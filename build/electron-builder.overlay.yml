@@ -1,0 +1,3 @@
+extraResources:
+  - from: ${env.ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE}
+    to: zhiyuan-enterprise/extension.cjs
