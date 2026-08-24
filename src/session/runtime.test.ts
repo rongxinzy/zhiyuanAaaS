@@ -67,7 +67,7 @@ function hostContext(root: string): ZhiyuanEnterpriseHostContext {
       resources: path.join(root, 'resources'),
       userData: path.join(root, 'user-data'),
     },
-    capabilities: { session: null, renderer: null },
+    capabilities: { session: null, renderer: null, settings: null },
   };
 }
 

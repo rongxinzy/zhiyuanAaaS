@@ -1,0 +1,138 @@
+import { CircleAlert, ShieldCheck } from 'lucide-react';
+
+import type { EnterpriseSessionIdentity } from '../../../host-contract.js';
+import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
+import { translate, type TranslationKey } from '../../i18n.js';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert.js';
+import { Button } from '../ui/button.js';
+import { Separator } from '../ui/separator.js';
+import { PasswordChangeForm } from '../session/PasswordChangeForm.js';
+
+interface AccountSettingsProps {
+  readonly language: EnterpriseRendererLanguage;
+  readonly identity: EnterpriseSessionIdentity;
+  readonly pending: boolean;
+  readonly signingOut: boolean;
+  readonly error: TranslationKey | null;
+  readonly success: TranslationKey | null;
+  readonly onPasswordChange: (input: {
+    currentPassword: string;
+    newPassword: string;
+  }) => Promise<boolean>;
+  readonly onSignOut: () => Promise<void>;
+}
+
+export function AccountSettings({
+  language,
+  identity,
+  pending,
+  signingOut,
+  error,
+  success,
+  onPasswordChange,
+  onSignOut,
+}: AccountSettingsProps) {
+  const details = [
+    [translate(language, 'user'), identity.user.displayName],
+    [translate(language, 'email'), identity.user.email || translate(language, 'notProvided')],
+    [translate(language, 'enterprise'), identity.enterprise.name],
+    [translate(language, 'enterpriseIdentifier'), identity.enterprise.id],
+    [
+      translate(language, 'roles'),
+      identity.roles.length > 0 ? identity.roles.join(', ') : translate(language, 'noRoles'),
+    ],
+    [
+      translate(language, 'sessionExpiresAt'),
+      formatSessionExpiry(identity.sessionExpiresAt, language),
+    ],
+  ] as const;
+
+  return (
+    <main className="h-full overflow-y-auto bg-background p-4 sm:p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <header className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card">
+            <ShieldCheck aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold leading-snug">
+              {translate(language, 'accountTitle')}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {translate(language, 'accountDescription')}
+            </p>
+          </div>
+        </header>
+
+        <section className="flex flex-col gap-4" aria-labelledby="account-details-heading">
+          <h2 id="account-details-heading" className="text-base font-semibold">
+            {translate(language, 'accountDetails')}
+          </h2>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+            {details.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="break-words text-sm font-medium">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <Separator />
+
+        <section className="flex flex-col gap-4" aria-labelledby="password-security-heading">
+          <div className="flex flex-col gap-1">
+            <h2 id="password-security-heading" className="text-base font-semibold">
+              {translate(language, 'passwordSecurity')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {translate(language, 'passwordSecurityDescription')}
+            </p>
+          </div>
+          <PasswordChangeForm
+            language={language}
+            pending={pending}
+            signingOut={signingOut}
+            error={error}
+            success={success}
+            submitLabel="changePassword"
+            signOutLabel="accountSignOut"
+            autoFocus={false}
+            onSubmit={onPasswordChange}
+            onSignOut={onSignOut}
+          />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export function AccountSettingsUnavailable({
+  language,
+}: {
+  readonly language: EnterpriseRendererLanguage;
+}) {
+  return (
+    <main className="flex min-h-full items-center justify-center bg-background p-4 sm:p-6">
+      <Alert className="max-w-md">
+        <CircleAlert aria-hidden="true" />
+        <AlertTitle>{translate(language, 'accountUnavailableTitle')}</AlertTitle>
+        <AlertDescription>
+          {translate(language, 'accountUnavailableDescription')}
+        </AlertDescription>
+      </Alert>
+    </main>
+  );
+}
+
+function formatSessionExpiry(
+  value: string,
+  language: EnterpriseRendererLanguage,
+): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}

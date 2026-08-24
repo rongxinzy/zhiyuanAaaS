@@ -6,6 +6,8 @@ import {
   ZhiyuanAaaSExtension,
   ZHIYUAN_ENTERPRISE_EXTENSION_ID,
   ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
+  ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
+  ZHIYUAN_ENTERPRISE_SETTINGS_LABELS,
 } from './extension.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -101,6 +103,27 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(unregister).toHaveBeenCalledTimes(1);
   });
 
+  test('registers the enterprise account settings page and releases it during disposal', async () => {
+    const unregister = vi.fn();
+    const registerPage = vi.fn(() => unregister);
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await extension.initialize(
+      hostContext(null, null, {
+        apiVersion: 1,
+        registerPage,
+      }),
+    );
+
+    expect(registerPage).toHaveBeenCalledWith({
+      entrypoint: ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
+      labels: ZHIYUAN_ENTERPRISE_SETTINGS_LABELS,
+    });
+    await extension.dispose();
+    await extension.dispose();
+    expect(unregister).toHaveBeenCalledTimes(1);
+  });
+
   test('fails closed for an incompatible session capability', async () => {
     const extension = new ZhiyuanAaaSExtension({
       createSession: vi.fn(async () => passwordSession()),
@@ -129,11 +152,27 @@ describe('Zhiyuan enterprise extension contract', () => {
       ),
     ).rejects.toThrow('renderer capability API version is not supported');
   });
+
+  test('fails closed for an incompatible settings capability', async () => {
+    const extension = createZhiyuanEnterpriseExtension();
+    const registerSessionGate = vi.fn();
+
+    await expect(
+      extension.initialize(
+        hostContext(null, { apiVersion: 1, registerSessionGate }, {
+          apiVersion: 2,
+          registerPage: vi.fn(),
+        } as never),
+      ),
+    ).rejects.toThrow('settings capability API version is not supported');
+    expect(registerSessionGate).not.toHaveBeenCalled();
+  });
 });
 
 function hostContext(
   session: ZhiyuanEnterpriseHostContext['capabilities']['session'] = null,
   renderer: ZhiyuanEnterpriseHostContext['capabilities']['renderer'] = null,
+  settings: ZhiyuanEnterpriseHostContext['capabilities']['settings'] = null,
 ): ZhiyuanEnterpriseHostContext {
   return Object.freeze({
     apiVersion: ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -144,7 +183,7 @@ function hostContext(
       resources: 'D:\\zhiyuan\\resources',
       userData: 'D:\\zhiyuan\\user-data',
     }),
-    capabilities: Object.freeze({ session, renderer }),
+    capabilities: Object.freeze({ session, renderer, settings }),
   });
 }
 

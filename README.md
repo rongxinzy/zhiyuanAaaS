@@ -26,9 +26,9 @@ npm run check
 application. `build/electron-builder.overlay.yml` places both outputs under
 `resources/zhiyuan-enterprise` without overwriting public source files.
 
-The current extension provides API v1 lifecycle, password-session, and enterprise renderer
-capabilities. Managed model projection, Skill reconciliation, and control-event processing remain
-separately reviewed capabilities.
+The current extension provides API v1 lifecycle, password-session, enterprise renderer, and
+enterprise account settings capabilities. Managed model projection, Skill reconciliation, and
+control-event processing remain separately reviewed capabilities.
 
 ## Password Session Foundation
 
@@ -42,6 +42,14 @@ The session foundation is exposed through the public host's narrow session capab
 enterprise renderer uses the host's renderer capability v1 for password login, recoverable-session
 handling, and mandatory password changes. The renderer receives normalized session snapshots only;
 access, refresh, and model tokens never cross into the iframe.
+
+## Enterprise Account Settings
+
+The extension registers an `Enterprise account` / `企业账户` page through settings capability
+v1. The page reuses the sandboxed renderer bundle with a distinct `settings` surface and displays
+only the normalized identity snapshot supplied by the host. Authenticated users can review their
+user, email, enterprise, roles, and session expiry, change their password, or sign out. Signing out
+publishes the normalized session transition so the public application's session gate takes control.
 
 ## Runtime Configuration
 

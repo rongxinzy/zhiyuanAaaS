@@ -20,6 +20,11 @@ assert.equal(
   'zhiyuan-enterprise/ui',
   'Renderer package directory must match the host-scoped resource path.',
 );
+assert.equal(
+  manifest.renderer.settingsPage,
+  'dist/ui/index.html',
+  'Renderer settings page must use the stable build output.',
+);
 assert.match(manifest.zhiyuanCore.commit, /^[0-9a-f]{40}$/, 'Core commit must be immutable.');
 assert.match(manifest.aepSdk.sha256, /^[0-9a-f]{64}$/, 'SDK digest must be SHA-256.');
 

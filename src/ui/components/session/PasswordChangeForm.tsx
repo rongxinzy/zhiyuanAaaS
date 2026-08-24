@@ -1,4 +1,4 @@
-import { CircleAlert, KeyRound, LogOut } from 'lucide-react';
+import { CircleAlert, CircleCheck, KeyRound, LogOut } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
@@ -14,7 +14,14 @@ interface PasswordChangeFormProps {
   readonly pending: boolean;
   readonly signingOut: boolean;
   readonly error: TranslationKey | null;
-  readonly onSubmit: (input: { currentPassword: string; newPassword: string }) => Promise<void>;
+  readonly success: TranslationKey | null;
+  readonly submitLabel?: TranslationKey;
+  readonly signOutLabel?: TranslationKey;
+  readonly autoFocus?: boolean;
+  readonly onSubmit: (input: {
+    currentPassword: string;
+    newPassword: string;
+  }) => Promise<boolean>;
   readonly onSignOut: () => Promise<void>;
 }
 
@@ -23,6 +30,10 @@ export function PasswordChangeForm({
   pending,
   signingOut,
   error,
+  success,
+  submitLabel = 'updatePassword',
+  signOutLabel = 'signOut',
+  autoFocus = true,
   onSubmit,
   onSignOut,
 }: PasswordChangeFormProps) {
@@ -32,12 +43,16 @@ export function PasswordChangeForm({
   const [validationError, setValidationError] = useState<TranslationKey | null>(null);
   const disabled = pending || signingOut;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextError = validatePasswordChange(currentPassword, newPassword, confirmation);
     setValidationError(nextError);
     if (nextError) return;
-    void onSubmit({ currentPassword, newPassword });
+    if (await onSubmit({ currentPassword, newPassword })) {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmation('');
+    }
   };
 
   const displayedError = validationError ?? error;
@@ -48,6 +63,12 @@ export function PasswordChangeForm({
         <Alert variant="destructive">
           <CircleAlert aria-hidden="true" />
           <AlertDescription>{translate(language, displayedError)}</AlertDescription>
+        </Alert>
+      ) : null}
+      {!displayedError && success ? (
+        <Alert>
+          <CircleCheck aria-hidden="true" />
+          <AlertDescription>{translate(language, success)}</AlertDescription>
         </Alert>
       ) : null}
       <FieldGroup>
@@ -66,7 +87,7 @@ export function PasswordChangeForm({
             maxLength={1024}
             disabled={disabled}
             aria-invalid={displayedError ? true : undefined}
-            autoFocus
+            autoFocus={autoFocus}
           />
         </Field>
         <Field data-invalid={displayedError ? true : undefined}>
@@ -108,7 +129,7 @@ export function PasswordChangeForm({
       <div className="flex flex-col gap-2">
         <Button type="submit" size="lg" disabled={disabled} className="w-full">
           {pending ? <Spinner data-icon="inline-start" /> : <KeyRound data-icon="inline-start" />}
-          {translate(language, pending ? 'updatingPassword' : 'updatePassword')}
+          {translate(language, pending ? 'updatingPassword' : submitLabel)}
         </Button>
         <Button
           type="button"
@@ -119,7 +140,7 @@ export function PasswordChangeForm({
           onClick={() => void onSignOut()}
         >
           {signingOut ? <Spinner data-icon="inline-start" /> : <LogOut data-icon="inline-start" />}
-          {translate(language, signingOut ? 'signingOut' : 'signOut')}
+          {translate(language, signingOut ? 'signingOut' : signOutLabel)}
         </Button>
       </div>
     </form>

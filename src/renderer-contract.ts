@@ -25,6 +25,13 @@ export const EnterpriseRendererSessionOperation = {
 export type EnterpriseRendererSessionOperation =
   (typeof EnterpriseRendererSessionOperation)[keyof typeof EnterpriseRendererSessionOperation];
 
+export const EnterpriseRendererSurface = {
+  SessionGate: 'session-gate',
+  Settings: 'settings',
+} as const;
+export type EnterpriseRendererSurface =
+  (typeof EnterpriseRendererSurface)[keyof typeof EnterpriseRendererSurface];
+
 export const EnterpriseRendererLanguage = {
   Chinese: 'zh',
   English: 'en',
@@ -49,6 +56,7 @@ export interface EnterpriseRendererInitializeMessage {
   readonly source: typeof EnterpriseRendererMessageSource.Host;
   readonly apiVersion: 1;
   readonly type: typeof EnterpriseRendererMessageType.Initialize;
+  readonly surface: EnterpriseRendererSurface;
   readonly language: EnterpriseRendererLanguage;
   readonly theme: EnterpriseRendererTheme;
   readonly session: EnterpriseSessionResult;

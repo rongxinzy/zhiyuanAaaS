@@ -1,6 +1,7 @@
 export const ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION = 1 as const;
+export const ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION = 1 as const;
 
 export const EnterpriseSessionStatus = {
   Unavailable: 'unavailable',
@@ -73,6 +74,19 @@ export interface ZhiyuanEnterpriseRendererHostCapability {
   registerSessionGate(entrypoint: string): () => void;
 }
 
+export interface ZhiyuanEnterpriseSettingsPageRegistration {
+  readonly entrypoint: string;
+  readonly labels: {
+    readonly zh: string;
+    readonly en: string;
+  };
+}
+
+export interface ZhiyuanEnterpriseSettingsHostCapability {
+  readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION;
+  registerPage(page: ZhiyuanEnterpriseSettingsPageRegistration): () => void;
+}
+
 export interface ZhiyuanEnterpriseHostContext {
   readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION;
   readonly appVersion: string;
@@ -85,6 +99,7 @@ export interface ZhiyuanEnterpriseHostContext {
   readonly capabilities: {
     readonly session: ZhiyuanEnterpriseSessionHostCapability | null;
     readonly renderer: ZhiyuanEnterpriseRendererHostCapability | null;
+    readonly settings: ZhiyuanEnterpriseSettingsHostCapability | null;
   };
 }
 
