@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 
-const bundleUrl = new URL('../dist/extension.cjs', import.meta.url).href;
+const bundleUrl = new URL('../dist/extension.cjs', import.meta.url);
+const bundleSource = await fs.readFile(bundleUrl, 'utf8');
+assert.doesNotMatch(
+  bundleSource,
+  /require\(["']@aep\/sdk-node["']\)/,
+  'Bundle must not require an external AEP SDK installation.',
+);
 const bundledModule = await import(bundleUrl);
 const factory =
   bundledModule.createZhiyuanEnterpriseExtension ??

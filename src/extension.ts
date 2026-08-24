@@ -1,5 +1,3 @@
-import type { AepClient } from '@aep/sdk-node';
-
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
   type ZhiyuanEnterpriseExtension,
@@ -17,7 +15,6 @@ class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   readonly apiVersion = ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION;
   readonly id = ZHIYUAN_ENTERPRISE_EXTENSION_ID;
   #state: ExtensionState = { status: 'idle' };
-  #aepClient: AepClient | null = null;
 
   async initialize(context: ZhiyuanEnterpriseHostContext): Promise<void> {
     if (this.#state.status !== 'idle') {
@@ -30,7 +27,6 @@ class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   }
 
   async dispose(): Promise<void> {
-    this.#aepClient = null;
     this.#state = { status: 'disposed' };
   }
 }
@@ -38,3 +34,5 @@ class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
 export function createZhiyuanEnterpriseExtension(): ZhiyuanEnterpriseExtension {
   return new ZhiyuanAaaSExtension();
 }
+
+export { createZhiyuanPasswordSession } from './session/factory.js';
