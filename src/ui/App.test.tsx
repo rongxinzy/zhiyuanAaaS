@@ -12,6 +12,8 @@ import {
   EnterpriseRendererLanguage,
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
+  EnterpriseRendererSurface,
+  type EnterpriseRendererSurface as EnterpriseRendererSurfaceValue,
   EnterpriseRendererTheme,
   type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
 } from '../renderer-contract.js';
@@ -64,11 +66,43 @@ describe('enterprise session UI', () => {
     expect(screen.getByLabelText('确认新密码')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '退出并重新登录' })).toBeInTheDocument();
   });
+
+  test('renders authenticated account details on the settings surface', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        authenticated(false),
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Enterprise account' })).toBeInTheDocument();
+    expect(screen.getByText('Administrator')).toBeInTheDocument();
+    expect(screen.getByText('Zhiyuan')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  test('fails safely when settings is opened without an authenticated session', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        { ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } },
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+
+    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+  });
 });
 
 function initialize(
   session: EnterpriseSessionResult,
   language: EnterpriseRendererLanguageValue = EnterpriseRendererLanguage.Chinese,
+  surface: EnterpriseRendererSurfaceValue = EnterpriseRendererSurface.SessionGate,
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
@@ -77,6 +111,7 @@ function initialize(
         source: EnterpriseRendererMessageSource.Host,
         apiVersion: 1,
         type: EnterpriseRendererMessageType.Initialize,
+        surface,
         language,
         theme: EnterpriseRendererTheme.Light,
         session,

@@ -2,16 +2,17 @@
   "schemaVersion": 1,
   "extension": {
     "id": "zhiyuan.aaas",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "apiVersion": 1,
     "artifact": "dist/extension.cjs"
   },
   "renderer": {
     "sessionGate": "dist/ui/index.html",
+    "settingsPage": "dist/ui/index.html",
     "packagedDirectory": "zhiyuan-enterprise/ui"
   },
   "zhiyuanCore": {
-    "commit": "73edb155bf9cbd10007b52dc314a5f3ea9917079"
+    "commit": "b5fe1dbac3982bfdb041bc5ff05f3ab7b6d18241"
   },
   "aepSdk": {
     "version": "0.2.0",

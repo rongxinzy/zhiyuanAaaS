@@ -3,10 +3,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-contract.js';
 import {
   EnterpriseRendererLanguage,
+  EnterpriseRendererSurface,
   EnterpriseRendererTheme,
   type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
 } from '../renderer-contract.js';
 import { LoginForm } from './components/session/LoginForm.js';
+import {
+  AccountSettings,
+  AccountSettingsUnavailable,
+} from './components/settings/AccountSettings.js';
 import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
 import { SessionLayout } from './components/session/SessionLayout.js';
 import { translate, type TranslationKey } from './i18n.js';
@@ -14,6 +19,7 @@ import { EnterpriseRendererClient } from './services/enterprise-renderer-client.
 
 interface RuntimeState {
   readonly language: EnterpriseRendererLanguageValue;
+  readonly surface: EnterpriseRendererSurface;
   readonly session: EnterpriseSessionResult;
 }
 
@@ -23,6 +29,7 @@ export function App() {
   const [pending, setPending] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<TranslationKey | null>(null);
+  const [success, setSuccess] = useState<TranslationKey | null>(null);
 
   useEffect(
     () =>
@@ -35,6 +42,7 @@ export function App() {
           message.language === EnterpriseRendererLanguage.Chinese ? 'zh-CN' : 'en';
         setRuntime({
           language: message.language,
+          surface: message.surface,
           session: message.session,
         });
       }),
@@ -59,6 +67,7 @@ export function App() {
   }) => {
     setPending(true);
     setError(null);
+    setSuccess(null);
     try {
       const result = await client.login(input);
       if (result.ok) updateSession(result);
@@ -73,23 +82,32 @@ export function App() {
   const handlePasswordChange = async (input: {
     currentPassword: string;
     newPassword: string;
-  }) => {
+  }): Promise<boolean> => {
     setPending(true);
     setError(null);
+    setSuccess(null);
     try {
       const result = await client.changePassword(input);
-      if (result.ok) updateSession(result);
-      else setError('passwordChangeFailed');
+      if (result.ok) {
+        updateSession(result);
+        if (runtime.surface === EnterpriseRendererSurface.Settings) {
+          setSuccess('passwordChangeSucceeded');
+        }
+        return true;
+      }
+      setError('passwordChangeFailed');
     } catch {
       setError('operationFailed');
     } finally {
       setPending(false);
     }
+    return false;
   };
 
   const handleSignOut = async () => {
     setSigningOut(true);
     setError(null);
+    setSuccess(null);
     try {
       const result = await client.logout();
       if (result.ok) updateSession(result);
@@ -100,6 +118,24 @@ export function App() {
       setSigningOut(false);
     }
   };
+
+  if (runtime.surface === EnterpriseRendererSurface.Settings) {
+    if (snapshot?.status !== EnterpriseSessionStatus.Authenticated) {
+      return <AccountSettingsUnavailable language={runtime.language} />;
+    }
+    return (
+      <AccountSettings
+        language={runtime.language}
+        identity={snapshot.identity}
+        pending={pending}
+        signingOut={signingOut}
+        error={error}
+        success={success}
+        onPasswordChange={handlePasswordChange}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
 
   if (passwordChangeRequired) {
     return (
@@ -113,6 +149,7 @@ export function App() {
           pending={pending}
           signingOut={signingOut}
           error={error}
+          success={null}
           onSubmit={handlePasswordChange}
           onSignOut={handleSignOut}
         />
