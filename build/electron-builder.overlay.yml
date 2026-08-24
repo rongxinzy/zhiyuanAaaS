@@ -3,3 +3,5 @@ extraResources:
     to: zhiyuan-enterprise/extension.cjs
   - from: ${env.ZHIYUAN_ENTERPRISE_NOTICE_FILE}
     to: zhiyuan-enterprise/THIRD_PARTY_NOTICES.md
+  - from: ${env.ZHIYUAN_ENTERPRISE_CONFIG_FILE}
+    to: zhiyuan-enterprise/config.json

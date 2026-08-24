@@ -24,5 +24,6 @@ await extension.initialize({
   isPackaged: true,
   platform: process.platform,
   paths: { resources: process.cwd(), userData: process.cwd() },
+  capabilities: { session: null },
 });
 await extension.dispose();
