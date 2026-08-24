@@ -1,8 +1,8 @@
 # Zhiyuan Enterprise Extension
 
-This private repository builds the closed enterprise extension loaded by the public Zhiyuan
-application. Private AEP configuration, enterprise policy, release inputs, and implementation
-remain here; the public application contains only the versioned extension host.
+This repository builds the enterprise extension loaded by the public Zhiyuan application.
+Enterprise AEP configuration, policy, release inputs, and implementation remain isolated here; the
+public application contains only the versioned extension host.
 
 ## Pinned Inputs
 
@@ -36,10 +36,22 @@ Only the refresh token is persisted through `ProtectedFileStorage`; callers must
 platform encryption adapter through `SafeStorageProtector`. Access and model tokens remain in the
 AEP SDK's in-memory session state.
 
-The session foundation is not exposed to the renderer yet. A later public-host capability will add
-a narrow, versioned IPC bridge before any login UI is introduced.
+The session foundation is exposed through the public host's narrow session capability v1. No login
+UI is included in this stage.
+
+## Runtime Configuration
+
+Enterprise packaging must provide `resources/zhiyuan-enterprise/config.json`; use
+`build/enterprise-config.example.json` as the schema reference. The file contains only the AEP base
+URL and the explicit insecure-HTTP development switch. Customer credentials are never build
+inputs. Each installation creates a stable UUID under the application user-data directory for AEP
+Agent binding.
+
+The extension registers its password-session provider through public session capability v1. It
+uses Electron platform encryption for refresh-token persistence and unregisters the provider during
+application shutdown. The renderer receives only normalized session and identity snapshots.
 
 ## License
 
-This repository is private and `UNLICENSED`. The root legal notice is an interim proprietary
-notice and must be reviewed before any external distribution.
+The npm package is marked private and `UNLICENSED`. The root legal notice is interim and must be
+reviewed before any external distribution.

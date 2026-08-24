@@ -10,6 +10,7 @@ export default defineConfig({
   clean: true,
   bundle: true,
   noExternal: ['@aep/sdk-node'],
+  external: ['electron'],
   splitting: false,
   sourcemap: true,
   minify: false,
