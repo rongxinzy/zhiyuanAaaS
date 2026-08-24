@@ -1,5 +1,6 @@
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
+  ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION,
   type ZhiyuanEnterpriseExtension,
   type ZhiyuanEnterpriseHostContext,
@@ -9,6 +10,7 @@ import { createZhiyuanSessionRuntime } from './session/runtime.js';
 import type { ZhiyuanPasswordSession } from './session/password-session.js';
 
 export const ZHIYUAN_ENTERPRISE_EXTENSION_ID = 'zhiyuan.aaas';
+export const ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT = 'ui/index.html';
 
 type ExtensionState =
   | { readonly status: 'idle' }
@@ -33,6 +35,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   readonly #dependencies: ZhiyuanExtensionDependencies;
   #state: ExtensionState = { status: 'idle' };
   #unregisterSessionProvider: (() => void) | null = null;
+  #unregisterSessionGate: (() => void) | null = null;
 
   constructor(dependencies: ZhiyuanExtensionDependencies = defaultDependencies) {
     this.#dependencies = dependencies;
@@ -60,10 +63,21 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
         );
       });
     }
+    const rendererCapability = context.capabilities.renderer;
+    if (rendererCapability) {
+      if (rendererCapability.apiVersion !== ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION) {
+        throw new Error('Zhiyuan enterprise renderer capability API version is not supported.');
+      }
+      this.#unregisterSessionGate = rendererCapability.registerSessionGate(
+        ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
+      );
+    }
     this.#state = { status: 'active', context };
   }
 
   async dispose(): Promise<void> {
+    this.#unregisterSessionGate?.();
+    this.#unregisterSessionGate = null;
     this.#unregisterSessionProvider?.();
     this.#unregisterSessionProvider = null;
     this.#state = { status: 'disposed' };

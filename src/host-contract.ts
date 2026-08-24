@@ -1,5 +1,13 @@
 export const ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION = 1 as const;
+export const ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION = 1 as const;
+
+export const EnterpriseSessionStatus = {
+  Unavailable: 'unavailable',
+  SignedOut: 'signed-out',
+  Recoverable: 'recoverable',
+  Authenticated: 'authenticated',
+} as const;
 
 export type EnterpriseSessionIdentity = {
   readonly user: {
@@ -17,10 +25,25 @@ export type EnterpriseSessionIdentity = {
 };
 
 export type EnterpriseSessionSnapshot =
-  | { readonly status: 'unavailable' }
-  | { readonly status: 'signed-out' }
-  | { readonly status: 'recoverable' }
-  | { readonly status: 'authenticated'; readonly identity: EnterpriseSessionIdentity };
+  | { readonly status: typeof EnterpriseSessionStatus.Unavailable }
+  | { readonly status: typeof EnterpriseSessionStatus.SignedOut }
+  | { readonly status: typeof EnterpriseSessionStatus.Recoverable }
+  | {
+      readonly status: typeof EnterpriseSessionStatus.Authenticated;
+      readonly identity: EnterpriseSessionIdentity;
+    };
+
+export type EnterpriseSessionErrorCode = 'UNAVAILABLE' | 'INVALID_INPUT' | 'OPERATION_FAILED';
+
+export type EnterpriseSessionResult =
+  | { readonly ok: true; readonly snapshot: EnterpriseSessionSnapshot }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly code: EnterpriseSessionErrorCode;
+        readonly message: string;
+      };
+    };
 
 export interface EnterprisePasswordLoginInput {
   readonly enterpriseId: string;
@@ -45,6 +68,11 @@ export interface ZhiyuanEnterpriseSessionHostCapability {
   registerProvider(provider: ZhiyuanEnterpriseSessionProvider): () => void;
 }
 
+export interface ZhiyuanEnterpriseRendererHostCapability {
+  readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION;
+  registerSessionGate(entrypoint: string): () => void;
+}
+
 export interface ZhiyuanEnterpriseHostContext {
   readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION;
   readonly appVersion: string;
@@ -56,6 +84,7 @@ export interface ZhiyuanEnterpriseHostContext {
   };
   readonly capabilities: {
     readonly session: ZhiyuanEnterpriseSessionHostCapability | null;
+    readonly renderer: ZhiyuanEnterpriseRendererHostCapability | null;
   };
 }
 

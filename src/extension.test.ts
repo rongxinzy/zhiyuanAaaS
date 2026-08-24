@@ -5,6 +5,7 @@ import {
   createZhiyuanEnterpriseExtension,
   ZhiyuanAaaSExtension,
   ZHIYUAN_ENTERPRISE_EXTENSION_ID,
+  ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
 } from './extension.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -82,6 +83,24 @@ describe('Zhiyuan enterprise extension contract', () => {
     );
   });
 
+  test('registers the renderer session gate and releases it during disposal', async () => {
+    const unregister = vi.fn();
+    const registerSessionGate = vi.fn(() => unregister);
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await extension.initialize(
+      hostContext(null, {
+        apiVersion: 1,
+        registerSessionGate,
+      }),
+    );
+
+    expect(registerSessionGate).toHaveBeenCalledWith(ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT);
+    await extension.dispose();
+    await extension.dispose();
+    expect(unregister).toHaveBeenCalledTimes(1);
+  });
+
   test('fails closed for an incompatible session capability', async () => {
     const extension = new ZhiyuanAaaSExtension({
       createSession: vi.fn(async () => passwordSession()),
@@ -97,10 +116,24 @@ describe('Zhiyuan enterprise extension contract', () => {
       ),
     ).rejects.toThrow('session capability API version is not supported');
   });
+
+  test('fails closed for an incompatible renderer capability', async () => {
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await expect(
+      extension.initialize(
+        hostContext(null, {
+          apiVersion: 2,
+          registerSessionGate: vi.fn(),
+        } as never),
+      ),
+    ).rejects.toThrow('renderer capability API version is not supported');
+  });
 });
 
 function hostContext(
   session: ZhiyuanEnterpriseHostContext['capabilities']['session'] = null,
+  renderer: ZhiyuanEnterpriseHostContext['capabilities']['renderer'] = null,
 ): ZhiyuanEnterpriseHostContext {
   return Object.freeze({
     apiVersion: ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -111,7 +144,7 @@ function hostContext(
       resources: 'D:\\zhiyuan\\resources',
       userData: 'D:\\zhiyuan\\user-data',
     }),
-    capabilities: Object.freeze({ session }),
+    capabilities: Object.freeze({ session, renderer }),
   });
 }
 
