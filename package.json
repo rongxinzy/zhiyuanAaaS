@@ -1,0 +1,31 @@
+{
+  "name": "@zhiyuan/enterprise-extension",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:bundle": "node scripts/verify-bundle.mjs",
+    "verify:manifest": "node scripts/verify-manifest.mjs",
+    "verify:sdk": "node scripts/verify-sdk.mjs"
+  },
+  "dependencies": {
+    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.0/aep-sdk-node-0.2.0.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
+  }
+}
