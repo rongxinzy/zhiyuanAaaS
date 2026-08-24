@@ -9,6 +9,7 @@ export default defineConfig({
   outExtension: () => ({ js: '.cjs' }),
   clean: true,
   bundle: true,
+  noExternal: ['@aep/sdk-node'],
   splitting: false,
   sourcemap: true,
   minify: false,
