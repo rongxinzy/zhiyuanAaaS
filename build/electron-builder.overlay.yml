@@ -1,6 +1,11 @@
 extraResources:
   - from: ${env.ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE}
     to: zhiyuan-enterprise/extension.cjs
+  - from: ${env.ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY}
+    to: zhiyuan-enterprise/ui
+    filter:
+      - '**/*'
+      - '!**/*.map'
   - from: ${env.ZHIYUAN_ENTERPRISE_NOTICE_FILE}
     to: zhiyuan-enterprise/THIRD_PARTY_NOTICES.md
   - from: ${env.ZHIYUAN_ENTERPRISE_CONFIG_FILE}

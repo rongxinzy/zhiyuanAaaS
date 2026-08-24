@@ -10,6 +10,16 @@ const manifest = JSON.parse(
 assert.equal(packageJson.private, true, 'Enterprise package must remain private.');
 assert.equal(packageJson.license, 'UNLICENSED', 'Enterprise package must remain unlicensed.');
 assert.equal(manifest.extension.version, packageJson.version, 'Extension versions must match.');
+assert.equal(
+  manifest.renderer.sessionGate,
+  'dist/ui/index.html',
+  'Renderer session gate must use the stable build output.',
+);
+assert.equal(
+  manifest.renderer.packagedDirectory,
+  'zhiyuan-enterprise/ui',
+  'Renderer package directory must match the host-scoped resource path.',
+);
 assert.match(manifest.zhiyuanCore.commit, /^[0-9a-f]{40}$/, 'Core commit must be immutable.');
 assert.match(manifest.aepSdk.sha256, /^[0-9a-f]{64}$/, 'SDK digest must be SHA-256.');
 

@@ -19,14 +19,16 @@ npm ci
 npm run check
 ```
 
-`npm run build` emits `dist/extension.cjs`. During public application development, set
-`ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of that file. Enterprise packaging
-uses `build/electron-builder.overlay.yml` to place the same artifact at
-`resources/zhiyuan-enterprise/extension.cjs` without overwriting public source files.
+`npm run build` emits the Node extension at `dist/extension.cjs` and the enterprise session UI at
+`dist/ui/index.html`. During public application development, set
+`ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of the extension bundle. Set
+`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY` to the absolute path of `dist/ui` when packaging the public
+application. `build/electron-builder.overlay.yml` places both outputs under
+`resources/zhiyuan-enterprise` without overwriting public source files.
 
-The current extension is an API v1 lifecycle skeleton. Authentication IPC, local token storage,
-managed model projection, Skill reconciliation, and control-event processing will be introduced
-as separately reviewed capabilities.
+The current extension provides API v1 lifecycle, password-session, and enterprise renderer
+capabilities. Managed model projection, Skill reconciliation, and control-event processing remain
+separately reviewed capabilities.
 
 ## Password Session Foundation
 
@@ -36,8 +38,10 @@ Only the refresh token is persisted through `ProtectedFileStorage`; callers must
 platform encryption adapter through `SafeStorageProtector`. Access and model tokens remain in the
 AEP SDK's in-memory session state.
 
-The session foundation is exposed through the public host's narrow session capability v1. No login
-UI is included in this stage.
+The session foundation is exposed through the public host's narrow session capability v1. The
+enterprise renderer uses the host's renderer capability v1 for password login, recoverable-session
+handling, and mandatory password changes. The renderer receives normalized session snapshots only;
+access, refresh, and model tokens never cross into the iframe.
 
 ## Runtime Configuration
 
