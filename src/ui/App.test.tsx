@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import {
-  EnterpriseSessionStatus,
-  type EnterpriseSessionResult,
-} from '../host-contract.js';
+import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-contract.js';
 import {
   EnterpriseRendererLanguage,
   EnterpriseRendererMessageSource,
@@ -51,8 +48,9 @@ describe('enterprise session UI', () => {
       ),
     );
 
-    expect(await screen.findByText('Your previous session could not be restored. Sign in again.'))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText('Your previous session could not be restored. Sign in again.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
@@ -77,11 +75,119 @@ describe('enterprise session UI', () => {
       ),
     );
 
-    expect(await screen.findByRole('heading', { name: 'Enterprise account' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Enterprise settings' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Enterprise account' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     expect(screen.getByText('Zhiyuan')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  test('shows a loading skeleton and populated managed models from the host catalog', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        authenticated(false),
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
+    expect(screen.getByRole('status', { name: 'Loading managed models' })).toBeInTheDocument();
+    await waitForCatalogRequests(1);
+    act(() =>
+      respondToLatestCatalog({
+        ok: true,
+        models: [
+          {
+            id: 'managed-model',
+            displayName: 'Managed Model',
+            protocol: 'openai-compatible',
+            provider: { id: 'external.zhiyuan', displayName: 'Zhiyuan' },
+            contextWindow: 128_000,
+            isDefault: true,
+            capabilities: { toolCalling: 'supported', imageInput: 'supported' },
+            baseUrl: 'https://gateway.example.test/v1',
+            apiKey: 'must-not-cross-the-frame-boundary',
+          },
+          {
+            id: 'other-model',
+            displayName: 'Other provider model',
+            protocol: 'openai-compatible',
+            provider: { id: 'external.other', displayName: 'Other' },
+          },
+        ],
+      }),
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Managed Model' })).toBeInTheDocument();
+    expect(screen.getByText('Default')).toBeInTheDocument();
+    expect(screen.getByText('128,000 tokens')).toBeInTheDocument();
+    expect(screen.getByText('Tool calling')).toBeInTheDocument();
+    expect(screen.getByText('Image input')).toBeInTheDocument();
+    expect(screen.queryByText('Other provider model')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('gateway.example.test');
+    expect(document.body.textContent).not.toContain('must-not-cross');
+  });
+
+  test('shows a useful empty managed-model state', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        authenticated(false),
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
+    await waitForCatalogRequests(1);
+    act(() => respondToLatestCatalog({ ok: true, models: [] }));
+
+    expect(await screen.findByRole('heading', { name: 'No models assigned' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Refresh' })).not.toHaveLength(0);
+  });
+
+  test('normalizes model catalog failures and offers a retry', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        authenticated(false),
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
+    await waitForCatalogRequests(1);
+    act(() => respondToLatestCatalog({ ok: false, error: 'sensitive host detail' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Models are unavailable' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('sensitive host detail');
+  });
+
+  test('requests a fresh model catalog on manual refresh', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        authenticated(false),
+        EnterpriseRendererLanguage.English,
+        EnterpriseRendererSurface.Settings,
+      ),
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
+    await waitForCatalogRequests(1);
+    act(() => respondToLatestCatalog({ ok: true, models: [] }));
+    const [refresh] = await screen.findAllByRole('button', { name: 'Refresh' });
+    fireEvent.click(refresh!);
+
+    await waitForCatalogRequests(2);
+    expect(screen.getByRole('status', { name: 'Loading managed models' })).toBeInTheDocument();
   });
 
   test('fails safely when settings is opened without an authenticated session', async () => {
@@ -118,6 +224,42 @@ function initialize(
       },
     }),
   );
+}
+
+async function waitForCatalogRequests(count: number): Promise<void> {
+  await waitFor(() => expect(catalogRequests()).toHaveLength(count));
+}
+
+function respondToLatestCatalog(result: unknown): void {
+  const request = catalogRequests().at(-1);
+  if (!request || typeof request.requestId !== 'string') {
+    throw new Error('Expected a model catalog request.');
+  }
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      source: window,
+      data: {
+        source: EnterpriseRendererMessageSource.Host,
+        apiVersion: 1,
+        type: EnterpriseRendererMessageType.ModelCatalogResponse,
+        requestId: request.requestId,
+        result,
+      },
+    }),
+  );
+}
+
+function catalogRequests(): Array<Record<string, unknown>> {
+  const calls = postMessage.mock.calls as unknown as Array<readonly [unknown, ...unknown[]]>;
+  return calls
+    .map(call => call[0])
+    .filter(
+      (message: unknown): message is Record<string, unknown> =>
+        message !== null &&
+        typeof message === 'object' &&
+        (message as Record<string, unknown>).type ===
+          EnterpriseRendererMessageType.ModelCatalogRequest,
+    );
 }
 
 function authenticated(passwordChangeRequired: boolean) {

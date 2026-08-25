@@ -16,8 +16,8 @@ export const ZHIYUAN_ENTERPRISE_EXTENSION_ID = 'zhiyuan.aaas';
 export const ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT = 'ui/index.html';
 export const ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT = 'ui/index.html';
 export const ZHIYUAN_ENTERPRISE_SETTINGS_LABELS = Object.freeze({
-  zh: '企业账户',
-  en: 'Enterprise account',
+  zh: '企业设置',
+  en: 'Enterprise settings',
 });
 
 type ExtensionState =

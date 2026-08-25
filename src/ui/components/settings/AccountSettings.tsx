@@ -1,4 +1,4 @@
-import { CircleAlert, ShieldCheck } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
 
 import type { EnterpriseSessionIdentity } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
@@ -48,62 +48,46 @@ export function AccountSettings({
   ] as const;
 
   return (
-    <main className="h-full overflow-y-auto bg-background p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-        <header className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card">
-            <ShieldCheck aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold leading-snug">
-              {translate(language, 'accountTitle')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {translate(language, 'accountDescription')}
-            </p>
-          </div>
-        </header>
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-4" aria-labelledby="account-details-heading">
+        <h2 id="account-details-heading" className="text-base font-semibold">
+          {translate(language, 'accountDetails')}
+        </h2>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+          {details.map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dd className="break-words text-sm font-medium">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-        <section className="flex flex-col gap-4" aria-labelledby="account-details-heading">
-          <h2 id="account-details-heading" className="text-base font-semibold">
-            {translate(language, 'accountDetails')}
+      <Separator />
+
+      <section className="flex flex-col gap-4" aria-labelledby="password-security-heading">
+        <div className="flex flex-col gap-1">
+          <h2 id="password-security-heading" className="text-base font-semibold">
+            {translate(language, 'passwordSecurity')}
           </h2>
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            {details.map(([label, value]) => (
-              <div key={label} className="min-w-0">
-                <dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className="break-words text-sm font-medium">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        <Separator />
-
-        <section className="flex flex-col gap-4" aria-labelledby="password-security-heading">
-          <div className="flex flex-col gap-1">
-            <h2 id="password-security-heading" className="text-base font-semibold">
-              {translate(language, 'passwordSecurity')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {translate(language, 'passwordSecurityDescription')}
-            </p>
-          </div>
-          <PasswordChangeForm
-            language={language}
-            pending={pending}
-            signingOut={signingOut}
-            error={error}
-            success={success}
-            submitLabel="changePassword"
-            signOutLabel="accountSignOut"
-            autoFocus={false}
-            onSubmit={onPasswordChange}
-            onSignOut={onSignOut}
-          />
-        </section>
-      </div>
-    </main>
+          <p className="text-sm text-muted-foreground">
+            {translate(language, 'passwordSecurityDescription')}
+          </p>
+        </div>
+        <PasswordChangeForm
+          language={language}
+          pending={pending}
+          signingOut={signingOut}
+          error={error}
+          success={success}
+          submitLabel="changePassword"
+          signOutLabel="accountSignOut"
+          autoFocus={false}
+          onSubmit={onPasswordChange}
+          onSignOut={onSignOut}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -117,18 +101,13 @@ export function AccountSettingsUnavailable({
       <Alert className="max-w-md">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{translate(language, 'accountUnavailableTitle')}</AlertTitle>
-        <AlertDescription>
-          {translate(language, 'accountUnavailableDescription')}
-        </AlertDescription>
+        <AlertDescription>{translate(language, 'accountUnavailableDescription')}</AlertDescription>
       </Alert>
     </main>
   );
 }
 
-function formatSessionExpiry(
-  value: string,
-  language: EnterpriseRendererLanguage,
-): string {
+function formatSessionExpiry(value: string, language: EnterpriseRendererLanguage): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en', {
