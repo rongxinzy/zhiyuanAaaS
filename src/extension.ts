@@ -3,12 +3,14 @@ import {
   ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION,
+  EXTERNAL_MODEL_CAPABILITY_API_VERSION,
   type ZhiyuanEnterpriseExtension,
   type ZhiyuanEnterpriseHostContext,
 } from './host-contract.js';
 import { ZhiyuanPasswordSessionProvider } from './session/provider.js';
 import { createZhiyuanSessionRuntime } from './session/runtime.js';
 import type { ZhiyuanPasswordSession } from './session/password-session.js';
+import { ZhiyuanModelProvider } from './models/provider.js';
 
 export const ZHIYUAN_ENTERPRISE_EXTENSION_ID = 'zhiyuan.aaas';
 export const ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT = 'ui/index.html';
@@ -43,6 +45,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   #unregisterSessionProvider: (() => void) | null = null;
   #unregisterSessionGate: (() => void) | null = null;
   #unregisterSettingsPage: (() => void) | null = null;
+  #unregisterModelProvider: (() => void) | null = null;
 
   constructor(dependencies: ZhiyuanExtensionDependencies = defaultDependencies) {
     this.#dependencies = dependencies;
@@ -58,6 +61,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     const sessionCapability = context.capabilities.session;
     const rendererCapability = context.capabilities.renderer;
     const settingsCapability = context.capabilities.settings;
+    const modelCapability = context.capabilities.models;
     if (
       sessionCapability &&
       sessionCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION
@@ -76,11 +80,21 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     ) {
       throw new Error('Zhiyuan enterprise settings capability API version is not supported.');
     }
-    if (sessionCapability) {
+    if (modelCapability && modelCapability.apiVersion !== EXTERNAL_MODEL_CAPABILITY_API_VERSION) {
+      throw new Error('Zhiyuan external model capability API version is not supported.');
+    }
+    if (sessionCapability || modelCapability) {
       const session = await this.#dependencies.createSession(context);
-      this.#unregisterSessionProvider = sessionCapability.registerProvider(
-        new ZhiyuanPasswordSessionProvider(session),
-      );
+      if (sessionCapability) {
+        this.#unregisterSessionProvider = sessionCapability.registerProvider(
+          new ZhiyuanPasswordSessionProvider(session),
+        );
+      }
+      if (modelCapability) {
+        this.#unregisterModelProvider = modelCapability.registerProvider(
+          new ZhiyuanModelProvider(session),
+        );
+      }
       await session.initialize().catch(() => {
         this.#dependencies.warn(
           '[EnterpriseSession] Session restoration could not complete and remains retryable.',
@@ -102,6 +116,8 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   }
 
   async dispose(): Promise<void> {
+    this.#unregisterModelProvider?.();
+    this.#unregisterModelProvider = null;
     this.#unregisterSettingsPage?.();
     this.#unregisterSettingsPage = null;
     this.#unregisterSessionGate?.();

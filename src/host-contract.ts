@@ -2,6 +2,45 @@ export const ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION = 1 as const;
+export const EXTERNAL_MODEL_CAPABILITY_API_VERSION = 1 as const;
+
+export const ExternalModelProtocol = {
+  OpenAICompatible: 'openai-compatible',
+} as const;
+export type ExternalModelProtocol =
+  (typeof ExternalModelProtocol)[keyof typeof ExternalModelProtocol];
+
+export const ModelCapabilityStatus = {
+  Supported: 'supported',
+  Unsupported: 'unsupported',
+  Unknown: 'unknown',
+} as const;
+export type ModelCapabilityStatus =
+  (typeof ModelCapabilityStatus)[keyof typeof ModelCapabilityStatus];
+
+export interface ModelCapabilities {
+  readonly toolCalling: ModelCapabilityStatus;
+  readonly imageInput: ModelCapabilityStatus;
+  readonly videoInput: ModelCapabilityStatus;
+  readonly audioInput: ModelCapabilityStatus;
+  readonly documentInput: ModelCapabilityStatus;
+  readonly reasoning: ModelCapabilityStatus;
+}
+
+export interface ExternalModelDescriptor {
+  readonly id: string;
+  readonly displayName: string;
+  readonly protocol: ExternalModelProtocol;
+  readonly capabilities?: Partial<ModelCapabilities>;
+  readonly contextWindow?: number;
+  readonly isDefault?: boolean;
+}
+
+export interface ExternalModelConnection {
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly modelId: string;
+}
 
 export const EnterpriseSessionStatus = {
   Unavailable: 'unavailable',
@@ -87,6 +126,19 @@ export interface ZhiyuanEnterpriseSettingsHostCapability {
   registerPage(page: ZhiyuanEnterpriseSettingsPageRegistration): () => void;
 }
 
+export interface ExternalModelProvider {
+  readonly id: string;
+  readonly displayName: string;
+  listModels(): Promise<readonly ExternalModelDescriptor[]>;
+  resolveConnection(modelId: string): Promise<ExternalModelConnection>;
+  onDidChange?(listener: () => void): () => void;
+}
+
+export interface ExternalModelHostCapability {
+  readonly apiVersion: typeof EXTERNAL_MODEL_CAPABILITY_API_VERSION;
+  registerProvider(provider: ExternalModelProvider): () => void;
+}
+
 export interface ZhiyuanEnterpriseHostContext {
   readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION;
   readonly appVersion: string;
@@ -100,6 +152,7 @@ export interface ZhiyuanEnterpriseHostContext {
     readonly session: ZhiyuanEnterpriseSessionHostCapability | null;
     readonly renderer: ZhiyuanEnterpriseRendererHostCapability | null;
     readonly settings: ZhiyuanEnterpriseSettingsHostCapability | null;
+    readonly models: ExternalModelHostCapability | null;
   };
 }
 

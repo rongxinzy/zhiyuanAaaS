@@ -1,12 +1,15 @@
 import type {
+  AgentModelList,
   AepSessionState,
   AepTokens,
   CurrentIdentity,
+  ModelConnection,
 } from '@aep/sdk-node';
 
 export interface PasswordSessionClient {
   getSessionState(): Promise<AepSessionState>;
   restoreSession(): Promise<AepTokens | null>;
+  refreshSession(): Promise<AepTokens>;
   loginWithPassword(input: {
     enterpriseId: string;
     username: string;
@@ -14,6 +17,8 @@ export interface PasswordSessionClient {
   }): Promise<AepTokens>;
   changePassword(currentPassword: string, newPassword: string): Promise<AepTokens>;
   getCurrentIdentity(): Promise<CurrentIdentity>;
+  listAgentModels(): Promise<AgentModelList>;
+  getModelConnection(): Promise<ModelConnection>;
   logout(): Promise<void>;
 }
 
@@ -29,11 +34,14 @@ export interface PasswordLoginInput {
 }
 
 export class ZhiyuanPasswordSession {
+  static readonly MODEL_TOKEN_REFRESH_WINDOW_MS = 30_000;
   readonly #client: PasswordSessionClient;
   #snapshot: ZhiyuanSessionSnapshot = Object.freeze({ status: 'signed-out' });
   #initialized = false;
   #initialization: Promise<ZhiyuanSessionSnapshot> | null = null;
   #operationTail: Promise<void> = Promise.resolve();
+  readonly #listeners = new Set<() => void>();
+  #modelAccessExpiresAt = 0;
 
   constructor(client: PasswordSessionClient) {
     this.#client = client;
@@ -41,6 +49,11 @@ export class ZhiyuanPasswordSession {
 
   snapshot(): ZhiyuanSessionSnapshot {
     return cloneSnapshot(this.#snapshot);
+  }
+
+  onDidChange(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
   }
 
   initialize(): Promise<ZhiyuanSessionSnapshot> {
@@ -57,12 +70,16 @@ export class ZhiyuanPasswordSession {
         if (!tokens) {
           this.#snapshot = Object.freeze({ status: 'signed-out' });
         } else {
+          this.#recordTokens(tokens);
           await this.#loadIdentity();
         }
       } else {
+        const tokens = await this.#client.restoreSession();
+        if (tokens) this.#recordTokens(tokens);
         await this.#loadIdentity();
       }
       this.#initialized = true;
+      this.#publishChanged();
       return this.snapshot();
     }).finally(() => {
       this.#initialization = null;
@@ -77,9 +94,11 @@ export class ZhiyuanPasswordSession {
       return Promise.reject(error);
     }
     return this.#enqueue(async () => {
-      await this.#client.loginWithPassword({ ...input });
+      const tokens = await this.#client.loginWithPassword({ ...input });
+      this.#recordTokens(tokens);
       this.#initialized = true;
       await this.#loadIdentityOrMarkRecoverable();
+      this.#publishChanged();
       return this.snapshot();
     });
   }
@@ -92,8 +111,10 @@ export class ZhiyuanPasswordSession {
       return Promise.reject(new Error('Current and new passwords are required.'));
     }
     return this.#enqueue(async () => {
-      await this.#client.changePassword(currentPassword, newPassword);
+      const tokens = await this.#client.changePassword(currentPassword, newPassword);
+      this.#recordTokens(tokens);
       await this.#loadIdentityOrMarkRecoverable();
+      this.#publishChanged();
       return this.snapshot();
     });
   }
@@ -102,8 +123,32 @@ export class ZhiyuanPasswordSession {
     return this.#enqueue(async () => {
       await this.#client.logout();
       this.#snapshot = Object.freeze({ status: 'signed-out' });
+      this.#modelAccessExpiresAt = 0;
       this.#initialized = true;
+      this.#publishChanged();
       return this.snapshot();
+    });
+  }
+
+  listAgentModels(): Promise<AgentModelList> {
+    return this.#enqueue(async () => {
+      if (this.#snapshot.status !== 'authenticated') return { models: [] };
+      return this.#client.listAgentModels();
+    });
+  }
+
+  getModelConnection(): Promise<ModelConnection> {
+    return this.#enqueue(async () => {
+      if (this.#snapshot.status !== 'authenticated') {
+        throw new Error('Zhiyuan enterprise session is not authenticated.');
+      }
+      if (
+        this.#modelAccessExpiresAt <=
+        Date.now() + ZhiyuanPasswordSession.MODEL_TOKEN_REFRESH_WINDOW_MS
+      ) {
+        this.#recordTokens(await this.#client.refreshSession());
+      }
+      return this.#client.getModelConnection();
     });
   }
 
@@ -131,6 +176,20 @@ export class ZhiyuanPasswordSession {
       () => undefined,
     );
     return result;
+  }
+
+  #publishChanged(): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener();
+      } catch {
+        // Session operations must not fail because a projection listener failed.
+      }
+    }
+  }
+
+  #recordTokens(tokens: AepTokens): void {
+    this.#modelAccessExpiresAt = Date.now() + Math.max(0, tokens.modelAccessExpiresIn) * 1_000;
   }
 }
 

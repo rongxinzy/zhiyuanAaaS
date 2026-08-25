@@ -1,4 +1,9 @@
-import type { AepSessionState, AepTokens, CurrentIdentity } from '@aep/sdk-node';
+import type {
+  AepSessionState,
+  AepTokens,
+  CurrentIdentity,
+  ModelConnection,
+} from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
@@ -100,17 +105,74 @@ describe('Zhiyuan password session', () => {
     expect(client.loginWithPassword).not.toHaveBeenCalled();
     expect(client.changePassword).not.toHaveBeenCalled();
   });
+
+  test('gates model operations on authentication and publishes session changes', async () => {
+    const client = mockClient();
+    const session = new ZhiyuanPasswordSession(client);
+    const changed = vi.fn();
+    const unsubscribe = session.onDidChange(changed);
+
+    await expect(session.listAgentModels()).resolves.toEqual({ models: [] });
+    await expect(session.getModelConnection()).rejects.toThrow('not authenticated');
+    expect(client.listAgentModels).not.toHaveBeenCalled();
+
+    await session.login({
+      enterpriseId: 'enterprise-1',
+      username: 'admin',
+      password: 'secret',
+    });
+    await expect(session.listAgentModels()).resolves.toEqual({ models: [] });
+    await expect(session.getModelConnection()).resolves.toMatchObject({
+      baseUrl: 'https://gateway.example/v1',
+      apiKey: 'model-token',
+    });
+    expect(changed).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    await session.logout();
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  test('refreshes a short-lived model token before resolving a gateway connection', async () => {
+    const client = mockClient({
+      loginWithPassword: vi.fn(async () => ({ ...tokens(), modelAccessExpiresIn: 1 })),
+    });
+    const session = new ZhiyuanPasswordSession(client);
+
+    await session.login({
+      enterpriseId: 'enterprise-1',
+      username: 'admin',
+      password: 'secret',
+    });
+    await session.getModelConnection();
+
+    expect(client.refreshSession).toHaveBeenCalledOnce();
+    expect(client.getModelConnection).toHaveBeenCalledOnce();
+  });
 });
 
 function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSessionClient {
   return {
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
+    refreshSession: vi.fn(async () => tokens()),
     loginWithPassword: vi.fn(async () => tokens()),
     changePassword: vi.fn(async () => tokens()),
     getCurrentIdentity: vi.fn(async () => identity()),
+    listAgentModels: vi.fn(async () => ({ models: [] })),
+    getModelConnection: vi.fn(async () => modelConnection()),
     logout: vi.fn(async () => undefined),
     ...overrides,
+  };
+}
+
+function modelConnection(): ModelConnection {
+  return {
+    baseUrl: 'https://gateway.example/v1',
+    protocol: 'openai-compatible',
+    apiVersion: 'v1',
+    apiKey: 'model-token',
+    expiresIn: 300,
   };
 }
 
