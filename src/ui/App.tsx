@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-contract.js';
 import {
@@ -8,10 +8,8 @@ import {
   type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
 } from '../renderer-contract.js';
 import { LoginForm } from './components/session/LoginForm.js';
-import {
-  AccountSettings,
-  AccountSettingsUnavailable,
-} from './components/settings/AccountSettings.js';
+import { AccountSettingsUnavailable } from './components/settings/AccountSettings.js';
+import { EnterpriseSettings } from './components/settings/EnterpriseSettings.js';
 import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
 import { SessionLayout } from './components/session/SessionLayout.js';
 import { translate, type TranslationKey } from './i18n.js';
@@ -30,6 +28,7 @@ export function App() {
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<TranslationKey | null>(null);
   const [success, setSuccess] = useState<TranslationKey | null>(null);
+  const loadModels = useCallback(() => client.listModels(), [client]);
 
   useEffect(
     () =>
@@ -124,13 +123,14 @@ export function App() {
       return <AccountSettingsUnavailable language={runtime.language} />;
     }
     return (
-      <AccountSettings
+      <EnterpriseSettings
         language={runtime.language}
         identity={snapshot.identity}
         pending={pending}
         signingOut={signingOut}
         error={error}
         success={success}
+        loadModels={loadModels}
         onPasswordChange={handlePasswordChange}
         onSignOut={handleSignOut}
       />

@@ -2,6 +2,7 @@ import type {
   EnterprisePasswordChangeInput,
   EnterprisePasswordLoginInput,
   EnterpriseSessionResult,
+  ExternalModel,
 } from './host-contract.js';
 
 export const EnterpriseRendererMessageSource = {
@@ -14,6 +15,8 @@ export const EnterpriseRendererMessageType = {
   Initialize: 'initialize',
   SessionRequest: 'session-request',
   SessionResponse: 'session-response',
+  ModelCatalogRequest: 'model-catalog-request',
+  ModelCatalogResponse: 'model-catalog-response',
 } as const;
 
 export const EnterpriseRendererSessionOperation = {
@@ -100,4 +103,23 @@ export interface EnterpriseRendererSessionResponseMessage {
   readonly type: typeof EnterpriseRendererMessageType.SessionResponse;
   readonly requestId: string;
   readonly result: EnterpriseSessionResult;
+}
+
+export interface EnterpriseRendererModelCatalogRequestMessage {
+  readonly source: typeof EnterpriseRendererMessageSource.Module;
+  readonly apiVersion: 1;
+  readonly type: typeof EnterpriseRendererMessageType.ModelCatalogRequest;
+  readonly requestId: string;
+}
+
+export type EnterpriseRendererModelCatalogResult =
+  | { readonly ok: true; readonly models: readonly ExternalModel[] }
+  | { readonly ok: false };
+
+export interface EnterpriseRendererModelCatalogResponseMessage {
+  readonly source: typeof EnterpriseRendererMessageSource.Host;
+  readonly apiVersion: 1;
+  readonly type: typeof EnterpriseRendererMessageType.ModelCatalogResponse;
+  readonly requestId: string;
+  readonly result: EnterpriseRendererModelCatalogResult;
 }

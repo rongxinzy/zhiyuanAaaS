@@ -36,6 +36,15 @@ export interface ExternalModelDescriptor {
   readonly isDefault?: boolean;
 }
 
+export interface ExternalModelProviderDescriptor {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+export interface ExternalModel extends ExternalModelDescriptor {
+  readonly provider: ExternalModelProviderDescriptor;
+}
+
 export interface ExternalModelConnection {
   readonly baseUrl: string;
   readonly apiKey: string;

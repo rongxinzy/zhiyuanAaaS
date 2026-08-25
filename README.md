@@ -50,6 +50,9 @@ v1. The page reuses the sandboxed renderer bundle with a distinct `settings` sur
 only the normalized identity snapshot supplied by the host. Authenticated users can review their
 user, email, enterprise, roles, and session expiry, change their password, or sign out. Signing out
 publishes the normalized session transition so the public application's session gate takes control.
+The same settings surface includes a managed-model view with loading, empty, retry, and populated
+states. It reads only the public host's normalized model catalog; connection URLs and credentials
+remain unavailable to the sandboxed renderer.
 
 ## Managed Models
 
