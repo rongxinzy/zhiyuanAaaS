@@ -26,6 +26,7 @@ assert.equal(
   'Renderer settings page must use the stable build output.',
 );
 assert.match(manifest.zhiyuanCore.commit, /^[0-9a-f]{40}$/, 'Core commit must be immutable.');
+assert.match(manifest.aepProtocol.commit, /^[0-9a-f]{40}$/, 'AEP commit must be immutable.');
 assert.match(manifest.aepSdk.sha256, /^[0-9a-f]{64}$/, 'SDK digest must be SHA-256.');
 
 const sdkDependency = packageJson.dependencies['@aep/sdk-node'];

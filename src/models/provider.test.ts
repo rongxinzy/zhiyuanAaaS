@@ -7,7 +7,7 @@ import type {
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
-import { ModelCapabilityStatus } from '../host-contract.js';
+import { ExternalModelThinkingFormat, ModelCapabilityStatus } from '../host-contract.js';
 import {
   ZhiyuanModelProvider,
   ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME,
@@ -25,6 +25,11 @@ describe('ZhiyuanModelProvider', () => {
         models: [
           model({
             capabilities: ['text', 'streaming', 'tools', 'vision', 'reasoning'],
+            reasoningCompatibility: {
+              thinkingFormat: 'deepseek',
+              supportsReasoningEffort: true,
+              requiresReasoningContentOnAssistantMessages: true,
+            },
             contextWindow: 128_000,
           }),
           model({ id: 'disabled', enabled: false }),
@@ -47,6 +52,11 @@ describe('ZhiyuanModelProvider', () => {
           toolCalling: ModelCapabilityStatus.Supported,
           imageInput: ModelCapabilityStatus.Supported,
           reasoning: ModelCapabilityStatus.Supported,
+        },
+        reasoningCompatibility: {
+          thinkingFormat: ExternalModelThinkingFormat.DeepSeek,
+          supportsReasoningEffort: true,
+          requiresReasoningContentOnAssistantMessages: true,
         },
         contextWindow: 128_000,
         isDefault: true,
@@ -108,6 +118,30 @@ describe('ZhiyuanModelProvider', () => {
     );
   });
 
+  test('rejects unsupported reasoning compatibility metadata', async () => {
+    const provider = new ZhiyuanModelProvider(
+      await authenticatedSession(
+        mockClient({
+          listAgentModels: vi.fn(async () => ({
+            models: [
+              model({
+                reasoningCompatibility: {
+                  thinkingFormat: 'deepseek',
+                  supportsReasoningEffort: false,
+                  requiresReasoningContentOnAssistantMessages: true,
+                },
+              }),
+            ],
+          })),
+        }),
+      ),
+    );
+
+    await expect(provider.listModels()).rejects.toThrow(
+      'reasoning compatibility is not supported',
+    );
+  });
+
   test('keeps the last successful model list during a control-plane outage', async () => {
     const listAgentModels = vi
       .fn()
@@ -143,7 +177,15 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
   };
 }
 
-function model(overrides: Partial<AgentModel> = {}): AgentModel {
+type ReasoningAwareAgentModel = AgentModel & {
+  reasoningCompatibility?: {
+    thinkingFormat: 'deepseek';
+    supportsReasoningEffort: boolean;
+    requiresReasoningContentOnAssistantMessages: boolean;
+  };
+};
+
+function model(overrides: Partial<ReasoningAwareAgentModel> = {}): ReasoningAwareAgentModel {
   return {
     id: 'enterprise-chat',
     displayName: 'Enterprise Chat',
