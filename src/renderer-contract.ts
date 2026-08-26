@@ -2,7 +2,7 @@ import type {
   EnterprisePasswordChangeInput,
   EnterprisePasswordLoginInput,
   EnterpriseSessionResult,
-  ExternalModel,
+  ManagedProviderCatalogModel,
 } from './host-contract.js';
 
 export const EnterpriseRendererMessageSource = {
@@ -60,6 +60,7 @@ export interface EnterpriseRendererInitializeMessage {
   readonly apiVersion: 1;
   readonly type: typeof EnterpriseRendererMessageType.Initialize;
   readonly surface: EnterpriseRendererSurface;
+  readonly pageId: string | null;
   readonly language: EnterpriseRendererLanguage;
   readonly theme: EnterpriseRendererTheme;
   readonly session: EnterpriseSessionResult;
@@ -113,7 +114,7 @@ export interface EnterpriseRendererModelCatalogRequestMessage {
 }
 
 export type EnterpriseRendererModelCatalogResult =
-  | { readonly ok: true; readonly models: readonly ExternalModel[] }
+  | { readonly ok: true; readonly models: readonly ManagedProviderCatalogModel[] }
   | { readonly ok: false };
 
 export interface EnterpriseRendererModelCatalogResponseMessage {

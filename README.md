@@ -50,28 +50,29 @@ v1. The page reuses the sandboxed renderer bundle with a distinct `settings` sur
 only the normalized identity snapshot supplied by the host. Authenticated users can review their
 user, email, enterprise, roles, and session expiry, change their password, or sign out. Signing out
 publishes the normalized session transition so the public application's session gate takes control.
-The same settings surface includes a managed-model view with loading, empty, retry, and populated
-states. It reads only the public host's normalized model catalog; connection URLs and credentials
-remain unavailable to the sandboxed renderer.
+The extension also registers a separate `Enterprise models` / `企业模型` page with loading, empty,
+retry, and populated states. It reads only the public host's normalized model catalog; connection
+URLs and credentials remain unavailable to the sandboxed renderer. Account and model settings are
+separate peer entries in the application settings sidebar rather than tabs inside one page.
 
 ## Managed Models
 
-The extension registers `external.zhiyuan` through external model capability v1 and projects only
-enabled, assigned, OpenAI-compatible gateway models returned by AEP. The public renderer receives
-display metadata and conservative capability flags; it never receives the gateway URL or model
-access token. The provider is exclusive, so enterprise builds hide community and local model
-configuration and the runtime rejects every model reference outside the AEP-authorized catalog.
+The extension registers the managed `custom_enterprise` configuration source and projects only
+enabled, assigned, OpenAI-compatible gateway models returned by AEP into the public core's existing
+custom-provider configuration. The public renderer receives display metadata and conservative
+capability flags; it never receives the gateway URL or model access token. The source is exclusive,
+so enterprise builds hide community and local model configuration and reject model references
+outside the AEP-authorized catalog even while the control plane is unavailable.
 
-AEP reasoning compatibility metadata is projected through the generic public host contract. A
-DeepSeek-compatible assignment enables reasoning-effort forwarding and preserves assistant
-`reasoning_content` when a tool-call conversation continues. Provider-specific runtime details stay
-inside the public core adapter and are not exposed through the enterprise extension contract.
+AEP reasoning compatibility metadata is projected into the custom model's existing Pi runtime
+configuration. A DeepSeek-compatible assignment enables reasoning-effort forwarding and preserves
+assistant `reasoning_content` when a tool-call conversation continues. No second model runtime is
+introduced.
 
-The model connection is resolved from the authenticated SDK session when the runtime starts a turn.
-The SDK refresh path rotates the short-lived model token before it is handed to the main-process
-runtime. Session transitions trigger an immediate model refresh, while a 30-second comparison poll
-detects remote assignment changes. Temporary control-plane failures preserve the last displayed
-model list, and authorization is checked again before every conversation turn.
+The provider snapshot resolves its connection from the authenticated SDK session. Session
+transitions trigger an immediate refresh, while a 30-second poll refreshes assignments and the
+short-lived model token. Temporary control-plane failures clear the managed snapshot without
+reopening personal providers; the exclusive policy remains active independently.
 
 ## Runtime Configuration
 

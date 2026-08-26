@@ -20,10 +20,13 @@ assert.equal(
   'zhiyuan-enterprise/ui',
   'Renderer package directory must match the host-scoped resource path.',
 );
-assert.equal(
-  manifest.renderer.settingsPage,
-  'dist/ui/index.html',
-  'Renderer settings page must use the stable build output.',
+assert.deepEqual(
+  manifest.renderer.settingsPages,
+  [
+    { id: 'account', entrypoint: 'dist/ui/index.html' },
+    { id: 'models', entrypoint: 'dist/ui/index.html' },
+  ],
+  'Renderer settings pages must use stable IDs and build output.',
 );
 assert.match(manifest.zhiyuanCore.commit, /^[0-9a-f]{40}$/, 'Core commit must be immutable.');
 assert.match(manifest.aepProtocol.commit, /^[0-9a-f]{40}$/, 'AEP commit must be immutable.');

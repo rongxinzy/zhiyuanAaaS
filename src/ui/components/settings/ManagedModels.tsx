@@ -1,9 +1,9 @@
-import { CloudAlert, CloudOff, Cpu, RefreshCw } from 'lucide-react';
+import { CloudAlert, CloudOff, Cpu, RefreshCw, Waypoints } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ModelCapabilityStatus,
-  type ExternalModel,
+  type ManagedProviderCatalogModel,
   type ModelCapabilities,
 } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
@@ -12,7 +12,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Skeleton } from '../ui/skeleton.js';
 
-export const ZHIYUAN_MODEL_PROVIDER_ID = 'external.zhiyuan';
+export const ZHIYUAN_MODEL_PROVIDER_KEY = 'custom_enterprise';
 
 export const ManagedModelLoadStatus = {
   Loading: 'loading',
@@ -24,7 +24,7 @@ type ManagedModelLoadState =
   | { readonly status: typeof ManagedModelLoadStatus.Loading }
   | {
       readonly status: typeof ManagedModelLoadStatus.Ready;
-      readonly models: readonly ExternalModel[];
+      readonly models: readonly ManagedProviderCatalogModel[];
     }
   | { readonly status: typeof ManagedModelLoadStatus.Error };
 
@@ -39,7 +39,7 @@ const CapabilityTranslationKeys = {
 
 interface ManagedModelsProps {
   readonly language: EnterpriseRendererLanguage;
-  readonly loadModels: () => Promise<readonly ExternalModel[]>;
+  readonly loadModels: () => Promise<readonly ManagedProviderCatalogModel[]>;
 }
 
 export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
@@ -53,7 +53,7 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
     setState({ status: ManagedModelLoadStatus.Loading });
     try {
       const models = (await loadModels()).filter(
-        model => model.provider.id === ZHIYUAN_MODEL_PROVIDER_ID,
+        model => model.providerKey === ZHIYUAN_MODEL_PROVIDER_KEY,
       );
       if (request === requestSequence.current) {
         setState({ status: ManagedModelLoadStatus.Ready, models });
@@ -73,54 +73,68 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
   }, [refresh]);
 
   return (
-    <section className="flex flex-col gap-4" aria-labelledby="managed-models-heading">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 id="managed-models-heading" className="text-base font-semibold leading-snug">
-            {translate(language, 'managedModelsTitle')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {translate(language, 'managedModelsDescription')}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={state.status === ManagedModelLoadStatus.Loading}
-          onClick={() => void refresh()}
-        >
-          <RefreshCw aria-hidden="true" />
-          {translate(language, 'refreshModels')}
-        </Button>
-      </div>
+    <main className="h-full overflow-y-auto bg-background p-4 sm:p-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+        <header className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card">
+            <Waypoints aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h1 id="managed-models-heading" className="text-lg font-semibold leading-snug">
+              {translate(language, 'managedModelsTitle')}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {translate(language, 'managedModelsDescription')}
+            </p>
+          </div>
+        </header>
 
-      {state.status === ManagedModelLoadStatus.Loading ? (
-        <ModelListSkeleton language={language} />
-      ) : state.status === ManagedModelLoadStatus.Error ? (
-        <ModelCatalogMessage
-          icon={CloudAlert}
-          title={translate(language, 'modelsUnavailableTitle')}
-          description={translate(language, 'modelsUnavailableDescription')}
-          action={translate(language, 'retryModels')}
-          onAction={() => void refresh()}
-        />
-      ) : state.models.length === 0 ? (
-        <ModelCatalogMessage
-          icon={CloudOff}
-          title={translate(language, 'noManagedModelsTitle')}
-          description={translate(language, 'noManagedModelsDescription')}
-          action={translate(language, 'refreshModels')}
-          onAction={() => void refresh()}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-md border" role="list">
-          {state.models.map(model => (
-            <ModelRow key={`${model.provider.id}/${model.id}`} language={language} model={model} />
-          ))}
-        </div>
-      )}
-    </section>
+        <section className="flex flex-col gap-4" aria-labelledby="managed-models-heading">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={state.status === ManagedModelLoadStatus.Loading}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw aria-hidden="true" />
+              {translate(language, 'refreshModels')}
+            </Button>
+          </div>
+
+          {state.status === ManagedModelLoadStatus.Loading ? (
+            <ModelListSkeleton language={language} />
+          ) : state.status === ManagedModelLoadStatus.Error ? (
+            <ModelCatalogMessage
+              icon={CloudAlert}
+              title={translate(language, 'modelsUnavailableTitle')}
+              description={translate(language, 'modelsUnavailableDescription')}
+              action={translate(language, 'retryModels')}
+              onAction={() => void refresh()}
+            />
+          ) : state.models.length === 0 ? (
+            <ModelCatalogMessage
+              icon={CloudOff}
+              title={translate(language, 'noManagedModelsTitle')}
+              description={translate(language, 'noManagedModelsDescription')}
+              action={translate(language, 'refreshModels')}
+              onAction={() => void refresh()}
+            />
+          ) : (
+            <div className="overflow-hidden rounded-md border" role="list">
+              {state.models.map(model => (
+                <ModelRow
+                  key={`${model.providerKey}/${model.id}`}
+                  language={language}
+                  model={model}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
 
@@ -129,7 +143,7 @@ function ModelRow({
   model,
 }: {
   readonly language: EnterpriseRendererLanguage;
-  readonly model: ExternalModel;
+  readonly model: ManagedProviderCatalogModel;
 }) {
   const capabilities = supportedCapabilities(model.capabilities);
   return (
@@ -152,7 +166,7 @@ function ModelRow({
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-xs text-muted-foreground">{translate(language, 'modelProvider')}</dt>
-          <dd className="font-medium">{model.provider.displayName}</dd>
+          <dd className="font-medium">{model.providerDisplayName}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">{translate(language, 'contextWindow')}</dt>
