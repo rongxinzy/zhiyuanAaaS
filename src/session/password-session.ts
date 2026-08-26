@@ -40,7 +40,7 @@ export class ZhiyuanPasswordSession {
   #initialized = false;
   #initialization: Promise<ZhiyuanSessionSnapshot> | null = null;
   #operationTail: Promise<void> = Promise.resolve();
-  readonly #listeners = new Set<() => void>();
+  readonly #listeners = new Set<() => void | Promise<void>>();
   #modelAccessExpiresAt = 0;
 
   constructor(client: PasswordSessionClient) {
@@ -51,7 +51,7 @@ export class ZhiyuanPasswordSession {
     return cloneSnapshot(this.#snapshot);
   }
 
-  onDidChange(listener: () => void): () => void {
+  onDidChange(listener: () => void | Promise<void>): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
@@ -61,26 +61,29 @@ export class ZhiyuanPasswordSession {
     if (this.#initialization) return this.#initialization;
 
     this.#initialization = this.#enqueue(async () => {
-      const sessionState = await this.#client.getSessionState();
-      if (sessionState.status === 'signed-out') {
-        this.#snapshot = Object.freeze({ status: 'signed-out' });
-      } else if (sessionState.status === 'recoverable') {
-        this.#snapshot = Object.freeze({ status: 'recoverable' });
-        const tokens = await this.#client.restoreSession();
-        if (!tokens) {
+      try {
+        const sessionState = await this.#client.getSessionState();
+        if (sessionState.status === 'signed-out') {
           this.#snapshot = Object.freeze({ status: 'signed-out' });
+        } else if (sessionState.status === 'recoverable') {
+          this.#snapshot = Object.freeze({ status: 'recoverable' });
+          const tokens = await this.#client.restoreSession();
+          if (!tokens) {
+            this.#snapshot = Object.freeze({ status: 'signed-out' });
+          } else {
+            this.#recordTokens(tokens);
+            await this.#loadIdentity();
+          }
         } else {
-          this.#recordTokens(tokens);
+          const tokens = await this.#client.restoreSession();
+          if (tokens) this.#recordTokens(tokens);
           await this.#loadIdentity();
         }
-      } else {
-        const tokens = await this.#client.restoreSession();
-        if (tokens) this.#recordTokens(tokens);
-        await this.#loadIdentity();
+        this.#initialized = true;
+        return this.snapshot();
+      } finally {
+        await this.#publishChanged();
       }
-      this.#initialized = true;
-      this.#publishChanged();
-      return this.snapshot();
     }).finally(() => {
       this.#initialization = null;
     });
@@ -97,9 +100,12 @@ export class ZhiyuanPasswordSession {
       const tokens = await this.#client.loginWithPassword({ ...input });
       this.#recordTokens(tokens);
       this.#initialized = true;
-      await this.#loadIdentityOrMarkRecoverable();
-      this.#publishChanged();
-      return this.snapshot();
+      try {
+        await this.#loadIdentityOrMarkRecoverable();
+        return this.snapshot();
+      } finally {
+        await this.#publishChanged();
+      }
     });
   }
 
@@ -113,9 +119,12 @@ export class ZhiyuanPasswordSession {
     return this.#enqueue(async () => {
       const tokens = await this.#client.changePassword(currentPassword, newPassword);
       this.#recordTokens(tokens);
-      await this.#loadIdentityOrMarkRecoverable();
-      this.#publishChanged();
-      return this.snapshot();
+      try {
+        await this.#loadIdentityOrMarkRecoverable();
+        return this.snapshot();
+      } finally {
+        await this.#publishChanged();
+      }
     });
   }
 
@@ -125,7 +134,7 @@ export class ZhiyuanPasswordSession {
       this.#snapshot = Object.freeze({ status: 'signed-out' });
       this.#modelAccessExpiresAt = 0;
       this.#initialized = true;
-      this.#publishChanged();
+      await this.#publishChanged();
       return this.snapshot();
     });
   }
@@ -178,14 +187,16 @@ export class ZhiyuanPasswordSession {
     return result;
   }
 
-  #publishChanged(): void {
-    for (const listener of this.#listeners) {
-      try {
-        listener();
-      } catch {
-        // Session operations must not fail because a projection listener failed.
-      }
-    }
+  async #publishChanged(): Promise<void> {
+    await Promise.all(
+      [...this.#listeners].map(async listener => {
+        try {
+          await listener();
+        } catch {
+          // Session operations must not fail because a projection listener failed.
+        }
+      }),
+    );
   }
 
   #recordTokens(tokens: AepTokens): void {

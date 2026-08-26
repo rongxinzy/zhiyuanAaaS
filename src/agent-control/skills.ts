@@ -21,13 +21,16 @@ const MAX_ARCHIVE_ENTRIES = 4_096;
 
 export class ManagedSkillReconciler {
   readonly #skillRoot: string;
+  readonly #onSkillsChanged: (() => void) | undefined;
 
   constructor(
     readonly client: AgentControlClient,
     readonly state: AgentControlState,
     skillRoot: string,
+    onSkillsChanged?: () => void,
   ) {
     this.#skillRoot = path.resolve(skillRoot);
+    this.#onSkillsChanged = onSkillsChanged;
   }
 
   async reconcile(): Promise<SkillReconcileResult> {
@@ -44,48 +47,57 @@ export class ManagedSkillReconciler {
       };
     }
 
-    fs.mkdirSync(this.#skillRoot, { recursive: true });
-    const desired = new Set<string>();
-    const items: Array<SkillReconcileResult['items'][number]> = [];
-    for (const skill of result.manifest.skills) {
-      if (!skill.enabled) continue;
-      validateSkill(skill);
-      if (desired.has(skill.id)) throw new Error(`Skill manifest contains duplicate ID ${skill.id}.`);
-      desired.add(skill.id);
-      const installed = this.state.managedSkills().find(item => item.skillId === skill.id);
-      if (
-        installed?.version === skill.version &&
-        installed.sha256 === skill.package.sha256 &&
-        fs.existsSync(installed.path)
-      ) {
+    let changed = false;
+    try {
+      fs.mkdirSync(this.#skillRoot, { recursive: true });
+      const desired = new Set<string>();
+      const items: Array<SkillReconcileResult['items'][number]> = [];
+      for (const skill of result.manifest.skills) {
+        if (!skill.enabled) continue;
+        validateSkill(skill);
+        if (desired.has(skill.id)) {
+          throw new Error(`Skill manifest contains duplicate ID ${skill.id}.`);
+        }
+        desired.add(skill.id);
+        const installed = this.state.managedSkills().find(item => item.skillId === skill.id);
+        if (
+          installed?.version === skill.version &&
+          installed.sha256 === skill.package.sha256 &&
+          fs.existsSync(installed.path)
+        ) {
+          items.push({
+            skillId: skill.id,
+            version: skill.version,
+            status: SkillSyncStatus.Unchanged,
+          });
+          continue;
+        }
+        await this.#install(skill, installed);
+        changed = true;
         items.push({
           skillId: skill.id,
           version: skill.version,
-          status: SkillSyncStatus.Unchanged,
+          status: installed ? SkillSyncStatus.Updated : SkillSyncStatus.Installed,
         });
-        continue;
       }
-      await this.#install(skill, installed);
-      items.push({
-        skillId: skill.id,
-        version: skill.version,
-        status: installed ? SkillSyncStatus.Updated : SkillSyncStatus.Installed,
-      });
-    }
 
-    for (const installed of this.state.managedSkills()) {
-      if (desired.has(installed.skillId)) continue;
-      this.#remove(installed);
-      items.push({
-        skillId: installed.skillId,
-        version: installed.version,
-        status: SkillSyncStatus.Removed,
-      });
-    }
+      for (const installed of this.state.managedSkills()) {
+        if (desired.has(installed.skillId)) continue;
+        this.#remove(installed);
+        changed = true;
+        items.push({
+          skillId: installed.skillId,
+          version: installed.version,
+          status: SkillSyncStatus.Removed,
+        });
+      }
 
-    this.state.setValue(SKILL_REVISION_KEY, result.manifest.revision);
-    if (result.etag) this.state.setValue(SKILL_ETAG_KEY, result.etag);
-    return { revision: result.manifest.revision, items };
+      this.state.setValue(SKILL_REVISION_KEY, result.manifest.revision);
+      if (result.etag) this.state.setValue(SKILL_ETAG_KEY, result.etag);
+      return { revision: result.manifest.revision, items };
+    } finally {
+      if (changed) this.#onSkillsChanged?.();
+    }
   }
 
   async #install(skill: SkillManifestItem, installed: ManagedSkill | undefined): Promise<void> {

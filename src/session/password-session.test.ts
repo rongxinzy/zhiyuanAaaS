@@ -149,6 +149,29 @@ describe('Zhiyuan password session', () => {
     expect(client.refreshSession).toHaveBeenCalledOnce();
     expect(client.getModelConnection).toHaveBeenCalledOnce();
   });
+
+  test('waits for asynchronous session listeners before completing a transition', async () => {
+    const session = new ZhiyuanPasswordSession(mockClient());
+    let releaseListener: () => void = () => {};
+    const listenerGate = new Promise<void>(resolve => {
+      releaseListener = resolve;
+    });
+    const listener = vi.fn(async () => listenerGate);
+    session.onDidChange(listener);
+
+    let completed = false;
+    const login = session
+      .login({ enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' })
+      .then(() => {
+        completed = true;
+      });
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce());
+    expect(completed).toBe(false);
+
+    releaseListener();
+    await login;
+    expect(completed).toBe(true);
+  });
 });
 
 function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSessionClient {

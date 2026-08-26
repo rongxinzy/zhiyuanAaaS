@@ -11,6 +11,7 @@ export interface ZhiyuanAgentControlBackendOptions {
   readonly platform: 'windows' | 'macos' | 'linux';
   readonly retryDelayMs?: number;
   readonly onError?: (error: unknown) => void;
+  readonly onSkillsChanged?: () => void;
 }
 
 export class ZhiyuanAgentControlBackend {
@@ -24,6 +25,7 @@ export class ZhiyuanAgentControlBackend {
       options.client,
       this.#state,
       options.skillRoot,
+      options.onSkillsChanged,
     );
     const runtimeOptions: AgentControlRuntimeOptions = {
       client: options.client,
@@ -45,6 +47,11 @@ export class ZhiyuanAgentControlBackend {
   async runOnce(): Promise<number> {
     this.#assertOpen();
     return this.runtime.runOnce();
+  }
+
+  async stop(): Promise<void> {
+    if (this.#closed) return;
+    await this.runtime.stop();
   }
 
   async close(): Promise<void> {

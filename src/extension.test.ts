@@ -64,6 +64,25 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(unregister).toHaveBeenCalledTimes(1);
   });
 
+  test('disposes the composed runtime with the extension', async () => {
+    const disposeRuntime = vi.fn(async () => undefined);
+    const extension = new ZhiyuanAaaSExtension({
+      createRuntime: vi.fn(async () => ({
+        session: passwordSession(),
+        dispose: disposeRuntime,
+      })),
+      warn: vi.fn(),
+    });
+
+    await extension.initialize(
+      hostContext({ apiVersion: 1, registerProvider: vi.fn(() => vi.fn()) }),
+    );
+    await extension.dispose();
+    await extension.dispose();
+
+    expect(disposeRuntime).toHaveBeenCalledOnce();
+  });
+
   test('keeps the provider available when startup restoration is deferred', async () => {
     const registerProvider = vi.fn((_provider: ZhiyuanEnterpriseSessionProvider) => vi.fn());
     const warn = vi.fn();
@@ -226,6 +245,19 @@ describe('Zhiyuan enterprise extension contract', () => {
       ),
     ).rejects.toThrow('managed provider capability API version is not supported');
   });
+
+  test('fails closed for an incompatible managed Skill capability', async () => {
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await expect(
+      extension.initialize(
+        hostContext(null, null, null, null, {
+          apiVersion: 2,
+          registerManagedRoot: vi.fn(),
+        } as never),
+      ),
+    ).rejects.toThrow('Skill capability API version is not supported');
+  });
 });
 
 function hostContext(
@@ -233,6 +265,7 @@ function hostContext(
   renderer: ZhiyuanEnterpriseHostContext['capabilities']['renderer'] = null,
   settings: ZhiyuanEnterpriseHostContext['capabilities']['settings'] = null,
   managedProvider: ZhiyuanEnterpriseHostContext['capabilities']['managedProvider'] = null,
+  skills: ZhiyuanEnterpriseHostContext['capabilities']['skills'] = null,
 ): ZhiyuanEnterpriseHostContext {
   return Object.freeze({
     apiVersion: ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -243,7 +276,7 @@ function hostContext(
       resources: 'D:\\zhiyuan\\resources',
       userData: 'D:\\zhiyuan\\user-data',
     }),
-    capabilities: Object.freeze({ session, renderer, settings, managedProvider }),
+    capabilities: Object.freeze({ session, renderer, settings, managedProvider, skills }),
   });
 }
 
