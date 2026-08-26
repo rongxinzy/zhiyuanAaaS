@@ -10,6 +10,7 @@ import {
 import { LoginForm } from './components/session/LoginForm.js';
 import { AccountSettingsUnavailable } from './components/settings/AccountSettings.js';
 import { EnterpriseSettings } from './components/settings/EnterpriseSettings.js';
+import { ManagedModels } from './components/settings/ManagedModels.js';
 import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
 import { SessionLayout } from './components/session/SessionLayout.js';
 import { translate, type TranslationKey } from './i18n.js';
@@ -18,6 +19,7 @@ import { EnterpriseRendererClient } from './services/enterprise-renderer-client.
 interface RuntimeState {
   readonly language: EnterpriseRendererLanguageValue;
   readonly surface: EnterpriseRendererSurface;
+  readonly pageId: string | null;
   readonly session: EnterpriseSessionResult;
 }
 
@@ -42,6 +44,7 @@ export function App() {
         setRuntime({
           language: message.language,
           surface: message.surface,
+          pageId: message.pageId,
           session: message.session,
         });
       }),
@@ -122,6 +125,9 @@ export function App() {
     if (snapshot?.status !== EnterpriseSessionStatus.Authenticated) {
       return <AccountSettingsUnavailable language={runtime.language} />;
     }
+    if (runtime.pageId === 'models') {
+      return <ManagedModels language={runtime.language} loadModels={loadModels} />;
+    }
     return (
       <EnterpriseSettings
         language={runtime.language}
@@ -130,7 +136,6 @@ export function App() {
         signingOut={signingOut}
         error={error}
         success={success}
-        loadModels={loadModels}
         onPasswordChange={handlePasswordChange}
         onSignOut={handleSignOut}
       />

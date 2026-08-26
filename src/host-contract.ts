@@ -2,25 +2,7 @@ export const ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION = 1 as const;
-export const EXTERNAL_MODEL_CAPABILITY_API_VERSION = 1 as const;
-
-export const ExternalModelProtocol = {
-  OpenAICompatible: 'openai-compatible',
-} as const;
-export type ExternalModelProtocol =
-  (typeof ExternalModelProtocol)[keyof typeof ExternalModelProtocol];
-
-export const ExternalModelThinkingFormat = {
-  DeepSeek: 'deepseek',
-} as const;
-export type ExternalModelThinkingFormat =
-  (typeof ExternalModelThinkingFormat)[keyof typeof ExternalModelThinkingFormat];
-
-export interface ExternalModelReasoningCompatibility {
-  readonly thinkingFormat: ExternalModelThinkingFormat;
-  readonly supportsReasoningEffort: boolean;
-  readonly requiresReasoningContentOnAssistantMessages: boolean;
-}
+export const ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION = 1 as const;
 
 export const ModelCapabilityStatus = {
   Supported: 'supported',
@@ -39,29 +21,59 @@ export interface ModelCapabilities {
   readonly reasoning: ModelCapabilityStatus;
 }
 
-export interface ExternalModelDescriptor {
+export type ProviderModelPiApi =
+  | 'anthropic-messages'
+  | 'openai-completions'
+  | 'openai-responses';
+export type ProviderModelPiThinkingFormat =
+  | 'openai'
+  | 'openrouter'
+  | 'deepseek'
+  | 'together'
+  | 'zai'
+  | 'qwen'
+  | 'chat-template'
+  | 'qwen-chat-template'
+  | 'string-thinking'
+  | 'ant-ling';
+
+export interface ProviderModelPiRuntimeConfig {
+  readonly api?: ProviderModelPiApi;
+  readonly reasoning?: boolean;
+  readonly compat?: {
+    readonly supportsReasoningEffort?: boolean;
+    readonly requiresReasoningContentOnAssistantMessages?: boolean;
+    readonly thinkingFormat?: ProviderModelPiThinkingFormat;
+  };
+}
+
+export interface ProviderConfig {
+  enabled: boolean;
+  userEnabled?: boolean;
+  apiKey: string;
+  baseUrl: string;
+  apiFormat?: 'openai' | 'anthropic' | 'gemini';
+  models?: Array<{
+    id: string;
+    name: string;
+    supportsImage?: boolean;
+    capabilities?: Partial<ModelCapabilities>;
+    contextWindow?: number;
+    contextTokens?: number;
+    maxTokens?: number;
+    piRuntime?: ProviderModelPiRuntimeConfig;
+  }>;
+  displayName?: string;
+}
+
+export interface ManagedProviderCatalogModel {
   readonly id: string;
   readonly displayName: string;
-  readonly protocol: ExternalModelProtocol;
+  readonly providerKey: string;
+  readonly providerDisplayName: string;
   readonly capabilities?: Partial<ModelCapabilities>;
-  readonly reasoningCompatibility?: ExternalModelReasoningCompatibility;
   readonly contextWindow?: number;
-  readonly isDefault?: boolean;
-}
-
-export interface ExternalModelProviderDescriptor {
-  readonly id: string;
-  readonly displayName: string;
-}
-
-export interface ExternalModel extends ExternalModelDescriptor {
-  readonly provider: ExternalModelProviderDescriptor;
-}
-
-export interface ExternalModelConnection {
-  readonly baseUrl: string;
-  readonly apiKey: string;
-  readonly modelId: string;
+  readonly isDefault: boolean;
 }
 
 export const EnterpriseSessionStatus = {
@@ -136,11 +148,9 @@ export interface ZhiyuanEnterpriseRendererHostCapability {
 }
 
 export interface ZhiyuanEnterpriseSettingsPageRegistration {
+  readonly id: string;
   readonly entrypoint: string;
-  readonly labels: {
-    readonly zh: string;
-    readonly en: string;
-  };
+  readonly labels: { readonly zh: string; readonly en: string };
 }
 
 export interface ZhiyuanEnterpriseSettingsHostCapability {
@@ -148,18 +158,16 @@ export interface ZhiyuanEnterpriseSettingsHostCapability {
   registerPage(page: ZhiyuanEnterpriseSettingsPageRegistration): () => void;
 }
 
-export interface ExternalModelProvider {
-  readonly id: string;
-  readonly displayName: string;
-  readonly exclusive?: boolean;
-  listModels(): Promise<readonly ExternalModelDescriptor[]>;
-  resolveConnection(modelId: string): Promise<ExternalModelConnection>;
+export interface ZhiyuanManagedProviderSource {
+  readonly providerKey: string;
+  readonly exclusive: boolean;
+  snapshot(): Promise<ProviderConfig>;
   onDidChange?(listener: () => void): () => void;
 }
 
-export interface ExternalModelHostCapability {
-  readonly apiVersion: typeof EXTERNAL_MODEL_CAPABILITY_API_VERSION;
-  registerProvider(provider: ExternalModelProvider): () => void;
+export interface ZhiyuanManagedProviderHostCapability {
+  readonly apiVersion: typeof ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION;
+  registerSource(source: ZhiyuanManagedProviderSource): () => void;
 }
 
 export interface ZhiyuanEnterpriseHostContext {
@@ -167,15 +175,12 @@ export interface ZhiyuanEnterpriseHostContext {
   readonly appVersion: string;
   readonly isPackaged: boolean;
   readonly platform: NodeJS.Platform;
-  readonly paths: {
-    readonly resources: string;
-    readonly userData: string;
-  };
+  readonly paths: { readonly resources: string; readonly userData: string };
   readonly capabilities: {
     readonly session: ZhiyuanEnterpriseSessionHostCapability | null;
     readonly renderer: ZhiyuanEnterpriseRendererHostCapability | null;
     readonly settings: ZhiyuanEnterpriseSettingsHostCapability | null;
-    readonly models: ExternalModelHostCapability | null;
+    readonly managedProvider: ZhiyuanManagedProviderHostCapability | null;
   };
 }
 

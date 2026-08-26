@@ -1,18 +1,15 @@
 import type { AgentModel, ModelConnection } from '@aep/sdk-node';
 
 import {
-  ExternalModelProtocol,
-  ExternalModelThinkingFormat,
   ModelCapabilityStatus,
-  type ExternalModelConnection,
-  type ExternalModelDescriptor,
-  type ExternalModelProvider,
-  type ExternalModelReasoningCompatibility,
   type ModelCapabilities,
+  type ProviderConfig,
+  type ProviderModelPiRuntimeConfig,
+  type ZhiyuanManagedProviderSource,
 } from '../host-contract.js';
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
 
-export const ZHIYUAN_MODEL_PROVIDER_ID = 'external.zhiyuan';
+export const ZHIYUAN_MODEL_PROVIDER_KEY = 'custom_enterprise';
 export const ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME = 'Zhiyuan';
 export const ZHIYUAN_MODEL_POLL_INTERVAL_MS = 30_000;
 
@@ -26,9 +23,8 @@ export interface ZhiyuanModelProviderDependencies {
   readonly clearInterval?: (handle: TimerHandle) => void;
 }
 
-export class ZhiyuanModelProvider implements ExternalModelProvider {
-  readonly id = ZHIYUAN_MODEL_PROVIDER_ID;
-  readonly displayName = ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME;
+export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
+  readonly providerKey = ZHIYUAN_MODEL_PROVIDER_KEY;
   readonly exclusive = true;
   readonly #session: ZhiyuanPasswordSession;
   readonly #pollIntervalMs: number;
@@ -37,8 +33,6 @@ export class ZhiyuanModelProvider implements ExternalModelProvider {
   readonly #listeners = new Set<() => void>();
   #sessionUnsubscribe: (() => void) | null = null;
   #pollTimer: TimerHandle | null = null;
-  #modelSignature: string | null = null;
-  #cachedModels: readonly ExternalModelDescriptor[] | null = null;
   #pollInFlight = false;
 
   constructor(
@@ -53,26 +47,21 @@ export class ZhiyuanModelProvider implements ExternalModelProvider {
     this.#clearInterval = dependencies.clearInterval ?? (handle => clearInterval(handle as never));
   }
 
-  async listModels(): Promise<readonly ExternalModelDescriptor[]> {
-    try {
-      const models = await this.#readModels();
-      this.#cachedModels = models;
-      this.#modelSignature = signature(models);
-      return models;
-    } catch (error) {
-      if (this.#cachedModels) return this.#cachedModels;
-      throw error;
-    }
-  }
-
-  async resolveConnection(modelId: string): Promise<ExternalModelConnection> {
-    const connection = await this.#session.getModelConnection();
+  async snapshot(): Promise<ProviderConfig> {
+    const [models, connection] = await Promise.all([
+      this.#readModels(),
+      this.#session.getModelConnection(),
+    ]);
     validateGatewayConnection(connection);
-    return Object.freeze({
-      baseUrl: connection.baseUrl,
+    return {
+      enabled: true,
+      userEnabled: true,
       apiKey: connection.apiKey,
-      modelId,
-    });
+      baseUrl: connection.baseUrl,
+      apiFormat: 'openai',
+      displayName: ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME,
+      models: models.map(toProviderModel),
+    };
   }
 
   onDidChange(listener: () => void): () => void {
@@ -87,14 +76,15 @@ export class ZhiyuanModelProvider implements ExternalModelProvider {
     };
   }
 
-  async #readModels(): Promise<ExternalModelDescriptor[]> {
+  async #readModels(): Promise<AgentModel[]> {
     const { models } = await this.#session.listAgentModels();
-    return models.filter(isGatewayModel).map(toExternalModel);
+    return models
+      .filter(isGatewayModel)
+      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
   }
 
   #startWatching(): void {
     this.#sessionUnsubscribe = this.#session.onDidChange(() => {
-      this.#modelSignature = null;
       this.#emitChanged();
     });
     this.#pollTimer = this.#setInterval(() => void this.#poll(), this.#pollIntervalMs);
@@ -106,26 +96,19 @@ export class ZhiyuanModelProvider implements ExternalModelProvider {
     this.#sessionUnsubscribe = null;
     if (this.#pollTimer) this.#clearInterval(this.#pollTimer);
     this.#pollTimer = null;
-    this.#modelSignature = null;
   }
 
   async #poll(): Promise<void> {
     if (this.#pollInFlight) return;
     this.#pollInFlight = true;
     try {
-      const models = await this.#readModels();
-      const nextSignature = signature(models);
-      this.#cachedModels = models;
-      if (this.#modelSignature !== null && nextSignature !== this.#modelSignature) {
-        this.#modelSignature = nextSignature;
-        this.#emitChanged();
-      } else {
-        this.#modelSignature = nextSignature;
-      }
+      await this.#readModels();
     } catch {
-      // A temporary control-plane outage must not remove the last known picker state.
+      // The host refresh below will clear the stale provider snapshot.
     } finally {
       this.#pollInFlight = false;
+      // Refreshes the short-lived model token and clears stale snapshots on outages.
+      this.#emitChanged();
     }
   }
 
@@ -144,18 +127,19 @@ function isGatewayModel(model: AgentModel): boolean {
   return model.enabled && model.sourceType === 'gateway' && model.protocol === 'openai-compatible';
 }
 
-function toExternalModel(model: AgentModel): ExternalModelDescriptor {
+function toProviderModel(model: AgentModel): NonNullable<ProviderConfig['models']>[number] {
   const capabilities = mapCapabilities(model.capabilities);
-  const reasoningCompatibility = mapReasoningCompatibility(model);
-  return Object.freeze({
+  const piRuntime = mapPiRuntime(model);
+  return {
     id: model.id,
-    displayName: model.displayName,
-    protocol: ExternalModelProtocol.OpenAICompatible,
-    ...(Object.keys(capabilities).length > 0 ? { capabilities: Object.freeze(capabilities) } : {}),
-    ...(reasoningCompatibility ? { reasoningCompatibility } : {}),
+    name: model.displayName,
+    ...(capabilities.imageInput === ModelCapabilityStatus.Supported
+      ? { supportsImage: true }
+      : {}),
+    ...(Object.keys(capabilities).length > 0 ? { capabilities } : {}),
     ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
-    isDefault: model.isDefault,
-  });
+    ...(piRuntime ? { piRuntime } : {}),
+  };
 }
 
 type AepReasoningAwareAgentModel = AgentModel & {
@@ -166,23 +150,25 @@ type AepReasoningAwareAgentModel = AgentModel & {
   };
 };
 
-function mapReasoningCompatibility(
-  model: AgentModel,
-): ExternalModelReasoningCompatibility | undefined {
+function mapPiRuntime(model: AgentModel): ProviderModelPiRuntimeConfig | undefined {
   const value = (model as AepReasoningAwareAgentModel).reasoningCompatibility;
   if (value === undefined) return undefined;
   if (
-    value.thinkingFormat !== ExternalModelThinkingFormat.DeepSeek ||
+    value.thinkingFormat !== 'deepseek' ||
     value.supportsReasoningEffort !== true ||
     value.requiresReasoningContentOnAssistantMessages !== true
   ) {
     throw new Error('Zhiyuan model reasoning compatibility is not supported.');
   }
-  return Object.freeze({
-    thinkingFormat: ExternalModelThinkingFormat.DeepSeek,
-    supportsReasoningEffort: true,
-    requiresReasoningContentOnAssistantMessages: true,
-  });
+  return {
+    api: 'openai-completions',
+    reasoning: true,
+    compat: {
+      thinkingFormat: 'deepseek',
+      supportsReasoningEffort: true,
+      requiresReasoningContentOnAssistantMessages: true,
+    },
+  };
 }
 
 function mapCapabilities(values: string[]): Partial<ModelCapabilities> {
@@ -213,12 +199,8 @@ function hasAny(values: ReadonlySet<string>, ...candidates: string[]): boolean {
   return candidates.some(candidate => values.has(candidate));
 }
 
-function signature(models: readonly ExternalModelDescriptor[]): string {
-  return JSON.stringify(models);
-}
-
 function validateGatewayConnection(connection: ModelConnection): void {
-  if (connection.protocol !== ExternalModelProtocol.OpenAICompatible) {
+  if (connection.protocol !== 'openai-compatible') {
     throw new Error('Zhiyuan model gateway protocol is not supported.');
   }
 }

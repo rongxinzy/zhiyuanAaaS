@@ -3,7 +3,7 @@ import {
   ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION,
-  EXTERNAL_MODEL_CAPABILITY_API_VERSION,
+  ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION,
   type ZhiyuanEnterpriseExtension,
   type ZhiyuanEnterpriseHostContext,
 } from './host-contract.js';
@@ -15,10 +15,18 @@ import { ZhiyuanModelProvider } from './models/provider.js';
 export const ZHIYUAN_ENTERPRISE_EXTENSION_ID = 'zhiyuan.aaas';
 export const ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT = 'ui/index.html';
 export const ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT = 'ui/index.html';
-export const ZHIYUAN_ENTERPRISE_SETTINGS_LABELS = Object.freeze({
-  zh: '企业设置',
-  en: 'Enterprise settings',
-});
+export const ZHIYUAN_ENTERPRISE_SETTINGS_PAGES = Object.freeze([
+  Object.freeze({
+    id: 'account',
+    entrypoint: ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
+    labels: Object.freeze({ zh: '企业账户', en: 'Enterprise account' }),
+  }),
+  Object.freeze({
+    id: 'models',
+    entrypoint: ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
+    labels: Object.freeze({ zh: '企业模型', en: 'Enterprise models' }),
+  }),
+]);
 
 type ExtensionState =
   | { readonly status: 'idle' }
@@ -44,8 +52,8 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
   #state: ExtensionState = { status: 'idle' };
   #unregisterSessionProvider: (() => void) | null = null;
   #unregisterSessionGate: (() => void) | null = null;
-  #unregisterSettingsPage: (() => void) | null = null;
-  #unregisterModelProvider: (() => void) | null = null;
+  #unregisterSettingsPages: Array<() => void> = [];
+  #unregisterManagedProvider: (() => void) | null = null;
 
   constructor(dependencies: ZhiyuanExtensionDependencies = defaultDependencies) {
     this.#dependencies = dependencies;
@@ -61,7 +69,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     const sessionCapability = context.capabilities.session;
     const rendererCapability = context.capabilities.renderer;
     const settingsCapability = context.capabilities.settings;
-    const modelCapability = context.capabilities.models;
+    const managedProviderCapability = context.capabilities.managedProvider;
     if (
       sessionCapability &&
       sessionCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION
@@ -80,18 +88,21 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     ) {
       throw new Error('Zhiyuan enterprise settings capability API version is not supported.');
     }
-    if (modelCapability && modelCapability.apiVersion !== EXTERNAL_MODEL_CAPABILITY_API_VERSION) {
-      throw new Error('Zhiyuan external model capability API version is not supported.');
+    if (
+      managedProviderCapability &&
+      managedProviderCapability.apiVersion !== ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION
+    ) {
+      throw new Error('Zhiyuan managed provider capability API version is not supported.');
     }
-    if (sessionCapability || modelCapability) {
+    if (sessionCapability || managedProviderCapability) {
       const session = await this.#dependencies.createSession(context);
       if (sessionCapability) {
         this.#unregisterSessionProvider = sessionCapability.registerProvider(
           new ZhiyuanPasswordSessionProvider(session),
         );
       }
-      if (modelCapability) {
-        this.#unregisterModelProvider = modelCapability.registerProvider(
+      if (managedProviderCapability) {
+        this.#unregisterManagedProvider = managedProviderCapability.registerSource(
           new ZhiyuanModelProvider(session),
         );
       }
@@ -107,19 +118,24 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
       );
     }
     if (settingsCapability) {
-      this.#unregisterSettingsPage = settingsCapability.registerPage({
-        entrypoint: ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
-        labels: ZHIYUAN_ENTERPRISE_SETTINGS_LABELS,
-      });
+      try {
+        for (const page of ZHIYUAN_ENTERPRISE_SETTINGS_PAGES) {
+          this.#unregisterSettingsPages.push(settingsCapability.registerPage(page));
+        }
+      } catch (error) {
+        for (const unregister of this.#unregisterSettingsPages.reverse()) unregister();
+        this.#unregisterSettingsPages = [];
+        throw error;
+      }
     }
     this.#state = { status: 'active', context };
   }
 
   async dispose(): Promise<void> {
-    this.#unregisterModelProvider?.();
-    this.#unregisterModelProvider = null;
-    this.#unregisterSettingsPage?.();
-    this.#unregisterSettingsPage = null;
+    this.#unregisterManagedProvider?.();
+    this.#unregisterManagedProvider = null;
+    for (const unregister of this.#unregisterSettingsPages.reverse()) unregister();
+    this.#unregisterSettingsPages = [];
     this.#unregisterSessionGate?.();
     this.#unregisterSessionGate = null;
     this.#unregisterSessionProvider?.();

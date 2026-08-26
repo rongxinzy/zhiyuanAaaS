@@ -72,14 +72,12 @@ describe('enterprise session UI', () => {
         authenticated(false),
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'account',
       ),
     );
 
-    expect(await screen.findByRole('heading', { name: 'Enterprise settings' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Enterprise account' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    expect(await screen.findByRole('heading', { name: 'Enterprise account' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     expect(screen.getByText('Zhiyuan')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
@@ -93,10 +91,10 @@ describe('enterprise session UI', () => {
         authenticated(false),
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'models',
       ),
     );
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
     expect(screen.getByRole('status', { name: 'Loading managed models' })).toBeInTheDocument();
     await waitForCatalogRequests(1);
     act(() =>
@@ -106,8 +104,8 @@ describe('enterprise session UI', () => {
           {
             id: 'managed-model',
             displayName: 'Managed Model',
-            protocol: 'openai-compatible',
-            provider: { id: 'external.zhiyuan', displayName: 'Zhiyuan' },
+            providerKey: 'custom_enterprise',
+            providerDisplayName: 'Zhiyuan',
             contextWindow: 128_000,
             isDefault: true,
             capabilities: { toolCalling: 'supported', imageInput: 'supported' },
@@ -117,8 +115,9 @@ describe('enterprise session UI', () => {
           {
             id: 'other-model',
             displayName: 'Other provider model',
-            protocol: 'openai-compatible',
-            provider: { id: 'external.other', displayName: 'Other' },
+            providerKey: 'custom_other',
+            providerDisplayName: 'Other',
+            isDefault: false,
           },
         ],
       }),
@@ -141,9 +140,9 @@ describe('enterprise session UI', () => {
         authenticated(false),
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'models',
       ),
     );
-    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
     await waitForCatalogRequests(1);
     act(() => respondToLatestCatalog({ ok: true, models: [] }));
 
@@ -158,9 +157,9 @@ describe('enterprise session UI', () => {
         authenticated(false),
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'models',
       ),
     );
-    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
     await waitForCatalogRequests(1);
     act(() => respondToLatestCatalog({ ok: false, error: 'sensitive host detail' }));
 
@@ -178,9 +177,9 @@ describe('enterprise session UI', () => {
         authenticated(false),
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'models',
       ),
     );
-    fireEvent.click(await screen.findByRole('tab', { name: 'Managed models' }));
     await waitForCatalogRequests(1);
     act(() => respondToLatestCatalog({ ok: true, models: [] }));
     const [refresh] = await screen.findAllByRole('button', { name: 'Refresh' });
@@ -197,6 +196,7 @@ describe('enterprise session UI', () => {
         { ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } },
         EnterpriseRendererLanguage.English,
         EnterpriseRendererSurface.Settings,
+        'account',
       ),
     );
 
@@ -209,6 +209,7 @@ function initialize(
   session: EnterpriseSessionResult,
   language: EnterpriseRendererLanguageValue = EnterpriseRendererLanguage.Chinese,
   surface: EnterpriseRendererSurfaceValue = EnterpriseRendererSurface.SessionGate,
+  pageId: string | null = null,
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
@@ -218,6 +219,7 @@ function initialize(
         apiVersion: 1,
         type: EnterpriseRendererMessageType.Initialize,
         surface,
+        pageId,
         language,
         theme: EnterpriseRendererTheme.Light,
         session,

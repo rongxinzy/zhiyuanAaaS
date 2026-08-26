@@ -2,10 +2,10 @@ import type {
   EnterprisePasswordChangeInput,
   EnterprisePasswordLoginInput,
   EnterpriseSessionResult,
-  ExternalModel,
+  ManagedProviderCatalogModel,
   ModelCapabilities,
 } from '../../host-contract.js';
-import { ExternalModelProtocol, ModelCapabilityStatus } from '../../host-contract.js';
+import { ModelCapabilityStatus } from '../../host-contract.js';
 import {
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
@@ -93,7 +93,7 @@ export class EnterpriseRendererClient {
     return this.#request(EnterpriseRendererSessionOperation.Logout);
   }
 
-  listModels(): Promise<readonly ExternalModel[]> {
+  listModels(): Promise<readonly ManagedProviderCatalogModel[]> {
     if (!this.#started) return Promise.reject(new Error('Enterprise renderer is not connected.'));
     const requestId = crypto.randomUUID();
     const request: EnterpriseRendererModelCatalogRequestMessage = {
@@ -208,12 +208,12 @@ function parseModelCatalogResult(value: unknown): EnterpriseRendererModelCatalog
   if (result?.ok !== true || !Array.isArray(result.models) || result.models.length > MAX_MODELS) {
     return null;
   }
-  const models: ExternalModel[] = [];
+  const models: ManagedProviderCatalogModel[] = [];
   const modelRefs = new Set<string>();
   for (const value of result.models) {
-    const model = parseExternalModel(value);
+    const model = parseManagedModel(value);
     if (!model) return null;
-    const modelRef = `${model.provider.id}/${model.id}`;
+    const modelRef = `${model.providerKey}/${model.id}`;
     if (modelRefs.has(modelRef)) return null;
     modelRefs.add(modelRef);
     models.push(model);
@@ -221,17 +221,15 @@ function parseModelCatalogResult(value: unknown): EnterpriseRendererModelCatalog
   return Object.freeze({ ok: true, models: Object.freeze(models) });
 }
 
-function parseExternalModel(value: unknown): ExternalModel | null {
+function parseManagedModel(value: unknown): ManagedProviderCatalogModel | null {
   const model = asRecord(value);
-  const provider = asRecord(model?.provider);
   if (
     !isBoundedString(model?.id, 256) ||
     !isBoundedString(model.displayName, 128) ||
-    model.protocol !== ExternalModelProtocol.OpenAICompatible ||
-    !isBoundedString(provider?.id, 64) ||
-    !isBoundedString(provider.displayName, 128) ||
+    !isBoundedString(model.providerKey, 64) ||
+    !isBoundedString(model.providerDisplayName, 128) ||
     (model.contextWindow !== undefined && !isPositiveInteger(model.contextWindow)) ||
-    (model.isDefault !== undefined && typeof model.isDefault !== 'boolean')
+    typeof model.isDefault !== 'boolean'
   ) {
     return null;
   }
@@ -240,12 +238,12 @@ function parseExternalModel(value: unknown): ExternalModel | null {
   return Object.freeze({
     id: model.id,
     displayName: model.displayName,
-    protocol: ExternalModelProtocol.OpenAICompatible,
-    provider: Object.freeze({ id: provider.id, displayName: provider.displayName }),
+    providerKey: model.providerKey,
+    providerDisplayName: model.providerDisplayName,
     ...(capabilities ? { capabilities } : {}),
     ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
-    ...(model.isDefault === undefined ? {} : { isDefault: model.isDefault }),
-  }) as ExternalModel;
+    isDefault: model.isDefault,
+  }) as ManagedProviderCatalogModel;
 }
 
 function parseCapabilities(value: unknown): Partial<ModelCapabilities> | null {

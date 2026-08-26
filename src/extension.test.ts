@@ -7,11 +7,11 @@ import {
   ZHIYUAN_ENTERPRISE_EXTENSION_ID,
   ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
   ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
-  ZHIYUAN_ENTERPRISE_SETTINGS_LABELS,
+  ZHIYUAN_ENTERPRISE_SETTINGS_PAGES,
 } from './extension.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
-  type ExternalModelProvider,
+  type ZhiyuanManagedProviderSource,
   type ZhiyuanEnterpriseSessionProvider,
   type ZhiyuanEnterpriseHostContext,
 } from './host-contract.js';
@@ -104,7 +104,7 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(unregister).toHaveBeenCalledTimes(1);
   });
 
-  test('registers the enterprise account settings page and releases it during disposal', async () => {
+  test('registers separate enterprise account and model pages and releases them', async () => {
     const unregister = vi.fn();
     const registerPage = vi.fn(() => unregister);
     const extension = createZhiyuanEnterpriseExtension();
@@ -116,18 +116,36 @@ describe('Zhiyuan enterprise extension contract', () => {
       }),
     );
 
-    expect(registerPage).toHaveBeenCalledWith({
-      entrypoint: ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
-      labels: ZHIYUAN_ENTERPRISE_SETTINGS_LABELS,
-    });
+    expect(registerPage).toHaveBeenCalledTimes(2);
+    expect(registerPage).toHaveBeenNthCalledWith(1, ZHIYUAN_ENTERPRISE_SETTINGS_PAGES[0]);
+    expect(registerPage).toHaveBeenNthCalledWith(2, ZHIYUAN_ENTERPRISE_SETTINGS_PAGES[1]);
+    expect(ZHIYUAN_ENTERPRISE_SETTINGS_PAGES.every(page =>
+      page.entrypoint === ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
+    )).toBe(true);
     await extension.dispose();
     await extension.dispose();
-    expect(unregister).toHaveBeenCalledTimes(1);
+    expect(unregister).toHaveBeenCalledTimes(2);
   });
 
-  test('registers the AEP model provider and releases it during disposal', async () => {
+  test('rolls back the first settings page when the second registration fails', async () => {
+    const unregisterAccount = vi.fn();
+    const registerPage = vi
+      .fn()
+      .mockReturnValueOnce(unregisterAccount)
+      .mockImplementationOnce(() => {
+        throw new Error('duplicate models page');
+      });
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await expect(
+      extension.initialize(hostContext(null, null, { apiVersion: 1, registerPage })),
+    ).rejects.toThrow('duplicate models page');
+    expect(unregisterAccount).toHaveBeenCalledOnce();
+  });
+
+  test('registers the AEP managed provider source and releases it during disposal', async () => {
     const unregister = vi.fn();
-    const registerProvider = vi.fn((_provider: ExternalModelProvider) => unregister);
+    const registerSource = vi.fn((_provider: ZhiyuanManagedProviderSource) => unregister);
     const session = passwordSession();
     const extension = new ZhiyuanAaaSExtension({
       createSession: vi.fn(async () => session),
@@ -137,15 +155,15 @@ describe('Zhiyuan enterprise extension contract', () => {
     await extension.initialize(
       hostContext(null, null, null, {
         apiVersion: 1,
-        registerProvider,
+        registerSource,
       }),
     );
 
-    expect(registerProvider).toHaveBeenCalledOnce();
-    const provider = registerProvider.mock.calls[0]?.[0];
-    expect(provider?.id).toBe('external.zhiyuan');
+    expect(registerSource).toHaveBeenCalledOnce();
+    const provider = registerSource.mock.calls[0]?.[0];
+    expect(provider?.providerKey).toBe('custom_enterprise');
     expect(provider?.exclusive).toBe(true);
-    await expect(provider?.listModels()).resolves.toEqual([]);
+    expect(provider?.snapshot).toEqual(expect.any(Function));
 
     await extension.dispose();
     await extension.dispose();
@@ -196,17 +214,17 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(registerSessionGate).not.toHaveBeenCalled();
   });
 
-  test('fails closed for an incompatible external model capability', async () => {
+  test('fails closed for an incompatible managed provider capability', async () => {
     const extension = createZhiyuanEnterpriseExtension();
 
     await expect(
       extension.initialize(
         hostContext(null, null, null, {
           apiVersion: 2,
-          registerProvider: vi.fn(),
+          registerSource: vi.fn(),
         } as never),
       ),
-    ).rejects.toThrow('model capability API version is not supported');
+    ).rejects.toThrow('managed provider capability API version is not supported');
   });
 });
 
@@ -214,7 +232,7 @@ function hostContext(
   session: ZhiyuanEnterpriseHostContext['capabilities']['session'] = null,
   renderer: ZhiyuanEnterpriseHostContext['capabilities']['renderer'] = null,
   settings: ZhiyuanEnterpriseHostContext['capabilities']['settings'] = null,
-  models: ZhiyuanEnterpriseHostContext['capabilities']['models'] = null,
+  managedProvider: ZhiyuanEnterpriseHostContext['capabilities']['managedProvider'] = null,
 ): ZhiyuanEnterpriseHostContext {
   return Object.freeze({
     apiVersion: ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -225,7 +243,7 @@ function hostContext(
       resources: 'D:\\zhiyuan\\resources',
       userData: 'D:\\zhiyuan\\user-data',
     }),
-    capabilities: Object.freeze({ session, renderer, settings, models }),
+    capabilities: Object.freeze({ session, renderer, settings, managedProvider }),
   });
 }
 
@@ -240,7 +258,13 @@ function passwordSession(
     changePassword: vi.fn(),
     getCurrentIdentity: vi.fn(),
     listAgentModels: vi.fn(async () => ({ models: [] })),
-    getModelConnection: vi.fn(),
+    getModelConnection: vi.fn(async () => ({
+      baseUrl: 'https://gateway.example/v1',
+      protocol: 'openai-compatible' as const,
+      apiVersion: 'v1' as const,
+      apiKey: 'model-token',
+      expiresIn: 300,
+    })),
     logout: vi.fn(async () => undefined),
     ...overrides,
   });
