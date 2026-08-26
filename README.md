@@ -27,8 +27,33 @@ application. `build/electron-builder.overlay.yml` places both outputs under
 `resources/zhiyuan-enterprise` without overwriting public source files.
 
 The current extension provides API v1 lifecycle, password-session, enterprise renderer, enterprise
-account settings, and managed model projection capabilities. Skill reconciliation and control-event
-processing remain separately reviewed capabilities.
+account settings, managed model projection, and a headless Agent control backend. Electron lifecycle
+activation and public-host Skill refresh notification remain separately reviewed capabilities.
+
+## Agent Control Backend
+
+`createZhiyuanAgentControlBackend` creates the Node-only control runtime without requiring Electron.
+It persists the control cursor, inbox, telemetry outbox, applied Skill revision, and managed Skill
+ownership in SQLite. Events are stored before acknowledgement and resumed after restart. Skill ZIPs
+are size and SHA-256 checked, extracted with traversal and symbolic-link protection, and installed
+through staging and atomic directory replacement. Revocation removes only directories recorded as
+managed by Zhiyuan.
+
+The backend requires an authenticated AEP SDK client and explicit database and managed-Skill paths.
+Call `start()` for the scheduled heartbeat loop, or `runOnce()` for a deterministic cycle, then call
+`close()` during shutdown. It is exported from `dist/extension.cjs` for headless verification and the
+next lifecycle integration stage; this change does not start it automatically inside the public host.
+
+With a local AEP control service running on `http://localhost:8080`, run the real backend scenario:
+
+```bash
+npm run verify:agent-control:e2e
+```
+
+The command creates isolated test data, verifies install and revocation end to end, removes the Skill
+and assignment, and disables the temporary account. Override the endpoint and administrator login
+with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_ENTERPRISE_ID`, `ZHIYUAN_AEP_ADMIN_USERNAME`, and
+`ZHIYUAN_AEP_ADMIN_PASSWORD`.
 
 ## Password Session Foundation
 
