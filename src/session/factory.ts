@@ -21,11 +21,15 @@ export interface ZhiyuanPasswordSessionOptions {
 export function createZhiyuanPasswordSession(
   options: ZhiyuanPasswordSessionOptions,
 ): ZhiyuanPasswordSession {
+  return new ZhiyuanPasswordSession(createZhiyuanAepClient(options));
+}
+
+export function createZhiyuanAepClient(options: ZhiyuanPasswordSessionOptions): AepClient {
   const tokenStore = new ProtectedRefreshTokenStore(
     options.protectedStorage,
     refreshTokenStorageKey(options.agentId),
   );
-  const client = new AepClient({
+  return new AepClient({
     baseUrl: options.baseUrl,
     agentId: options.agentId,
     agentVersion: options.agentVersion,
@@ -33,7 +37,6 @@ export function createZhiyuanPasswordSession(
     tokenStore,
     ...(options.transport ? { transport: options.transport } : {}),
   });
-  return new ZhiyuanPasswordSession(client);
 }
 
 function refreshTokenStorageKey(agentId: string): string {

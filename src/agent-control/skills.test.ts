@@ -32,7 +32,13 @@ describe('Managed Skill reconciliation', () => {
     let response = manifest('1', '1.0.0', firstArchive);
     let archive = firstArchive;
     const client = skillClient(() => response, () => archive);
-    const reconciler = new ManagedSkillReconciler(client, state, skillRoot);
+    const onSkillsChanged = vi.fn();
+    const reconciler = new ManagedSkillReconciler(
+      client,
+      state,
+      skillRoot,
+      onSkillsChanged,
+    );
     fs.mkdirSync(path.join(skillRoot, 'personal'), { recursive: true });
     fs.writeFileSync(path.join(skillRoot, 'personal', 'SKILL.md'), '# Personal');
 
@@ -64,6 +70,7 @@ describe('Managed Skill reconciliation', () => {
       expect(fs.readFileSync(path.join(skillRoot, 'personal', 'SKILL.md'), 'utf8')).toBe(
         '# Personal',
       );
+      expect(onSkillsChanged).toHaveBeenCalledTimes(3);
     } finally {
       state.close();
     }
@@ -77,10 +84,12 @@ describe('Managed Skill reconciliation', () => {
       .fn<() => Promise<SkillManifestResult>>()
       .mockResolvedValueOnce(manifest('1', '1.0.0', archive))
       .mockResolvedValueOnce({ notModified: true, etag: '"revision-1"' });
+    const onSkillsChanged = vi.fn();
     const reconciler = new ManagedSkillReconciler(
       skillClient(getSkillManifest, () => archive),
       state,
       path.join(directory, 'skills'),
+      onSkillsChanged,
     );
     try {
       await reconciler.reconcile();
@@ -90,6 +99,7 @@ describe('Managed Skill reconciliation', () => {
       });
       expect(getSkillManifest).toHaveBeenNthCalledWith(1, undefined);
       expect(getSkillManifest).toHaveBeenNthCalledWith(2, '"revision-1"');
+      expect(onSkillsChanged).toHaveBeenCalledOnce();
     } finally {
       state.close();
     }
@@ -170,6 +180,38 @@ describe('Managed Skill reconciliation', () => {
         '# Stable',
       );
       expect(state.managedSkills()[0]?.version).toBe('1.0.0');
+    } finally {
+      state.close();
+    }
+  });
+
+  test('notifies after a partial change when a later Skill fails', async () => {
+    const directory = createTemporaryDirectory();
+    const skillRoot = path.join(directory, 'skills');
+    const state = new AgentControlState(path.join(directory, 'state.sqlite'));
+    const archive = await zip([['SKILL.md', '# Installed before failure']]);
+    const response = manifest('1', '1.0.0', archive);
+    if (!response.notModified) {
+      response.manifest.skills.push({
+        id: 'broken',
+        name: 'Broken',
+        version: '1.0.0',
+        enabled: true,
+        package: { url: '/broken.zip', sha256: '0'.repeat(64), size: archive.byteLength },
+      });
+    }
+    const onSkillsChanged = vi.fn();
+    const reconciler = new ManagedSkillReconciler(
+      skillClient(() => response, () => archive),
+      state,
+      skillRoot,
+      onSkillsChanged,
+    );
+
+    try {
+      await expect(reconciler.reconcile()).rejects.toThrow(/checksum mismatch/);
+      expect(fs.existsSync(path.join(skillRoot, 'demo', 'SKILL.md'))).toBe(true);
+      expect(onSkillsChanged).toHaveBeenCalledOnce();
     } finally {
       state.close();
     }

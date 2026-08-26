@@ -27,8 +27,8 @@ application. `build/electron-builder.overlay.yml` places both outputs under
 `resources/zhiyuan-enterprise` without overwriting public source files.
 
 The current extension provides API v1 lifecycle, password-session, enterprise renderer, enterprise
-account settings, managed model projection, and a headless Agent control backend. Electron lifecycle
-activation and public-host Skill refresh notification remain separately reviewed capabilities.
+account settings, managed model projection, and Agent control. Authenticated sessions automatically
+start the control loop, while sign-out and Electron shutdown stop it before releasing local state.
 
 ## Agent Control Backend
 
@@ -40,9 +40,10 @@ through staging and atomic directory replacement. Revocation removes only direct
 managed by Zhiyuan.
 
 The backend requires an authenticated AEP SDK client and explicit database and managed-Skill paths.
-Call `start()` for the scheduled heartbeat loop, or `runOnce()` for a deterministic cycle, then call
-`close()` during shutdown. It is exported from `dist/extension.cjs` for headless verification and the
-next lifecycle integration stage; this change does not start it automatically inside the public host.
+The Electron extension shares the password session's client with this backend, stores its SQLite
+state under the application user-data directory, and installs assigned Skills only into the managed
+root allocated by the public host. Successful filesystem changes notify the host SkillManager. The
+headless factory remains exported for deterministic verification and service-independent testing.
 
 With a local AEP control service running on `http://localhost:8080`, run the real backend scenario:
 
@@ -107,9 +108,11 @@ URL and the explicit insecure-HTTP development switch. Customer credentials are 
 inputs. Each installation creates a stable UUID under the application user-data directory for AEP
 Agent binding.
 
-The extension registers its password-session provider through public session capability v1. It
-uses Electron platform encryption for refresh-token persistence and unregisters the provider during
-application shutdown. The renderer receives only normalized session and identity snapshots.
+The extension registers its password-session provider through public session capability v1 and its
+managed Skill root through Skill capability v1. It uses Electron platform encryption for refresh-token
+persistence, starts Agent control only while authenticated, and closes the control database before
+unregistering the managed root during shutdown. The renderer receives only normalized session and
+identity snapshots.
 
 ## License
 
