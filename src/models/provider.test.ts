@@ -37,6 +37,7 @@ describe('ZhiyuanModelProvider', () => {
 
     expect(provider.id).toBe(ZHIYUAN_MODEL_PROVIDER_ID);
     expect(provider.displayName).toBe(ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME);
+    expect(provider.exclusive).toBe(true);
     await expect(provider.listModels()).resolves.toEqual([
       {
         id: 'enterprise-chat',

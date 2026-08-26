@@ -12,7 +12,7 @@
     "packagedDirectory": "zhiyuan-enterprise/ui"
   },
   "zhiyuanCore": {
-    "commit": "72a03962b2410065535bffffce7a5dd3f0728e76"
+    "commit": "6d74db6ced86562136a86f925e4015ad3ec36afd"
   },
   "aepSdk": {
     "version": "0.2.0",

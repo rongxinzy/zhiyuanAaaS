@@ -59,7 +59,8 @@ remain unavailable to the sandboxed renderer.
 The extension registers `external.zhiyuan` through external model capability v1 and projects only
 enabled, assigned, OpenAI-compatible gateway models returned by AEP. The public renderer receives
 display metadata and conservative capability flags; it never receives the gateway URL or model
-access token.
+access token. The provider is exclusive, so enterprise builds hide community and local model
+configuration and the runtime rejects every model reference outside the AEP-authorized catalog.
 
 The model connection is resolved from the authenticated SDK session when the runtime starts a turn.
 The SDK refresh path rotates the short-lived model token before it is handed to the main-process
