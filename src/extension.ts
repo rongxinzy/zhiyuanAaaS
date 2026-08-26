@@ -149,3 +149,8 @@ export function createZhiyuanEnterpriseExtension(): ZhiyuanEnterpriseExtension {
 }
 
 export { createZhiyuanPasswordSession } from './session/factory.js';
+export {
+  createZhiyuanAgentControlBackend,
+  ZhiyuanAgentControlBackend,
+  type ZhiyuanAgentControlBackendOptions,
+} from './agent-control/factory.js';
