@@ -27,6 +27,7 @@ export interface ZhiyuanModelProviderDependencies {
 export class ZhiyuanModelProvider implements ExternalModelProvider {
   readonly id = ZHIYUAN_MODEL_PROVIDER_ID;
   readonly displayName = ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME;
+  readonly exclusive = true;
   readonly #session: ZhiyuanPasswordSession;
   readonly #pollIntervalMs: number;
   readonly #setInterval: (callback: () => void, milliseconds: number) => TimerHandle;

@@ -144,6 +144,7 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(registerProvider).toHaveBeenCalledOnce();
     const provider = registerProvider.mock.calls[0]?.[0];
     expect(provider?.id).toBe('external.zhiyuan');
+    expect(provider?.exclusive).toBe(true);
     await expect(provider?.listModels()).resolves.toEqual([]);
 
     await extension.dispose();
