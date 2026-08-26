@@ -7,8 +7,8 @@ public application contains only the versioned extension host.
 ## Pinned Inputs
 
 `build/build-manifest.json` is the source of truth for release inputs. It pins the exact public
-core commit, extension version, host API version, AEP SDK Release asset, and SDK SHA-256 digest.
-Branches are never accepted as release inputs.
+core and AEP protocol commits, extension version, host API version, AEP SDK Release asset, and SDK
+SHA-256 digest. Branches are never accepted as release inputs.
 
 ## Development
 
@@ -61,6 +61,11 @@ enabled, assigned, OpenAI-compatible gateway models returned by AEP. The public 
 display metadata and conservative capability flags; it never receives the gateway URL or model
 access token. The provider is exclusive, so enterprise builds hide community and local model
 configuration and the runtime rejects every model reference outside the AEP-authorized catalog.
+
+AEP reasoning compatibility metadata is projected through the generic public host contract. A
+DeepSeek-compatible assignment enables reasoning-effort forwarding and preserves assistant
+`reasoning_content` when a tool-call conversation continues. Provider-specific runtime details stay
+inside the public core adapter and are not exposed through the enterprise extension contract.
 
 The model connection is resolved from the authenticated SDK session when the runtime starts a turn.
 The SDK refresh path rotates the short-lived model token before it is handed to the main-process

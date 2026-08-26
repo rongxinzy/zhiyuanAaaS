@@ -2,10 +2,12 @@ import type { AgentModel, ModelConnection } from '@aep/sdk-node';
 
 import {
   ExternalModelProtocol,
+  ExternalModelThinkingFormat,
   ModelCapabilityStatus,
   type ExternalModelConnection,
   type ExternalModelDescriptor,
   type ExternalModelProvider,
+  type ExternalModelReasoningCompatibility,
   type ModelCapabilities,
 } from '../host-contract.js';
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
@@ -144,13 +146,42 @@ function isGatewayModel(model: AgentModel): boolean {
 
 function toExternalModel(model: AgentModel): ExternalModelDescriptor {
   const capabilities = mapCapabilities(model.capabilities);
+  const reasoningCompatibility = mapReasoningCompatibility(model);
   return Object.freeze({
     id: model.id,
     displayName: model.displayName,
     protocol: ExternalModelProtocol.OpenAICompatible,
     ...(Object.keys(capabilities).length > 0 ? { capabilities: Object.freeze(capabilities) } : {}),
+    ...(reasoningCompatibility ? { reasoningCompatibility } : {}),
     ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
     isDefault: model.isDefault,
+  });
+}
+
+type AepReasoningAwareAgentModel = AgentModel & {
+  readonly reasoningCompatibility?: {
+    readonly thinkingFormat: 'deepseek';
+    readonly supportsReasoningEffort: true;
+    readonly requiresReasoningContentOnAssistantMessages: true;
+  };
+};
+
+function mapReasoningCompatibility(
+  model: AgentModel,
+): ExternalModelReasoningCompatibility | undefined {
+  const value = (model as AepReasoningAwareAgentModel).reasoningCompatibility;
+  if (value === undefined) return undefined;
+  if (
+    value.thinkingFormat !== ExternalModelThinkingFormat.DeepSeek ||
+    value.supportsReasoningEffort !== true ||
+    value.requiresReasoningContentOnAssistantMessages !== true
+  ) {
+    throw new Error('Zhiyuan model reasoning compatibility is not supported.');
+  }
+  return Object.freeze({
+    thinkingFormat: ExternalModelThinkingFormat.DeepSeek,
+    supportsReasoningEffort: true,
+    requiresReasoningContentOnAssistantMessages: true,
   });
 }
 

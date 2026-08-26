@@ -10,6 +10,18 @@ export const ExternalModelProtocol = {
 export type ExternalModelProtocol =
   (typeof ExternalModelProtocol)[keyof typeof ExternalModelProtocol];
 
+export const ExternalModelThinkingFormat = {
+  DeepSeek: 'deepseek',
+} as const;
+export type ExternalModelThinkingFormat =
+  (typeof ExternalModelThinkingFormat)[keyof typeof ExternalModelThinkingFormat];
+
+export interface ExternalModelReasoningCompatibility {
+  readonly thinkingFormat: ExternalModelThinkingFormat;
+  readonly supportsReasoningEffort: boolean;
+  readonly requiresReasoningContentOnAssistantMessages: boolean;
+}
+
 export const ModelCapabilityStatus = {
   Supported: 'supported',
   Unsupported: 'unsupported',
@@ -32,6 +44,7 @@ export interface ExternalModelDescriptor {
   readonly displayName: string;
   readonly protocol: ExternalModelProtocol;
   readonly capabilities?: Partial<ModelCapabilities>;
+  readonly reasoningCompatibility?: ExternalModelReasoningCompatibility;
   readonly contextWindow?: number;
   readonly isDefault?: boolean;
 }
