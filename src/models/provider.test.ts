@@ -132,7 +132,9 @@ describe('ZhiyuanModelProvider', () => {
               model({
                 reasoningCompatibility: {
                   thinkingFormat: 'deepseek',
-                  supportsReasoningEffort: false,
+                  // Deliberately violate the protocol type to exercise the
+                  // provider's runtime rejection path.
+                  supportsReasoningEffort: false as unknown as true,
                   requiresReasoningContentOnAssistantMessages: true,
                 },
               }),

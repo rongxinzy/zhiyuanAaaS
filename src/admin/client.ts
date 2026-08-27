@@ -1,5 +1,6 @@
 import {
   AepClient,
+  FetchTransport,
   MemoryTokenStore,
   type AepTokenStore,
   type AdminAgent,
@@ -195,11 +196,12 @@ export class AdminConsoleClient {
   #getClient(): AepClient {
     if (!this.#client) {
       this.#client = new AepClient({
-        baseUrl: this.#baseUrl,
-        agentId: adminAgentId(),
-        agentVersion: ADMIN_AGENT_VERSION,
-        platform: platform(),
-        tokenStore: this.#tokenStore,
+      baseUrl: this.#baseUrl,
+      agentId: adminAgentId(),
+      agentVersion: ADMIN_AGENT_VERSION,
+      platform: platform(),
+      tokenStore: this.#tokenStore,
+      transport: new FetchTransport({fetch: runtimeFetch()}),
       });
     }
     return this.#client;
@@ -219,6 +221,15 @@ export class AdminConsoleClient {
       ? { status: AdminConsoleStatus.Authenticated, identity }
       : { status: AdminConsoleStatus.Forbidden, identity };
   }
+}
+
+function runtimeFetch(): typeof globalThis.fetch {
+  const root = globalThis as typeof globalThis & {fetch?: typeof globalThis.fetch};
+  const candidate = root.fetch ?? (typeof window !== 'undefined' ? window.fetch : undefined);
+  if (typeof candidate !== 'function') {
+    throw new Error('The enterprise console runtime does not provide fetch.');
+  }
+  return candidate.bind(typeof window !== 'undefined' ? window : root);
 }
 
 function ensureRequestIdCrypto(): void {

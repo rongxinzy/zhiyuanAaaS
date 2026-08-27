@@ -39,7 +39,8 @@ export function AdminApp() {
     setError(null);
     try {
       setSession(await client.login(input));
-    } catch {
+    } catch (cause) {
+      console.error('[ZhiyuanAdmin] login failed before session creation', cause);
       setError('signInFailed');
     } finally {
       setPending(false);
