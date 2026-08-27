@@ -90,6 +90,16 @@ const translations = {
     unknownEvent: '未知事件',
     allAgents: '全部 Agent',
     viewDelivery: '查看投递状态',
+    themeLight: '浅色',
+    themeDark: '深色',
+    themeSystem: '跟随系统',
+    themeToggleLabel: '切换界面主题',
+    usersEmptyHint: '企业用户同步后显示在这里。',
+    agentsEmptyHint: 'Agent 客户端接入管控平面后显示在这里。',
+    skillsEmptyHint: 'Skill 发布到企业目录后显示在这里。',
+    assignmentsEmptyHint: '为成员或 Agent 授权 Skill 后显示在这里。',
+    modelsEmptyHint: '使用「添加模型」把网关模型加入企业目录。',
+    auditEmptyHint: '输入条件查询记录，或先发布一条管控事件。',
   },
   en: {
     brand: 'Zhiyuan Enterprise Console',
@@ -182,11 +192,23 @@ const translations = {
     unknownEvent: 'Unknown event',
     allAgents: 'All Agents',
     viewDelivery: 'View delivery status',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeSystem: 'System',
+    themeToggleLabel: 'Switch interface theme',
+    usersEmptyHint: 'Users appear here once synced from your enterprise directory.',
+    agentsEmptyHint: 'Agents appear here once they connect to the control plane.',
+    skillsEmptyHint: 'Skills appear here once published to the enterprise catalog.',
+    assignmentsEmptyHint: 'Assignments appear here once Skills are granted.',
+    modelsEmptyHint: 'Use "Add model" above to publish a gateway model to the catalog.',
+    auditEmptyHint: 'Search with filters above, or publish a control event first.',
   },
 } as const;
 
 export type AdminLanguage = keyof typeof translations;
 export type AdminTranslationKey = keyof (typeof translations)['zh'];
+
+export const ADMIN_LANGUAGE: AdminLanguage = 'zh';
 
 export function translate(language: AdminLanguage, key: AdminTranslationKey): string {
   return translations[language][key];
