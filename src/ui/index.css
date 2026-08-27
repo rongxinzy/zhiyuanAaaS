@@ -153,6 +153,9 @@ body {
   justify-content: center;
   width: auto;
   text-align: center;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 #root.zhiyuan-admin-console [data-slot='button'].w-full {
@@ -171,4 +174,23 @@ body {
 
 #root.zhiyuan-admin-console [data-slot='button'] > svg {
   flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+}
+
+#root.zhiyuan-admin-console [data-slot='empty-media'] > svg,
+#root.zhiyuan-admin-console [data-slot='card'] svg {
+  flex: 0 0 auto;
+}
+
+#root.zhiyuan-admin-console [data-slot='table'] th {
+  text-align: left;
+}
+
+#root.zhiyuan-admin-console [data-slot='table'] .text-right {
+  text-align: right;
+}
+
+#root.zhiyuan-admin-console :where(h1, h2, h3, p, dl, dd) {
+  margin: 0;
 }
