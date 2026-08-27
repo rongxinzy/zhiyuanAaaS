@@ -56,6 +56,20 @@ and assignment, and disables the temporary account. Override the endpoint and ad
 with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_ENTERPRISE_ID`, `ZHIYUAN_AEP_ADMIN_USERNAME`, and
 `ZHIYUAN_AEP_ADMIN_PASSWORD`.
 
+Before invoking electron-builder, verify the closed-source package inputs with:
+
+```bash
+npm run build
+npm run verify:package-inputs
+```
+
+The check validates the extension bundle, Renderer entrypoint, legal notice, and enterprise
+configuration that the public application's `build/electron-builder.overlay.yml` injects under
+`resources/zhiyuan-enterprise`. It also prints SHA-256 values and the immutable core, protocol,
+and SDK pins used for the package. Override `ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE`,
+`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY`, `ZHIYUAN_ENTERPRISE_NOTICE_FILE`, or
+`ZHIYUAN_ENTERPRISE_CONFIG_FILE` when packaging from a staging directory.
+
 ## Password Session Foundation
 
 The extension provides a password-only AEP session service for Zhiyuan accounts. Operations are

@@ -17,6 +17,7 @@
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
+    "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
     "verify:sdk": "node scripts/verify-sdk.mjs"
   },
