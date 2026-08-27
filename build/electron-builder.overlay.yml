@@ -6,6 +6,11 @@ extraResources:
     filter:
       - '**/*'
       - '!**/*.map'
+  - from: ${env.ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY}
+    to: zhiyuan-enterprise/admin
+    filter:
+      - '**/*'
+      - '!**/*.map'
   - from: ${env.ZHIYUAN_ENTERPRISE_NOTICE_FILE}
     to: zhiyuan-enterprise/THIRD_PARTY_NOTICES.md
   - from: ${env.ZHIYUAN_ENTERPRISE_CONFIG_FILE}

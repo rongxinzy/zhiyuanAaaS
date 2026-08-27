@@ -12,6 +12,7 @@ const manifest = JSON.parse(
 const inputs = {
   extensionBundle: resolveInput('ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE', 'dist/extension.cjs'),
   rendererDirectory: resolveInput('ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY', 'dist/ui'),
+  adminDirectory: resolveInput('ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY', 'dist/admin'),
   noticeFile: resolveInput('ZHIYUAN_ENTERPRISE_NOTICE_FILE', 'THIRD_PARTY_NOTICES.md'),
   configFile: resolveInput(
     'ZHIYUAN_ENTERPRISE_CONFIG_FILE',
@@ -42,6 +43,14 @@ assert.ok(rendererEntries.some(entry => entry.isFile() && entry.name === 'index.
 for (const entry of rendererEntries) {
   if (entry.isFile() && !entry.name.endsWith('.map')) {
     files.push(await inspectFile(path.join(inputs.rendererDirectory, entry.name), 'renderer asset'));
+  }
+}
+
+const adminEntries = await fs.readdir(inputs.adminDirectory, { withFileTypes: true });
+assert.ok(adminEntries.some(entry => entry.isFile() && entry.name === 'index.html'));
+for (const entry of adminEntries) {
+  if (entry.isFile() && !entry.name.endsWith('.map')) {
+    files.push(await inspectFile(path.join(inputs.adminDirectory, entry.name), 'admin asset'));
   }
 }
 

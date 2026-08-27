@@ -14,6 +14,7 @@ const enterpriseRoot = path.join(packageRoot, 'resources', 'zhiyuan-enterprise')
 const source = {
   extension: path.join(root, 'dist', 'extension.cjs'),
   renderer: path.join(root, 'dist', 'ui'),
+  admin: path.join(root, 'dist', 'admin'),
   notices: path.join(root, 'THIRD_PARTY_NOTICES.md'),
   config: path.resolve(
     process.env.ZHIYUAN_ENTERPRISE_CONFIG_FILE ??
@@ -40,6 +41,22 @@ for (const file of sourceRenderer.filter(file => !file.relative.endsWith('.map')
       path.join(source.renderer, file.relative),
       path.join(enterpriseRoot, 'ui', file.relative),
       `Renderer asset ${file.relative}`,
+    ),
+  );
+}
+const sourceAdmin = await collectFiles(source.admin);
+const packagedAdmin = await collectFiles(path.join(enterpriseRoot, 'admin'));
+assert.deepEqual(
+  packagedAdmin.map(file => file.relative),
+  sourceAdmin.filter(file => !file.relative.endsWith('.map')).map(file => file.relative),
+  'Packaged Admin Console files do not match the AaaS build output.',
+);
+for (const file of sourceAdmin.filter(file => !file.relative.endsWith('.map'))) {
+  checks.push(
+    await compareFile(
+      path.join(source.admin, file.relative),
+      path.join(enterpriseRoot, 'admin', file.relative),
+      `Admin asset ${file.relative}`,
     ),
   );
 }

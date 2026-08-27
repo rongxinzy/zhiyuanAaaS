@@ -20,6 +20,8 @@ assert.equal(
   'zhiyuan-enterprise/ui',
   'Renderer package directory must match the host-scoped resource path.',
 );
+assert.equal(manifest.adminConsole.artifact, 'dist/admin');
+assert.equal(manifest.adminConsole.packagedDirectory, 'zhiyuan-enterprise/admin');
 assert.deepEqual(
   manifest.renderer.settingsPages,
   [
