@@ -178,6 +178,23 @@ body {
   height: 1rem;
 }
 
+#root.zhiyuan-admin-console [data-slot='badge'] {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  border-radius: var(--radius-md) !important;
+  width: max-content;
+  min-width: max-content;
+  white-space: nowrap;
+  line-height: 1rem;
+}
+
+#root.zhiyuan-admin-console [data-slot='badge'] > svg {
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+  flex: 0 0 auto;
+}
+
 #root.zhiyuan-admin-console [data-slot='empty-media'] > svg,
 #root.zhiyuan-admin-console [data-slot='card'] svg {
   flex: 0 0 auto;
