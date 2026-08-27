@@ -18,6 +18,7 @@
     "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
     "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
+    "verify:electron-package": "node scripts/verify-electron-package.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
     "verify:sdk": "node scripts/verify-sdk.mjs"
   },

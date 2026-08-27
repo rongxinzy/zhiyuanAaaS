@@ -70,6 +70,16 @@ and SDK pins used for the package. Override `ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE
 `ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY`, `ZHIYUAN_ENTERPRISE_NOTICE_FILE`, or
 `ZHIYUAN_ENTERPRISE_CONFIG_FILE` when packaging from a staging directory.
 
+After `electron-builder --dir` finishes, verify the generated application directory with:
+
+```bash
+npm run verify:electron-package
+```
+
+Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` when the output is not the sibling
+`../zhiyuan-dev/dist/win-unpacked` directory. The check compares every injected enterprise file
+against the AaaS build output and fails on missing, extra, or mismatched Renderer assets.
+
 ## Password Session Foundation
 
 The extension provides a password-only AEP session service for Zhiyuan accounts. Operations are
