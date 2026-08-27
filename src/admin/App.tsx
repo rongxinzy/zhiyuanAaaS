@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, Boxes, Cpu, LogIn, LogOut, RefreshCw, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, Boxes, Cpu, LayoutDashboard, LogIn, LogOut, RefreshCw, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 import {
@@ -14,8 +14,11 @@ import { Button } from '../ui/components/ui/button.js';
 import { Field, FieldError, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
+import { AdminResourceTab, Resources } from './Resources.js';
 
 const language: AdminLanguage = 'zh';
+const AdminPage = { Overview: 'overview', Resources: 'resources' } as const;
+type AdminPage = (typeof AdminPage)[keyof typeof AdminPage];
 
 export function AdminApp() {
   const [client] = useState(() => new AdminConsoleClient());
@@ -23,6 +26,7 @@ export function AdminApp() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
+  const [page, setPage] = useState<AdminPage>(AdminPage.Overview);
 
   useEffect(() => {
     void client.restore().then(setSession).catch(() => setSession({ status: AdminConsoleStatus.SignedOut })).finally(() => setLoading(false));
@@ -58,7 +62,12 @@ export function AdminApp() {
       <ForbiddenView />
     );
   }
-  return <OverviewView client={client} identity={session.identity} pending={pending} onSignOut={signOut} />;
+  return <ConsoleLayout client={client} identity={session.identity} pending={pending} page={page} setPage={setPage} onSignOut={signOut} />;
+}
+
+function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: { readonly client: AdminConsoleClient; readonly identity?: AdminSession['identity']; readonly pending: boolean; readonly page: AdminPage; readonly setPage: (page: AdminPage) => void; readonly onSignOut: () => Promise<void> }) {
+  const [resourceTab, setResourceTab] = useState<AdminResourceTab>(AdminResourceTab.Users);
+  return <main className="flex min-h-full flex-col bg-background"><header className="flex min-h-12 items-center justify-between gap-4 border-b px-4 py-2 sm:px-6"><div className="min-w-0"><div className="text-sm font-semibold">{translate(language, 'brand')}</div><div className="text-xs text-muted-foreground">{translate(language, 'signedInAs')}: {identity?.user.displayName ?? translate(language, 'username')}</div></div><Button variant="ghost" size="sm" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button></header><div className="flex min-h-0 flex-1 flex-col sm:flex-row"><nav className="flex shrink-0 gap-1 border-b p-2 sm:w-52 sm:flex-col sm:border-b-0 sm:border-r sm:p-3" aria-label={translate(language, 'navigation') }><Button variant={page === AdminPage.Overview ? 'secondary' : 'ghost'} size="sm" className="justify-start" onClick={() => setPage(AdminPage.Overview)}><LayoutDashboard data-icon="inline-start" />{translate(language, 'overview')}</Button><Button variant={page === AdminPage.Resources ? 'secondary' : 'ghost'} size="sm" className="justify-start" onClick={() => setPage(AdminPage.Resources)}><Boxes data-icon="inline-start" />{translate(language, 'resources')}</Button></nav>{page === AdminPage.Overview ? <OverviewView client={client} identity={identity} pending={pending} onSignOut={onSignOut} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="flex gap-1 overflow-x-auto border-b px-4 py-2 sm:px-6">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <Button key={tab} variant={resourceTab === tab ? 'secondary' : 'ghost'} size="sm" onClick={() => setResourceTab(tab)}>{translate(language, tab)}</Button>)}</div><Resources client={client} tab={resourceTab} /></div>}</div></main>;
 }
 
 function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; readonly error: AdminTranslationKey | null; readonly onSubmit: (input: { enterpriseId: string; username: string; password: string }) => Promise<void> }) {
@@ -96,7 +105,7 @@ function OverviewView({ client, identity, pending, onSignOut }: { readonly clien
     { key: 'models' as const, value: overview.models, icon: ArrowRight },
     { key: 'pendingEvents' as const, value: overview.pendingEvents, icon: RefreshCw },
   ] : [];
-  return <main className="flex min-h-full flex-col bg-background"><header className="flex min-h-12 items-center justify-between gap-4 border-b px-4 py-2 sm:px-6"><div className="min-w-0"><div className="text-sm font-semibold">{translate(language, 'brand')}</div><div className="text-xs text-muted-foreground">{translate(language, 'signedInAs')}: {identity?.user.displayName ?? translate(language, 'username')}</div></div><Button variant="ghost" size="sm" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button></header><section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-5xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><h1 className="text-lg font-semibold">{translate(language, 'overview')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>{loading ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{translate(language, loading ? 'refreshing' : 'refresh')}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{cards.map(card => <OverviewCard key={card.key} label={translate(language, card.key)} value={card.value} icon={card.icon} loading={loading} />)}</div></div></section></main>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-5xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><h1 className="text-lg font-semibold">{translate(language, 'overview')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>{loading ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{translate(language, loading ? 'refreshing' : 'refresh')}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{cards.map(card => <OverviewCard key={card.key} label={translate(language, card.key)} value={card.value} icon={card.icon} loading={loading} />)}</div></div></section>;
 }
 
 function OverviewCard({ label, value, icon: Icon, loading }: { readonly label: string; readonly value: number; readonly icon: typeof Users; readonly loading: boolean }) {

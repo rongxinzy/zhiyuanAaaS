@@ -2,8 +2,10 @@ import {
   AepClient,
   MemoryTokenStore,
   type AepTokenStore,
+  type AdminAgent,
   type CurrentIdentity,
   type Page,
+  type PlatformUser,
 } from '@aep/sdk-node';
 
 const ADMIN_AGENT_VERSION = '0.1.0';
@@ -27,6 +29,27 @@ export interface AdminOverview {
 export interface AdminSession {
   readonly status: AdminConsoleStatus;
   readonly identity?: CurrentIdentity;
+}
+
+export interface AdminSkill {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly enabled: boolean;
+}
+
+export interface AdminSkillAssignment {
+  readonly id: string;
+  readonly skillId: string;
+  readonly subjectType: string;
+  readonly subjectId: string;
+}
+
+export interface AdminResources {
+  readonly users: readonly PlatformUser[];
+  readonly agents: readonly AdminAgent[];
+  readonly skills: readonly AdminSkill[];
+  readonly assignments: readonly AdminSkillAssignment[];
 }
 
 export class AdminConsoleClient {
@@ -78,6 +101,34 @@ export class AdminConsoleClient {
       models: listCount(models),
       pendingEvents: pendingEventCount(events),
     };
+  }
+
+  async resources(): Promise<AdminResources> {
+    const client = this.#requireClient();
+    const [users, agents, skills, assignments] = await Promise.all([
+      client.listUsers(),
+      client.listAgents(),
+      client.listSkills(),
+      client.listSkillAssignments(),
+    ]);
+    return {
+      users: users.items,
+      agents: agents.items,
+      skills: parseSkills(skills),
+      assignments: parseAssignments(assignments),
+    };
+  }
+
+  async updateUser(userId: string, input: { readonly status: 'active' | 'disabled' }): Promise<void> {
+    await this.#requireClient().updateUser(userId, input);
+  }
+
+  async updateSkill(skillId: string, input: { readonly enabled: boolean }): Promise<void> {
+    await this.#requireClient().updateSkill(skillId, input);
+  }
+
+  async deleteSkillAssignment(assignmentId: string): Promise<void> {
+    await this.#requireClient().deleteSkillAssignment(assignmentId);
   }
 
   #getClient(): AepClient {
@@ -172,6 +223,53 @@ function listCount(value: unknown): number {
     return (value as { models: unknown[] }).models.length;
   }
   return 0;
+}
+
+function parseSkills(value: unknown): AdminSkill[] {
+  const items = arrayFrom(value, 'skills');
+  return items.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.id !== 'string' || typeof record.name !== 'string') return [];
+    return [{
+      id: record.id,
+      name: record.name,
+      ...(typeof record.description === 'string' ? { description: record.description } : {}),
+      enabled: record.enabled !== false,
+    }];
+  });
+}
+
+function parseAssignments(value: unknown): AdminSkillAssignment[] {
+  return arrayFrom(value, 'items').flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const subject = record.subject;
+    if (
+      typeof record.id !== 'string' ||
+      typeof record.skillId !== 'string' ||
+      !subject ||
+      typeof subject !== 'object' ||
+      typeof (subject as Record<string, unknown>).type !== 'string' ||
+      typeof (subject as Record<string, unknown>).id !== 'string'
+    ) return [];
+    const subjectType = (subject as Record<string, unknown>).type;
+    const subjectId = (subject as Record<string, unknown>).id;
+    if (typeof subjectType !== 'string' || typeof subjectId !== 'string') return [];
+    return [{
+      id: record.id,
+      skillId: record.skillId,
+      subjectType,
+      subjectId,
+    }];
+  });
+}
+
+function arrayFrom(value: unknown, key: string): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  const items = (value as Record<string, unknown>)[key];
+  return Array.isArray(items) ? items : [];
 }
 
 function pendingEventCount(value: unknown): number {
