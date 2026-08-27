@@ -74,6 +74,7 @@ export class AdminConsoleClient {
   #client: AepClient | null = null;
 
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
+    ensureRequestIdCrypto();
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#tokenStore = tokenStore ?? new SessionTokenStore();
   }
@@ -217,6 +218,28 @@ export class AdminConsoleClient {
     return hasAdminRole
       ? { status: AdminConsoleStatus.Authenticated, identity }
       : { status: AdminConsoleStatus.Forbidden, identity };
+  }
+}
+
+function ensureRequestIdCrypto(): void {
+  const root = globalThis as typeof globalThis & {
+    crypto?: {randomUUID?: () => string};
+  };
+  if (typeof root.crypto?.randomUUID === 'function') return;
+  const fallback = {
+    randomUUID: () => {
+      const bytes = Array.from({length: 16}, () => Math.floor(Math.random() * 256));
+      bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+      bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+      const hex = bytes.map(value => value.toString(16).padStart(2, '0'));
+      return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+    },
+  };
+  try {
+    Object.defineProperty(root, 'crypto', {configurable: true, value: fallback});
+  } catch {
+    // The host may expose a non-configurable global; the SDK will report its
+    // native error in that environment instead of preventing app startup.
   }
 }
 
