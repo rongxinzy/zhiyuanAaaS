@@ -263,7 +263,14 @@ export class SessionTokenStore implements AepTokenStore {
 
 function defaultBaseUrl(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  return env?.VITE_AEP_BASE_URL ?? 'http://localhost:8080';
+  if (env?.VITE_AEP_BASE_URL) return env.VITE_AEP_BASE_URL;
+  // The admin server proxies /aep to the control service. Keeping the client
+  // same-origin avoids browser CORS failures and also works behind a reverse
+  // proxy in production.
+  if (typeof window !== 'undefined' && window.location.origin !== 'null') {
+    return window.location.origin;
+  }
+  return 'http://localhost:8080';
 }
 
 function platform(): 'windows' | 'macos' | 'linux' {
