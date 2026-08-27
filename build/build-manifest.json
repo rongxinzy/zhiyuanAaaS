@@ -15,7 +15,7 @@
     "packagedDirectory": "zhiyuan-enterprise/ui"
   },
   "zhiyuanCore": {
-    "commit": "cbb048e50bc6d9d28f0cf50ff6b1a2d3c2b37e80"
+    "commit": "a7139ece7c6f7cbd8580c6b4cd3af572058b2085"
   },
   "aepProtocol": {
     "commit": "d6cc0a51e70b1c5f5dbd85a7a5c0d4a37b6487fc"
