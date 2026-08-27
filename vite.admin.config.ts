@@ -12,4 +12,12 @@ export default defineConfig({
   plugins: [tailwindcss(), react()],
   resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
   build: { outDir: path.resolve(repositoryRoot, 'dist/admin'), emptyOutDir: true, sourcemap: true, target: 'chrome130' },
+  server: {
+    proxy: {
+      '/aep': {
+        target: process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
 });

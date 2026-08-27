@@ -33,6 +33,16 @@ browser session, enforces the administrator role, and shows users, Agents, Skill
 and pending control events. Use `npm run build:admin` to emit the deployable static console at
 `dist/admin`.
 
+For a same-origin deployment, build first and use the bundled static server instead:
+
+```bash
+npm run verify:admin
+npm run serve:admin
+```
+
+The server serves the console and proxies `/aep/*` to `ZHIYUAN_AEP_BASE_URL` (default
+`http://localhost:8080`). Set `ZHIYUAN_ADMIN_PORT` to change the listen port.
+
 `npm run build` emits the Node extension at `dist/extension.cjs` and the enterprise session UI at
 `dist/ui/index.html`. During public application development, set
 `ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of the extension bundle. Set
