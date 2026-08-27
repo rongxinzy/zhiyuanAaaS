@@ -20,6 +20,12 @@ try {
   const assets = [...html.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map(match => match[1]);
   assert.ok(assets.length >= 2, 'Admin entrypoint must include JavaScript and CSS assets.');
   for (const asset of assets) await fs.access(path.join(root, asset));
+  const cssAssets = assets.filter(asset => asset.endsWith('.css'));
+  assert.ok(cssAssets.length > 0, 'Admin entrypoint must include a CSS asset.');
+  const css = await fs.readFile(path.join(root, cssAssets[0]), 'utf8');
+  assert.match(css, /\.h-10(?:\{|,)/, 'Admin CSS must include the shadcn button height utility.');
+  assert.match(css, /\.bg-primary(?:\{|,)/, 'Admin CSS must include the shadcn primary button utility.');
+  assert.match(css, /\.inline-flex(?:\{|,)/, 'Admin CSS must include the shadcn inline flex utility.');
   console.log(JSON.stringify({ status: 'passed', origin: `http://127.0.0.1:${port}`, assets }));
 } finally {
   child.kill();
