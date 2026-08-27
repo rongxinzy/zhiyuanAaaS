@@ -6,6 +6,7 @@ import {
   type AdminModel,
   type ModelAssignment,
   type CurrentIdentity,
+  type JsonObject,
   type Page,
   type PlatformUser,
 } from '@aep/sdk-node';
@@ -57,6 +58,14 @@ export interface AdminResources {
 export interface AdminModels {
   readonly models: readonly AdminModel[];
   readonly assignments: readonly ModelAssignment[];
+}
+
+export interface AdminEventRecord {
+  readonly eventId?: string;
+  readonly type?: string;
+  readonly agentId?: string;
+  readonly receivedAt?: string;
+  readonly createdAt?: string;
 }
 
 export class AdminConsoleClient {
@@ -157,6 +166,29 @@ export class AdminConsoleClient {
 
   async deleteModelAssignment(assignmentId: string): Promise<void> {
     await this.#requireClient().deleteModelAssignment(assignmentId);
+  }
+
+  async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
+    return this.#requireClient().createControlEvent(input) as Promise<Record<string, unknown>>;
+  }
+
+  async deliverySummary(eventId: string): Promise<unknown> {
+    return this.#requireClient().listControlEventDeliveries(eventId);
+  }
+
+  async searchAudit(filters?: Record<string, string | number>): Promise<readonly AdminEventRecord[]> {
+    const result = await this.#requireClient().searchEvents(filters);
+    return arrayFrom(result, 'items').flatMap(item => {
+      if (!item || typeof item !== 'object') return [];
+      const record = item as Record<string, unknown>;
+      return [{
+        ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
+        ...(typeof record.type === 'string' ? { type: record.type } : {}),
+        ...(typeof record.agentId === 'string' ? { agentId: record.agentId } : {}),
+        ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
+        ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
+      }];
+    });
   }
 
   #getClient(): AepClient {
