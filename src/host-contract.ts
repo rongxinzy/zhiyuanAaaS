@@ -3,6 +3,7 @@ export const ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION = 1 as const;
 export const ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION = 1 as const;
+export const ZHIYUAN_AGENT_CONTROL_CAPABILITY_API_VERSION = 1 as const;
 
 export const ModelCapabilityStatus = {
   Supported: 'supported',
@@ -170,6 +171,12 @@ export interface ZhiyuanManagedProviderHostCapability {
   registerSource(source: ZhiyuanManagedProviderSource): () => void;
 }
 
+export interface ZhiyuanAgentControlHostCapability {
+  readonly apiVersion: typeof ZHIYUAN_AGENT_CONTROL_CAPABILITY_API_VERSION;
+  readonly skillRoot: string;
+  notifySkillsChanged(): void;
+}
+
 export interface ZhiyuanEnterpriseHostContext {
   readonly apiVersion: typeof ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION;
   readonly appVersion: string;
@@ -181,6 +188,7 @@ export interface ZhiyuanEnterpriseHostContext {
     readonly renderer: ZhiyuanEnterpriseRendererHostCapability | null;
     readonly settings: ZhiyuanEnterpriseSettingsHostCapability | null;
     readonly managedProvider: ZhiyuanManagedProviderHostCapability | null;
+    readonly agentControl: ZhiyuanAgentControlHostCapability | null;
   };
 }
 

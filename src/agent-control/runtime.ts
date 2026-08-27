@@ -27,6 +27,7 @@ export interface AgentControlRuntimeOptions {
   readonly now?: () => Date;
   readonly createEventId?: () => string;
   readonly onError?: (error: unknown) => void;
+  readonly onSkillsChanged?: () => void;
 }
 
 export class AgentControlRuntime {
@@ -91,6 +92,7 @@ export class AgentControlRuntime {
       status: 'succeeded',
       items: result.items.map(item => ({ skillId: item.skillId, status: item.status })),
     });
+    if (result.items.some(item => item.status !== 'unchanged')) this.#options.onSkillsChanged?.();
   }
 
   async flushTelemetry(): Promise<void> {
@@ -196,6 +198,7 @@ export class AgentControlRuntime {
       status: 'succeeded',
       items: result.items.map(item => ({ skillId: item.skillId, status: item.status })),
     });
+    if (result.items.some(item => item.status !== 'unchanged')) this.#options.onSkillsChanged?.();
     return result.revision;
   }
 

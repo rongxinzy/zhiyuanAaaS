@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import type { AepSessionState } from '@aep/sdk-node';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
   createZhiyuanEnterpriseExtension,
@@ -10,6 +14,7 @@ import {
   ZHIYUAN_ENTERPRISE_SETTINGS_PAGES,
 } from './extension.js';
 import {
+  ZHIYUAN_AGENT_CONTROL_CAPABILITY_API_VERSION,
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
   type ZhiyuanManagedProviderSource,
   type ZhiyuanEnterpriseSessionProvider,
@@ -18,6 +23,15 @@ import {
 import { ZhiyuanPasswordSession } from './session/password-session.js';
 
 describe('Zhiyuan enterprise extension contract', () => {
+  const temporaryDirectories: string[] = [];
+
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const directory of temporaryDirectories.splice(0)) {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   test('exports the API v1 factory expected by the public host', async () => {
     const extension = createZhiyuanEnterpriseExtension();
     const context = hostContext();
@@ -226,6 +240,61 @@ describe('Zhiyuan enterprise extension contract', () => {
       ),
     ).rejects.toThrow('managed provider capability API version is not supported');
   });
+
+  test('starts and stops the Agent control backend through the host capability', async () => {
+    vi.useFakeTimers();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zhiyuan-extension-'));
+    temporaryDirectories.push(directory);
+    const heartbeat = vi.fn(async () => ({
+      serverTime: '2026-08-26T00:00:00.000Z',
+      hasPendingControlEvents: false,
+      controlEventWatermark: null,
+      nextHeartbeatAfterSeconds: 30,
+    }));
+    const session = passwordSession({ heartbeat });
+    const notifySkillsChanged = vi.fn();
+    const extension = new ZhiyuanAaaSExtension({
+      createSession: vi.fn(async () => session),
+      warn: vi.fn(),
+    });
+
+    await extension.initialize(
+      hostContext(
+        null,
+        null,
+        null,
+        null,
+        {
+          apiVersion: ZHIYUAN_AGENT_CONTROL_CAPABILITY_API_VERSION,
+          skillRoot: path.join(directory, 'skills'),
+          notifySkillsChanged,
+        },
+        { userData: path.join(directory, 'user-data') },
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(heartbeat).toHaveBeenCalled();
+    await extension.dispose();
+    const heartbeatCalls = heartbeat.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(heartbeat).toHaveBeenCalledTimes(heartbeatCalls);
+    expect(notifySkillsChanged).not.toHaveBeenCalled();
+  });
+
+  test('fails closed for an incompatible Agent control capability', async () => {
+    const extension = createZhiyuanEnterpriseExtension();
+
+    await expect(
+      extension.initialize(
+        hostContext(null, null, null, null, {
+          apiVersion: 2,
+          skillRoot: 'D:\\zhiyuan\\skills',
+          notifySkillsChanged: vi.fn(),
+        } as never),
+      ),
+    ).rejects.toThrow('Agent control capability API version is not supported');
+  });
 });
 
 function hostContext(
@@ -233,6 +302,8 @@ function hostContext(
   renderer: ZhiyuanEnterpriseHostContext['capabilities']['renderer'] = null,
   settings: ZhiyuanEnterpriseHostContext['capabilities']['settings'] = null,
   managedProvider: ZhiyuanEnterpriseHostContext['capabilities']['managedProvider'] = null,
+  agentControl: ZhiyuanEnterpriseHostContext['capabilities']['agentControl'] = null,
+  paths: Partial<ZhiyuanEnterpriseHostContext['paths']> = {},
 ): ZhiyuanEnterpriseHostContext {
   return Object.freeze({
     apiVersion: ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -242,8 +313,9 @@ function hostContext(
     paths: Object.freeze({
       resources: 'D:\\zhiyuan\\resources',
       userData: 'D:\\zhiyuan\\user-data',
+      ...paths,
     }),
-    capabilities: Object.freeze({ session, renderer, settings, managedProvider }),
+    capabilities: Object.freeze({ session, renderer, settings, managedProvider, agentControl }),
   });
 }
 
@@ -265,6 +337,19 @@ function passwordSession(
       apiKey: 'model-token',
       expiresIn: 300,
     })),
+    getSkillManifest: vi.fn(async () => ({ notModified: true as const, etag: null })),
+    downloadSkillPackage: vi.fn(async () => new Uint8Array()),
+    reportSkillSyncResult: vi.fn(async () => undefined),
+    uploadEventBatch: vi.fn(async () => ({ accepted: [], rejected: [] })),
+    heartbeat: vi.fn(async () => ({
+      serverTime: '2026-08-26T00:00:00.000Z',
+      hasPendingControlEvents: false,
+      controlEventWatermark: null,
+      nextHeartbeatAfterSeconds: 30,
+    })),
+    listControlEvents: vi.fn(async () => ({ items: [], nextCursor: null })),
+    acknowledgeControlEvent: vi.fn(async () => undefined),
+    reportControlEventResult: vi.fn(async () => undefined),
     logout: vi.fn(async () => undefined),
     ...overrides,
   });

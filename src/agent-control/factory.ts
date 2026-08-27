@@ -11,6 +11,7 @@ export interface ZhiyuanAgentControlBackendOptions {
   readonly platform: 'windows' | 'macos' | 'linux';
   readonly retryDelayMs?: number;
   readonly onError?: (error: unknown) => void;
+  readonly onSkillsChanged?: () => void;
 }
 
 export class ZhiyuanAgentControlBackend {
@@ -33,6 +34,7 @@ export class ZhiyuanAgentControlBackend {
       platform: options.platform,
       ...(options.retryDelayMs === undefined ? {} : { retryDelayMs: options.retryDelayMs }),
       ...(options.onError === undefined ? {} : { onError: options.onError }),
+      ...(options.onSkillsChanged === undefined ? {} : { onSkillsChanged: options.onSkillsChanged }),
     };
     this.runtime = new AgentControlRuntime(runtimeOptions);
   }

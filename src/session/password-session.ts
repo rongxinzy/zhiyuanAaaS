@@ -6,6 +6,8 @@ import type {
   ModelConnection,
 } from '@aep/sdk-node';
 
+import type { AgentControlClient } from '../agent-control/types.js';
+
 export interface PasswordSessionClient {
   getSessionState(): Promise<AepSessionState>;
   restoreSession(): Promise<AepTokens | null>;
@@ -20,6 +22,14 @@ export interface PasswordSessionClient {
   listAgentModels(): Promise<AgentModelList>;
   getModelConnection(): Promise<ModelConnection>;
   logout(): Promise<void>;
+  getSkillManifest?: AgentControlClient['getSkillManifest'];
+  downloadSkillPackage?: AgentControlClient['downloadSkillPackage'];
+  reportSkillSyncResult?: AgentControlClient['reportSkillSyncResult'];
+  uploadEventBatch?: AgentControlClient['uploadEventBatch'];
+  heartbeat?: AgentControlClient['heartbeat'];
+  listControlEvents?: AgentControlClient['listControlEvents'];
+  acknowledgeControlEvent?: AgentControlClient['acknowledgeControlEvent'];
+  reportControlEventResult?: AgentControlClient['reportControlEventResult'];
 }
 
 export type ZhiyuanSessionSnapshot =
@@ -150,6 +160,24 @@ export class ZhiyuanPasswordSession {
       }
       return this.#client.getModelConnection();
     });
+  }
+
+  getAgentControlClient(): AgentControlClient {
+    const candidate = this.#client as Partial<AgentControlClient>;
+    const required = [
+      'getSkillManifest',
+      'downloadSkillPackage',
+      'reportSkillSyncResult',
+      'uploadEventBatch',
+      'heartbeat',
+      'listControlEvents',
+      'acknowledgeControlEvent',
+      'reportControlEventResult',
+    ] as const;
+    if (required.some(method => typeof candidate[method] !== 'function')) {
+      throw new Error('Zhiyuan enterprise session does not support Agent control operations.');
+    }
+    return candidate as AgentControlClient;
   }
 
   async #loadIdentityOrMarkRecoverable(): Promise<void> {
