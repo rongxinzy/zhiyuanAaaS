@@ -141,3 +141,34 @@ body {
     @apply font-sans;
   }
 }
+
+/* The admin console can be mounted inside the desktop renderer, where the
+   host app has broad button rules. Keep shadcn primitives deterministic at
+   this boundary while preserving the explicit full-width controls. */
+#root.zhiyuan-admin-console [data-slot='button'] {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  text-align: center;
+}
+
+#root.zhiyuan-admin-console [data-slot='button'].w-full {
+  width: 100%;
+}
+
+#root.zhiyuan-admin-console [data-admin-nav='true'] {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+#root.zhiyuan-admin-console [data-admin-tab='true'] {
+  justify-content: center;
+  text-align: center;
+}
+
+#root.zhiyuan-admin-console [data-slot='button'] > svg {
+  flex: 0 0 auto;
+}

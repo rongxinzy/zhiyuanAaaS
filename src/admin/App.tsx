@@ -154,11 +154,11 @@ function BrandMark() {
 }
 
 function NavItem({ icon: Icon, active, label, onClick, compact = false }: { readonly icon: LucideIcon; readonly active: boolean; readonly label: string; readonly onClick: () => void; readonly compact?: boolean }) {
-  return <Button variant="ghost" size="sm" className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
+  return <Button data-admin-nav="true" variant="ghost" size="sm" className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
 }
 
 function TabButton({ active, label, onClick }: { readonly active: boolean; readonly label: string; readonly onClick: () => void }) {
-  return <Button variant="ghost" size="sm" className={cn('shrink-0 rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}>{label}</Button>;
+  return <Button data-admin-tab="true" variant="ghost" size="sm" className={cn('shrink-0 rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}>{label}</Button>;
 }
 
 function PageTransition({ pageKey, children }: { readonly pageKey: string; readonly children: ReactNode }) {
