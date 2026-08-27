@@ -17,7 +17,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
   AdminConsoleClient,
@@ -113,7 +113,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
   const activeLabel = navigation.find(item => item.page === page)?.label ?? 'overview';
   return (
     <main className="flex min-h-full bg-background">
-      <aside className="hidden w-[220px] shrink-0 flex-col border-r border-border bg-muted/30 md:flex">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-muted md:flex">
         <div className="flex h-16 items-center gap-3 border-b border-border px-5">
           <BrandMark />
           <div className="min-w-0"><div className="truncate text-sm font-semibold">{translate(language, 'brandShort')}</div><div className="truncate text-xs text-muted-foreground">{translate(language, 'adminWorkspace')}</div></div>
@@ -128,7 +128,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{translate(language, 'controlPlaneDescription')}</p>
           </div>
         </div>
-        <div className="border-t p-3">
+        <div className="border-t border-border p-3">
           <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-medium">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-muted-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
           <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button>
         </div>
@@ -189,36 +189,17 @@ function ThemeToggle() {
         persistAdminTheme(target);
       }}
     >
-      <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+      <Icon className="text-muted-foreground" aria-hidden="true" />
     </Button>
   );
 }
 
 function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; readonly error: AdminTranslationKey | null; readonly onSubmit: (input: { enterpriseId: string; username: string; password: string }) => Promise<void> }) {
-  const formRef = useRef<HTMLFormElement>(null);
   const [validationError, setValidationError] = useState<AdminTranslationKey | null>(null);
   const displayedError = validationError ?? error;
-  useEffect(() => {
-    const form = formRef.current;
-    if (!form) return;
-    const submitCredentials = () => {
-      const values = new FormData(form);
-      const enterpriseId = String(values.get('enterpriseId') ?? '').trim();
-      const username = String(values.get('username') ?? '').trim();
-      const password = String(values.get('password') ?? '');
-      if (!enterpriseId || !username || !password) { setValidationError('requiredFields'); return; }
-      setValidationError(null);
-      void onSubmit({ enterpriseId, username, password });
-    };
-    const handleSubmit = (event: SubmitEvent) => { event.preventDefault(); submitCredentials(); };
-    form.addEventListener('submit', handleSubmit);
-    return () => form.removeEventListener('submit', handleSubmit);
-  }, [onSubmit]);
-  const submitFromClick = (event: MouseEvent<HTMLButtonElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = formRef.current;
-    if (!form) return;
-    const values = new FormData(form);
+    const values = new FormData(event.currentTarget);
     const enterpriseId = String(values.get('enterpriseId') ?? '').trim();
     const username = String(values.get('username') ?? '').trim();
     const password = String(values.get('password') ?? '');
@@ -226,11 +207,11 @@ function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; re
     setValidationError(null);
     void onSubmit({ enterpriseId, username, password });
   };
-  return <main className="relative flex min-h-full items-center justify-center bg-background p-6"><div className="absolute right-4 top-4"><ThemeToggle /></div><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-4"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-5" aria-hidden="true" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><div className="flex flex-col gap-1.5"><h1 className="text-xl font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></div></header><form ref={formRef} className="flex flex-col gap-5" noValidate aria-busy={pending}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending} onClick={submitFromClick}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
+  return <main className="relative flex min-h-full items-center justify-center bg-background p-6"><div className="absolute right-4 top-4"><ThemeToggle /></div><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-4"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-5" aria-hidden="true" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><div className="flex flex-col gap-1.5"><h1 className="text-lg font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></div></header><form className="flex flex-col gap-5" noValidate aria-busy={pending} onSubmit={handleSubmit}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field data-invalid={Boolean(validationError)}><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} aria-invalid={Boolean(validationError)} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
 }
 
 function ForbiddenView({ identity }: { readonly identity: string | undefined }) {
-  return <main className="flex min-h-full items-center justify-center bg-muted/30 p-6"><Alert className="max-w-md bg-background"><AlertCircle aria-hidden="true" /><AlertTitle>{translate(language, 'accessDeniedTitle')}</AlertTitle><AlertDescription>{translate(language, 'accessDeniedDescription')}{identity ? ` (${identity})` : ''}</AlertDescription></Alert></main>;
+  return <main className="flex min-h-full items-center justify-center bg-muted p-6"><Alert className="max-w-md"><AlertCircle aria-hidden="true" /><AlertTitle>{translate(language, 'accessDeniedTitle')}</AlertTitle><AlertDescription>{translate(language, 'accessDeniedDescription')}{identity ? ` (${identity})` : ''}</AlertDescription></Alert></main>;
 }
 
 function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
@@ -239,9 +220,9 @@ function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
   const [error, setError] = useState(false);
   const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview()); } catch { setError(true); } finally { setLoading(false); } }, [client]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-5 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card className="bg-background"><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="outline"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="outline"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
 }
 
 function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | undefined; readonly icon: LucideIcon }) {
-  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-muted-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-xl font-semibold leading-tight">{value}</div>}</Card>;
+  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-muted-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
 }

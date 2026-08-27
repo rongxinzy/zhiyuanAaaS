@@ -2,6 +2,11 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+/* Admin Vite uses src/admin as its root, while the shared shadcn primitives
+   live beside it under src/ui. Keep both trees in Tailwind's source graph. */
+@source "./components";
+@source "../admin";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -142,9 +147,8 @@ body {
   }
 }
 
-/* The admin console can be mounted inside the desktop renderer, where the
-   host app has broad button rules. Keep shadcn primitives deterministic at
-   this boundary while preserving the explicit full-width controls. */
+/* Keep the console boundary deterministic if it is ever embedded by a host
+   renderer, while preserving the explicit full-width controls. */
 #root.zhiyuan-admin-console [data-slot='button'] {
   box-sizing: border-box;
   display: inline-flex;
