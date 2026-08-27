@@ -1,0 +1,42 @@
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest';
+
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+
+import { AdminResourceTab, Resources } from './Resources.js';
+
+describe('admin resources', () => {
+  afterEach(() => cleanup());
+
+  test('renders users and toggles status through the client', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+        agents: [],
+        skills: [],
+        assignments: [],
+      }),
+      updateUser: vi.fn().mockResolvedValue(undefined),
+      updateSkill: vi.fn(),
+      deleteSkillAssignment: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '停用' }));
+    await waitFor(() => expect(client.updateUser).toHaveBeenCalledWith('u1', { status: 'disabled' }));
+  });
+
+  test('renders assignment and revokes it', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], agents: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
+      updateUser: vi.fn(),
+      updateSkill: vi.fn(),
+      deleteSkillAssignment: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
+    expect(await screen.findByText('写作')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '撤销授权' }));
+    await waitFor(() => expect(client.deleteSkillAssignment).toHaveBeenCalledWith('a1'));
+  });
+});
