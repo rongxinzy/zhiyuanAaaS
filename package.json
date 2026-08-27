@@ -11,7 +11,7 @@
     "build": "npm run build:extension && npm run build:ui && npm run build:admin",
     "build:admin": "vite build --config vite.admin.config.ts",
     "dev:admin": "vite --config vite.admin.config.ts",
-    "serve:admin": "node scripts/serve-admin.mjs",
+    "serve:admin": "npm run build:admin && node scripts/serve-admin.mjs",
     "verify:admin": "npm run build:admin && node scripts/verify-admin-console.mjs",
     "build:extension": "tsup",
     "build:ui": "vite build",
