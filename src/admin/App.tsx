@@ -29,6 +29,7 @@ import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.
 import { Alert, AlertDescription, AlertTitle } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
+import { Card } from '../ui/components/ui/card.js';
 import { Field, FieldError, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
@@ -148,7 +149,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
 }
 
 function BrandMark() {
-  return <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><ShieldCheck className="size-4" aria-hidden="true" /></div>;
+  return <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-4" aria-hidden="true" /></div>;
 }
 
 function NavItem({ icon: Icon, active, label, onClick, compact = false }: { readonly icon: LucideIcon; readonly active: boolean; readonly label: string; readonly onClick: () => void; readonly compact?: boolean }) {
@@ -220,20 +221,7 @@ function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; re
     setValidationError(null);
     void onSubmit({ enterpriseId, username, password });
   };
-  return (
-    <main className="relative grid min-h-full bg-background lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="absolute right-4 top-4 z-10"><ThemeToggle /></div>
-      <section className="hidden flex-col justify-between bg-muted/40 p-8 lg:flex xl:p-12">
-        <div><div className="flex items-center gap-3"><BrandMark /><span className="text-base font-semibold">{translate(language, 'brandShort')}</span></div><div className="mt-24 max-w-md"><p className="text-sm font-medium text-muted-foreground">{translate(language, 'adminWorkspace')}</p><h1 className="mt-3 text-xl font-semibold leading-snug">{translate(language, 'loginAsideTitle')}</h1><p className="mt-4 text-sm leading-relaxed text-muted-foreground">{translate(language, 'loginAsideDescription')}</p></div></div>
-        <p className="text-xs text-muted-foreground">{translate(language, 'loginSecureNote')}</p>
-      </section>
-      <section className="flex items-center justify-center px-6 py-12 sm:px-10"><div className="w-full max-w-sm">
-        <div className="mb-8 lg:hidden"><div className="flex items-center gap-3"><BrandMark /><span className="text-base font-semibold">{translate(language, 'brand')}</span></div></div>
-        <header className="mb-8"><p className="text-sm font-medium text-muted-foreground">{translate(language, 'adminWorkspace')}</p><h1 className="mt-2 text-lg font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="mt-3 text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></header>
-        <form ref={formRef} className="flex flex-col gap-5" noValidate aria-busy={pending}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="mt-2 w-full" aria-busy={pending} onClick={submitFromClick}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form>
-      </div></section>
-    </main>
-  );
+  return <main className="relative flex min-h-full items-center justify-center bg-background p-6"><div className="absolute right-4 top-4"><ThemeToggle /></div><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-4"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-5" aria-hidden="true" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><div className="flex flex-col gap-1.5"><h1 className="text-xl font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></div></header><form ref={formRef} className="flex flex-col gap-5" noValidate aria-busy={pending}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending} onClick={submitFromClick}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
 }
 
 function ForbiddenView({ identity }: { readonly identity: string | undefined }) {
@@ -250,5 +238,5 @@ function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
 }
 
 function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | undefined; readonly icon: LucideIcon }) {
-  return <article className="flex min-h-28 flex-col justify-between gap-4 rounded-lg border bg-card p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-muted-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-xl font-semibold leading-tight">{value}</div>}</article>;
+  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-muted-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-xl font-semibold leading-tight">{value}</div>}</Card>;
 }
