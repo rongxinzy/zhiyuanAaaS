@@ -56,9 +56,8 @@ export function Resources({ client, tab }: ResourcesProps) {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         <div className="flex items-start justify-between gap-4">
           <div><p className="text-xs text-muted-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, resourceTitle(tab))}</h2></div>
-          <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
-            {loading ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-            {translate(language, loading ? 'refreshing' : 'refresh')}
+          <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>
+            {loading ? <Spinner /> : <RefreshCw />}
           </Button>
         </div>
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
