@@ -8,12 +8,14 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "build": "npm run build:extension && npm run build:ui",
+    "build": "npm run build:extension && npm run build:ui && npm run build:admin",
+    "build:admin": "vite build --config vite.admin.config.ts",
+    "dev:admin": "vite --config vite.admin.config.ts",
     "build:extension": "tsup",
     "build:ui": "vite build",
     "check": "npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest",
     "test": "vitest run --config vitest.config.ts",
-    "typecheck": "tsc --noEmit && tsc --project tsconfig.ui.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.ui.json --noEmit && tsc --project tsconfig.admin.json --noEmit",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
