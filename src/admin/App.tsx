@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowRight, Boxes, Cpu, LayoutDashboard, LogIn, LogOut, RefreshCw, Users } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   AdminConsoleClient,
@@ -73,21 +73,29 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
 }
 
 function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; readonly error: AdminTranslationKey | null; readonly onSubmit: (input: { enterpriseId: string; username: string; password: string }) => Promise<void> }) {
-  const [enterpriseId, setEnterpriseId] = useState('demo');
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
   const [validationError, setValidationError] = useState<AdminTranslationKey | null>(null);
   const displayedError = validationError ?? error;
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!enterpriseId.trim() || !username.trim() || !password) {
-      setValidationError('requiredFields');
-      return;
-    }
-    setValidationError(null);
-    void onSubmit({ enterpriseId: enterpriseId.trim(), username: username.trim(), password });
-  };
-  return <main className="flex min-h-full items-center justify-center bg-background p-6"><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-2"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><Boxes className="size-5" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><h1 className="text-xl font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></header><form className="flex flex-col gap-5" onSubmit={submit} noValidate aria-busy={pending}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" value={enterpriseId} onChange={event => setEnterpriseId(event.target.value)} placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" value={username} onChange={event => setUsername(event.target.value)} placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) return;
+    const handleSubmit = (event: SubmitEvent) => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const enterpriseId = String(values.get('enterpriseId') ?? '').trim();
+      const username = String(values.get('username') ?? '').trim();
+      const password = String(values.get('password') ?? '');
+      if (!enterpriseId || !username || !password) {
+        setValidationError('requiredFields');
+        return;
+      }
+      setValidationError(null);
+      void onSubmit({ enterpriseId, username, password });
+    };
+    form.addEventListener('submit', handleSubmit);
+    return () => form.removeEventListener('submit', handleSubmit);
+  }, [onSubmit]);
+  return <main className="flex min-h-full items-center justify-center bg-background p-6"><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-2"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><Boxes className="size-5" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><h1 className="text-xl font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></header><form ref={formRef} className="flex flex-col gap-5" noValidate aria-busy={pending}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
 }
 
 function ForbiddenView({ identity }: { readonly identity?: string }) {
