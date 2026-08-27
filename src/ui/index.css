@@ -182,6 +182,7 @@ body {
   display: inline-flex !important;
   flex-direction: row !important;
   align-items: center !important;
+  border-radius: var(--radius-md) !important;
   width: max-content;
   min-width: max-content;
   white-space: nowrap;
