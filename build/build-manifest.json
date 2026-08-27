@@ -14,6 +14,10 @@
     ],
     "packagedDirectory": "zhiyuan-enterprise/ui"
   },
+  "adminConsole": {
+    "artifact": "dist/admin",
+    "packagedDirectory": "zhiyuan-enterprise/admin"
+  },
   "zhiyuanCore": {
     "commit": "a7139ece7c6f7cbd8580c6b4cd3af572058b2085"
   },

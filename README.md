@@ -43,11 +43,12 @@ npm run serve:admin
 The server serves the console and proxies `/aep/*` to `ZHIYUAN_AEP_BASE_URL` (default
 `http://localhost:8080`). Set `ZHIYUAN_ADMIN_PORT` to change the listen port.
 
-`npm run build` emits the Node extension at `dist/extension.cjs` and the enterprise session UI at
-`dist/ui/index.html`. During public application development, set
+`npm run build` emits the Node extension at `dist/extension.cjs`, the enterprise session UI at
+`dist/ui/index.html`, and the standalone Admin Console at `dist/admin/index.html`. During public application development, set
 `ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of the extension bundle. Set
-`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY` to the absolute path of `dist/ui` when packaging the public
-application. `build/electron-builder.overlay.yml` places both outputs under
+`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY` to the absolute path of `dist/ui` and
+`ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY` to the absolute path of `dist/admin` when packaging the public
+application. `build/electron-builder.overlay.yml` places all outputs under
 `resources/zhiyuan-enterprise` without overwriting public source files.
 
 The current extension provides API v1 lifecycle, password-session, enterprise renderer, enterprise
