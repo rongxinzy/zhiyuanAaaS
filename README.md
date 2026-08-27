@@ -19,6 +19,20 @@ npm ci
 npm run check
 ```
 
+The Admin Console is a standalone browser entrypoint for enterprise operators. Start the AEP
+control service first, then run the console in a second terminal:
+
+```bash
+npm run dev:admin
+```
+
+Open the URL printed by Vite (normally `http://localhost:5173`). The console defaults to
+`http://localhost:8080` for AEP; set `VITE_AEP_BASE_URL` when the service uses another address. Sign
+in with an account carrying the `admin` or `enterprise_admin` role. The current MVP restores the
+browser session, enforces the administrator role, and shows users, Agents, Skills, enterprise models,
+and pending control events. Use `npm run build:admin` to emit the deployable static console at
+`dist/admin`.
+
 `npm run build` emits the Node extension at `dist/extension.cjs` and the enterprise session UI at
 `dist/ui/index.html`. During public application development, set
 `ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of the extension bundle. Set

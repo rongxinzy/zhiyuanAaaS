@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.ui.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/ui/*"] }
+  },
+  "include": ["src/admin/**/*.ts", "src/admin/**/*.tsx", "vite.admin.config.ts"]
+}
