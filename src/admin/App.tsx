@@ -29,11 +29,12 @@ import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.
 import { Alert, AlertDescription, AlertTitle } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
-import { Card } from '../ui/components/ui/card.js';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/components/ui/card.js';
 import { Field, FieldError, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
+import { cn } from '../ui/lib/utils.js';
 import {
   AdminThemeMode,
   applyAdminTheme,
@@ -111,20 +112,20 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
   const [resourceTab, setResourceTab] = useState<AdminResourceTab>(AdminResourceTab.Users);
   const activeLabel = navigation.find(item => item.page === page)?.label ?? 'overview';
   return (
-    <main className="flex min-h-full bg-muted/30">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
-        <div className="flex h-14 items-center gap-3 border-b px-5">
+    <main className="flex min-h-full bg-background">
+      <aside className="hidden w-[220px] shrink-0 flex-col border-r border-border bg-muted/30 md:flex">
+        <div className="flex h-16 items-center gap-3 border-b border-border px-5">
           <BrandMark />
           <div className="min-w-0"><div className="truncate text-sm font-semibold">{translate(language, 'brandShort')}</div><div className="truncate text-xs text-muted-foreground">{translate(language, 'adminWorkspace')}</div></div>
         </div>
-        <div className="flex flex-1 flex-col gap-6 p-3">
+        <div className="flex flex-1 flex-col p-3">
           <div className="flex flex-col gap-1">
             <span className="px-3 pb-1 text-xs font-medium text-muted-foreground">{translate(language, 'workspaceLabel')}</span>
             {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} />)}
           </div>
-          <div className="rounded-lg bg-muted/60 p-3">
-            <div className="flex items-center gap-2 text-xs font-medium"><CircleGauge className="size-4" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{translate(language, 'controlPlaneDescription')}</p>
+          <div className="mt-auto border-t border-border px-3 pt-4">
+            <div className="flex items-center gap-2 text-xs font-medium"><CircleGauge className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{translate(language, 'controlPlaneDescription')}</p>
           </div>
         </div>
         <div className="border-t p-3">
@@ -133,15 +134,15 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex min-h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><div className="min-w-0"><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p><p className="hidden truncate text-xs text-muted-foreground sm:block">{translate(language, 'signedInAs')}: {identity?.user.displayName ?? translate(language, 'username')}</p></div></div>
-          <div className="flex items-center gap-2"><Badge variant="outline" className="hidden sm:inline-flex"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge><ThemeToggle /><Button variant="ghost" size="icon" className="md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut /></Button></div>
+        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border bg-background px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p></div>
+          <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut /></Button></div>
         </header>
-        <nav className="flex gap-1 overflow-x-auto border-b bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
+        <nav className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
           {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
         </nav>
         <PageTransition pageKey={page}>
-          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="flex gap-1 overflow-x-auto border-b bg-background px-4 py-2 sm:px-6">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <Button key={tab} variant={resourceTab === tab ? 'secondary' : 'ghost'} size="sm" onClick={() => setResourceTab(tab)}>{translate(language, tab)}</Button>)}</div><Resources client={client} tab={resourceTab} /></div>}
+          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="flex gap-1 overflow-x-auto border-b border-border bg-background px-4 py-2 sm:px-6">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabButton key={tab} active={resourceTab === tab} label={translate(language, tab)} onClick={() => setResourceTab(tab)} />)}</div><Resources client={client} tab={resourceTab} /></div>}
         </PageTransition>
       </div>
     </main>
@@ -153,7 +154,11 @@ function BrandMark() {
 }
 
 function NavItem({ icon: Icon, active, label, onClick, compact = false }: { readonly icon: LucideIcon; readonly active: boolean; readonly label: string; readonly onClick: () => void; readonly compact?: boolean }) {
-  return <Button variant={active ? 'secondary' : 'ghost'} size="sm" className={compact ? 'shrink-0' : 'w-full justify-start'} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
+  return <Button variant="ghost" size="sm" className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
+}
+
+function TabButton({ active, label, onClick }: { readonly active: boolean; readonly label: string; readonly onClick: () => void }) {
+  return <Button variant="ghost" size="sm" className={cn('shrink-0 rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}>{label}</Button>;
 }
 
 function PageTransition({ pageKey, children }: { readonly pageKey: string; readonly children: ReactNode }) {
@@ -234,7 +239,7 @@ function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
   const [error, setError] = useState(false);
   const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview()); } catch { setError(true); } finally { setLoading(false); } }, [client]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-6xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-2 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>{loading ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{translate(language, loading ? 'refreshing' : 'refresh')}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]"><section className="rounded-lg border bg-background p-5"><div className="flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden="true" /><h3 className="text-base font-semibold">{translate(language, 'overviewStatusTitle')}</h3></div><p className="mt-2 text-sm leading-relaxed text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></section><section className="rounded-lg border bg-background p-5"><p className="text-xs font-medium text-muted-foreground">{translate(language, 'signedInAs')}</p><p className="mt-2 truncate text-sm font-medium">{translate(language, 'adminAccountReady')}</p><Badge variant="outline" className="mt-4"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></section></div></div></section>;
+  return <section className="flex flex-1 flex-col gap-5 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>{loading ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{translate(language, loading ? 'refreshing' : 'refresh')}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card className="bg-background"><CardHeader className="flex-row items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle></CardHeader><CardContent className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p><Badge variant="outline"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardContent></Card></div></section>;
 }
 
 function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | undefined; readonly icon: LucideIcon }) {
