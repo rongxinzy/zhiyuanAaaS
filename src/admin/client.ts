@@ -3,6 +3,8 @@ import {
   MemoryTokenStore,
   type AepTokenStore,
   type AdminAgent,
+  type AdminModel,
+  type ModelAssignment,
   type CurrentIdentity,
   type Page,
   type PlatformUser,
@@ -50,6 +52,11 @@ export interface AdminResources {
   readonly agents: readonly AdminAgent[];
   readonly skills: readonly AdminSkill[];
   readonly assignments: readonly AdminSkillAssignment[];
+}
+
+export interface AdminModels {
+  readonly models: readonly AdminModel[];
+  readonly assignments: readonly ModelAssignment[];
 }
 
 export class AdminConsoleClient {
@@ -129,6 +136,27 @@ export class AdminConsoleClient {
 
   async deleteSkillAssignment(assignmentId: string): Promise<void> {
     await this.#requireClient().deleteSkillAssignment(assignmentId);
+  }
+
+  async models(): Promise<AdminModels> {
+    const client = this.#requireClient();
+    const [models, assignments] = await Promise.all([
+      client.listAdminModels(),
+      client.listModelAssignments(),
+    ]);
+    return { models: models.models, assignments: assignments.assignments };
+  }
+
+  async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {
+    await this.#requireClient().createModel(input);
+  }
+
+  async updateModel(modelId: string, input: Parameters<AepClient['updateModel']>[1]): Promise<void> {
+    await this.#requireClient().updateModel(modelId, input);
+  }
+
+  async deleteModelAssignment(assignmentId: string): Promise<void> {
+    await this.#requireClient().deleteModelAssignment(assignmentId);
   }
 
   #getClient(): AepClient {
