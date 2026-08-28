@@ -93,13 +93,25 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE: ${{ github.workspace }}\dist\extension.cjs
-          ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY: ${{ github.workspace }}\dist\ui
-          ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ${{ github.workspace }}\dist\admin
-          ZHIYUAN_ENTERPRISE_NOTICE_FILE: ${{ github.workspace }}\THIRD_PARTY_NOTICES.md
-          ZHIYUAN_ENTERPRISE_CONFIG_FILE: ${{ github.workspace }}\build\enterprise-config.example.json
+          ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE: ..\dist\extension.cjs
+          ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY: ..\dist\ui
+          ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ..\dist\admin
+          ZHIYUAN_ENTERPRISE_NOTICE_FILE: ..\THIRD_PARTY_NOTICES.md
+          ZHIYUAN_ENTERPRISE_CONFIG_FILE: ..\build\enterprise-config.example.json
           ZHIYUAN_UPDATE_VARIANT: lite
         run: |
+          $enterpriseInputs = @(
+            $env:ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE,
+            $env:ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY,
+            $env:ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY,
+            $env:ZHIYUAN_ENTERPRISE_NOTICE_FILE,
+            $env:ZHIYUAN_ENTERPRISE_CONFIG_FILE
+          )
+          foreach ($inputPath in $enterpriseInputs) {
+            if (-not (Test-Path -LiteralPath $inputPath)) {
+              throw "Enterprise package input does not exist relative to the host root: $inputPath"
+            }
+          }
           bun run prepare:update-release
           node scripts/ensure-build-version.js
           bun run build
