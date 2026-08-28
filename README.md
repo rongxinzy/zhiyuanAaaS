@@ -105,6 +105,20 @@ Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` when the output is not the sibling
 `../zhiyuan-dev/dist/win-unpacked` directory. The check compares every injected enterprise file
 against the AaaS build output and fails on missing, extra, or mismatched Renderer assets.
 
+For a reproducible Windows installer, run the `Build Windows enterprise package` GitHub Actions
+workflow from `main`. The workflow checks out the exact Zhiyuan core commit pinned in
+`build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and Skill Python runtimes,
+builds the overlay installer, verifies every injected enterprise asset and bundled runtime, and
+performs the install/upgrade/uninstall smoke test. Its artifact contains the installer and
+`SHA256SUMS.txt` and is retained for 14 days.
+
+Local packaging uses the same `build/electron-builder.overlay.yml`, but the public core's packaging
+hooks require reachable upstream release downloads or pre-populated offline inputs. In restricted
+networks, set `ZHIYUAN_PORTABLE_GIT_ARCHIVE` and `ZHIYUAN_PORTABLE_UV_ARCHIVE` to the pinned archives
+expected by the core scripts and prepare the uv-managed Python and Skill Python directories before
+running electron-builder. A package made by disabling the host `beforePack` or `afterPack` hooks is
+only suitable for renderer smoke testing and must not be published.
+
 ## Password Session Foundation
 
 The extension provides a password-only AEP session service for Zhiyuan accounts. Operations are

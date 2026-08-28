@@ -1,0 +1,162 @@
+name: Build Windows enterprise package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enterprise-windows-package-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  package-and-install:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+
+      - name: Install and verify enterprise inputs
+        run: |
+          npm ci
+          npm run check
+          npm run verify:package-inputs
+
+      - name: Resolve immutable core input
+        id: manifest
+        shell: pwsh
+        run: |
+          $manifest = Get-Content build/build-manifest.json -Raw | ConvertFrom-Json
+          $commit = $manifest.zhiyuanCore.commit
+          if ($commit -notmatch '^[0-9a-f]{40}$') {
+            throw 'build-manifest.json must pin zhiyuanCore.commit to a full commit SHA.'
+          }
+          "core_commit=$commit" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/checkout@v6
+        with:
+          repository: rongxinzy/RongxinAI
+          ref: ${{ steps.manifest.outputs.core_commit }}
+          path: zhiyuan-core
+
+      - name: Restore host packaging caches
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.bun/install/cache
+            ~/.npm
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            zhiyuan-core/resources/PortableGit-*.7z.exe
+            zhiyuan-core/resources/uv-win-runtime.zip
+            zhiyuan-core/resources/mingit
+            zhiyuan-core/resources/uv-win
+            zhiyuan-core/resources/python-win
+            zhiyuan-core/resources/skill-python
+            zhiyuan-core/vendor/engram-runtime
+            zhiyuan-core/vendor/channel-runtime
+          key: enterprise-windows-${{ steps.manifest.outputs.core_commit }}-${{ hashFiles('package-lock.json', 'build/build-manifest.json', 'zhiyuan-core/bun.lock', 'zhiyuan-core/scripts/**') }}
+          restore-keys: |
+            enterprise-windows-${{ steps.manifest.outputs.core_commit }}-
+
+      - name: Install host dependencies
+        working-directory: zhiyuan-core
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun run apply:patches
+
+      - name: Prepare Windows runtimes
+        working-directory: zhiyuan-core
+        run: |
+          bun run setup:mingit
+          bun run setup:uv-runtime
+          bun run setup:python-runtime
+          bun run channel:runtime:win-x64
+          bun run engram:runtime:win-x64
+
+      - name: Build enterprise installer
+        working-directory: zhiyuan-core
+        shell: pwsh
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE: ${{ github.workspace }}\dist\extension.cjs
+          ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY: ${{ github.workspace }}\dist\ui
+          ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ${{ github.workspace }}\dist\admin
+          ZHIYUAN_ENTERPRISE_NOTICE_FILE: ${{ github.workspace }}\THIRD_PARTY_NOTICES.md
+          ZHIYUAN_ENTERPRISE_CONFIG_FILE: ${{ github.workspace }}\build\enterprise-config.example.json
+          ZHIYUAN_UPDATE_VARIANT: lite
+        run: |
+          bun run prepare:update-release
+          node scripts/ensure-build-version.js
+          bun run build
+          bun run build:skills
+          bun run prepare:modelscope-tokens
+          bunx electron-builder --win nsis --x64 --config "$env:GITHUB_WORKSPACE\build\electron-builder.overlay.yml" --publish never
+
+      - name: Verify injected enterprise package
+        env:
+          ZHIYUAN_ELECTRON_PACKAGE_DIR: ${{ github.workspace }}\zhiyuan-core\release\win-unpacked
+        run: npm run verify:electron-package
+
+      - name: Verify packaged runtimes
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File zhiyuan-core/scripts/ci/windows-runtime-smoke.ps1
+          -ProjectRoot ${{ github.workspace }}\zhiyuan-core
+
+      - name: Verify installer lifecycle
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File zhiyuan-core/scripts/ci/windows-installer-smoke.ps1
+          -ProjectRoot ${{ github.workspace }}\zhiyuan-core
+
+      - name: Write installer checksums
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem zhiyuan-core/release -Filter '*.exe' -File)
+          if ($installers.Count -eq 0) {
+            throw 'No Windows installer was generated.'
+          }
+          $lines = foreach ($installer in $installers) {
+            $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($installer.Name)"
+          }
+          $lines | Set-Content zhiyuan-core/release/SHA256SUMS.txt -Encoding ascii
+          $lines
+
+      - name: Upload enterprise installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: zhiyuan-enterprise-windows-${{ github.run_number }}
+          path: |
+            zhiyuan-core/release/*.exe
+            zhiyuan-core/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload packaging diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: zhiyuan-enterprise-windows-diagnostics-${{ github.run_number }}
+          path: |
+            zhiyuan-core/release/*.exe
+            ${{ runner.temp }}/zhiyuan-build-logs
+          if-no-files-found: ignore
+          retention-days: 7
