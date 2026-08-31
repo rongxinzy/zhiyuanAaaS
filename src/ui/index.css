@@ -171,11 +171,6 @@ body {
   text-align: left;
 }
 
-#root.zhiyuan-admin-console [data-admin-tab='true'] {
-  justify-content: center;
-  text-align: center;
-}
-
 #root.zhiyuan-admin-console [data-slot='button'] > svg {
   flex: 0 0 auto;
   width: 1rem;

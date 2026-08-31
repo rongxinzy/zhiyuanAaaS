@@ -31,14 +31,6 @@ export function applyAdminTheme(mode: AdminThemeMode): void {
   htmlElement().classList.toggle(DARK_CLASS, prefersDark(mode));
 }
 
-export function cycleAdminTheme(current: AdminThemeMode): AdminThemeMode {
-  return current === AdminThemeMode.Light
-    ? AdminThemeMode.Dark
-    : current === AdminThemeMode.System
-      ? AdminThemeMode.Light
-      : AdminThemeMode.System;
-}
-
 export function subscribeToSystemTheme(listener: () => void): () => void {
   if (!globalThis.matchMedia) return () => undefined;
   const media = globalThis.matchMedia(DARK_MEDIA_QUERY);

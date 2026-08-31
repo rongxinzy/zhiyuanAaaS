@@ -10,6 +10,17 @@ import {
 } from './client.js';
 import { formatTimestamp } from './format.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../ui/components/ui/alert-dialog.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
@@ -117,7 +128,7 @@ function AssignmentsTable({ assignments, skills, client, onChanged, onError }: {
   const { pendingId, run } = useRowMutation(onChanged, onError);
   if (assignments.length === 0) return <EmptyState label="assignmentsEmpty" hint="assignmentsEmptyHint" icon={KeyRound} />;
   const names = new Map(skills.map(skill => [skill.id, skill.name]));
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'subject')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{assignments.map(assignment => <TableRow key={assignment.id}><TableCell className="font-medium">{names.get(assignment.skillId) || assignment.skillId}</TableCell><TableCell className="text-muted-foreground">{assignment.subjectType}: {assignment.subjectId}</TableCell><TableCell className="text-right"><Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pendingId !== null} onClick={() => void run(assignment.id, async () => { await client.deleteSkillAssignment(assignment.id); })}>{translate(language, 'revoke')}</Button></TableCell></TableRow>)}</TableBody></Table></div>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'subject')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{assignments.map(assignment => <TableRow key={assignment.id}><TableCell className="font-medium">{names.get(assignment.skillId) || assignment.skillId}</TableCell><TableCell className="text-muted-foreground">{assignment.subjectType}: {assignment.subjectId}</TableCell><TableCell className="text-right"><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pendingId !== null} />}>{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive/90" disabled={pendingId !== null} onClick={() => void run(assignment.id, async () => { await client.deleteSkillAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
 function EmptyState({ label, hint, icon: Icon }: { readonly label: AdminTranslationKey; readonly hint: AdminTranslationKey; readonly icon: LucideIcon }) {

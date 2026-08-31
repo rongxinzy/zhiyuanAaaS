@@ -5,9 +5,30 @@ import type { AdminModel, ModelAssignment } from '@aep/sdk-node';
 import { AdminConsoleClient, type AdminModels } from './client.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../ui/components/ui/alert-dialog.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '../ui/components/ui/card.js';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../ui/components/ui/dialog.js';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
 import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
@@ -48,8 +69,32 @@ function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleC
       setId(''); setDisplayName(''); setEndpoint(''); setUpstreamModel(''); setOpen(false); await onCreated();
     } catch { setError(true); } finally { setPending(false); }
   };
-  if (!open) return <Button variant="outline" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus data-icon="inline-start" />{translate(language, 'addModel')}</Button>;
-  return <form onSubmit={submit} noValidate><Card><CardHeader className="flex-row items-center justify-between"><CardTitle>{translate(language, 'addModel')}</CardTitle><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>{translate(language, 'cancel')}</Button></CardHeader><CardContent className="flex flex-col gap-4">{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="model-id">{translate(language, 'modelId')}</FieldLabel><Input id="model-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="model-name">{translate(language, 'modelName')}</FieldLabel><Input id="model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field></FieldGroup></CardContent><CardFooter><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></CardFooter></Card></form>;
+  return (
+    <Dialog open={open} onOpenChange={nextOpen => { setOpen(nextOpen); if (!nextOpen) setError(false); }}>
+      <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}>
+        <Plus data-icon="inline-start" />{translate(language, 'addModel')}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{translate(language, 'addModel')}</DialogTitle>
+          <DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+          {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}
+          <FieldGroup>
+            <Field><FieldLabel htmlFor="model-id">{translate(language, 'modelId')}</FieldLabel><Input id="model-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} /></Field>
+            <Field><FieldLabel htmlFor="model-name">{translate(language, 'modelName')}</FieldLabel><Input id="model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field>
+            <Field><FieldLabel htmlFor="model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} /></Field>
+            <Field><FieldLabel htmlFor="model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field>
+          </FieldGroup>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="ghost" disabled={pending} />}>{translate(language, 'cancel')}</DialogClose>
+            <Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function ModelList({ models, assignments, client, onChanged, onError }: { readonly models: readonly AdminModel[]; readonly assignments: readonly ModelAssignment[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
@@ -60,7 +105,7 @@ function ModelList({ models, assignments, client, onChanged, onError }: { readon
 function ModelRow({ model, assignments, client, onChanged, onError }: { readonly model: AdminModel; readonly assignments: readonly ModelAssignment[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
   const [pending, setPending] = useState(false);
   const run = async (operation: () => Promise<void>) => { setPending(true); try { await operation(); await onChanged(); } catch { onError(); } finally { setPending(false); } };
-  return <Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Cpu className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><CardTitle className="truncate">{model.displayName}</CardTitle><p className="break-all text-xs text-muted-foreground">{model.id} / {model.upstreamModel || model.localModelRef || translate(language, 'notProvided')}</p></div></div><div className="flex items-center gap-2"><Badge variant={model.enabled ? 'secondary' : 'outline'}>{translate(language, model.enabled ? 'enabled' : 'disabled')}</Badge>{model.isDefault ? <Badge variant="outline">{translate(language, 'defaultModel')}</Badge> : null}</div></div></CardHeader><CardContent className="flex flex-col gap-4"><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">{translate(language, 'modelEndpoint')}</dt><dd className="break-all font-medium">{model.endpoint || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-muted-foreground">{translate(language, 'assignments')}</dt><dd className="font-medium">{assignments.length}</dd></div></dl><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { enabled: !model.enabled }); })}>{translate(language, model.enabled ? 'disable' : 'enable')}</Button>{!model.isDefault ? <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { isDefault: true }); })}>{translate(language, 'makeDefault')}</Button> : null}</div>{assignments.length > 0 ? <div className="flex flex-col gap-2 border-t border-border pt-3">{assignments.map(assignment => <div className="flex items-center justify-between gap-3 text-sm" key={assignment.id}><span className="truncate text-muted-foreground">{assignment.subject.type}: {assignment.subject.id}</span><Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pending} onClick={() => void run(async () => { await client.deleteModelAssignment(assignment.id); })}><Trash2 data-icon="inline-start" />{translate(language, 'revoke')}</Button></div>)}</div> : null}</CardContent></Card>;
+  return <Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Cpu className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><CardTitle className="truncate">{model.displayName}</CardTitle><p className="break-all text-xs text-muted-foreground">{model.id} / {model.upstreamModel || model.localModelRef || translate(language, 'notProvided')}</p></div></div><div className="flex items-center gap-2"><Badge variant={model.enabled ? 'secondary' : 'outline'}>{translate(language, model.enabled ? 'enabled' : 'disabled')}</Badge>{model.isDefault ? <Badge variant="outline">{translate(language, 'defaultModel')}</Badge> : null}</div></div></CardHeader><CardContent className="flex flex-col gap-4"><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">{translate(language, 'modelEndpoint')}</dt><dd className="break-all font-medium">{model.endpoint || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-muted-foreground">{translate(language, 'assignments')}</dt><dd className="font-medium">{assignments.length}</dd></div></dl><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { enabled: !model.enabled }); })}>{translate(language, model.enabled ? 'disable' : 'enable')}</Button>{!model.isDefault ? <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { isDefault: true }); })}>{translate(language, 'makeDefault')}</Button> : null}</div>{assignments.length > 0 ? <div className="flex flex-col gap-2 border-t border-border pt-3">{assignments.map(assignment => <div className="flex items-center justify-between gap-3 text-sm" key={assignment.id}><span className="truncate text-muted-foreground">{assignment.subject.type}: {assignment.subject.id}</span><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive/90" disabled={pending} onClick={() => void run(async () => { await client.deleteModelAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div> : null}</CardContent></Card>;
 }
 
 function ModelCatalogSkeleton() { return <div className="flex flex-col gap-4">{Array.from({ length: 2 }, (_, index) => <Card key={index}><CardHeader><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Skeleton className="size-4" /><div className="min-w-0 flex flex-col gap-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-64" /></div></div><Skeleton className="h-6 w-14" /></div></CardHeader><CardContent className="flex flex-col gap-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><Skeleton className="h-9 w-full max-w-xs" /><Skeleton className="h-9 w-full max-w-32" /></div><Skeleton className="h-7 w-24" /></CardContent></Card>)}</div>; }
