@@ -133,7 +133,10 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button>
         </div>
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-clip">
+        {/* overflow-clip keeps the PageTransition entrance slide from extending
+            the document's scrollable overflow, which flashed a layout-shifting
+            vertical scrollbar on every nav switch. */}
         <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border bg-background px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p></div>
           <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut /></Button></div>
