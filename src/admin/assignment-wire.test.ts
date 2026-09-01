@@ -1,0 +1,66 @@
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+import { MemoryTokenStore } from '@aep/sdk-node';
+import { afterEach, describe, expect, test } from 'vitest';
+
+import { AdminConsoleClient, AdminSubjectType } from './client.js';
+
+interface RecordedRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly body: unknown;
+}
+
+function startAepStub() {
+  const requests: RecordedRequest[] = [];
+  const server = http.createServer((request, response) => {
+    let raw = '';
+    request.setEncoding('utf8');
+    request.on('data', chunk => { raw += chunk; });
+    request.on('end', () => {
+      requests.push({ method: request.method ?? '', path: request.url ?? '', body: raw ? JSON.parse(raw) : null });
+      response.setHeader('Content-Type', 'application/json');
+      if (request.method === 'GET' && request.url === '/aep/v1/agent/me') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, enterprise: { id: 'demo', name: '演示企业' }, roles: ['admin'] }));
+        return;
+      }
+      if (request.method === 'POST' && request.url === '/aep/v1/admin/skill-assignments') {
+        response.writeHead(201);
+        response.end(JSON.stringify({ id: 'assignment-1', resourceType: 'skill', resourceId: 's1', subject: { type: 'user', id: 'u1' }, createdAt: '2026-09-01T00:00:00Z' }));
+        return;
+      }
+      response.writeHead(404);
+      response.end(JSON.stringify({ title: 'not found' }));
+    });
+  });
+  return { server, requests };
+}
+
+describe('admin console assignment wire contract', () => {
+  let server: http.Server | null = null;
+
+  afterEach(async () => {
+    server?.close();
+    server = null;
+  });
+
+  test('createSkillAssignment POSTs the SDK payload to the control plane', async () => {
+    const stub = startAepStub();
+    await new Promise<void>(resolve => stub.server.listen(0, '127.0.0.1', resolve));
+    server = stub.server;
+    const port = (stub.server.address() as AddressInfo).port;
+    const tokenStore = new MemoryTokenStore();
+    await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
+    const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
+
+    const session = await client.restore();
+    expect(session.status).toBe('authenticated');
+    await client.createSkillAssignment({ skillId: 's1', subject: { type: AdminSubjectType.User, id: 'u1' } });
+
+    const post = stub.requests.find(request => request.method === 'POST');
+    expect(post?.path).toBe('/aep/v1/admin/skill-assignments');
+    expect(post?.body).toEqual({ skillId: 's1', subject: { type: 'user', id: 'u1' } });
+  });
+});

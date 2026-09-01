@@ -1,9 +1,10 @@
-import { Bot, Boxes, CircleAlert, KeyRound, RefreshCw, UserRound, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Bot, Boxes, Check, CircleAlert, KeyRound, RefreshCw, UserRound, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { PlatformUser } from '@aep/sdk-node';
 import {
   AdminConsoleClient,
+  AdminSubjectType,
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
@@ -24,10 +25,14 @@ import {
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/components/ui/dialog.js';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
+import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
+import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
+import { cn } from '../ui/lib/utils.js';
 
 const language: AdminLanguage = 'zh';
 
@@ -48,6 +53,7 @@ export function Resources({ client, tab }: ResourcesProps) {
   const [resources, setResources] = useState<AdminResources | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
+  const [granting, setGranting] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -67,28 +73,35 @@ export function Resources({ client, tab }: ResourcesProps) {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         <div className="flex items-start justify-between gap-4">
           <div><p className="text-xs text-muted-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, resourceTitle(tab))}</h2></div>
-          <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>
-            {loading ? <Spinner /> : <RefreshCw />}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {tab === AdminResourceTab.Assignments && resources ? <Button size="sm" onClick={() => setGranting(true)}><UserRound data-icon="inline-start" />{translate(language, 'grantSkill')}</Button> : null}
+            <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>
+              {loading ? <Spinner /> : <RefreshCw />}
+            </Button>
+          </div>
         </div>
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
-        {loading && !resources ? <ResourceListSkeleton /> : resources ? <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} /> : null}
+        {loading && !resources ? <ResourceListSkeleton /> : resources ? <>
+          <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} />
+          {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} skills={resources.skills} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
+        </> : null}
       </div>
     </section>
   );
 }
 
-function ResourceTable({ tab, resources, client, onChanged, onError }: {
+function ResourceTable({ tab, resources, client, onChanged, onError, onGrant }: {
   readonly tab: AdminResourceTab;
   readonly resources: AdminResources;
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
+  readonly onGrant: () => void;
 }) {
   if (tab === AdminResourceTab.Users) return <UsersTable users={resources.users} client={client} onChanged={onChanged} onError={onError} />;
   if (tab === AdminResourceTab.Agents) return <AgentsTable agents={resources.agents} />;
   if (tab === AdminResourceTab.Skills) return <SkillsTable skills={resources.skills} client={client} onChanged={onChanged} onError={onError} />;
-  return <AssignmentsTable assignments={resources.assignments} skills={resources.skills} client={client} onChanged={onChanged} onError={onError} />;
+  return <AssignmentsTable assignments={resources.assignments} skills={resources.skills} users={resources.users} client={client} onChanged={onChanged} onError={onError} onGrant={onGrant} />;
 }
 
 function useRowMutation(onDone: () => Promise<void>, onError: () => void) {
@@ -124,11 +137,112 @@ function SkillsTable({ skills, client, onChanged, onError }: { readonly skills: 
   return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{skills.map(skill => <TableRow key={skill.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Boxes className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-medium">{skill.name}</div><div className="truncate text-xs text-muted-foreground">{skill.description || skill.id}</div></div></div></TableCell><TableCell><Badge variant={skill.enabled ? 'secondary' : 'outline'}>{translate(language, skill.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(skill.id, async () => { await client.updateSkill(skill.id, { enabled: !skill.enabled }); })}>{translate(language, skill.enabled ? 'disable' : 'enable')}</Button></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
-function AssignmentsTable({ assignments, skills, client, onChanged, onError }: { readonly assignments: readonly AdminSkillAssignment[]; readonly skills: readonly AdminSkill[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function AssignmentsTable({ assignments, skills, users, client, onChanged, onError, onGrant }: { readonly assignments: readonly AdminSkillAssignment[]; readonly skills: readonly AdminSkill[]; readonly users: readonly PlatformUser[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onGrant: () => void }) {
   const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (assignments.length === 0) return <EmptyState label="assignmentsEmpty" hint="assignmentsEmptyHint" icon={KeyRound} />;
-  const names = new Map(skills.map(skill => [skill.id, skill.name]));
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'subject')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{assignments.map(assignment => <TableRow key={assignment.id}><TableCell className="font-medium">{names.get(assignment.skillId) || assignment.skillId}</TableCell><TableCell className="text-muted-foreground">{assignment.subjectType}: {assignment.subjectId}</TableCell><TableCell className="text-right"><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pendingId !== null} />}>{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive/90" disabled={pendingId !== null} onClick={() => void run(assignment.id, async () => { await client.deleteSkillAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow>)}</TableBody></Table></div>;
+  if (assignments.length === 0) return <div className="flex flex-col items-center gap-4"><EmptyState label="assignmentsEmpty" hint="assignmentsEmptyHint" icon={KeyRound} /><Button size="sm" onClick={onGrant}><UserRound data-icon="inline-start" />{translate(language, 'grantSkill')}</Button></div>;
+  const skillNames = new Map(skills.map(skill => [skill.id, skill.name]));
+  const userNames = new Map(users.map(user => [user.id, user]));
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'subject')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{assignments.map(assignment => <TableRow key={assignment.id}><TableCell className="font-medium">{skillNames.get(assignment.skillId) || assignment.skillId}</TableCell><TableCell><SubjectCell subjectType={assignment.subjectType} subjectId={assignment.subjectId} user={userNames.get(assignment.subjectId)} /></TableCell><TableCell className="text-right"><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pendingId !== null} />}>{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive/90" disabled={pendingId !== null} onClick={() => void run(assignment.id, async () => { await client.deleteSkillAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow>)}</TableBody></Table></div>;
+}
+
+function SubjectCell({ subjectType, subjectId, user }: { readonly subjectType: string; readonly subjectId: string; readonly user: PlatformUser | undefined }) {
+  if (subjectType === 'user' && user) {
+    return <div className="min-w-0"><div className="truncate font-medium">{user.displayName}</div><div className="truncate text-xs text-muted-foreground">{user.username}</div></div>;
+  }
+  return <span className="text-muted-foreground">{subjectType}: {subjectId}</span>;
+}
+
+function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged, onError }: {
+  readonly client: AdminConsoleClient;
+  readonly open: boolean;
+  readonly users: readonly PlatformUser[];
+  readonly skills: readonly AdminSkill[];
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [skillId, setSkillId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [filter, setFilter] = useState('');
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const reset = useCallback(() => { setSkillId(null); setSelected(new Set()); setFilter(''); setFailed(false); }, []);
+  useEffect(() => {
+    if (open) reset();
+  }, [open, reset]);
+  const filtered = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    return query ? users.filter(user => user.displayName.toLowerCase().includes(query) || user.username.toLowerCase().includes(query)) : users;
+  }, [users, filter]);
+  const toggleUser = useCallback((userId: string) => {
+    setSelected(current => {
+      const next = new Set(current);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
+  const submit = async () => {
+    if (!skillId || selected.size === 0) return;
+    setPending(true);
+    setFailed(false);
+    try {
+      await Promise.all([...selected].map(userId => client.createSkillAssignment({ skillId, subject: { type: AdminSubjectType.User, id: userId } })));
+      onOpenChange(false);
+      await onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{translate(language, 'grantSkillTitle')}</DialogTitle>
+          <DialogDescription>{translate(language, 'grantSkillDescription')}</DialogDescription>
+        </DialogHeader>
+        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'grantFailed')}</AlertDescription></Alert> : null}
+        <div className="flex flex-col gap-3">
+          <FieldGroup className="gap-3">
+            <Field>
+              <FieldLabel>{translate(language, 'selectSkill')}</FieldLabel>
+              <div role="group" aria-label={translate(language, 'selectSkill')} className="flex flex-col gap-1">
+                {skills.length === 0 ? <p className="text-sm text-muted-foreground">{translate(language, 'skillsEmpty')}</p> : skills.map(skill => (
+                  <Button key={skill.id} type="button" variant="ghost" size="sm" aria-pressed={skillId === skill.id} className="justify-between"
+                    onClick={() => setSkillId(current => (current === skill.id ? null : skill.id))}
+                  >
+                    <span className="flex min-w-0 items-center gap-2"><Boxes className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="truncate">{skill.name}</span></span>
+                    {skill.enabled ? null : <Badge variant="outline">{translate(language, 'disabled')}</Badge>}
+                  </Button>
+                ))}
+              </div>
+            </Field>
+            <Field>
+              <FieldLabel>{translate(language, 'selectUsers')}</FieldLabel>
+              <Input aria-label={translate(language, 'searchUsers')} value={filter} onChange={event => setFilter(event.target.value)} placeholder={translate(language, 'searchUsers')} disabled={pending} />
+              <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">
+                {filtered.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">{translate(language, 'noMatchingUsers')}</p> : filtered.map(user => (
+                  <Button key={user.id} type="button" variant="ghost" size="sm" role="checkbox" aria-checked={selected.has(user.id)} disabled={pending} className="justify-between"
+                    onClick={() => toggleUser(user.id)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0"><span className="block truncate text-left">{user.displayName}</span><span className="block truncate text-left text-xs text-muted-foreground">{user.username}</span></span></span>
+                    <span aria-hidden="true" className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', selected.has(user.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>{selected.has(user.id) ? <Check className="size-3" /> : null}</span>
+                  </Button>
+                ))}
+              </div>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">{translate(language, 'selectedUsersLabel')}<Badge variant="secondary">{selected.size}</Badge></p>
+            </Field>
+          </FieldGroup>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button>
+          <Button type="button" disabled={pending || !skillId || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'granting' : 'grant')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function EmptyState({ label, hint, icon: Icon }: { readonly label: AdminTranslationKey; readonly hint: AdminTranslationKey; readonly icon: LucideIcon }) {
