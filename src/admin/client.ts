@@ -60,6 +60,19 @@ export interface AdminAssignmentSubject {
   readonly id: string;
 }
 
+export const AdminModelSubjectType = {
+  Enterprise: 'enterprise',
+  Organization: 'organization',
+  User: 'user',
+  Agent: 'agent',
+} as const;
+export type AdminModelSubjectType = (typeof AdminModelSubjectType)[keyof typeof AdminModelSubjectType];
+
+export interface AdminModelAssignmentSubject {
+  readonly type: AdminModelSubjectType;
+  readonly id: string;
+}
+
 export interface AdminResources {
   readonly users: readonly PlatformUser[];
   readonly agents: readonly AdminAgent[];
@@ -148,6 +161,11 @@ export class AdminConsoleClient {
     };
   }
 
+  async users(): Promise<readonly PlatformUser[]> {
+    const page = await this.#requireClient().listUsers();
+    return page.items;
+  }
+
   async updateUser(userId: string, input: { readonly status: 'active' | 'disabled' }): Promise<void> {
     await this.#requireClient().updateUser(userId, input);
   }
@@ -179,6 +197,10 @@ export class AdminConsoleClient {
 
   async updateModel(modelId: string, input: Parameters<AepClient['updateModel']>[1]): Promise<void> {
     await this.#requireClient().updateModel(modelId, input);
+  }
+
+  async createModelAssignment(input: { readonly modelId: string; readonly subject: AdminModelAssignmentSubject }): Promise<void> {
+    await this.#requireClient().createModelAssignment({ modelId: input.modelId, subject: { type: input.subject.type, id: input.subject.id } });
   }
 
   async deleteModelAssignment(assignmentId: string): Promise<void> {

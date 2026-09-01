@@ -1,5 +1,5 @@
-import { Bot, Boxes, Check, CircleAlert, KeyRound, RefreshCw, UserRound, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bot, Boxes, CircleAlert, KeyRound, RefreshCw, UserRound, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { PlatformUser } from '@aep/sdk-node';
 import {
@@ -22,17 +22,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../ui/components/ui/alert-dialog.js';
+import { UserMultiPicker } from './UserMultiPicker.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/components/ui/dialog.js';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
 import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
-import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
-import { cn } from '../ui/lib/utils.js';
 
 const language: AdminLanguage = 'zh';
 
@@ -145,7 +144,7 @@ function AssignmentsTable({ assignments, skills, users, client, onChanged, onErr
   return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'subject')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{assignments.map(assignment => <TableRow key={assignment.id}><TableCell className="font-medium">{skillNames.get(assignment.skillId) || assignment.skillId}</TableCell><TableCell><SubjectCell subjectType={assignment.subjectType} subjectId={assignment.subjectId} user={userNames.get(assignment.subjectId)} /></TableCell><TableCell className="text-right"><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pendingId !== null} />}>{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive/90" disabled={pendingId !== null} onClick={() => void run(assignment.id, async () => { await client.deleteSkillAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
-function SubjectCell({ subjectType, subjectId, user }: { readonly subjectType: string; readonly subjectId: string; readonly user: PlatformUser | undefined }) {
+export function SubjectCell({ subjectType, subjectId, user }: { readonly subjectType: string; readonly subjectId: string; readonly user: PlatformUser | undefined }) {
   if (subjectType === 'user' && user) {
     return <div className="min-w-0"><div className="truncate font-medium">{user.displayName}</div><div className="truncate text-xs text-muted-foreground">{user.username}</div></div>;
   }
@@ -163,17 +162,12 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
 }) {
   const [skillId, setSkillId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [filter, setFilter] = useState('');
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const reset = useCallback(() => { setSkillId(null); setSelected(new Set()); setFilter(''); setFailed(false); }, []);
+  const reset = useCallback(() => { setSkillId(null); setSelected(new Set()); setFailed(false); }, []);
   useEffect(() => {
     if (open) reset();
   }, [open, reset]);
-  const filtered = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    return query ? users.filter(user => user.displayName.toLowerCase().includes(query) || user.username.toLowerCase().includes(query)) : users;
-  }, [users, filter]);
   const toggleUser = useCallback((userId: string) => {
     setSelected(current => {
       const next = new Set(current);
@@ -220,19 +214,7 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
               </div>
             </Field>
             <Field>
-              <FieldLabel>{translate(language, 'selectUsers')}</FieldLabel>
-              <Input aria-label={translate(language, 'searchUsers')} value={filter} onChange={event => setFilter(event.target.value)} placeholder={translate(language, 'searchUsers')} disabled={pending} />
-              <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">
-                {filtered.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">{translate(language, 'noMatchingUsers')}</p> : filtered.map(user => (
-                  <Button key={user.id} type="button" variant="ghost" size="sm" role="checkbox" aria-checked={selected.has(user.id)} disabled={pending} className="justify-between"
-                    onClick={() => toggleUser(user.id)}
-                  >
-                    <span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0"><span className="block truncate text-left">{user.displayName}</span><span className="block truncate text-left text-xs text-muted-foreground">{user.username}</span></span></span>
-                    <span aria-hidden="true" className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', selected.has(user.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>{selected.has(user.id) ? <Check className="size-3" /> : null}</span>
-                  </Button>
-                ))}
-              </div>
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">{translate(language, 'selectedUsersLabel')}<Badge variant="secondary">{selected.size}</Badge></p>
+              <UserMultiPicker users={users} selected={selected} onToggle={toggleUser} disabled={pending} />
             </Field>
           </FieldGroup>
         </div>
