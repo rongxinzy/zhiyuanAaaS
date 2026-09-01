@@ -27,7 +27,7 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.updateUser).toHaveBeenCalledWith('u1', { status: 'disabled' }));
   });
 
-  test('renders assignment and revokes it', async () => {
+  test('renders assignment and revokes it after confirmation', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({ users: [], agents: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
       updateUser: vi.fn(),
@@ -37,6 +37,7 @@ describe('admin resources', () => {
     render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
     expect(await screen.findByText('写作')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '撤销授权' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认撤销' }));
     await waitFor(() => expect(client.deleteSkillAssignment).toHaveBeenCalledWith('a1'));
   });
 });

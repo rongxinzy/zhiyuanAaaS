@@ -35,10 +35,11 @@ import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
 import { cn } from '../ui/lib/utils.js';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '../ui/components/ui/dropdown-menu.js';
+import { Tabs, TabsList, TabsTrigger } from '../ui/components/ui/tabs.js';
 import {
   AdminThemeMode,
   applyAdminTheme,
-  cycleAdminTheme,
   initialAdminTheme,
   persistAdminTheme,
   subscribeToSystemTheme,
@@ -142,7 +143,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
         </nav>
         <PageTransition pageKey={page}>
-          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="flex gap-1 overflow-x-auto border-b border-border bg-background px-4 py-2 sm:px-6">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabButton key={tab} active={resourceTab === tab} label={translate(language, tab)} onClick={() => setResourceTab(tab)} />)}</div><Resources client={client} tab={resourceTab} /></div>}
+          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 py-2 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}</TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
         </PageTransition>
       </div>
     </main>
@@ -154,11 +155,7 @@ function BrandMark() {
 }
 
 function NavItem({ icon: Icon, active, label, onClick, compact = false }: { readonly icon: LucideIcon; readonly active: boolean; readonly label: string; readonly onClick: () => void; readonly compact?: boolean }) {
-  return <Button data-admin-nav="true" variant="ghost" size="sm" className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
-}
-
-function TabButton({ active, label, onClick }: { readonly active: boolean; readonly label: string; readonly onClick: () => void }) {
-  return <Button data-admin-tab="true" variant="ghost" size="sm" className={cn('shrink-0 rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}>{label}</Button>;
+  return <Button data-admin-nav="true" variant="ghost" size="sm" aria-current={active ? 'page' : undefined} className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
 }
 
 function PageTransition({ pageKey, children }: { readonly pageKey: string; readonly children: ReactNode }) {
@@ -172,25 +169,33 @@ function ThemeToggle() {
     if (mode !== AdminThemeMode.System) return;
     return subscribeToSystemTheme(() => applyAdminTheme(mode));
   }, [mode]);
-  const modeLabel = translate(
-    language,
-    mode === AdminThemeMode.Light ? 'themeLight' : mode === AdminThemeMode.Dark ? 'themeDark' : 'themeSystem',
-  );
+  const options = [AdminThemeMode.Light, AdminThemeMode.Dark, AdminThemeMode.System] as const;
+  const modeLabel = translate(language, mode === AdminThemeMode.Light ? 'themeLight' : mode === AdminThemeMode.Dark ? 'themeDark' : 'themeSystem');
   const Icon = mode === AdminThemeMode.Light ? Sun : mode === AdminThemeMode.Dark ? Moon : Monitor;
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label={`${translate(language, 'themeToggleLabel')}: ${modeLabel}`}
-      title={modeLabel}
-      onClick={() => {
-        const target = cycleAdminTheme(mode);
-        setMode(target);
-        persistAdminTheme(target);
-      }}
-    >
-      <Icon className="text-muted-foreground" aria-hidden="true" />
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" aria-label={`${translate(language, 'themeToggleLabel')}: ${modeLabel}`} title={modeLabel} />}
+      >
+        <Icon className="text-muted-foreground" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={value => {
+            const target = value as AdminThemeMode;
+            setMode(target);
+            persistAdminTheme(target);
+          }}
+        >
+          {options.map(option => (
+            <DropdownMenuRadioItem key={option} value={option}>
+              {translate(language, option === AdminThemeMode.Light ? 'themeLight' : option === AdminThemeMode.Dark ? 'themeDark' : 'themeSystem')}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
