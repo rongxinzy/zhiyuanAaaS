@@ -31,11 +31,22 @@ const config = await inspectFile(inputs.configFile, 'enterprise config');
 const configValue = JSON.parse(await fs.readFile(inputs.configFile, 'utf8'));
 assert.deepEqual(
   Object.keys(configValue).sort(),
-  ['aepBaseUrl', 'allowInsecureHttp', 'schemaVersion'],
+  ['aepBaseUrl', 'allowInsecureHttp', 'license', 'schemaVersion'],
 );
 assert.equal(configValue.schemaVersion, 1);
 assert.match(configValue.aepBaseUrl, /^https?:\/\//);
 assert.equal(typeof configValue.allowInsecureHttp, 'boolean');
+assert.equal(typeof configValue.license, 'object');
+assert.equal(configValue.license.file, 'license.zylic');
+assert.equal(typeof configValue.license.deploymentId, 'string');
+assert.ok(configValue.license.deploymentId.length > 0);
+assert.equal(typeof configValue.license.trustedKeys, 'object');
+assert.ok(Object.keys(configValue.license.trustedKeys).length > 0);
+for (const [keyId, publicKey] of Object.entries(configValue.license.trustedKeys)) {
+  assert.match(keyId, /^[A-Za-z0-9._-]+$/);
+  assert.equal(typeof publicKey, 'string');
+  assert.ok(publicKey.length > 0);
+}
 files.push(config);
 
 const rendererEntries = await fs.readdir(inputs.rendererDirectory, { withFileTypes: true });
