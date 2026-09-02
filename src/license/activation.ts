@@ -34,7 +34,16 @@ export class ZhiyuanLicenseActivation {
     if (file !== root && !file.startsWith(root + path.sep)) {
       throw new Error('Zhiyuan enterprise license file must stay inside the enterprise resources directory.');
     }
-    const content = await fs.readFile(file, 'utf8');
+    let content: string;
+    try {
+      content = await fs.readFile(file, 'utf8');
+    } catch (error) {
+      // A license is deployed separately from the application bundle. Keep the
+      // extension usable while it is absent, and expose the invalid state to
+      // the host instead of aborting enterprise runtime initialization.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      content = '';
+    }
     const state = new ZhiyuanLicenseStateMachine({
       trustedKeys: options.config.trustedKeys,
       expectedDeploymentId: options.config.deploymentId,
