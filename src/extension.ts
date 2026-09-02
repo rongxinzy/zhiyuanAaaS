@@ -189,6 +189,7 @@ export {
   type ZhiyuanExtensionRuntimeDependencies,
 } from './extension-runtime.js';
 export { ZhiyuanLicenseStateMachine } from './license/state.js';
+export { ZhiyuanLicenseActivation } from './license/activation.js';
 export { verifyLicense, parseLicenseEnvelope } from './license/verifier.js';
 export { canonicalize, sha256Digest } from './license/canonical.js';
 export * from './license/types.js';

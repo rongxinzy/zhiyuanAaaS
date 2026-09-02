@@ -12,6 +12,7 @@ import {
   type SafeStorageLike,
 } from './protected-file-storage.js';
 import { ZhiyuanPasswordSession } from './password-session.js';
+import { ZhiyuanLicenseActivation } from '../license/activation.js';
 
 export interface SessionRuntimeDependencies {
   readonly loadSafeStorage?: () => Promise<SafeStorageLike>;
@@ -27,6 +28,7 @@ export interface ZhiyuanSessionRuntimeComponents {
   readonly client: AepClient;
   readonly agentId: string;
   readonly platform: 'windows' | 'macos' | 'linux';
+  readonly licenseActivation: ZhiyuanLicenseActivation | null;
 }
 
 export async function createZhiyuanSessionRuntime(
@@ -59,11 +61,21 @@ export async function createZhiyuanSessionRuntimeComponents(
     platform,
     protectedStorage,
   });
+  const session = new ZhiyuanPasswordSession(client);
+  const licenseActivation = config.license
+    ? await ZhiyuanLicenseActivation.create({
+        resourcesPath: context.paths.resources,
+        config: config.license,
+        session,
+        client,
+      })
+    : null;
   return Object.freeze({
-    session: new ZhiyuanPasswordSession(client),
+    session,
     client,
     agentId,
     platform,
+    licenseActivation,
   });
 }
 

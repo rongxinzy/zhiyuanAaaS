@@ -14,9 +14,11 @@ import {
   type SessionRuntimeDependencies,
 } from './session/runtime.js';
 import type { ZhiyuanPasswordSession } from './session/password-session.js';
+import type { ZhiyuanLicenseActivation } from './license/activation.js';
 
 export interface ZhiyuanExtensionRuntime {
   readonly session: ZhiyuanPasswordSession;
+  readonly licenseActivation?: ZhiyuanLicenseActivation | null;
   dispose(): Promise<void>;
 }
 
@@ -34,9 +36,11 @@ export async function createZhiyuanExtensionRuntime(
   const components = await createZhiyuanSessionRuntimeComponents(context, dependencies);
   const skillCapability = context.capabilities.skills;
   if (!skillCapability) {
+    components.licenseActivation?.start();
     return Object.freeze({
       session: components.session,
-      dispose: async () => undefined,
+      licenseActivation: components.licenseActivation,
+      dispose: async () => components.licenseActivation?.stop(),
     });
   }
 
@@ -62,12 +66,17 @@ export async function createZhiyuanExtensionRuntime(
   }
 
   const lifecycle = new ZhiyuanAgentControlLifecycle(components.session, backend);
+  components.licenseActivation?.start();
   let disposePromise: Promise<void> | null = null;
   return Object.freeze({
     session: components.session,
+    licenseActivation: components.licenseActivation,
     dispose: () => {
       if (disposePromise) return disposePromise;
-      disposePromise = lifecycle.dispose().finally(() => registration.unregister());
+      disposePromise = lifecycle.dispose().finally(() => {
+        components.licenseActivation?.stop();
+        registration.unregister();
+      });
       return disposePromise;
     },
   });

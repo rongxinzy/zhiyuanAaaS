@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
   "aepBaseUrl": "http://127.0.0.1:8080",
-  "allowInsecureHttp": true
+  "allowInsecureHttp": true,
+  "license": {
+    "file": "license.zylic",
+    "deploymentId": "deployment-example",
+    "trustedKeys": {
+      "license-prod-1": "base64url-ed25519-public-key"
+    }
+  }
 }
