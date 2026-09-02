@@ -3,6 +3,8 @@ import type {
   AepSessionState,
   AepTokens,
   CurrentIdentity,
+  EntitlementTokenResponse,
+  LicenseActivationRequest,
   ModelConnection,
 } from '@aep/sdk-node';
 
@@ -17,6 +19,7 @@ export interface PasswordSessionClient {
   }): Promise<AepTokens>;
   changePassword(currentPassword: string, newPassword: string): Promise<AepTokens>;
   getCurrentIdentity(): Promise<CurrentIdentity>;
+  activateEnterpriseLicense?(input: LicenseActivationRequest): Promise<EntitlementTokenResponse>;
   listAgentModels(): Promise<AgentModelList>;
   getModelConnection(): Promise<ModelConnection>;
   logout(): Promise<void>;
