@@ -49,6 +49,17 @@ export interface AdminSkillAssignment {
   readonly subjectId: string;
 }
 
+export const AdminSubjectType = {
+  User: 'user',
+  Role: 'role',
+} as const;
+export type AdminSubjectType = (typeof AdminSubjectType)[keyof typeof AdminSubjectType];
+
+export interface AdminAssignmentSubject {
+  readonly type: AdminSubjectType;
+  readonly id: string;
+}
+
 export interface AdminResources {
   readonly users: readonly PlatformUser[];
   readonly agents: readonly AdminAgent[];
@@ -143,6 +154,10 @@ export class AdminConsoleClient {
 
   async updateSkill(skillId: string, input: { readonly enabled: boolean }): Promise<void> {
     await this.#requireClient().updateSkill(skillId, input);
+  }
+
+  async createSkillAssignment(input: { readonly skillId: string; readonly subject: AdminAssignmentSubject }): Promise<void> {
+    await this.#requireClient().createSkillAssignment({ skillId: input.skillId, subject: { type: input.subject.type, id: input.subject.id } });
   }
 
   async deleteSkillAssignment(assignmentId: string): Promise<void> {
