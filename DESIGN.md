@@ -2,6 +2,31 @@
 
 知远企业控制台（Web 管理端）前端设计标准。本文件改编自主应用的 `DESIGN.md`，作为本项目 admin console（`src/admin` + `src/ui`）的**项目级约束**：所有新增和修改的 UI 代码必须遵守。与 `AGENTS.md` 的组件库规则配套使用。
 
+## Agent 入口
+
+没有本项目上下文时，按以下顺序建立上下文，再开始写 UI：
+
+1. 先读本文件和 `AGENTS.md`，再读 `src/ui/tea-theme.css`、`src/ui/index.css`、`src/admin/theme.ts`。
+2. 页面行为看 `src/admin/App.tsx`；资源、模型、事件页面分别看 `src/admin/Resources.tsx`、`src/admin/Models.tsx`、`src/admin/Events.tsx`。
+3. 可复用组件只从 `src/ui/components/ui/*` 选择；组件的默认尺寸、状态和 token 映射以组件源码为准，本文件规定使用场景。
+4. 用户可见文案先在 `src/admin/i18n.ts` 增加中英文键，再在 JSX 中使用 `translate`；禁止为了完成视觉稿直接写裸文案。
+5. 修改后至少运行 `npm run typecheck`、`npm test`、`npm run verify:admin` 和 `git diff --check`，并在浅色、深色两套主题下检查桌面与窄视口。
+
+源码职责边界：
+
+| 文件/目录 | 唯一职责 |
+| --------- | -------- |
+| `src/ui/tea-theme.css` | Tea Design 的完整 Color、Shadow、Border、Space、Font、Typography 和组件 token；不在组件中覆写 |
+| `src/ui/index.css` | Tea token 到 shadcn/Tailwind 语义 token 的桥接，以及 admin console 的全局边界规则 |
+| `src/ui/components/ui/*` | 可复用的视觉和交互原语；新增页面优先组合它们 |
+| `src/admin/theme.ts` | 浅色、深色、跟随系统的主题状态、媒体查询和持久化；不引入第二套 `useTheme` 实现 |
+| `src/admin/App.tsx` | 会话门控、全局 shell、导航和主题切换 |
+| `src/admin/Resources.tsx` | 用户、智能体、Skill、Skill 授权四个资源页签 |
+| `src/admin/Models.tsx` | 企业模型列表、创建和授权模型 |
+| `src/admin/Events.tsx` | 控管事件发布和审计查询 |
+
+当设计要求与实现发生冲突时，优先级为：用户明确需求 > 本文件的项目规则 > 现有组件实现 > 单个页面的历史写法。修复历史写法时同步更新组件或 token，不要在页面中叠加一次性覆盖。
+
 ## 与主应用的适配说明
 
 admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此本文件在主应用标准的基础上做了以下裁剪，阅读时以本文件为准：
@@ -29,7 +54,7 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 
 - **目标浏览器：** Chromium ≥130（`vite.admin.config.ts` 的 build target）。使用 CSS custom properties 与现代 CSS，不承诺旧版浏览器兼容；Safari / Firefox 非首要目标，允许优雅降级。
 - **主题三态：** 浅色 / 深色 / 跟随系统，实现于 `src/admin/theme.ts`（`.dark` class + `theme-mode` attribute + `prefers-color-scheme` + localStorage）。主题等浏览器偏好持久化必须用 try/catch 容忍存储被禁用（该文件即范式）。
-- **布局面向桌面浏览器：** 以 ≥1280px 视口为一等公民，窗口可任意缩放；不要求移动端布局，hover 交互按桌面鼠标假设。
+- **布局面向桌面浏览器：** 以 ≥1280px 视口为一等公民，窗口可任意缩放；窄视口提供导航折叠和横向滚动等基本响应式行为，hover 交互仍按桌面鼠标假设设计。
 - **明暗两套外观下都成立。** 所有设计决策必须同时在浅色与深色主题下验证。
 
 ## 设计方向
@@ -49,6 +74,56 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 - **呼吸感** = 节奏。内容按次序落位而不是整屏同时砸出来；留白有疏密；进行中的状态有缓慢的生命迹象（脉冲、微光）。一屏的呼吸感由一处编排好的节奏提供，不是到处都在动。
 - **不呆板** = 微交互覆盖。每个可交互元素对 hover/press 都有即时、轻微的回应（见「动效语言」）。微交互单个不起眼，合在一起是"做得用心"的直觉。
 
+## 页面壳层
+
+admin console 的主结构固定为“左侧导航 + 顶部行 + 内容区”，新增页面必须落在这个结构内，不另起一套 shell：
+
+```text
+main: min-h-full / bg-background
+├── aside (desktop: hidden below md, w-56, bg-sidebar, border-r)
+│   ├── brand row (h-14, border-b)
+│   ├── workspace navigation
+│   ├── control-plane note (底部对齐)
+│   └── account row + sign-out
+└── content column (min-w-0, flex-1, overflow-clip)
+    ├── header (h-14, bg-card, border-b)
+    ├── mobile navigation (below md, horizontal, border-b)
+    └── PageTransition + page content
+```
+
+### 页面模板
+
+- 内容页使用 `section.flex-1.flex-col.overflow-y-auto.bg-background.p-4.sm:p-6`。
+- 内容内层使用 `mx-auto.w-full.max-w-4xl`；页面标题、说明和操作行使用 `gap-4`，页面区块使用 `gap-6`。
+- 页面眉标使用 `text-xs text-tertiary-foreground`，页面标题使用 `text-lg font-semibold leading-snug`，说明使用 `mt-1.5 text-sm text-muted-foreground`。
+- 页面右上角的刷新是无文字图标按钮：`size="icon"`、`aria-label`、`title`，图标 `size-4`；不添加边框或阴影。
+- 内容卡片使用 `Card`，卡片之间用 `gap-4`；不要用卡片包裹卡片，也不要把整页背景做成浮动卡片。
+- 列表型页面优先使用 `Table`；信息型或可操作实体优先使用 `Card`。表格容器使用 `overflow-hidden rounded-lg border border-border bg-card`。
+
+### 导航与响应式
+
+- 导航只有四个一级目的地：概览、资源管理、企业模型、事件与审计。增加目的地前必须同时更新 `AdminPage`、`navigation`、i18n 和测试。
+- 桌面端使用左侧 `aside`；窄视口隐藏 aside，在顶部行显示品牌标记、主题切换和图标化退出登录，并在其下显示横向滚动的一级导航。
+- 一级导航和移动导航必须表达同一个 `page` 状态，不能维护两套选中逻辑。
+- 资源管理的二级页签固定为：用户、智能体、Skill、Skill 授权。使用线性页签，不改成胶囊分段控件。
+- 所有横向内容必须允许收缩：外层用 `min-w-0`，长 ID、用户名、版本和 endpoint 使用 `truncate` 或 `break-all`，不能撑宽 shell。
+- `md` 断点只改变导航布局；内容宽度、颜色、字重、控件语义在两种视口保持一致。
+
+### 页面职责与信息结构
+
+| 页面 | 首屏结构 | 数据/操作规则 |
+| ---- | -------- | -------------- |
+| 概览 | 页面标题行、5 个统计卡片、连接状态卡片 | 统计数据加载时卡片原地显示 Skeleton；刷新按钮只刷新概览，不改变导航状态 |
+| 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、智能体、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
+| 企业模型 | 页面标题行、添加模型按钮、模型卡片列表 | 添加模型通过 Dialog；模型启用状态用 success/outline Badge；授权用户通过 Dialog 多选 |
+| 事件与审计 | 发布控管事件卡片、审计查询卡片、审计结果 | 发布和查询使用 Field + Input + Button；结果为空显示 Empty；事件成功后保留 event id 并提供投递查询 |
+
+页面新增区块必须说明它属于哪个页面职责、它消耗哪个 API 数据、它的 loading/error/empty/success 状态，以及完成后如何回到当前页面上下文。不要把 API 字段、网络错误或后端状态直接当作视觉规则。
+
+### 顶部图标按钮的尺寸陷阱
+
+图标按钮的 hover 背景必须覆盖完整按钮，而不是只包住图标。统一使用 `size="icon"`（当前为 `size-8`）和显式 `size-4` 图标；必要时补 `p-0`。`src/ui/index.css` 的 admin 全局按钮规则禁止用 `width: auto` 覆盖尺寸 utility，否则 icon button 会退化为“图标宽、按钮高”的窄条。所有新增全局按钮规则都必须检查 `size-*`、`w-*`、`w-full` 是否仍能生效。
+
 ## 色彩
 
 ### 事实来源（单真源）
@@ -58,6 +133,14 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 - `:root` / `.tea-theme-light` / `[theme-mode='light']` 提供完整浅色主题。
 - `.dark` / `.tea-theme-dark` / `[theme-mode='dark'][theme-enable='true']` 提供完整深色主题。
 - `src/ui/index.css` 的 `:root` / `.dark` 只定义 `--background`、`--primary`、`--border` 等兼容 shadcn 的语义别名，`@theme inline` 再桥接为 Tailwind 工具类。
+
+### 主题运行契约
+
+- 组件只使用 `background`、`card`、`muted`、`primary`、`sidebar-*` 等语义类；不要在 JSX 中判断主题后拼接两套颜色 class。
+- 主题切换统一调用 `applyAdminTheme` / `persistAdminTheme`，状态枚举统一使用 `AdminThemeMode`。不要创建第二个 `useTheme`、第二个 localStorage key 或第二套 `matchMedia` 监听。
+- `applyAdminTheme` 在 `document.documentElement` 上维护 `.dark`、`theme-mode` 和 `theme-enable`；Tea 变量根据这些选择器自动切换。
+- `system` 模式必须继续监听 `prefers-color-scheme`；主题存储失败时仍应正常渲染。
+- 修改 token 时同时检查浅色和深色的对比度，特别是 `primary-foreground`、`sidebar-primary-foreground`、状态文本和 `border`。
 
 组件一律通过 shadcn 语义 utility（`bg-card`、`text-muted-foreground`、`border-border` 等）消费颜色，不得绕过 token。
 
@@ -246,7 +329,7 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 ## 动效
 
 - 时长：普通交互 **100–250ms**；具备明确语义过程的动态图标 **400–600ms**，统一 `ease-out`。超过 600ms 的动画需要理由。
-- 可动属性只有 `opacity` 和 `transform`；禁止动画化 width/height/top/left（布局抖动）。
+- 可动属性默认只有 `opacity` 和 `transform`；禁止动画化 width/height/top/left（布局抖动）。唯一的现有例外是 `TabsIndicator` 的活动下划线：它可根据 Base UI 的 `--active-tab-width` 过渡自身宽度，因为该元素不参与内容布局。
 - 入场动画优先用 `tw-animate-css` 工具类（本仓库已引入）：`animate-in`、`fade-in`、`slide-in-from-bottom-2`、`zoom-in-95` 等，组合使用（如 `animate-in fade-in slide-in-from-bottom-2`）。需要自定义时在 `@theme` 补 keyframes，不内联。
 - 实现手段只有 CSS（transition / animation）。本仓库没有 framer-motion，不要为动效引入 JS 动画库。
 - 必须遵守 `prefers-reduced-motion`：给自定义动画补 `motion-reduce:animate-none` 或等效处理；`tw-animate-css` 已内置时验证即可。
@@ -334,6 +417,32 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 
 禁止：给工具栏触发按钮加 `border`（包括 `border-input`）、用 `rounded-full` 胶囊、用阴影作为 hover 反馈——这些是已被否决的变体。
 
+## 组件组合契约
+
+| 需求 | 必选组件/写法 | 约束 |
+| ---- | ------------- | ---- |
+| 普通主动作 | `Button` 默认 variant | 主按钮一个屏幕最多一个；文字 400；需要图标时使用 Lucide + `data-icon="inline-start"` |
+| 次要动作 | `Button variant="outline"` | 用于取消、刷新旁的次要操作和不改变页面主任务的动作 |
+| 工具栏/低强调动作 | `Button variant="ghost"` | 无边框、无阴影；hover 使用 muted/accent；危险动作显式使用 destructive 文本 |
+| 纯图标动作 | `Button size="icon"` | 必须有 `aria-label`，有悬停提示时加 `title`；按钮 `size-8`，图标 `size-4`，不要让全局规则覆盖宽度 |
+| 状态标签 | `Badge` | 仅使用 `success`、`warning`、`info`、`destructive`、`outline`、`secondary` 等已有变体；不手写色值 |
+| 页面错误/操作错误 | `Alert variant="destructive"` | 包含图标和翻译后的短说明；不要用 toast 替代页面内错误上下文 |
+| 表单 | `FieldGroup` + `Field` + `FieldLabel` + `Input` | 标签必须可关联输入；字段错误使用 `FieldError`；提交期间控件 disabled 并显示 `Spinner` |
+| 详情容器 | `Card` / `CardHeader` / `CardTitle` / `CardContent` | 使用 card 表面和 1px border；不要嵌套卡片制造层层浮层 |
+| 数据列表 | `Table` + `TableHeader` + `TableHead` + `TableBody` | 表头 400、次文本；操作列右对齐；动态数据行使用稳定 key |
+| 空数据 | `Empty` 组合 | 至少包含图标、标题、说明；有可执行下一步时在 `EmptyContent` 放 CTA |
+| 不可逆动作 | `AlertDialog` | 说明简短；取消为 outline/ghost，确认使用 destructive；pending 时禁止关闭和重复提交 |
+| 内容分区 | `Tabs` + `TabsList` + `TabsTrigger` | 资源管理使用 `variant="line"` + `TabsIndicator`，不要用默认胶囊轨道 |
+
+Button 当前支持的标准 variant 为 `default`、`outline`、`secondary`、`ghost`、`destructive`、`link`；标准 size 为 `default`、`xs`、`sm`、`lg`、`icon`、`icon-xs`、`icon-sm`、`icon-lg`。新增变体前先证明现有语义无法表达需求，并同步补本表、组件测试和明暗主题映射。
+
+### 图标规则
+
+- 图标统一来自 `lucide-react`，普通装饰图标加 `aria-hidden="true"`，动作图标按钮通过按钮的 `aria-label` 表达含义。
+- 文字按钮的图标使用 `data-icon="inline-start"` 或 `data-icon="inline-end"`，由 Button 的间距规则统一布局；不要手写图标与文字的 margin。
+- 装饰图标默认 `size-4`，登录/品牌标记可使用 `size-5`，弹层媒体图标按组件默认尺寸；图标颜色使用 `text-muted-foreground` 或当前语义色。
+- 不用 emoji、手绘 SVG 或 Unicode 符号代替已有 Lucide 图标。
+
 ## 交互状态
 
 所有可交互元素必须具备完整状态链，缺一不可：
@@ -343,6 +452,37 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 - **focus-visible**：统一 focus ring（组件库默认 `outline-ring/50`），颜色取 `ring` token，不得移除焦点样式而不提供替代。
 - **disabled**：`opacity-50` + 禁止指针事件，不改变配色结构。
 - **loading**：异步动作（刷新、登录）进行中按钮转入 pending 态（`disabled` + `Spinner`），避免重复提交。
+
+## 可访问性与内容
+
+- 每个页面只有一个清晰的页面级标题；区块标题用 `h2` 或组件提供的标题语义，不用普通 `div` 冒充层级。
+- 输入必须有 `FieldLabel` 和稳定 `id`；错误使用 `aria-invalid`、`FieldError` 和 `role="alert"`，不能只依赖红色边框。
+- 图标按钮必须有可读的 `aria-label`；有视觉上不明显的图标动作时同时提供 `title`。装饰图标使用 `aria-hidden`。
+- 弹层必须使用 `Dialog` / `AlertDialog`，保留焦点管理、Escape 关闭和关闭按钮；不可逆操作在 pending 时不可重复提交。
+- 表格必须有表头；右对齐的操作列只对齐操作，不改变其他列的阅读方向。
+- 所有状态不能只靠颜色表达，至少同时有文字、图标或结构差异；颜色仅作为 Tea 语义的辅助信号。
+- 中英文文案长度都要检查。动态 ID、用户名、endpoint 和时间戳不得导致按钮、表格或卡片溢出。
+
+## 验证流程
+
+提交 UI 变更前执行：
+
+```text
+npm run typecheck
+npm test
+npm run verify:admin
+git diff --check
+```
+
+视觉检查至少覆盖：
+
+1. Chromium 桌面视口（约 1280px 或更宽）：侧边栏、顶部行、内容最大宽度、分割线对齐。
+2. 窄视口（低于 `md`）：品牌标记、主题按钮、退出按钮、横向导航和页签不溢出。
+3. 浅色主题：选中导航背景 `#e5ecff`，选中文字仍为侧边栏默认文本；页面背景、卡片、边框层级清楚。
+4. 深色主题：选中导航背景 `#282e40`；状态色、文本和边框仍有足够对比度。
+5. 交互状态：hover、focus-visible、pressed、disabled、loading、error、empty、dialog open/close；检查图标按钮的 hover 填充是否完整包裹图标。
+
+浏览器级验证无法完成登录时，不要伪造已验证的页面结果；仍需运行组件测试和 `verify:admin`，并在交付说明中明确未覆盖的认证后页面。
 
 ## 落地检查清单
 
@@ -355,7 +495,7 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 - [ ] 圆角、阴影只用本文件定义的刻度，无任意值
 - [ ] 边框 1px，颜色用 token
 - [ ] 透明度只用于状态，配色变浅一律换 token
-- [ ] 普通交互动效 ≤250ms；语义动态图标 400–600ms；只动 opacity/transform，幅度符合「动效语言」规范；CSS 实现，未引入 JS 动画库
+- [ ] 普通交互动效 ≤250ms；语义动态图标 400–600ms；默认只动 opacity/transform，唯一例外是不参与布局的 `TabsIndicator` 宽度过渡；幅度符合「动效语言」规范；CSS 实现，未引入 JS 动画库
 - [ ] hover 反馈可感知（非 <3% 的假 hover）；含文字卡片未用 scale；自定义动画遵守 reduced-motion
 - [ ] 入场错峰至多一组、≤4 层、总延迟 ≤400ms；循环动画只用于状态指示且一屏一处
 - [ ] 视图切换有退出-进入序列，无硬切；reduced-motion 下退化正常
