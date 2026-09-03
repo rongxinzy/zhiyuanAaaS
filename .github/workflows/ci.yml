@@ -19,4 +19,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run verify:electron-rc
       - run: npm run verify:sdk

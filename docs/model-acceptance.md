@@ -26,6 +26,19 @@ The gateway scenario covers:
 - DeepSeek-compatible reasoning replay for tool turns;
 - model-token expiry, unauthorized model rejection, and safe telemetry.
 
+The enterprise extension release-candidate contract can be checked independently after a build:
+
+```bash
+npm run build
+npm run verify:electron-rc
+```
+
+This verifies the host registration lifecycle, enterprise session projection, exclusive managed
+model projection, OpenAI-compatible fail-closed behavior, and redaction of provider credentials
+and passwords. Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` to also compare a packaged Electron directory;
+CI sets `ZHIYUAN_REQUIRE_ELECTRON_PACKAGE=1` so a missing package fails the gate. The script never
+requires a real provider API key.
+
 ## Electron release-candidate check
 
 1. Start the AEP gateway Compose stack and verify `http://127.0.0.1:8080/healthz`.

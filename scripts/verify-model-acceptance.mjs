@@ -12,6 +12,7 @@ const manifestPath = path.join(enterpriseRoot, 'build', 'build-manifest.json');
 
 await assertPinnedInputs();
 await run('npm', ['run', 'check'], enterpriseRoot);
+await run('npm', ['run', 'verify:electron-rc'], enterpriseRoot);
 await run('npm', ['run', 'test:e2e:m1-client'], protocolRoot);
 
 console.log(
@@ -20,10 +21,11 @@ console.log(
       status: 'passed',
       checks: [
         'AaaS typecheck, unit tests, extension and renderer build',
+        'Electron enterprise host contract and managed model release-candidate checks',
         'immutable Zhiyuan core, AEP protocol, and SDK release inputs',
         'OpenAI-compatible model gateway with streaming and telemetry redaction',
       ],
-      note: 'Electron UI click-through remains a manual release-candidate check.',
+      note: 'Packaged Electron UI click-through remains a manual release-candidate check.',
     },
     null,
     2,

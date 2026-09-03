@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit && tsc --project tsconfig.ui.json --noEmit && tsc --project tsconfig.admin.json --noEmit",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
+    "verify:electron-rc": "node scripts/verify-electron-rc.mjs",
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
     "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
     "verify:electron-package": "node scripts/verify-electron-package.mjs",

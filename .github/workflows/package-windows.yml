@@ -124,6 +124,13 @@ jobs:
           ZHIYUAN_ELECTRON_PACKAGE_DIR: ${{ github.workspace }}\zhiyuan-core\release\win-unpacked
         run: npm run verify:electron-package
 
+      - name: Verify Electron release candidate contract
+        env:
+          ZHIYUAN_ELECTRON_PACKAGE_DIR: ${{ github.workspace }}\zhiyuan-core\release\win-unpacked
+          ZHIYUAN_REQUIRE_ELECTRON_PACKAGE: '1'
+          ZHIYUAN_ELECTRON_RC_EVIDENCE_FILE: ${{ github.workspace }}\zhiyuan-core\release\electron-rc-evidence.json
+        run: npm run verify:electron-rc
+
       - name: Verify packaged runtimes
         shell: powershell
         run: >-
@@ -159,6 +166,7 @@ jobs:
           path: |
             zhiyuan-core/release/*.exe
             zhiyuan-core/release/SHA256SUMS.txt
+            zhiyuan-core/release/electron-rc-evidence.json
           if-no-files-found: error
           retention-days: 14
 
