@@ -35,6 +35,7 @@ export class ZhiyuanLicenseActivation {
   #unsubscribe: (() => void) | null = null;
   #activationPromise: Promise<EntitlementTokenResponse | null> | null = null;
   #entitlement: EntitlementTokenResponse | null = null;
+  readonly #listeners = new Set<() => void>();
 
   static async create(options: ZhiyuanLicenseActivationOptions): Promise<ZhiyuanLicenseActivation> {
     const root = path.resolve(options.resourcesPath, 'zhiyuan-enterprise');
@@ -98,6 +99,12 @@ export class ZhiyuanLicenseActivation {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.#entitlement = null;
+    this.#emitChanged();
+  }
+
+  onDidChange(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
   }
 
   snapshot(): LicenseSnapshot {
@@ -117,8 +124,11 @@ export class ZhiyuanLicenseActivation {
       try {
         const entitlement = await this.#client.activateEnterpriseLicense({license: this.#licenseEnvelope} as never);
         this.#entitlement = entitlement;
+        this.#emitChanged();
         return entitlement;
       } catch (error) {
+        this.#entitlement = null;
+        this.#emitChanged();
         this.#onError(error);
         return null;
       } finally {
@@ -126,5 +136,15 @@ export class ZhiyuanLicenseActivation {
       }
     })();
     return this.#activationPromise;
+  }
+
+  #emitChanged(): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener();
+      } catch {
+        // A projection listener must not interrupt activation or shutdown.
+      }
+    }
   }
 }

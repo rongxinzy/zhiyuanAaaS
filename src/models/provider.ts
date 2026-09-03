@@ -21,6 +21,9 @@ export interface ZhiyuanModelProviderDependencies {
   readonly pollIntervalMs?: number;
   readonly setInterval?: (callback: () => void, milliseconds: number) => TimerHandle;
   readonly clearInterval?: (handle: TimerHandle) => void;
+  readonly getEntitlementToken?: () => string | null;
+  readonly requireEntitlement?: boolean;
+  readonly onEntitlementChange?: (listener: () => void) => () => void;
 }
 
 export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
@@ -30,6 +33,10 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
   readonly #pollIntervalMs: number;
   readonly #setInterval: (callback: () => void, milliseconds: number) => TimerHandle;
   readonly #clearInterval: (handle: TimerHandle) => void;
+  readonly #getEntitlementToken: (() => string | null) | null;
+  readonly #requireEntitlement: boolean;
+  readonly #onEntitlementChange: ((listener: () => void) => () => void) | null;
+  #entitlementUnsubscribe: (() => void) | null = null;
   readonly #listeners = new Set<() => void>();
   #sessionUnsubscribe: (() => void) | null = null;
   #pollTimer: TimerHandle | null = null;
@@ -45,6 +52,9 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
       dependencies.setInterval ??
       ((callback, milliseconds) => setInterval(callback, milliseconds));
     this.#clearInterval = dependencies.clearInterval ?? (handle => clearInterval(handle as never));
+    this.#getEntitlementToken = dependencies.getEntitlementToken ?? null;
+    this.#requireEntitlement = dependencies.requireEntitlement === true;
+    this.#onEntitlementChange = dependencies.onEntitlementChange ?? null;
   }
 
   async snapshot(): Promise<ProviderConfig> {
@@ -53,10 +63,14 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
       this.#session.getModelConnection(),
     ]);
     validateGatewayConnection(connection);
+    const entitlementToken = this.#getEntitlementToken?.() ?? null;
+    if (this.#requireEntitlement && !entitlementToken) {
+      throw new Error('Zhiyuan enterprise model access requires an active License entitlement.');
+    }
     return {
       enabled: true,
       userEnabled: true,
-      apiKey: connection.apiKey,
+      apiKey: entitlementToken ?? connection.apiKey,
       baseUrl: connection.baseUrl,
       apiFormat: 'openai',
       displayName: ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME,
@@ -87,6 +101,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
     this.#sessionUnsubscribe = this.#session.onDidChange(() => {
       this.#emitChanged();
     });
+    this.#entitlementUnsubscribe = this.#onEntitlementChange?.(() => this.#emitChanged()) ?? null;
     this.#pollTimer = this.#setInterval(() => void this.#poll(), this.#pollIntervalMs);
     this.#pollTimer.unref?.();
   }
@@ -94,6 +109,8 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
   #stopWatching(): void {
     this.#sessionUnsubscribe?.();
     this.#sessionUnsubscribe = null;
+    this.#entitlementUnsubscribe?.();
+    this.#entitlementUnsubscribe = null;
     if (this.#pollTimer) this.#clearInterval(this.#pollTimer);
     this.#pollTimer = null;
   }
