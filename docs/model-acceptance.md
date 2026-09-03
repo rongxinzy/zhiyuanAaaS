@@ -39,6 +39,10 @@ and passwords. Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` to also compare a packaged Ele
 CI sets `ZHIYUAN_REQUIRE_ELECTRON_PACKAGE=1` so a missing package fails the gate. The script never
 requires a real provider API key.
 
+The Windows packaging workflow writes `SHA256SUMS.txt` and runs
+`npm run verify:release-artifacts` before uploading the installer. The verifier rejects
+missing, extra, duplicate, malformed, or mismatched checksum entries.
+
 ## Electron release-candidate check
 
 1. Start the AEP gateway Compose stack and verify `http://127.0.0.1:8080/healthz`.
