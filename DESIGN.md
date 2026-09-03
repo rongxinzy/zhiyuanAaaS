@@ -83,7 +83,7 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 | 强调     | `primary` / `primary-foreground`   | 唯一的品牌强调色，用于主按钮、激活态、链接、focus ring |
 | 状态     | `destructive` / `success` / `warning` / `info` | 危险、成功、警告、信息只使用 Tea 对应的 `--tea-color-function-*`、`--tea-color-bg-*`、`--tea-color-text-*` token |
 
-侧边栏必须通过 `sidebar` 语义 token 直接消费 Tea 的 `--menu-*` 组件变量：默认表面使用 `--menu-bg`，hover 使用 `--menu-item-bg-hover` / `--menu-item-text-hover`，选中态使用 `--menu-item-bg-active` / `--menu-item-text-active`。浅色主题的选中背景固定为 `#e5ecff`，深色主题的选中背景固定为 `#282e40`；选中文字和图标保持 Tea 既有的 `--tea-color-text-on-bg-brand-default`，不因背景调整而改变。选中项不增加可见边框、不加粗，文字和图标继承同一选中前景色。
+侧边栏必须通过 `sidebar` 语义 token 直接消费 Tea 的 `--menu-*` 组件变量：默认表面使用 `--menu-bg`，hover 使用 `--menu-item-bg-hover` / `--menu-item-text-hover`，选中态使用 `--menu-item-bg-active` / `--menu-item-text-active`。浅色主题的选中背景固定为 `#e5ecff`，选中文字和图标沿用侧边栏默认文本 `--menu-text-default`；深色主题的选中背景固定为 `#282e40`，选中文字和图标保持白色 Tea 前景。选中态的文字颜色不因背景调整而改变，选中项不增加可见边框、不加粗，文字和图标继承同一选中前景色。
 
 ### Tea 色值参考（Light / Dark）
 

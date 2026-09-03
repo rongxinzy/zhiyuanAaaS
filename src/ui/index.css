@@ -69,8 +69,8 @@
   --sidebar: var(--menu-bg);
   --sidebar-foreground: var(--menu-text-default);
   --menu-item-bg-active: #e5ecff;
-  --menu-item-text-active: var(--tea-color-text-on-bg-brand-default);
-  --menu-icon-color-active: var(--tea-color-text-on-bg-brand-default);
+  --menu-item-text-active: var(--menu-text-default);
+  --menu-icon-color-active: var(--menu-text-default);
   --sidebar-primary: var(--menu-item-bg-active);
   --sidebar-primary-foreground: var(--menu-item-text-active);
   --sidebar-accent: var(--menu-item-bg-hover);
