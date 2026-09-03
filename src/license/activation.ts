@@ -11,6 +11,13 @@ import type { ZhiyuanPasswordSession } from '../session/password-session.js';
 import { LicenseStatus, type LicenseSnapshot } from './types.js';
 import { ZhiyuanLicenseStateMachine } from './state.js';
 
+type LicenseEnvelope = {
+  readonly format: 'zhiyuan-license-v1';
+  readonly keyId: string;
+  readonly payload: Record<string, unknown>;
+  readonly signature: string;
+};
+
 export interface ZhiyuanLicenseActivationOptions {
   readonly resourcesPath: string;
   readonly config: NonNullable<ZhiyuanEnterpriseConfig['license']>;
@@ -24,6 +31,7 @@ export class ZhiyuanLicenseActivation {
   readonly #session: ZhiyuanPasswordSession;
   readonly #client: Pick<AepClient, 'activateEnterpriseLicense'>;
   readonly #onError: (error: unknown) => void;
+  readonly #licenseEnvelope: LicenseEnvelope | null;
   #unsubscribe: (() => void) | null = null;
   #activationPromise: Promise<EntitlementTokenResponse | null> | null = null;
   #entitlement: EntitlementTokenResponse | null = null;
@@ -49,7 +57,16 @@ export class ZhiyuanLicenseActivation {
       expectedDeploymentId: options.config.deploymentId,
     });
     const snapshot = state.load(content);
-    return new ZhiyuanLicenseActivation(options, state, snapshot);
+    let envelope: LicenseEnvelope | null = null;
+    try {
+      const parsed = JSON.parse(content) as LicenseEnvelope;
+      if (parsed && parsed.format === 'zhiyuan-license-v1' && typeof parsed.keyId === 'string' && parsed.payload && typeof parsed.payload === 'object' && typeof parsed.signature === 'string') {
+        envelope = parsed;
+      }
+    } catch {
+      envelope = null;
+    }
+    return new ZhiyuanLicenseActivation(options, state, snapshot, envelope);
   }
 
   readonly #initialSnapshot: LicenseSnapshot;
@@ -58,12 +75,14 @@ export class ZhiyuanLicenseActivation {
     options: ZhiyuanLicenseActivationOptions,
     state: ZhiyuanLicenseStateMachine,
     initialSnapshot: LicenseSnapshot,
+    licenseEnvelope: LicenseEnvelope | null,
   ) {
     this.#state = state;
     this.#session = options.session;
     this.#client = options.client;
     this.#onError = options.onError ?? (() => undefined);
     this.#initialSnapshot = initialSnapshot;
+    this.#licenseEnvelope = licenseEnvelope;
   }
 
   start(): void {
@@ -94,15 +113,9 @@ export class ZhiyuanLicenseActivation {
     if (this.#activationPromise) return this.#activationPromise;
     this.#activationPromise = (async () => {
       const snapshot = this.#state.snapshot();
-      if (!snapshot.licenseId || !snapshot.digest || !snapshot.deploymentId || !snapshot.expiresAt) return null;
+      if (!snapshot.licenseId || !snapshot.digest || !snapshot.deploymentId || !snapshot.expiresAt || !this.#licenseEnvelope) return null;
       try {
-        const entitlement = await this.#client.activateEnterpriseLicense({
-          licenseId: snapshot.licenseId,
-          licenseDigest: snapshot.digest,
-          deploymentId: snapshot.deploymentId,
-          expiresAt: snapshot.expiresAt,
-          features: [...snapshot.features],
-        });
+        const entitlement = await this.#client.activateEnterpriseLicense({license: this.#licenseEnvelope} as never);
         this.#entitlement = entitlement;
         return entitlement;
       } catch (error) {
