@@ -38,10 +38,31 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 
 ## 技能参考
 
-涉及 UI 实现时，**必须参考以下技能**（通过 `/` 或 Skill 工具加载，优先级从高到低）：
+涉及 UI 实现时，**必须参考以下技能**（通过 `/` 或 Skill 工具加载）：
 
 1. **`shadcn`** — shadcn/ui 组件用法、样式规则、表单、组合、图标。本仓库 shadcn 组件安装于 `src/ui/components/ui/*`。
-2. **`ai-elements`** — Vercel AI Elements 的 AI 原生组件。管理台目前没有对话类界面；仅在引入 AI 管理特性（如智能体行为预览、AI 审计摘要）时按需使用。
+
+### 技能安装方法
+
+本企业版只使用 `shadcn` 技能。技能属于 Codex 开发环境，不属于应用运行时依赖；安装技能不会修改 `package.json`。
+
+如果当前 Codex 会话已经提供 `shadcn` 技能，直接加载该技能即可，不需要重复安装。技能缺失时，先列出可安装技能，再使用返回的精确路径安装：
+
+```text
+# 将 <CODEX_HOME> 替换为本机 Codex home；Windows 可使用 %CODEX_HOME% 或默认的 ~/.codex
+python <CODEX_HOME>/skills/.system/skill-installer/scripts/list-skills.py
+
+# 从 curated 列表安装已确认存在的技能
+python <CODEX_HOME>/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo openai/skills \
+  --path skills/.curated/<skill-name>
+
+# 从指定 GitHub 仓库或目录安装技能
+python <CODEX_HOME>/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --url https://github.com/<owner>/<repo>/tree/<ref>/<path-to-skill>
+```
+
+安装后在下一个 Codex task 中加载技能；不要把技能目录复制进本仓库，也不要把技能包加入前端 bundle。`shadcn` 安装失败时停止 UI 实现，先确认技能名称、GitHub 路径和 Codex home，再继续。
 
 **使用规则：**
 
