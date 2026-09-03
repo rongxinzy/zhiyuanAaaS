@@ -74,4 +74,17 @@ describe('admin console', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '刷新' })));
     expect(client.overview).toHaveBeenCalledTimes(2);
   });
+
+  test('uses Tea menu tokens and regular weight for active navigation', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    const activeItems = await screen.findAllByRole('button', { name: '概览' });
+    expect(activeItems).toHaveLength(2);
+    for (const item of activeItems) {
+      expect(item).toHaveAttribute('aria-current', 'page');
+      expect(item).toHaveClass('bg-sidebar-primary', 'text-sidebar-primary-foreground', 'font-normal');
+      expect(item).not.toHaveClass('border-border', 'font-medium', 'font-semibold');
+    }
+  });
 });

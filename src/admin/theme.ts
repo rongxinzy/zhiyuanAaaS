@@ -28,7 +28,11 @@ export function initialAdminTheme(): AdminThemeMode {
 }
 
 export function applyAdminTheme(mode: AdminThemeMode): void {
-  htmlElement().classList.toggle(DARK_CLASS, prefersDark(mode));
+  const root = htmlElement();
+  const dark = prefersDark(mode);
+  root.classList.toggle(DARK_CLASS, dark);
+  root.setAttribute('theme-mode', dark ? AdminThemeMode.Dark : AdminThemeMode.Light);
+  root.setAttribute('theme-enable', 'true');
 }
 
 export function subscribeToSystemTheme(listener: () => void): () => void {

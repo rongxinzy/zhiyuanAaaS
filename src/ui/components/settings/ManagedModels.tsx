@@ -166,11 +166,11 @@ function ModelRow({
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-xs text-muted-foreground">{translate(language, 'modelProvider')}</dt>
-          <dd className="font-medium">{model.providerDisplayName}</dd>
+          <dd className="font-normal">{model.providerDisplayName}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">{translate(language, 'contextWindow')}</dt>
-          <dd className="font-medium">
+          <dd className="font-normal">
             {model.contextWindow
               ? `${new Intl.NumberFormat(language).format(model.contextWindow)} ${translate(language, 'tokens')}`
               : translate(language, 'notProvided')}

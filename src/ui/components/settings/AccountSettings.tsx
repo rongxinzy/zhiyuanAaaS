@@ -57,7 +57,7 @@ export function AccountSettings({
           {details.map(([label, value]) => (
             <div key={label} className="min-w-0">
               <dt className="text-xs text-muted-foreground">{label}</dt>
-              <dd className="break-words text-sm font-medium">{value}</dd>
+              <dd className="break-words text-sm font-normal">{value}</dd>
             </div>
           ))}
         </dl>

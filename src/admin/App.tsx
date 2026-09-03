@@ -114,23 +114,23 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
   const activeLabel = navigation.find(item => item.page === page)?.label ?? 'overview';
   return (
     <main className="flex min-h-full bg-background">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-muted md:flex">
-        <div className="flex h-16 items-center gap-3 border-b border-border px-5">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
+        <div className="flex h-14 items-center gap-3 border-b border-border px-5">
           <BrandMark />
           <div className="min-w-0"><div className="truncate text-sm font-semibold">{translate(language, 'brandShort')}</div><div className="truncate text-xs text-muted-foreground">{translate(language, 'adminWorkspace')}</div></div>
         </div>
         <div className="flex flex-1 flex-col p-3">
           <div className="flex flex-col gap-1">
-            <span className="px-3 pb-1 text-xs font-medium text-muted-foreground">{translate(language, 'workspaceLabel')}</span>
+            <span className="px-3 pb-1 text-xs font-normal text-muted-foreground">{translate(language, 'workspaceLabel')}</span>
             {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} />)}
           </div>
           <div className="mt-auto border-t border-border px-3 pt-4">
-            <div className="flex items-center gap-2 text-xs font-medium"><CircleGauge className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
+            <div className="flex items-center gap-2 text-xs font-normal"><CircleGauge className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{translate(language, 'controlPlaneDescription')}</p>
           </div>
         </div>
         <div className="border-t border-border p-3">
-          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-medium">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-muted-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
+          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-normal">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-muted-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
           <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button>
         </div>
       </aside>
@@ -138,7 +138,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
         {/* overflow-clip keeps the PageTransition entrance slide from extending
             the document's scrollable overflow, which flashed a layout-shifting
             vertical scrollbar on every nav switch. */}
-        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border bg-background px-4 sm:px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p></div>
           <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut /></Button></div>
         </header>
@@ -158,7 +158,7 @@ function BrandMark() {
 }
 
 function NavItem({ icon: Icon, active, label, onClick, compact = false }: { readonly icon: LucideIcon; readonly active: boolean; readonly label: string; readonly onClick: () => void; readonly compact?: boolean }) {
-  return <Button data-admin-nav="true" variant="ghost" size="sm" aria-current={active ? 'page' : undefined} className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2', active ? 'border-border bg-card text-foreground hover:bg-card' : 'text-muted-foreground hover:border-border hover:bg-card hover:text-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
+  return <Button data-admin-nav="true" variant="ghost" size="sm" aria-current={active ? 'page' : undefined} className={cn(compact ? 'shrink-0 gap-2' : 'w-full justify-start gap-3', 'rounded-lg border border-transparent px-3 py-2 font-normal', active ? 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')} onClick={onClick}><Icon data-icon="inline-start" />{label}</Button>;
 }
 
 function PageTransition({ pageKey, children }: { readonly pageKey: string; readonly children: ReactNode }) {
