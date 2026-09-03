@@ -312,6 +312,15 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 3. **状态用文字表达，不用色块**：选中侧 `font-normal text-foreground`，未选侧 `font-normal text-muted-foreground opacity-50`；不通过加粗或强调色染色。
 4. **整行可点**：点击目标是整个控件区域，不只是滑块。
 
+### 线性页签
+
+资源管理等内容分区使用 RongxinAI 风格的线性页签：
+
+1. **底部分割线**：页签容器与内容区域之间使用 `border-b border-border`，不使用胶囊轨道。
+2. **活动下划线**：使用共享 Tabs 的 `TabsIndicator`，颜色使用 `primary` token，活动项保持 `font-normal`。
+3. **切换滑动**：指示条根据 Base UI 的 `--active-tab-left` / `--active-tab-width` 移动，过渡为 200ms `ease-in-out`；`prefers-reduced-motion` 下取消过渡。
+4. **非活动项**：使用 `text-muted-foreground`，hover 时提升为 `text-foreground`，不使用额外状态色。
+
 ### 工具栏触发按钮
 
 下拉选择器、菜单触发器、工具栏动作按钮一律使用以下语言：

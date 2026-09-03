@@ -263,6 +263,20 @@ body {
   line-height: var(--tea-font-line-height-default);
 }
 
+[data-slot='tabs-indicator'] {
+  width: var(--active-tab-width);
+  translate: var(--active-tab-left) 0;
+  transition-property: translate, width;
+  transition-duration: 200ms;
+  transition-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='tabs-indicator'] {
+    transition: none;
+  }
+}
+
 /* Keep the console boundary deterministic if it is ever embedded by a host
    renderer, while preserving the explicit full-width controls. */
 #root.zhiyuan-admin-console [data-slot='button'] {

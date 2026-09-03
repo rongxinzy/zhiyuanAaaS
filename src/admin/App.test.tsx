@@ -9,6 +9,7 @@ const client = {
   login: vi.fn(),
   logout: vi.fn(),
   overview: vi.fn(),
+  resources: vi.fn(),
 };
 
 vi.mock('./client.js', () => ({
@@ -41,6 +42,7 @@ describe('admin console', () => {
       },
     });
     client.overview.mockResolvedValue({ users: 4, agents: 2, skills: 3, models: 1, pendingEvents: 0 });
+    client.resources.mockResolvedValue({ users: [], agents: [], skills: [], assignments: [] });
     client.logout.mockResolvedValue(undefined);
   });
 
@@ -87,5 +89,18 @@ describe('admin console', () => {
       expect(item).toHaveClass('bg-sidebar-primary', 'text-sidebar-primary-foreground', 'font-normal');
       expect(item).not.toHaveClass('border-border', 'font-medium', 'font-semibold');
     }
+  });
+
+  test('uses RongxinAI line tabs and a sliding indicator for resources', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
+    expect(await screen.findByRole('tablist')).toHaveAttribute('data-variant', 'line');
+    expect(document.querySelector('[data-slot="tabs-indicator"]')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-active');
+
+    fireEvent.click(screen.getByRole('tab', { name: '智能体' }));
+    expect(screen.getByRole('tab', { name: '智能体' })).toHaveAttribute('data-active');
   });
 });
