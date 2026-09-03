@@ -140,7 +140,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
             vertical scrollbar on every nav switch. */}
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p></div>
-          <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut /></Button></div>
+          <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="size-8 rounded-lg p-0 md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut className="size-4" /></Button></div>
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
           {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}

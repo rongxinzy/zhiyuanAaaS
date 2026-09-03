@@ -91,6 +91,16 @@ describe('admin console', () => {
     }
   });
 
+  test('keeps the compact header sign-out hover target around its icon', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    const signOutButtons = await screen.findAllByRole('button', { name: '退出登录' });
+    const headerSignOut = signOutButtons.at(-1)!;
+    expect(headerSignOut).toHaveClass('size-8', 'rounded-lg', 'p-0', 'md:hidden');
+    expect(headerSignOut.querySelector('svg')).toHaveClass('size-4');
+  });
+
   test('uses RongxinAI line tabs and a sliding indicator for resources', async () => {
     client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
     render(<AdminApp />);
