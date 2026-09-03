@@ -291,7 +291,6 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  width: auto;
   text-align: center;
   font-family: var(--font-sans);
   font-size: 0.875rem;
