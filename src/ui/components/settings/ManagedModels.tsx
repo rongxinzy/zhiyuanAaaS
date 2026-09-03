@@ -156,20 +156,20 @@ function ModelRow({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="break-words text-sm font-semibold">{model.displayName}</h3>
-              {model.isDefault ? <Badge>{translate(language, 'defaultModel')}</Badge> : null}
+              {model.isDefault ? <Badge variant="info">{translate(language, 'defaultModel')}</Badge> : null}
             </div>
-            <p className="break-all text-xs text-muted-foreground">{model.id}</p>
+            <p className="break-all text-xs text-tertiary-foreground">{model.id}</p>
           </div>
         </div>
       </div>
 
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-xs text-muted-foreground">{translate(language, 'modelProvider')}</dt>
+          <dt className="text-xs text-tertiary-foreground">{translate(language, 'modelProvider')}</dt>
           <dd className="font-normal">{model.providerDisplayName}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted-foreground">{translate(language, 'contextWindow')}</dt>
+          <dt className="text-xs text-tertiary-foreground">{translate(language, 'contextWindow')}</dt>
           <dd className="font-normal">
             {model.contextWindow
               ? `${new Intl.NumberFormat(language).format(model.contextWindow)} ${translate(language, 'tokens')}`
@@ -186,7 +186,7 @@ function ModelRow({
             </Badge>
           ))
         ) : (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-tertiary-foreground">
             {translate(language, 'noDeclaredCapabilities')}
           </span>
         )}

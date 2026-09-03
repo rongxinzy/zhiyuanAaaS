@@ -71,6 +71,7 @@ describe('admin console', () => {
     expect(await screen.findByText('4')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(await screen.findByText('服务已连接')).toHaveClass('bg-success-soft', 'text-success');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '刷新' })));
     expect(client.overview).toHaveBeenCalledTimes(2);
   });

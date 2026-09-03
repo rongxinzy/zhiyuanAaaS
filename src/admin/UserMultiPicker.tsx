@@ -31,12 +31,12 @@ export function UserMultiPicker({ users, selected, onToggle, disabled = false }:
           <Button key={user.id} type="button" variant="ghost" size="sm" role="checkbox" aria-checked={selected.has(user.id)} disabled={disabled} className="justify-between"
             onClick={() => onToggle(user.id)}
           >
-            <span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0"><span className="block truncate text-left">{user.displayName}</span><span className="block truncate text-left text-xs text-muted-foreground">{user.username}</span></span></span>
+            <span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0"><span className="block truncate text-left">{user.displayName}</span><span className="block truncate text-left text-xs text-tertiary-foreground">{user.username}</span></span></span>
             <span aria-hidden="true" className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', selected.has(user.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>{selected.has(user.id) ? <Check className="size-3" /> : null}</span>
           </Button>
         ))}
       </div>
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">{translate(language, 'selectedUsersLabel')}<Badge variant="secondary">{selected.size}</Badge></p>
+      <p className="flex items-center gap-1.5 text-xs text-tertiary-foreground">{translate(language, 'selectedUsersLabel')}<Badge variant="secondary">{selected.size}</Badge></p>
     </>
   );
 }

@@ -66,7 +66,7 @@ export function PasswordChangeForm({
         </Alert>
       ) : null}
       {!displayedError && success ? (
-        <Alert>
+        <Alert variant="success">
           <CircleCheck aria-hidden="true" />
           <AlertDescription>{translate(language, success)}</AlertDescription>
         </Alert>

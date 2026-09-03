@@ -77,10 +77,11 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 | 覆盖层   | `popover`                          | 弹层、下拉、浮窗                                       |
 | 侧边栏   | `sidebar` 系列                     | 侧边栏专用表面、边框、激活态                           |
 | 主文本   | `foreground`                       | 正文、标题                                             |
-| 次文本   | `muted-foreground`                 | 辅助说明、时间戳、占位符、搜索无匹配结果及紧凑空态     |
+| 次文本   | `muted-foreground`                 | 辅助说明、表头、占位符、搜索无匹配结果及紧凑空态       |
+| 淡色文本 | `tertiary-foreground`              | 用户名、资源 ID、版本、时间戳、eyebrow 等元信息       |
 | 边框     | `border` / `input`                 | 分隔线、控件描边                                       |
 | 强调     | `primary` / `primary-foreground`   | 唯一的品牌强调色，用于主按钮、激活态、链接、focus ring |
-| 状态     | `destructive` / Tea success / warning | 危险、成功、警告只使用 `--tea-color-function-*` 与对应的 `--tea-color-bg-*` / `--tea-color-text-*` token |
+| 状态     | `destructive` / `success` / `warning` / `info` | 危险、成功、警告、信息只使用 Tea 对应的 `--tea-color-function-*`、`--tea-color-bg-*`、`--tea-color-text-*` token |
 
 侧边栏必须通过 `sidebar` 语义 token 直接消费 Tea 的 `--menu-*` 组件变量：默认表面使用 `--menu-bg`，hover 使用 `--menu-item-bg-hover` / `--menu-item-text-hover`，激活态使用 `--menu-item-bg-active` / `--menu-item-text-active`。激活项不增加可见边框、不加粗，文字和图标继承同一激活前景色。
 
@@ -116,6 +117,9 @@ admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此�
 3. **层级公式：** 背景每浮起一层（background → card → muted → popover），明暗差异缩小一档；不要跳档制造高反差色块。
 4. 明暗主题共用同一套 token 名，组件代码不得出现 `dark:` 前缀的单独配色——差异必须在 `src/ui/tea-theme.css` 和 `src/ui/index.css` 的 token 层解决。模态遮罩使用 `bg-overlay`，不在组件中写黑色透明度。
 5. **搜索空结果使用次文本。** 关键词无匹配、无可选项等紧凑空态使用 `text-sm text-muted-foreground`，不使用主文本、状态色或额外边框；完整空状态页面再按空状态组件规范处理。
+
+6. **文本层级按语义区分。** 辅助说明和表头使用 `text-muted-foreground`；资源 ID、用户名、版本、时间戳和 eyebrow 等元信息使用 `text-tertiary-foreground`，不通过 opacity 临时降低颜色。
+7. **状态组件使用语义变体。** `Badge` 和 `Alert` 支持 `success`、`warning`、`info`、`destructive` 变体；启用、连接和操作成功使用 `success`，权限或不可用提示使用 `warning`，错误和危险操作使用 `destructive`，默认/已标记类信息使用 `info`。
 
 ## 字体
 

@@ -54,6 +54,20 @@
 
 ## Semantic Colors
 
+The admin console exposes the Tea text and status roles through semantic utility tokens:
+
+```css
+--tertiary-foreground: var(--tea-color-text-tertiary);
+--success: var(--tea-color-text-success);
+--success-soft: var(--tea-color-bg-success-lighten-default);
+--warning: var(--tea-color-text-warning);
+--warning-soft: var(--tea-color-bg-warning-lighten-default);
+--info: var(--tea-color-text-brand);
+--info-soft: var(--tea-color-bg-brand-lighten-default);
+```
+
+Use `text-muted-foreground` for secondary descriptions and compact empty states. Use `text-tertiary-foreground` for metadata such as identifiers, usernames, versions, timestamps, and eyebrows. Status components use Tea-backed `success`, `warning`, `info`, or `destructive` variants instead of neutral badges.
+
 ```css
 --tea-color-bg-brand-default: #0052d9;
 --tea-color-bg-brand-lighten-default: #e3ecff;

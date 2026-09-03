@@ -117,20 +117,20 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
       <aside className="hidden w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
         <div className="flex h-14 items-center gap-3 border-b border-border px-5">
           <BrandMark />
-          <div className="min-w-0"><div className="truncate text-sm font-semibold">{translate(language, 'brandShort')}</div><div className="truncate text-xs text-muted-foreground">{translate(language, 'adminWorkspace')}</div></div>
+          <div className="min-w-0"><div className="truncate text-sm font-semibold">{translate(language, 'brandShort')}</div><div className="truncate text-xs text-tertiary-foreground">{translate(language, 'adminWorkspace')}</div></div>
         </div>
         <div className="flex flex-1 flex-col p-3">
           <div className="flex flex-col gap-1">
-            <span className="px-3 pb-1 text-xs font-normal text-muted-foreground">{translate(language, 'workspaceLabel')}</span>
+            <span className="px-3 pb-1 text-xs font-normal text-tertiary-foreground">{translate(language, 'workspaceLabel')}</span>
             {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} />)}
           </div>
           <div className="mt-auto border-t border-border px-3 pt-4">
             <div className="flex items-center gap-2 text-xs font-normal"><CircleGauge className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
-            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{translate(language, 'controlPlaneDescription')}</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-tertiary-foreground">{translate(language, 'controlPlaneDescription')}</p>
           </div>
         </div>
         <div className="border-t border-border p-3">
-          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-normal">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-muted-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
+          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-normal">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-tertiary-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
           <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button>
         </div>
       </aside>
@@ -219,7 +219,7 @@ function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; re
 }
 
 function ForbiddenView({ identity }: { readonly identity: string | undefined }) {
-  return <main className="flex min-h-full items-center justify-center bg-muted p-6"><Alert className="max-w-md"><AlertCircle aria-hidden="true" /><AlertTitle>{translate(language, 'accessDeniedTitle')}</AlertTitle><AlertDescription>{translate(language, 'accessDeniedDescription')}{identity ? ` (${identity})` : ''}</AlertDescription></Alert></main>;
+  return <main className="flex min-h-full items-center justify-center bg-muted p-6"><Alert variant="warning" className="max-w-md"><AlertCircle aria-hidden="true" /><AlertTitle>{translate(language, 'accessDeniedTitle')}</AlertTitle><AlertDescription>{translate(language, 'accessDeniedDescription')}{identity ? ` (${identity})` : ''}</AlertDescription></Alert></main>;
 }
 
 function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
@@ -228,9 +228,9 @@ function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
   const [error, setError] = useState(false);
   const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview()); } catch { setError(true); } finally { setLoading(false); } }, [client]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="outline"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="success"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
 }
 
 function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | undefined; readonly icon: LucideIcon }) {
-  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-muted-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
+  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-tertiary-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
 }

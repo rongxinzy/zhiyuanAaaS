@@ -56,7 +56,7 @@ export function AccountSettings({
         <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
           {details.map(([label, value]) => (
             <div key={label} className="min-w-0">
-              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dt className="text-xs text-tertiary-foreground">{label}</dt>
               <dd className="break-words text-sm font-normal">{value}</dd>
             </div>
           ))}
@@ -98,7 +98,7 @@ export function AccountSettingsUnavailable({
 }) {
   return (
     <main className="flex min-h-full items-center justify-center bg-background p-4 sm:p-6">
-      <Alert className="max-w-md">
+      <Alert variant="warning" className="max-w-md">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{translate(language, 'accountUnavailableTitle')}</AlertTitle>
         <AlertDescription>{translate(language, 'accountUnavailableDescription')}</AlertDescription>
