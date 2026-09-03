@@ -159,6 +159,11 @@ jobs:
           $lines | Set-Content zhiyuan-core/release/SHA256SUMS.txt -Encoding ascii
           $lines
 
+      - name: Verify installer checksums
+        env:
+          ZHIYUAN_RELEASE_DIR: ${{ github.workspace }}\zhiyuan-core\release
+        run: npm run verify:release-artifacts
+
       - name: Upload enterprise installer
         uses: actions/upload-artifact@v6
         with:

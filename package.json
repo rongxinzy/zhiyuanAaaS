@@ -24,6 +24,7 @@
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
     "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
     "verify:electron-package": "node scripts/verify-electron-package.mjs",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
     "verify:sdk": "node scripts/verify-sdk.mjs"
   },
