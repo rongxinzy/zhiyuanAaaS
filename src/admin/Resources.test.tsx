@@ -23,6 +23,8 @@ describe('admin resources', () => {
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     expect(await screen.findByText('张三')).toBeInTheDocument();
+    expect(screen.getByText('zhangsan')).toHaveClass('text-tertiary-foreground');
+    expect(screen.getByText('启用')).toHaveClass('bg-success-soft', 'text-success');
     fireEvent.click(screen.getByRole('button', { name: '停用' }));
     await waitFor(() => expect(client.updateUser).toHaveBeenCalledWith('u1', { status: 'disabled' }));
   });

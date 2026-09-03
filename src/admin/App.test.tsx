@@ -9,6 +9,7 @@ const client = {
   login: vi.fn(),
   logout: vi.fn(),
   overview: vi.fn(),
+  resources: vi.fn(),
 };
 
 vi.mock('./client.js', () => ({
@@ -41,6 +42,7 @@ describe('admin console', () => {
       },
     });
     client.overview.mockResolvedValue({ users: 4, agents: 2, skills: 3, models: 1, pendingEvents: 0 });
+    client.resources.mockResolvedValue({ users: [], agents: [], skills: [], assignments: [] });
     client.logout.mockResolvedValue(undefined);
   });
 
@@ -71,7 +73,44 @@ describe('admin console', () => {
     expect(await screen.findByText('4')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(await screen.findByText('服务已连接')).toHaveClass('bg-success-soft', 'text-success');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '刷新' })));
     expect(client.overview).toHaveBeenCalledTimes(2);
+  });
+
+  test('uses Tea menu tokens and regular weight for active navigation', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    const activeItems = await screen.findAllByRole('button', { name: '概览' });
+    expect(activeItems).toHaveLength(2);
+    for (const item of activeItems) {
+      expect(item).toHaveAttribute('aria-current', 'page');
+      expect(item).toHaveClass('bg-sidebar-primary', 'text-sidebar-primary-foreground', 'font-normal');
+      expect(item).not.toHaveClass('border-border', 'font-medium', 'font-semibold');
+    }
+  });
+
+  test('keeps the compact header sign-out hover target around its icon', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    const signOutButtons = await screen.findAllByRole('button', { name: '退出登录' });
+    const headerSignOut = signOutButtons.at(-1)!;
+    expect(headerSignOut).toHaveClass('size-8', 'rounded-lg', 'p-0', 'md:hidden');
+    expect(headerSignOut.querySelector('svg')).toHaveClass('size-4');
+  });
+
+  test('uses RongxinAI line tabs and a sliding indicator for resources', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
+    expect(await screen.findByRole('tablist')).toHaveAttribute('data-variant', 'line');
+    expect(document.querySelector('[data-slot="tabs-indicator"]')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-active');
+
+    fireEvent.click(screen.getByRole('tab', { name: '智能体' }));
+    expect(screen.getByRole('tab', { name: '智能体' })).toHaveAttribute('data-active');
   });
 });

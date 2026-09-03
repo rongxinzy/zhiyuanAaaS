@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import './tea-theme.css';
 
 /* Admin Vite uses src/admin as its root, while the shared shadcn primitives
    live beside it under src/ui. Keep both trees in Tailwind's source graph. */
@@ -9,75 +10,141 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  color-scheme: light;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.366 0.008 253);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.366 0.008 253);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.366 0.008 253);
-  --primary: oklch(0.366 0.008 253);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.869 0.005 56.366);
-  --chart-2: oklch(0.553 0.013 58.071);
-  --chart-3: oklch(0.444 0.011 73.639);
-  --chart-4: oklch(0.374 0.01 67.558);
-  --chart-5: oklch(0.268 0.007 34.298);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.216 0.006 56.043);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
+/* Keep the existing shadcn semantic API, but source every value from Tea. */
+:root,
+.tea-theme-light,
+[theme-mode='light'] {
+  --background: var(--tea-color-bg-page-default);
+  --foreground: var(--tea-color-text-primary);
+  --card: var(--tea-color-bg-container-default);
+  --card-foreground: var(--tea-color-text-primary);
+  --popover: var(--tea-color-bg-container-default);
+  --popover-foreground: var(--tea-color-text-primary);
+  --primary: var(--tea-color-bg-brand-default);
+  --primary-hover: var(--tea-color-bg-brand-hover);
+  --primary-active: var(--tea-color-bg-brand-active);
+  --primary-focus: var(--tea-color-bg-brand-focus);
+  --primary-soft: var(--tea-color-bg-brand-lighten-default);
+  --primary-border-soft: var(--tea-color-border-brand-lighten-default);
+  --primary-foreground: var(--tea-color-text-on-bg-brand-default);
+  --secondary: var(--tea-color-bg-secondary-default);
+  --secondary-hover: var(--tea-color-bg-secondary-hover);
+  --secondary-foreground: var(--tea-color-text-primary);
+  --muted: var(--tea-color-bg-secondary-default);
+  --muted-foreground: var(--tea-color-text-secondary);
+  --tertiary-foreground: var(--tea-color-text-tertiary);
+  --accent: var(--tea-color-bg-secondary-hover);
+  --accent-foreground: var(--tea-color-text-primary);
+  --success: var(--tea-color-text-success);
+  --success-foreground: var(--tea-color-text-on-bg-success-lighten-default);
+  --success-soft: var(--tea-color-bg-success-lighten-default);
+  --success-hover: var(--tea-color-bg-success-hover);
+  --success-border: var(--tea-color-border-success-default);
+  --warning: var(--tea-color-text-warning);
+  --warning-foreground: var(--tea-color-text-on-bg-warning-lighten-default);
+  --warning-soft: var(--tea-color-bg-warning-lighten-default);
+  --warning-hover: var(--tea-color-bg-warning-hover);
+  --warning-border: var(--tea-color-border-warning-default);
+  --info: var(--tea-color-text-brand);
+  --info-foreground: var(--tea-color-text-on-bg-brand-lighten-default);
+  --info-soft: var(--tea-color-bg-brand-lighten-default);
+  --info-hover: var(--tea-color-bg-brand-hover);
+  --info-border: var(--tea-color-border-brand-default);
+  --destructive: var(--tea-color-function-error-default);
+  --destructive-soft: var(--tea-color-bg-error-lighten-default);
+  --destructive-hover: var(--tea-color-bg-error-hover);
+  --destructive-focus: var(--tea-color-bg-error-focus);
+  --destructive-border-focus: var(--tea-color-border-error-focus);
+  --destructive-ring: var(--tea-color-function-error-focus);
+  --overlay: var(--tea-color-bg-mask-default);
+  --border: var(--tea-color-border-primary-default);
+  --input: var(--tea-color-border-form-default);
+  --ring: var(--tea-color-function-brand-focus);
+  --chart-1: var(--tea-color-function-brand-default);
+  --chart-2: var(--tea-color-function-success-default);
+  --chart-3: var(--tea-color-function-warning-default);
+  --chart-4: var(--tea-color-function-error-default);
+  --chart-5: var(--tea-color-text-secondary);
+  --radius: var(--tea-border-radius-default);
+  --sidebar: var(--menu-bg);
+  --sidebar-foreground: var(--menu-text-default);
+  --menu-item-bg-active: #e5ecff;
+  --menu-item-text-active: var(--menu-text-default);
+  --menu-icon-color-active: var(--menu-text-default);
+  --sidebar-primary: var(--menu-item-bg-active);
+  --sidebar-primary-foreground: var(--menu-item-text-active);
+  --sidebar-accent: var(--menu-item-bg-hover);
+  --sidebar-accent-foreground: var(--menu-item-text-hover);
+  --sidebar-border: var(--menu-border);
+  --sidebar-ring: var(--tea-color-function-brand-focus);
 }
 
-.dark {
-  color-scheme: dark;
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.923 0.003 48.717);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.553 0.013 58.071);
-  --chart-1: oklch(0.869 0.005 56.366);
-  --chart-2: oklch(0.553 0.013 58.071);
-  --chart-3: oklch(0.444 0.011 73.639);
-  --chart-4: oklch(0.374 0.01 67.558);
-  --chart-5: oklch(0.268 0.007 34.298);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.553 0.013 58.071);
+.dark,
+.tea-theme-dark,
+[theme-mode='dark'][theme-enable='true'] {
+  --background: var(--tea-color-bg-page-default);
+  --foreground: var(--tea-color-text-primary);
+  --card: var(--tea-color-bg-container-default);
+  --card-foreground: var(--tea-color-text-primary);
+  --popover: var(--tea-color-bg-container-default);
+  --popover-foreground: var(--tea-color-text-primary);
+  --primary: var(--tea-color-bg-brand-default);
+  --primary-hover: var(--tea-color-bg-brand-hover);
+  --primary-active: var(--tea-color-bg-brand-active);
+  --primary-focus: var(--tea-color-bg-brand-focus);
+  --primary-soft: var(--tea-color-bg-brand-lighten-default);
+  --primary-border-soft: var(--tea-color-border-brand-lighten-default);
+  --primary-foreground: var(--tea-color-text-on-bg-brand-default);
+  --secondary: var(--tea-color-bg-secondary-default);
+  --secondary-hover: var(--tea-color-bg-secondary-hover);
+  --secondary-foreground: var(--tea-color-text-primary);
+  --muted: var(--tea-color-bg-secondary-default);
+  --muted-foreground: var(--tea-color-text-secondary);
+  --tertiary-foreground: var(--tea-color-text-tertiary);
+  --accent: var(--tea-color-bg-secondary-hover);
+  --accent-foreground: var(--tea-color-text-primary);
+  --success: var(--tea-color-text-success);
+  --success-foreground: var(--tea-color-text-on-bg-success-lighten-default);
+  --success-soft: var(--tea-color-bg-success-lighten-default);
+  --success-hover: var(--tea-color-bg-success-hover);
+  --success-border: var(--tea-color-border-success-default);
+  --warning: var(--tea-color-text-warning);
+  --warning-foreground: var(--tea-color-text-on-bg-warning-lighten-default);
+  --warning-soft: var(--tea-color-bg-warning-lighten-default);
+  --warning-hover: var(--tea-color-bg-warning-hover);
+  --warning-border: var(--tea-color-border-warning-default);
+  --info: var(--tea-color-text-brand);
+  --info-foreground: var(--tea-color-text-on-bg-brand-lighten-default);
+  --info-soft: var(--tea-color-bg-brand-lighten-default);
+  --info-hover: var(--tea-color-bg-brand-hover);
+  --info-border: var(--tea-color-border-brand-default);
+  --destructive: var(--tea-color-function-error-default);
+  --destructive-soft: var(--tea-color-bg-error-lighten-default);
+  --destructive-hover: var(--tea-color-bg-error-hover);
+  --destructive-focus: var(--tea-color-bg-error-focus);
+  --destructive-border-focus: var(--tea-color-border-error-focus);
+  --destructive-ring: var(--tea-color-function-error-focus);
+  --overlay: var(--tea-color-bg-mask-default);
+  --border: var(--tea-color-border-primary-default);
+  --input: var(--tea-color-border-form-default);
+  --ring: var(--tea-color-function-brand-focus);
+  --chart-1: var(--tea-color-function-brand-default);
+  --chart-2: var(--tea-color-function-success-default);
+  --chart-3: var(--tea-color-function-warning-default);
+  --chart-4: var(--tea-color-function-error-default);
+  --chart-5: var(--tea-color-text-secondary);
+  --radius: var(--tea-border-radius-default);
+  --sidebar: var(--menu-bg);
+  --sidebar-foreground: var(--menu-text-default);
+  --menu-item-bg-active: #282e40;
+  --menu-item-text-active: var(--tea-color-text-on-bg-brand-default);
+  --menu-icon-color-active: var(--tea-color-text-on-bg-brand-default);
+  --sidebar-primary: var(--menu-item-bg-active);
+  --sidebar-primary-foreground: var(--menu-item-text-active);
+  --sidebar-accent: var(--menu-item-bg-hover);
+  --sidebar-accent-foreground: var(--menu-item-text-hover);
+  --sidebar-border: var(--menu-border);
+  --sidebar-ring: var(--tea-color-function-brand-focus);
 }
 
 html,
@@ -93,8 +160,58 @@ body {
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
-    Inter, system-ui, sans-serif;
+  --font-sans: var(--tea-font-family-default);
+  --font-mono: var(--tea-font-family-code);
+  --font-weight-normal: var(--tea-font-weight-regular);
+  --font-weight-medium: var(--tea-font-weight-medium);
+  --font-weight-semibold: var(--tea-font-weight-medium);
+  --spacing: var(--tea-space-100);
+  --border-width: var(--tea-border-width-default);
+  --text-xs: var(--tea-font-size-300);
+  --text-xs--line-height: var(--tea-font-line-height-500);
+  --text-sm: var(--tea-font-size-350);
+  --text-sm--line-height: var(--tea-font-line-height-550);
+  --text-base: var(--tea-font-size-400);
+  --text-base--line-height: var(--tea-font-line-height-600);
+  --text-lg: var(--tea-font-size-450);
+  --text-lg--line-height: var(--tea-font-line-height-650);
+  --text-xl: var(--tea-font-size-500);
+  --text-xl--line-height: var(--tea-font-line-height-700);
+  --text-2xl: var(--tea-font-size-600);
+  --text-2xl--line-height: var(--tea-font-line-height-800);
+  --shadow-sm: var(--tea-shadow-sm);
+  --shadow-md: var(--tea-shadow-md);
+  --shadow-lg: var(--tea-shadow-lg);
+  --shadow-xl: var(--tea-shadow-xl);
+  --shadow-2xl: var(--tea-shadow-xl);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-focus: var(--primary-focus);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border-soft: var(--primary-border-soft);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-tertiary-foreground: var(--tertiary-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-success-hover: var(--success-hover);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-hover: var(--warning-hover);
+  --color-warning-border: var(--warning-border);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-info-hover: var(--info-hover);
+  --color-info-border: var(--info-border);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-focus: var(--destructive-focus);
+  --color-destructive-border-focus: var(--destructive-border-focus);
+  --color-destructive-ring: var(--destructive-ring);
+  --color-overlay: var(--overlay);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -126,13 +243,13 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: var(--tea-border-radius-150);
+  --radius-md: var(--tea-border-radius-200);
+  --radius-lg: var(--tea-border-radius-300);
+  --radius-xl: var(--tea-border-radius-400);
+  --radius-2xl: var(--tea-border-radius-500);
+  --radius-3xl: var(--tea-border-radius-750);
+  --radius-4xl: var(--tea-border-radius-full);
 }
 
 @layer base {
@@ -147,6 +264,25 @@ body {
   }
 }
 
+body {
+  font-size: var(--tea-font-size-default);
+  line-height: var(--tea-font-line-height-default);
+}
+
+[data-slot='tabs-indicator'] {
+  width: var(--active-tab-width);
+  translate: var(--active-tab-left) 0;
+  transition-property: translate, width;
+  transition-duration: 200ms;
+  transition-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='tabs-indicator'] {
+    transition: none;
+  }
+}
+
 /* Keep the console boundary deterministic if it is ever embedded by a host
    renderer, while preserving the explicit full-width controls. */
 #root.zhiyuan-admin-console [data-slot='button'] {
@@ -155,7 +291,6 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  width: auto;
   text-align: center;
   font-family: var(--font-sans);
   font-size: 0.875rem;

@@ -42,7 +42,7 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
       {recoverable ? (
-        <Alert>
+        <Alert variant="destructive">
           <CircleAlert aria-hidden="true" />
           <AlertDescription>{translate(language, 'sessionRecoveryFailed')}</AlertDescription>
         </Alert>
