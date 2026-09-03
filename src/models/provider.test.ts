@@ -108,6 +108,24 @@ describe('ZhiyuanModelProvider', () => {
     expect(clearInterval).toHaveBeenCalledOnce();
   });
 
+  test('uses the activated entitlement token for enterprise inference', async () => {
+    const provider = new ZhiyuanModelProvider(
+      await authenticatedSession(mockClient()),
+      {getEntitlementToken: () => 'entitlement-token', requireEntitlement: true},
+    );
+
+    await expect(provider.snapshot()).resolves.toMatchObject({apiKey: 'entitlement-token'});
+  });
+
+  test('does not expose models before a required entitlement is active', async () => {
+    const provider = new ZhiyuanModelProvider(
+      await authenticatedSession(mockClient()),
+      {getEntitlementToken: () => null, requireEntitlement: true},
+    );
+
+    await expect(provider.snapshot()).rejects.toThrow('requires an active License entitlement');
+  });
+
   test('rejects a gateway with an incompatible protocol', async () => {
     const provider = new ZhiyuanModelProvider(
       await authenticatedSession(

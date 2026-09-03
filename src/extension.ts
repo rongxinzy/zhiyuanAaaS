@@ -121,7 +121,13 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
       }
       if (managedProviderCapability) {
         this.#unregisterManagedProvider = managedProviderCapability.registerSource(
-          new ZhiyuanModelProvider(session),
+          new ZhiyuanModelProvider(session, {
+            getEntitlementToken: () => runtime.licenseActivation?.entitlement()?.entitlementToken ?? null,
+            requireEntitlement: runtime.licenseActivation !== null && runtime.licenseActivation !== undefined,
+            ...(runtime.licenseActivation
+              ? {onEntitlementChange: (listener: () => void) => runtime.licenseActivation!.onDidChange(listener)}
+              : {}),
+          }),
         );
       }
       await session.initialize().catch(() => {
