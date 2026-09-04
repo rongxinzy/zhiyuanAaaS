@@ -57,13 +57,14 @@ export function Operations({ client, identity }: { readonly client: AdminConsole
             </TabsList>
           </Tabs>
         </div>
-        {activeTab === OperationsTab.Licenses ? <LicensePanel client={client} /> : activeTab === OperationsTab.Sessions ? <SessionPanel client={client} /> : activeTab === OperationsTab.Credentials ? <CredentialPanel client={client} identity={identity} /> : <DataPlanePanel client={client} />}
+        {activeTab === OperationsTab.Licenses ? <LicensePanel client={client} identity={identity} /> : activeTab === OperationsTab.Sessions ? <SessionPanel client={client} /> : activeTab === OperationsTab.Credentials ? <CredentialPanel client={client} identity={identity} /> : <DataPlanePanel client={client} />}
       </div>
     </section>
   );
 }
 
-function LicensePanel({ client }: { readonly client: AdminConsoleClient }) {
+function LicensePanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
+  const canRevoke = hasAdminPermission(identity, AdminPermission.LicensesRevoke);
   const [licenses, setLicenses] = useState<readonly License[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
@@ -90,20 +91,20 @@ function LicensePanel({ client }: { readonly client: AdminConsoleClient }) {
         </div>
       </div>
       {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
-      {loading && !licenses ? <LicenseSkeleton /> : licenses ? <LicenseTable licenses={licenses} client={client} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
+      {loading && !licenses ? <LicenseSkeleton /> : licenses ? <LicenseTable licenses={licenses} canRevoke={canRevoke} client={client} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
       <LicenseImportDialog client={client} open={importOpen} onOpenChange={setImportOpen} onChanged={load} onError={() => setError('licensesLoadFailed')} />
     </div>
   );
 }
 
-function LicenseTable({ licenses, client, onChanged, onError }: { readonly licenses: readonly License[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function LicenseTable({ licenses, canRevoke, client, onChanged, onError }: { readonly licenses: readonly License[]; readonly canRevoke: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   if (licenses.length === 0) return <Empty><EmptyHeader><EmptyMedia><FileKey2 aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noLicenses')}</EmptyTitle><EmptyDescription>{translate(language, 'noLicensesHint')}</EmptyDescription></EmptyHeader></Empty>;
   const revoke = async (licenseId: string) => {
     setPendingId(licenseId);
     try { await client.revokeLicense(licenseId); await onChanged(); } catch { onError(); } finally { setPendingId(null); }
   };
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'license')}</TableHead><TableHead>{translate(language, 'licenseStatus')}</TableHead><TableHead>{translate(language, 'expiresAt')}</TableHead><TableHead>{translate(language, 'activeUsers')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{licenses.map(license => <TableRow key={license.licenseId}><TableCell><div className="min-w-0"><div className="truncate font-normal">{license.licenseId}</div><div className="truncate text-xs text-tertiary-foreground">{license.customerId} · {license.keyId}</div></div></TableCell><TableCell><Badge variant={license.status === 'active' ? 'success' : 'outline'}>{translate(language, license.status === 'active' ? 'enabled' : 'revoked')}</Badge></TableCell><TableCell className="text-xs text-tertiary-foreground">{formatTimestamp(license.expiresAt)}</TableCell><TableCell className="text-xs text-tertiary-foreground">{license.activeUsers} / {license.limits.users}</TableCell><TableCell className="text-right">{license.status === 'active' ? <AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null} />}><ShieldAlert data-icon="inline-start" />{translate(language, 'revokeLicense')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeLicenseTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeLicenseDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void revoke(license.licenseId)}>{translate(language, 'confirmRevokeLicense')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : <span className="text-xs text-tertiary-foreground">{translate(language, 'revoked')}</span>}</TableCell></TableRow>)}</TableBody></Table></div>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'license')}</TableHead><TableHead>{translate(language, 'licenseStatus')}</TableHead><TableHead>{translate(language, 'expiresAt')}</TableHead><TableHead>{translate(language, 'activeUsers')}</TableHead>{canRevoke ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{licenses.map(license => <TableRow key={license.licenseId}><TableCell><div className="min-w-0"><div className="truncate font-normal">{license.licenseId}</div><div className="truncate text-xs text-tertiary-foreground">{license.customerId} · {license.keyId}</div></div></TableCell><TableCell><Badge variant={license.status === 'active' ? 'success' : 'outline'}>{translate(language, license.status === 'active' ? 'enabled' : 'revoked')}</Badge></TableCell><TableCell className="text-xs text-tertiary-foreground">{formatTimestamp(license.expiresAt)}</TableCell><TableCell className="text-xs text-tertiary-foreground">{license.activeUsers} / {license.limits.users}</TableCell>{canRevoke ? <TableCell className="text-right">{license.status === 'active' ? <AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null} />}><ShieldAlert data-icon="inline-start" />{translate(language, 'revokeLicense')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeLicenseTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeLicenseDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void revoke(license.licenseId)}>{translate(language, 'confirmRevokeLicense')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : <span className="text-xs text-tertiary-foreground">{translate(language, 'revoked')}</span>}</TableCell> : null}</TableRow>)}</TableBody></Table></div>;
 }
 
 function LicenseImportDialog({ client, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
@@ -149,6 +150,8 @@ function SessionPanel({ client }: { readonly client: AdminConsoleClient }) {
 }
 
 function CredentialPanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
+  const canWrite = hasAdminPermission(identity, AdminPermission.CredentialsWrite);
+  const canAssign = hasAdminPermission(identity, AdminPermission.CredentialsAssign);
   const [state, setState] = useState<AdminCredentials | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [roles, setRoles] = useState<readonly Role[]>([]);
@@ -160,7 +163,7 @@ function CredentialPanel({ client, identity }: { readonly client: AdminConsoleCl
     setLoading(true);
     setError(false);
     try {
-      const [credentials, resources] = await Promise.all([client.credentials(), client.resources(identity)]);
+      const [credentials, resources] = await Promise.all([client.credentials(identity), client.resources(identity)]);
       setState(credentials);
       setUsers(resources.users);
       setRoles(resources.roles);
@@ -181,31 +184,35 @@ function CredentialPanel({ client, identity }: { readonly client: AdminConsoleCl
       <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button>
     </div>
     {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialsLoadFailed')}</AlertDescription></Alert> : null}
-    <CredentialEditorDialog client={client} open={undefined} onOpenChange={() => undefined} onChanged={load} onError={() => setError(true)} />
-    {loading && !state ? <CredentialSkeleton /> : state ? <CredentialList credentials={state.credentials} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError(true)} onGrant={(credential, assignments) => setGranting({ credential, assignments })} /> : null}
-    {granting ? <CredentialGrantDialog client={client} credential={granting.credential} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} open onOpenChange={nextOpen => { if (!nextOpen) setGranting(null); }} onChanged={load} onError={() => setError(true)} /> : null}
+    {canWrite ? <CredentialEditorDialog client={client} open={undefined} onOpenChange={() => undefined} onChanged={load} onError={() => setError(true)} /> : null}
+    {loading && !state ? <CredentialSkeleton /> : state ? <CredentialList credentials={state.credentials} assignments={state.assignments} users={users} roles={roles} teams={teams} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={load} onError={() => setError(true)} onGrant={(credential, assignments) => setGranting({ credential, assignments })} /> : null}
+    {canAssign && granting ? <CredentialGrantDialog client={client} credential={granting.credential} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} open onOpenChange={nextOpen => { if (!nextOpen) setGranting(null); }} onChanged={load} onError={() => setError(true)} /> : null}
   </div>;
 }
 
-function CredentialList({ credentials, assignments, users, roles, teams, client, onChanged, onError, onGrant }: {
+function CredentialList({ credentials, assignments, users, roles, teams, canWrite, canAssign, client, onChanged, onError, onGrant }: {
   readonly credentials: readonly CredentialMetadata[];
   readonly assignments: readonly CredentialAssignment[];
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
+  readonly canWrite: boolean;
+  readonly canAssign: boolean;
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
   readonly onGrant: (credential: CredentialMetadata, assignments: readonly CredentialAssignment[]) => void;
 }) {
   if (credentials.length === 0) return <Empty><EmptyHeader><EmptyMedia><KeyRound aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noCredentials')}</EmptyTitle><EmptyDescription>{translate(language, 'noCredentialsHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="flex flex-col gap-4"><div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'credential')}</TableHead><TableHead>{translate(language, 'credentialService')}</TableHead><TableHead>{translate(language, 'deliveryMode')}</TableHead><TableHead>{translate(language, 'credentialStatus')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{credentials.map(credential => { const credentialAssignments = assignments.filter(item => item.resourceId === credential.id); return <CredentialRow key={credential.id} credential={credential} assignments={credentialAssignments} users={users} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(credential, credentialAssignments)} />; })}</TableBody></Table></div><div className="flex items-center gap-2 text-xs text-tertiary-foreground"><KeyRound className="size-3.5" aria-hidden="true" />{translate(language, 'credentialSecretHint')}</div></div>;
+  return <div className="flex flex-col gap-4"><div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'credential')}</TableHead><TableHead>{translate(language, 'credentialService')}</TableHead><TableHead>{translate(language, 'deliveryMode')}</TableHead><TableHead>{translate(language, 'credentialStatus')}</TableHead>{canWrite || canAssign ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{credentials.map(credential => { const credentialAssignments = assignments.filter(item => item.resourceId === credential.id); return <CredentialRow key={credential.id} credential={credential} assignments={credentialAssignments} users={users} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(credential, credentialAssignments)} />; })}</TableBody></Table></div><div className="flex items-center gap-2 text-xs text-tertiary-foreground"><KeyRound className="size-3.5" aria-hidden="true" />{translate(language, 'credentialSecretHint')}</div></div>;
 }
 
-function CredentialRow({ credential, assignments, users, client, onChanged, onError, onGrant }: {
+function CredentialRow({ credential, assignments, users, canWrite, canAssign, client, onChanged, onError, onGrant }: {
   readonly credential: CredentialMetadata;
   readonly assignments: readonly CredentialAssignment[];
   readonly users: readonly PlatformUser[];
+  readonly canWrite: boolean;
+  readonly canAssign: boolean;
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
@@ -222,19 +229,19 @@ function CredentialRow({ credential, assignments, users, client, onChanged, onEr
       <TableCell className="max-w-40 truncate text-xs text-tertiary-foreground">{credential.service}</TableCell>
       <TableCell><Badge variant="info">{translate(language, credential.deliveryMode === 'client' ? 'clientDelivery' : 'serverOnlyDelivery')}</Badge></TableCell>
       <TableCell><Badge variant={credential.enabled ? 'success' : 'outline'}>{translate(language, credential.enabled ? 'enabled' : 'disabled')}</Badge></TableCell>
-      <TableCell><div className="flex flex-wrap justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(true)}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => setRotating(true)}><RotateCcw data-icon="inline-start" />{translate(language, 'rotateCredential')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateCredential(credential.id, { enabled: !credential.enabled }); })}>{translate(language, credential.enabled ? 'disable' : 'enable')}</Button><Button size="sm" onClick={onGrant}><UsersRound data-icon="inline-start" />{translate(language, 'grantCredential')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteCredentialTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteCredentialDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteCredential(credential.id); })}>{translate(language, 'confirmDeleteCredential')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell>
+      {canWrite || canAssign ? <TableCell><div className="flex flex-wrap justify-end gap-1.5">{canWrite ? <><Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(true)}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => setRotating(true)}><RotateCcw data-icon="inline-start" />{translate(language, 'rotateCredential')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateCredential(credential.id, { enabled: !credential.enabled }); })}>{translate(language, credential.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteCredentialTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteCredentialDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteCredential(credential.id); })}>{translate(language, 'confirmDeleteCredential')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></> : null}{canAssign ? <Button size="sm" onClick={onGrant}><UsersRound data-icon="inline-start" />{translate(language, 'grantCredential')}</Button> : null}</div></TableCell> : null}
     </TableRow>
-    {assignments.length > 0 ? <TableRow><TableCell colSpan={5}><div className="flex flex-wrap gap-2 text-xs text-tertiary-foreground">{assignments.map(assignment => <CredentialAssignmentRow key={assignment.id} assignment={assignment} user={userNames.get(assignment.subject.id)} client={client} onChanged={onChanged} onError={onError} />)}</div></TableCell></TableRow> : null}
-    {editing ? <CredentialEditorDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setEditing(false); }} onChanged={onChanged} onError={onError} /> : null}
-    {rotating ? <CredentialRotateDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setRotating(false); }} onChanged={onChanged} onError={onError} /> : null}
+    {assignments.length > 0 ? <TableRow><TableCell colSpan={canWrite || canAssign ? 5 : 4}><div className="flex flex-wrap gap-2 text-xs text-tertiary-foreground">{assignments.map(assignment => <CredentialAssignmentRow key={assignment.id} assignment={assignment} user={userNames.get(assignment.subject.id)} canAssign={canAssign} client={client} onChanged={onChanged} onError={onError} />)}</div></TableCell></TableRow> : null}
+    {canWrite && editing ? <CredentialEditorDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setEditing(false); }} onChanged={onChanged} onError={onError} /> : null}
+    {canWrite && rotating ? <CredentialRotateDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setRotating(false); }} onChanged={onChanged} onError={onError} /> : null}
   </>;
 }
 
-function CredentialAssignmentRow({ assignment, user, client, onChanged, onError }: { readonly assignment: CredentialAssignment; readonly user: PlatformUser | undefined; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function CredentialAssignmentRow({ assignment, user, canAssign, client, onChanged, onError }: { readonly assignment: CredentialAssignment; readonly user: PlatformUser | undefined; readonly canAssign: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
   const [pending, setPending] = useState(false);
   const revoke = async () => { setPending(true); try { await client.deleteCredentialAssignment(assignment.id); await onChanged(); } catch { onError(); } finally { setPending(false); } };
   const label = assignment.subject.type === AdminSubjectType.User && user ? user.displayName : `${assignment.subject.type}: ${assignment.subject.id}`;
-  return <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1"><span className="truncate">{label}</span><AlertDialog><AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" aria-label={translate(language, 'revoke')} title={translate(language, 'revoke')} disabled={pending} />}><Trash2 /></AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void revoke()}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></span>;
+  return <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1"><span className="truncate">{label}</span>{canAssign ? <AlertDialog><AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" aria-label={translate(language, 'revoke')} title={translate(language, 'revoke')} disabled={pending} />}><Trash2 /></AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void revoke()}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}</span>;
 }
 
 function CredentialEditorDialog({ client, credential, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential?: CredentialMetadata; readonly open: boolean | undefined; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {

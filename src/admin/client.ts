@@ -375,11 +375,11 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteSkillAssignment(assignmentId);
   }
 
-  async models(): Promise<AdminModels> {
+  async models(identity?: AdminIdentity): Promise<AdminModels> {
     const client = this.#requireClient();
     const [models, assignments] = await Promise.all([
       client.listAdminModels(),
-      client.listModelAssignments(),
+      hasAdminPermission(identity, AdminPermission.ModelsAssign) ? client.listModelAssignments() : Promise.resolve({ assignments: [] }),
     ]);
     return { models: models.models, assignments: assignments.assignments };
   }
@@ -439,11 +439,11 @@ export class AdminConsoleClient {
     }
   }
 
-  async credentials(): Promise<AdminCredentials> {
+  async credentials(identity?: AdminIdentity): Promise<AdminCredentials> {
     const client = this.#requireClient();
     const [credentials, assignments] = await Promise.all([
       client.listCredentials(),
-      client.listCredentialAssignments(),
+      hasAdminPermission(identity, AdminPermission.CredentialsAssign) ? client.listCredentialAssignments() : Promise.resolve({ assignments: [] }),
     ]);
     return {
       credentials: credentials.credentials,
