@@ -124,6 +124,39 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.createUser).toHaveBeenCalledWith(expect.objectContaining({ username: 'new-user', displayName: '新用户', temporaryPassword: 'temporary-password', roleIds: ['role-1'], teamIds: ['team-1'], requirePasswordChange: true })));
   });
 
+  test('imports users from a JSON envelope and refreshes the list', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
+      importUsers: vi.fn().mockResolvedValue({ created: 2, rejected: 1 }),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '导入用户' }));
+    const payload = JSON.stringify({ users: [
+      { externalRowId: 'row-1', username: 'one', displayName: '用户一', temporaryPassword: 'temporary-password-1' },
+      { externalRowId: 'row-2', username: 'two', displayName: '用户二', temporaryPassword: 'temporary-password-2' },
+    ] });
+    fireEvent.change(screen.getByLabelText('用户 JSON 文件'), { target: { files: [new File([payload], 'users.json', { type: 'application/json' })] } });
+    fireEvent.click((await screen.findAllByRole('button', { name: '导入用户' })).at(-1)!);
+    await waitFor(() => expect(client.importUsers).toHaveBeenCalledWith(expect.objectContaining({ users: expect.any(Array) })));
+    const imported = client.importUsers.mock.calls[0]?.[0] as { readonly users?: readonly unknown[] } | undefined;
+    expect(imported?.users).toHaveLength(2);
+    await waitFor(() => expect(client.resources).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/已创建用户: 2/)).toBeInTheDocument();
+  });
+
+  test('rejects malformed user import before calling the client', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
+      importUsers: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '导入用户' }));
+    fireEvent.change(screen.getByLabelText('用户 JSON 文件'), { target: { files: [new File(['{"users":[{"username":"missing-fields"}]}'], 'users.json', { type: 'application/json' })] } });
+    fireEvent.click((await screen.findAllByRole('button', { name: '导入用户' })).at(-1)!);
+    expect(await screen.findByText('用户导入失败，请检查 JSON 格式、必填字段和临时密码长度。')).toBeInTheDocument();
+    expect(client.importUsers).not.toHaveBeenCalled();
+  });
+
   test('creates a role with selected permissions', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [{ id: 'models.read', description: '读取模型' }], skills: [], assignments: [] }),

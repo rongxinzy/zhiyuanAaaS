@@ -1,7 +1,7 @@
 import { Boxes, Check, CircleAlert, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import type { Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
+import type { JsonObject, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
 import {
   AdminConsoleClient,
   AdminSubjectType,
@@ -56,6 +56,8 @@ export function Resources({ client, tab }: ResourcesProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ readonly created: number; readonly rejected: number } | null>(null);
   const [editor, setEditor] = useState<{ readonly kind: 'user' | 'team' | 'role' | 'skill'; readonly id?: string } | null>(null);
   const [versionSkill, setVersionSkill] = useState<AdminSkill | null>(null);
   const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
@@ -82,6 +84,7 @@ export function Resources({ client, tab }: ResourcesProps) {
           <div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, resourceTitle(tab))}</h2></div>
           <div className="flex shrink-0 items-center gap-1.5">
             {tab === AdminResourceTab.Users ? <Button size="sm" onClick={() => setEditor({ kind: 'user' })}><Plus data-icon="inline-start" />{translate(language, 'addUser')}</Button> : null}
+            {tab === AdminResourceTab.Users ? <Button size="sm" variant="outline" onClick={() => { setImportResult(null); setImporting(true); }}><Upload data-icon="inline-start" />{translate(language, 'importUsers')}</Button> : null}
             {tab === AdminResourceTab.Teams ? <Button size="sm" onClick={() => setEditor({ kind: 'team' })}><Plus data-icon="inline-start" />{translate(language, 'addTeam')}</Button> : null}
             {tab === AdminResourceTab.Roles ? <Button size="sm" onClick={() => setEditor({ kind: 'role' })}><Plus data-icon="inline-start" />{translate(language, 'addRole')}</Button> : null}
             {tab === AdminResourceTab.Skills ? <Button size="sm" onClick={() => setEditor({ kind: 'skill' })}><Plus data-icon="inline-start" />{translate(language, 'addSkill')}</Button> : null}
@@ -94,7 +97,9 @@ export function Resources({ client, tab }: ResourcesProps) {
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
         {loading && !resources ? <ResourceListSkeleton /> : resources ? <>
           <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} onVersion={setVersionSkill} />
+          {importResult ? <Alert><Check aria-hidden="true" /><AlertDescription>{translate(language, 'usersImported')}: {importResult.created} / {translate(language, 'usersRejected')}: {importResult.rejected}</AlertDescription></Alert> : null}
           {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} roles={resources.roles} teams={resources.teams} skills={resources.skills} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
+          {tab === AdminResourceTab.Users ? <UserImportDialog client={client} open={importing} onOpenChange={setImporting} onChanged={async result => { setImportResult(result); await load(); }} onError={reportError} /> : null}
           {editor?.kind === 'user' ? <UserEditorDialog client={client} user={editor.id ? resources.users.find(item => item.id === editor.id) : undefined} roles={resources.roles} teams={resources.teams} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'team' ? <TeamEditorDialog client={client} team={editor.id ? resources.teams.find(item => item.id === editor.id) : undefined} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'role' ? <RoleEditorDialog client={client} role={editor.id ? resources.roles.find(item => item.id === editor.id) : undefined} permissions={resources.permissions} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
@@ -297,6 +302,92 @@ function SkillVersionDialog({ client, skill, open, onOpenChange, onChanged, onEr
     }
   };
   return <Dialog open={open} onOpenChange={nextOpen => { if (!pending && pendingVersion === null) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'uploadVersion')}: {skill.name}</DialogTitle><DialogDescription>{translate(language, 'skillEditorDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, failed)}</AlertDescription></Alert> : null}<form onSubmit={upload} noValidate className="flex flex-col gap-4"><FieldGroup className="gap-4"><Field><FieldLabel htmlFor="skill-version">{translate(language, 'skillVersion')}</FieldLabel><Input id="skill-version" value={version} onChange={event => setVersion(event.target.value)} placeholder="1.0.0" disabled={pending || pendingVersion !== null} /></Field><Field><FieldLabel htmlFor="skill-package">{translate(language, 'skillPackage')}</FieldLabel><Input id="skill-package" type="file" accept=".zip,application/zip" onChange={event => setArchive(event.target.files?.[0] ?? null)} disabled={pending || pendingVersion !== null} /></Field></FieldGroup><Button type="submit" className="self-start" disabled={pending || pendingVersion !== null}>{pending ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'uploadVersion')}</Button></form><div className="flex flex-col gap-2"><p className="text-sm font-semibold">{translate(language, 'versions')}</p>{skill.versions.length === 0 ? <p className="text-sm text-muted-foreground">{translate(language, 'noVersions')}</p> : <div className="flex flex-col gap-2">{skill.versions.map(item => <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3" key={item.version}><div className="min-w-0"><p className="truncate text-sm font-normal">{item.version}</p><p className="truncate text-xs text-tertiary-foreground">{item.sha256} · {item.size} {translate(language, 'bytes')}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={item.state === 'published' ? 'success' : 'outline'}>{translate(language, versionStateLabel(item.state))}</Badge>{item.state === 'draft' ? <Button type="button" size="sm" variant="outline" disabled={pending || pendingVersion !== null} onClick={() => void publish(item.version)}>{pendingVersion === item.version ? <Spinner data-icon="inline-start" /> : null}{translate(language, pendingVersion === item.version ? 'publishing' : 'publishVersion')}</Button> : null}</div></div>)}</div>}</div></div><DialogFooter><Button type="button" variant="ghost" disabled={pending || pendingVersion !== null} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+type UserImportResult = { readonly created: number; readonly rejected: number };
+
+function UserImportDialog({ client, open, onOpenChange, onChanged, onError }: {
+  readonly client: AdminConsoleClient;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: (result: UserImportResult) => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setFile(null);
+      setPending(false);
+      setFailed(false);
+    }
+  }, [open]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!file) {
+      setFailed(true);
+      return;
+    }
+    setPending(true);
+    setFailed(false);
+    try {
+      const payload = normalizeUserImport(JSON.parse(await file.text()));
+      const result = await client.importUsers(payload);
+      const created = typeof result.created === 'number' ? result.created : 0;
+      const rejected = typeof result.rejected === 'number' ? result.rejected : 0;
+      onOpenChange(false);
+      await onChanged({ created, rejected });
+    } catch {
+      setFailed(true);
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{translate(language, 'importUsersTitle')}</DialogTitle>
+        <DialogDescription>{translate(language, 'importUsersDescription')}</DialogDescription>
+      </DialogHeader>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'importUsersFailed')}</AlertDescription></Alert> : null}
+        <FieldGroup className="gap-4">
+          <Field>
+            <FieldLabel htmlFor="users-import-file">{translate(language, 'importUsersFile')}</FieldLabel>
+            <Input id="users-import-file" type="file" accept="application/json,.json" onChange={event => setFile(event.target.files?.[0] ?? null)} disabled={pending} />
+          </Field>
+          <p className="text-xs text-tertiary-foreground">{translate(language, 'importUsersHint')}</p>
+        </FieldGroup>
+        <DialogFooter>
+          <Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button>
+          <Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}{translate(language, pending ? 'importingUsers' : 'importUsers')}</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>;
+}
+
+function normalizeUserImport(value: unknown): JsonObject {
+  const users = Array.isArray(value) ? value : value && typeof value === 'object' && Array.isArray((value as { readonly users?: unknown }).users) ? (value as { readonly users: unknown[] }).users : null;
+  if (!users || users.length === 0 || users.length > 1000) throw new Error('Invalid user import row count.');
+  for (const row of users) {
+    if (!row || typeof row !== 'object') throw new Error('Invalid user import row.');
+    const item = row as Record<string, unknown>;
+    for (const key of ['externalRowId', 'username', 'displayName', 'temporaryPassword']) {
+      if (typeof item[key] !== 'string' || item[key].trim() === '') throw new Error(`Missing ${key}.`);
+    }
+    if ((item.temporaryPassword as string).length < 12) throw new Error('Temporary password is too short.');
+    for (const key of ['teamIds', 'roleIds']) {
+      if (item[key] !== undefined && (!Array.isArray(item[key]) || item[key].some(entry => typeof entry !== 'string'))) throw new Error(`Invalid ${key}.`);
+    }
+    if (item.requirePasswordChange !== undefined && typeof item.requirePasswordChange !== 'boolean') throw new Error('Invalid requirePasswordChange.');
+  }
+  return { users } as JsonObject;
 }
 
 function UserEditorDialog({ client, user, roles, teams, open, onOpenChange, onChanged, onError }: {

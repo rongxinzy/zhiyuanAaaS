@@ -6,6 +6,7 @@ import {
   type AdminModel,
   type ModelAssignment,
   type CurrentIdentity,
+  type AdminControlEvent,
   type CredentialAssignment,
   type CredentialAssignmentWrite,
   type CredentialCreate,
@@ -132,6 +133,11 @@ export interface AdminEventRecord {
   readonly scopeId?: string;
   readonly receivedAt?: string;
   readonly createdAt?: string;
+}
+
+export interface AdminControlEvents {
+  readonly items: readonly AdminControlEvent[];
+  readonly nextCursor: string | null;
 }
 
 export class AdminConsoleClient {
@@ -410,6 +416,25 @@ export class AdminConsoleClient {
 
   async putDataPlane(input: DataPlaneDesiredStateWrite): Promise<DataPlaneDesiredState> {
     return this.#requireClient().putDataPlaneDesiredState(input);
+  }
+
+  async importUsers(input: JsonObject): Promise<Record<string, unknown>> {
+    const deploymentId = this.#deploymentId;
+    if (!deploymentId) throw new Error('The deployment identity is unavailable.');
+    return this.#requireClient().importUsers({ ...input, deploymentId }) as Promise<Record<string, unknown>>;
+  }
+
+  async controlEvents(filters?: Query): Promise<AdminControlEvents> {
+    const result = await this.#requireClient().listAdminControlEvents(filters);
+    return { items: result.items, nextCursor: result.nextCursor };
+  }
+
+  async getControlEvent(eventId: string): Promise<AdminControlEvent> {
+    return this.#requireClient().getAdminControlEvent(eventId);
+  }
+
+  async cancelControlEvent(eventId: string): Promise<AdminControlEvent> {
+    return this.#requireClient().cancelControlEvent(eventId);
   }
 
   async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
