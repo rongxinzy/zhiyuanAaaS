@@ -7,7 +7,6 @@ import {
   type ModelAssignment,
   type CurrentIdentity,
   type JsonObject,
-  type Page,
   type PlatformUser,
   type Permission,
   type Role,
@@ -143,14 +142,14 @@ export class AdminConsoleClient {
   async overview(): Promise<AdminOverview> {
     const client = this.#requireClient();
     const [users, teams, skills, models, events] = await Promise.all([
-      client.listUsers(),
+      this.#listAllUsers(client),
       client.listTeams(),
       client.listSkills(),
       client.listAdminModels(),
       client.searchEvents({ limit: 100 }),
     ]);
     return {
-      users: pageCount(users),
+      users: users.length,
       teams: teams.teams.length,
       skills: listCount(skills),
       models: listCount(models),
@@ -161,7 +160,7 @@ export class AdminConsoleClient {
   async resources(): Promise<AdminResources> {
     const client = this.#requireClient();
     const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
-      client.listUsers(),
+      this.#listAllUsers(client),
       client.listTeams(),
       client.listRoles(),
       client.listPermissions(),
@@ -169,7 +168,7 @@ export class AdminConsoleClient {
       client.listSkillAssignments(),
     ]);
     return {
-      users: users.items,
+      users,
       teams: teams.teams,
       roles: roles.roles,
       permissions: permissions.permissions,
@@ -179,8 +178,7 @@ export class AdminConsoleClient {
   }
 
   async users(): Promise<readonly PlatformUser[]> {
-    const page = await this.#requireClient().listUsers();
-    return page.items;
+    return this.#listAllUsers(this.#requireClient());
   }
 
   async createUser(input: {
@@ -339,6 +337,18 @@ export class AdminConsoleClient {
     return this.#client;
   }
 
+  async #listAllUsers(client: AepClient): Promise<readonly PlatformUser[]> {
+    const users: PlatformUser[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listUsers(cursor, 200);
+      users.push(...page.items);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return users;
+      cursor = nextCursor;
+    }
+  }
+
   async #identitySession(client: AepClient): Promise<AdminSession> {
     const identity = await client.getCurrentIdentity();
     this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
@@ -427,10 +437,6 @@ function defaultBaseUrl(): string {
   return 'http://localhost:8080';
 }
 
-function pageCount(value: Page<unknown> | { items?: unknown[] }): number {
-  return Array.isArray(value.items) ? value.items.length : 0;
-}
-
 function listCount(value: unknown): number {
   if (Array.isArray(value)) return value.length;
   if (value && typeof value === 'object' && Array.isArray((value as { items?: unknown[] }).items)) {
@@ -458,7 +464,9 @@ function parseSkills(value: unknown): AdminSkill[] {
       id: record.id,
       name: record.name,
       ...(typeof record.description === 'string' ? { description: record.description } : {}),
-      enabled: record.enabled !== false,
+      // M2 contracts use state; keep enabled as a compatibility fallback for
+      // older control-service responses while the deployment is upgraded.
+      enabled: typeof record.state === 'string' ? record.state === 'active' : record.enabled !== false,
       versions,
     }];
   });

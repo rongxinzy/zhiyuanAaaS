@@ -257,4 +257,21 @@ describe('admin resources', () => {
     expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'role', id: 'role-1' } });
     expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'team', id: 'team-1' } });
   });
+
+  test('maps the contract state field to the disabled Skill status', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        teams: [],
+        roles: [],
+        permissions: [],
+        skills: [{ id: 's1', name: '已撤回 Skill', state: 'withdrawn', versions: [] }],
+        assignments: [],
+      }),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+
+    expect(await screen.findByText('已撤回 Skill')).toBeInTheDocument();
+    expect(screen.getByText('停用')).toBeInTheDocument();
+  });
 });

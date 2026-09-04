@@ -523,6 +523,7 @@ function ResourceListSkeleton({ rows = 6 }: { readonly rows?: number }) {
 function resourceTitle(tab: AdminResourceTab): AdminTranslationKey {
   if (tab === AdminResourceTab.Users) return 'users';
   if (tab === AdminResourceTab.Teams) return 'teams';
+  if (tab === AdminResourceTab.Roles) return 'roles';
   if (tab === AdminResourceTab.Skills) return 'skills';
   return 'assignments';
 }
