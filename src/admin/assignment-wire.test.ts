@@ -124,4 +124,56 @@ describe('admin console assignment wire contract', () => {
       '/aep/v1/admin/users?cursor=page-2&limit=200',
     ]);
   });
+
+  test('maps the admin Skill enabled compatibility flag to the state contract', async () => {
+    const requests: RecordedRequest[] = [];
+    const stub = http.createServer((request, response) => {
+      let raw = '';
+      request.setEncoding('utf8');
+      request.on('data', chunk => { raw += chunk; });
+      request.on('end', () => {
+        requests.push({ method: request.method ?? '', path: request.url ?? '', body: raw ? JSON.parse(raw) : null });
+        response.setHeader('Content-Type', 'application/json');
+        if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
+          response.writeHead(200);
+          response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+          return;
+        }
+        if (request.method === 'POST' && request.url === '/aep/v1/admin/skills') {
+          response.writeHead(201);
+          response.end(JSON.stringify({ id: 'skill-1', name: '写作', description: '生成文案', state: 'active', versions: [] }));
+          return;
+        }
+        if (request.method === 'PATCH' && request.url?.startsWith('/aep/v1/admin/skills/')) {
+          response.writeHead(200);
+          response.end(JSON.stringify({ id: 'skill-1', name: '写作', description: '生成文案', state: 'withdrawn', versions: [] }));
+          return;
+        }
+        response.writeHead(404);
+        response.end(JSON.stringify({ title: 'not found' }));
+      });
+    });
+    await new Promise<void>(resolve => stub.listen(0, '127.0.0.1', resolve));
+    server = stub;
+    const port = (stub.address() as AddressInfo).port;
+    const tokenStore = new MemoryTokenStore();
+    await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
+    const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
+
+    await client.restore();
+    await client.createSkill({ id: 'skill-1', name: '写作', description: '生成文案', enabled: true });
+    await client.updateSkill('skill-1', { enabled: false });
+    await client.createSkill({ id: 'skill-2', name: '翻译', description: '翻译文本', enabled: false });
+    await client.updateSkill('skill-1', { enabled: true });
+
+    expect(requests.filter(request => request.method === 'POST')).toEqual([
+      { method: 'POST', path: '/aep/v1/admin/skills', body: { id: 'skill-1', name: '写作', description: '生成文案' } },
+      { method: 'POST', path: '/aep/v1/admin/skills', body: { id: 'skill-2', name: '翻译', description: '翻译文本' } },
+    ]);
+    expect(requests.filter(request => request.method === 'PATCH')).toEqual([
+      { method: 'PATCH', path: '/aep/v1/admin/skills/skill-1', body: { state: 'withdrawn' } },
+      { method: 'PATCH', path: '/aep/v1/admin/skills/skill-2', body: { state: 'withdrawn' } },
+      { method: 'PATCH', path: '/aep/v1/admin/skills/skill-1', body: { state: 'active' } },
+    ]);
+  });
 });

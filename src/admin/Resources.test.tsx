@@ -172,6 +172,30 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.createRole).toHaveBeenCalledWith({ id: 'model-reader', name: '模型读取者', description: '', permissions: ['models.read'] }));
   });
 
+  test('edits and deletes a non-built-in role', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        teams: [],
+        roles: [{ id: 'role-1', name: '旧角色', description: '旧描述', builtIn: false, enabled: true, permissions: [] }],
+        permissions: [],
+        skills: [],
+        assignments: [],
+      }),
+      updateRole: vi.fn().mockResolvedValue(undefined),
+      deleteRole: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新角色' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.updateRole).toHaveBeenCalledWith('role-1', expect.objectContaining({ name: '新角色', description: '旧描述', enabled: true, permissions: [] })));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
+    fireEvent.click(deleteButtons.at(-1)!);
+    await waitFor(() => expect(client.deleteRole).toHaveBeenCalledWith('role-1'));
+  });
+
   test('updates user profile and replaces RBAC memberships separately', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({

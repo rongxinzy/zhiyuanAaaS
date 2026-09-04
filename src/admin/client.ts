@@ -50,6 +50,7 @@ export interface AdminSkill {
   readonly id: string;
   readonly name: string;
   readonly description?: string;
+  readonly state: 'active' | 'withdrawn';
   readonly enabled: boolean;
   readonly versions: readonly AdminSkillVersion[];
 }
@@ -306,11 +307,14 @@ export class AdminConsoleClient {
   }
 
   async createSkill(input: { readonly id: string; readonly name: string; readonly description: string; readonly enabled?: boolean }): Promise<void> {
-    await this.#requireClient().createSkill(input);
+    const { enabled, ...write } = input;
+    await this.#requireClient().createSkill(write);
+    if (enabled === false) await this.#requireClient().updateSkill(input.id, { state: 'withdrawn' });
   }
 
   async updateSkill(skillId: string, input: { readonly name?: string; readonly description?: string; readonly enabled?: boolean }): Promise<void> {
-    await this.#requireClient().updateSkill(skillId, input);
+    const { enabled, ...patch } = input;
+    await this.#requireClient().updateSkill(skillId, { ...patch, ...(enabled === undefined ? {} : { state: enabled ? 'active' : 'withdrawn' }) });
   }
 
   async deleteSkill(skillId: string): Promise<void> {
@@ -644,13 +648,13 @@ function parseSkills(value: unknown): AdminSkill[] {
       if (typeof item.version !== 'string' || typeof item.state !== 'string' || typeof item.sha256 !== 'string' || typeof item.size !== 'number') return [];
       return [{ version: item.version, state: item.state as AdminSkillVersion['state'], sha256: item.sha256, size: item.size, ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}) }];
     }) : [];
+    const state = record.state === 'withdrawn' || record.state === 'active' ? record.state : record.enabled === false ? 'withdrawn' : 'active';
     return [{
       id: record.id,
       name: record.name,
       ...(typeof record.description === 'string' ? { description: record.description } : {}),
-      // M2 contracts use state; keep enabled as a compatibility fallback for
-      // older control-service responses while the deployment is upgraded.
-      enabled: typeof record.state === 'string' ? record.state === 'active' : record.enabled !== false,
+      state,
+      enabled: state === 'active',
       versions,
     }];
   });
