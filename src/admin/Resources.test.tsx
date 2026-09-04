@@ -127,7 +127,7 @@ describe('admin resources', () => {
   test('imports users from a JSON envelope and refreshes the list', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
-      importUsers: vi.fn().mockResolvedValue({ created: 2, rejected: 1 }),
+      importUsers: vi.fn().mockResolvedValue({ created: 2, rejected: 1, errors: ['row-3: username already exists'] }),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     fireEvent.click(await screen.findByRole('button', { name: '导入用户' }));
@@ -142,6 +142,7 @@ describe('admin resources', () => {
     expect(imported?.users).toHaveLength(2);
     await waitFor(() => expect(client.resources).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/已创建用户: 2/)).toBeInTheDocument();
+    expect(screen.getByText('row-3: username already exists')).toBeInTheDocument();
   });
 
   test('rejects malformed user import before calling the client', async () => {
