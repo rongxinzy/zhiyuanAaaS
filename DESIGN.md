@@ -125,7 +125,7 @@ main: min-h-full / bg-background
 
 ### 导航与响应式
 
-- 导航只有四个一级目的地：概览、资源管理、企业模型、事件与审计。增加目的地前必须同时更新 `AdminPage`、`navigation`、i18n 和测试。
+- 导航有五个一级目的地：概览、资源管理、企业模型、事件与审计、平台运维。增加目的地前必须同时更新 `AdminPage`、`navigation`、i18n 和测试。
 - 桌面端使用左侧 `aside`；窄视口隐藏 aside，在顶部行显示品牌标记、主题切换和图标化退出登录，并在其下显示横向滚动的一级导航。
 - 一级导航和移动导航必须表达同一个 `page` 状态，不能维护两套选中逻辑。
 - 资源管理的二级页签固定为：用户、Team、Role、Skill、Skill 授权。使用线性页签，不改成胶囊分段控件。
@@ -140,6 +140,7 @@ main: min-h-full / bg-background
 | 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、Team、Role、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
 | 企业模型 | 页面标题行、添加模型按钮、模型卡片列表 | 添加模型通过 Dialog；模型启用状态用 success/outline Badge；授权用户通过 Dialog 多选 |
 | 事件与审计 | 发布控管事件卡片、审计查询卡片、审计结果 | 发布和查询使用 Field + Input + Button；结果为空显示 Empty；事件成功后保留 event id 并提供投递查询 |
+| 平台运维 | 页面标题行、License/用户会话线性页签、当前记录列表 | License 支持导入和撤销；会话只读查询；敏感 License 内容不在列表中展示 |
 
 页面新增区块必须说明它属于哪个页面职责、它消耗哪个 API 数据、它的 loading/error/empty/success 状态，以及完成后如何回到当前页面上下文。不要把 API 字段、网络错误或后端状态直接当作视觉规则。
 
