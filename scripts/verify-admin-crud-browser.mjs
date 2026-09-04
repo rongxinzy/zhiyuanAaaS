@@ -122,7 +122,11 @@ try {
   assert.equal(state.models.find(item => item.id === 'e2e-model')?.displayName, 'E2E Model Updated');
   await page.getByRole('button', { name: '分配模型' }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
+  const modelSubject = dialog.getByRole('checkbox', { name: /E2E 用户/ });
+  await modelSubject.waitFor({ state: 'visible' });
+  assert.equal(await modelSubject.getAttribute('aria-checked'), 'false');
+  await modelSubject.click();
+  await waitForAttribute(modelSubject, 'aria-checked', 'true');
   await dialog.getByRole('button', { name: '授权' }).click();
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/model-assignments'), 'model assignment request did not reach the mock service');
   assert.equal(state.modelAssignments.length, 1);
@@ -317,4 +321,13 @@ async function waitForText(page, value) {
 
 async function waitForNoText(page, value) {
   await page.getByText(value, { exact: true }).first().waitFor({ state: 'detached', timeout: 10_000 });
+}
+
+async function waitForAttribute(locator, name, expected) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (await locator.getAttribute(name) === expected) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for ${name}=${expected}`);
 }
