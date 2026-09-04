@@ -18,6 +18,7 @@ vi.mock('./client.js', () => ({
     login = client.login;
     logout = client.logout;
     overview = client.overview;
+    resources = client.resources;
   },
   AdminConsoleStatus: {
     SignedOut: 'signed-out',
@@ -43,7 +44,7 @@ describe('admin console', () => {
       },
     });
     client.overview.mockResolvedValue({ users: 4, teams: 2, skills: 3, models: 1, pendingEvents: 0 });
-    client.resources.mockResolvedValue({ users: [], teams: [], roles: [], skills: [], assignments: [] });
+    client.resources.mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] });
     client.logout.mockResolvedValue(undefined);
   });
 

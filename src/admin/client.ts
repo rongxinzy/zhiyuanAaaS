@@ -9,6 +9,7 @@ import {
   type JsonObject,
   type Page,
   type PlatformUser,
+  type Permission,
   type Role,
   type Team,
 } from '@aep/sdk-node';
@@ -75,6 +76,7 @@ export interface AdminResources {
   readonly users: readonly PlatformUser[];
   readonly teams: readonly Team[];
   readonly roles: readonly Role[];
+  readonly permissions: readonly Permission[];
   readonly skills: readonly AdminSkill[];
   readonly assignments: readonly AdminSkillAssignment[];
 }
@@ -97,6 +99,7 @@ export class AdminConsoleClient {
   readonly #baseUrl: string;
   readonly #tokenStore: AepTokenStore;
   #client: AepClient | null = null;
+  #deploymentId: string | null = null;
 
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
     ensureRequestIdCrypto();
@@ -117,6 +120,7 @@ export class AdminConsoleClient {
     readonly password: string;
   }): Promise<AdminSession> {
     const client = this.#getClient();
+    this.#deploymentId = input.deploymentId;
     await client.loginWithPassword(input);
     return this.#identitySession(client);
   }
@@ -147,10 +151,11 @@ export class AdminConsoleClient {
 
   async resources(): Promise<AdminResources> {
     const client = this.#requireClient();
-    const [users, teams, roles, skills, assignments] = await Promise.all([
+    const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
       client.listUsers(),
       client.listTeams(),
       client.listRoles(),
+      client.listPermissions(),
       client.listSkills(),
       client.listSkillAssignments(),
     ]);
@@ -158,6 +163,7 @@ export class AdminConsoleClient {
       users: users.items,
       teams: teams.teams,
       roles: roles.roles,
+      permissions: permissions.permissions,
       skills: parseSkills(skills),
       assignments: parseAssignments(assignments),
     };
@@ -168,8 +174,63 @@ export class AdminConsoleClient {
     return page.items;
   }
 
-  async updateUser(userId: string, input: { readonly status: 'active' | 'disabled' }): Promise<void> {
-    await this.#requireClient().updateUser(userId, input);
+  async createUser(input: {
+    readonly username: string;
+    readonly displayName: string;
+    readonly email?: string | null;
+    readonly temporaryPassword: string;
+    readonly teamIds?: readonly string[];
+    readonly roleIds?: readonly string[];
+    readonly requirePasswordChange: boolean;
+  }): Promise<PlatformUser> {
+    const deploymentId = this.#deploymentId;
+    if (!deploymentId) throw new Error('The deployment identity is unavailable.');
+    return this.#requireClient().createUser({
+      deploymentId,
+      username: input.username,
+      displayName: input.displayName,
+      ...(input.email ? { email: input.email } : {}),
+      temporaryPassword: input.temporaryPassword,
+      ...(input.teamIds ? { teamIds: [...input.teamIds] } : {}),
+      ...(input.roleIds ? { roleIds: [...input.roleIds] } : {}),
+      requirePasswordChange: input.requirePasswordChange,
+    });
+  }
+
+  async updateUser(userId: string, input: Parameters<AepClient['updateUser']>[1]): Promise<PlatformUser> {
+    return this.#requireClient().updateUser(userId, input);
+  }
+
+  async resetUserPassword(userId: string, input: { readonly temporaryPassword: string; readonly requirePasswordChange: boolean }): Promise<void> {
+    await this.#requireClient().resetUserPassword(userId, input);
+  }
+
+  async replaceUserRBAC(userId: string, input: { readonly roleIds: readonly string[]; readonly teamIds: readonly string[] }): Promise<void> {
+    await this.#requireClient().replaceUserRBAC(userId, { roleIds: [...input.roleIds], teamIds: [...input.teamIds] });
+  }
+
+  async createRole(input: Parameters<AepClient['createRole']>[0]): Promise<Role> {
+    return this.#requireClient().createRole(input);
+  }
+
+  async updateRole(roleId: string, input: Parameters<AepClient['updateRole']>[1]): Promise<Role> {
+    return this.#requireClient().updateRole(roleId, input);
+  }
+
+  async deleteRole(roleId: string): Promise<void> {
+    await this.#requireClient().deleteRole(roleId);
+  }
+
+  async createTeam(input: Parameters<AepClient['createTeam']>[0]): Promise<Team> {
+    return this.#requireClient().createTeam(input);
+  }
+
+  async updateTeam(teamId: string, input: Parameters<AepClient['updateTeam']>[1]): Promise<Team> {
+    return this.#requireClient().updateTeam(teamId, input);
+  }
+
+  async deleteTeam(teamId: string): Promise<void> {
+    await this.#requireClient().deleteTeam(teamId);
   }
 
   async updateSkill(skillId: string, input: { readonly enabled: boolean }): Promise<void> {
@@ -251,6 +312,7 @@ export class AdminConsoleClient {
 
   async #identitySession(client: AepClient): Promise<AdminSession> {
     const identity = await client.getCurrentIdentity();
+    this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
     const hasAdminRole = identity.roles.some(role =>
       ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()),
     );
