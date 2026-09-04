@@ -12,7 +12,7 @@ describe('admin models', () => {
   test('creates a gateway model from the configuration form', async () => {
     const client = {
       models: vi.fn().mockResolvedValue({ models: [], assignments: [] }),
-      users: vi.fn().mockResolvedValue([]),
+      resources: vi.fn().mockResolvedValue({ users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
       createModel: vi.fn().mockResolvedValue(undefined),
       updateModel: vi.fn(),
       deleteModelAssignment: vi.fn(),
@@ -33,10 +33,10 @@ describe('admin models', () => {
         models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
         assignments: [],
       }),
-      users: vi.fn().mockResolvedValue([
+      resources: vi.fn().mockResolvedValue({ users: [
         { id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' },
         { id: 'u2', displayName: '李四', username: 'lisi', status: 'active' },
-      ]),
+      ], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
       createModel: vi.fn(),
       updateModel: vi.fn(),
       deleteModelAssignment: vi.fn(),
@@ -50,5 +50,46 @@ describe('admin models', () => {
     await waitFor(() => expect(client.createModelAssignment).toHaveBeenCalledTimes(2));
     expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'user', id: 'u1' } });
     expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'user', id: 'u2' } });
+  });
+
+  test('edits and deletes a model', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({ models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }], assignments: [] }),
+      resources: vi.fn().mockResolvedValue({ users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
+      updateModel: vi.fn().mockResolvedValue(undefined),
+      deleteModel: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Models client={client as never} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新名称' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.updateModel).toHaveBeenCalledWith('chat', expect.objectContaining({ displayName: '新名称', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat' })));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
+    fireEvent.click(deleteButtons.at(-1)!);
+    await waitFor(() => expect(client.deleteModel).toHaveBeenCalledWith('chat'));
+  });
+
+  test('assigns a model to a role and a team', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({ models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }], assignments: [] }),
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        roles: [{ id: 'role-1', name: '编辑者', description: '', builtIn: false, enabled: true, permissions: [] }],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        permissions: [],
+        skills: [],
+        assignments: [],
+      }),
+      createModelAssignment: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Models client={client as never} />);
+    fireEvent.click(await screen.findByRole('button', { name: '分配模型' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /编辑者/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
+    fireEvent.click(screen.getByRole('button', { name: '授权' }));
+    await waitFor(() => expect(client.createModelAssignment).toHaveBeenCalledTimes(2));
+    expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'role', id: 'role-1' } });
+    expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'team', id: 'team-1' } });
   });
 });
