@@ -76,6 +76,18 @@ try {
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Team');
   assert.ok(state.teams.some(item => item.id === 'e2e-team'));
+  await page.getByRole('button', { name: '编辑' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('名称').fill('E2E Team Updated');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'E2E Team Updated');
+  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.name, 'E2E Team Updated');
+  await page.getByRole('button', { name: '停用' }).click();
+  await waitForText(page, '停用');
+  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.enabled, false);
+  await page.getByRole('button', { name: '启用' }).click();
+  await waitForText(page, '启用');
+  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.enabled, true);
 
   await page.getByRole('tab', { name: 'Role' }).click();
   await page.getByRole('button', { name: '新增 Role' }).click();
@@ -85,6 +97,18 @@ try {
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Role');
   assert.ok(state.roles.some(item => item.id === 'e2e-role'));
+  await page.getByRole('button', { name: '编辑' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('名称').fill('E2E Role Updated');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'E2E Role Updated');
+  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.name, 'E2E Role Updated');
+  await page.getByRole('button', { name: '停用' }).click();
+  await waitForText(page, '停用');
+  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.enabled, false);
+  await page.getByRole('button', { name: '启用' }).click();
+  await waitForText(page, '启用');
+  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.enabled, true);
 
   await page.getByRole('tab', { name: 'Skill', exact: true }).click();
   await page.getByRole('button', { name: '新增 Skill' }).click();
@@ -100,9 +124,40 @@ try {
   dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'E2E Skill' }).click();
   await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
   await dialog.getByRole('button', { name: '授权' }).click();
   await waitForText(page, 'E2E 用户');
-  assert.equal(state.skillAssignments.length, 1);
+  assert.equal(state.skillAssignments.length, 3);
+  assert.deepEqual(new Set(state.skillAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
+
+  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
+  await page.getByRole('button', { name: '编辑' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('名称').fill('E2E Skill Updated');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'E2E Skill Updated');
+  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.name, 'E2E Skill Updated');
+  await page.getByRole('button', { name: '停用' }).click();
+  await waitForText(page, '停用');
+  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.enabled, false);
+  await page.getByRole('button', { name: '启用' }).click();
+  await waitForText(page, '启用');
+  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.enabled, true);
+
+  await page.getByRole('tab', { name: 'Skill 授权' }).click();
+  while (state.skillAssignments.length > 0) {
+    const expectedLength = state.skillAssignments.length - 1;
+    await page.getByRole('button', { name: '撤销授权' }).first().click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
+    await waitForValue(() => state.skillAssignments.length, expectedLength);
+  }
+  assert.equal(state.skillAssignments.length, 0);
+  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
+  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
+  await waitForNoText(page, 'E2E Skill Updated');
+  assert.equal(state.skills.length, 0);
 
   await page.getByRole('button', { name: '企业模型' }).click();
   await page.getByRole('button', { name: '添加模型' }).click();
@@ -127,9 +182,19 @@ try {
   assert.equal(await modelSubject.getAttribute('aria-checked'), 'false');
   await modelSubject.click();
   await waitForAttribute(modelSubject, 'aria-checked', 'true');
+  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
   await dialog.getByRole('button', { name: '授权' }).click();
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/model-assignments'), 'model assignment request did not reach the mock service');
-  assert.equal(state.modelAssignments.length, 1);
+  assert.equal(state.modelAssignments.length, 3);
+  assert.deepEqual(new Set(state.modelAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
+  while (state.modelAssignments.length > 0) {
+    const expectedLength = state.modelAssignments.length - 1;
+    await page.getByRole('button', { name: '撤销授权' }).first().click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
+    await waitForValue(() => state.modelAssignments.length, expectedLength);
+  }
+  assert.equal(state.modelAssignments.length, 0);
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
   await waitForNoText(page, 'E2E Model Updated');
@@ -151,14 +216,58 @@ try {
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Credential Updated');
   assert.equal(state.credentials[0].name, 'E2E Credential Updated');
+  const credentialId = state.credentials[0].id;
+  await page.getByRole('button', { name: '轮换凭证' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('凭证值').fill('e2e-rotated-secret');
+  await dialog.getByRole('button', { name: '轮换凭证' }).click();
+  await waitForValue(() => state.credentials[0]?.maskedValue, 'e2e-rotated-***');
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === `/aep/v1/admin/credentials/${credentialId}/rotate`));
+  await page.getByRole('button', { name: '停用' }).click();
+  await waitForText(page, '停用');
+  assert.equal(state.credentials[0].enabled, false);
+  await page.getByRole('button', { name: '启用' }).click();
+  await waitForText(page, '启用');
+  assert.equal(state.credentials[0].enabled, true);
+  await page.getByRole('button', { name: '授权凭证' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
+  await dialog.getByRole('button', { name: '授权' }).click();
+  await waitForValue(() => state.credentialAssignments.length, 3);
+  assert.deepEqual(new Set(state.credentialAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
+  while (state.credentialAssignments.length > 0) {
+    const expectedLength = state.credentialAssignments.length - 1;
+    await page.getByRole('button', { name: '撤销' }).first().click();
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
+    await waitForValue(() => state.credentialAssignments.length, expectedLength);
+  }
+  assert.equal(state.credentialAssignments.length, 0);
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '确认删除凭证' }).click();
   await waitForNoText(page, 'E2E Credential Updated');
   assert.equal(state.credentials.length, 0);
 
   await page.getByRole('button', { name: '资源管理' }).click();
+  await page.getByRole('tab', { name: 'Team' }).click();
+  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
+  await waitForNoText(page, 'E2E Team Updated');
+  assert.equal(state.teams.length, 0);
+  await page.getByRole('tab', { name: 'Role' }).click();
+  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
+  await waitForNoText(page, 'E2E Role Updated');
+  assert.equal(state.roles.length, 0);
   await page.getByRole('tab', { name: '用户' }).click();
   await waitForText(page, 'E2E 用户');
+  await page.getByRole('row').filter({ hasText: 'E2E 用户' }).getByRole('button', { name: '编辑' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('显示名称').fill('E2E 用户 Updated');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'E2E 用户 Updated');
+  assert.equal(createdUser.displayName, 'E2E 用户 Updated');
   await page.getByRole('button', { name: '停用' }).last().click();
   await waitForText(page, '停用');
   assert.equal(createdUser.status, 'disabled');
@@ -167,9 +276,9 @@ try {
   await waitForText(page, '概览');
   await page.getByRole('button', { name: '资源管理' }).click();
   await page.getByRole('tab', { name: '用户' }).click();
-  await waitForText(page, 'E2E 用户');
+  await waitForText(page, 'E2E 用户 Updated');
   assert.ok(state.requests.some(item => item.path === '/aep/v1/user/me'));
-  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/disable', 'team create', 'role create', 'Skill create/grant', 'model create/update/grant/delete', 'credential create/update/delete', 'reload session restore'], requests: state.requests.length }));
+  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'reload session restore'], requests: state.requests.length }));
 } finally {
   await browser?.close().catch(() => undefined);
   if (staticServer) staticServer.kill();
@@ -198,7 +307,12 @@ async function route(method, pathname, rawBody, response) {
     Object.assign(user ?? {}, jsonBody(rawBody));
     return writeJson(response, 200, user);
   }
-  if (method === 'PUT' && pathname.startsWith('/aep/v1/admin/users/') && pathname.endsWith('/rbac')) return writeJson(response, 200, jsonBody(rawBody));
+  if (method === 'PUT' && pathname.startsWith('/aep/v1/admin/users/') && pathname.endsWith('/rbac')) {
+    const user = state.users.find(item => item.id === pathname.split('/').at(-2));
+    const input = jsonBody(rawBody);
+    if (user) Object.assign(user, { roleIds: input.roleIds ?? [], teamIds: input.teamIds ?? [] });
+    return writeJson(response, 200, input);
+  }
   if (method === 'GET' && pathname === '/aep/v1/admin/teams') return writeJson(response, 200, { teams: state.teams });
   if (method === 'POST' && pathname === '/aep/v1/admin/teams') return createRecord(response, state.teams, jsonBody(rawBody));
   if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/teams/')) return patchRecord(response, state.teams, pathname, jsonBody(rawBody));
@@ -228,6 +342,13 @@ async function route(method, pathname, rawBody, response) {
     return createRecord(response, state.credentials, { ...input, id: `credential-${state.nextId++}`, maskedValue: 'e2e-***', updatedAt: new Date().toISOString() });
   }
   if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/credentials/')) return patchRecord(response, state.credentials, pathname, jsonBody(rawBody));
+  if (method === 'POST' && pathname.startsWith('/aep/v1/admin/credentials/') && pathname.endsWith('/rotate')) {
+    const credential = state.credentials.find(item => item.id === pathname.split('/').at(-2));
+    if (!credential) return writeJson(response, 404, { code: 'NOT_FOUND' });
+    credential.maskedValue = 'e2e-rotated-***';
+    credential.updatedAt = new Date().toISOString();
+    return writeJson(response, 200, credential);
+  }
   if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/credentials/')) return deleteRecord(response, state.credentials, pathname);
   if (method === 'GET' && pathname === '/aep/v1/admin/credential-assignments') return writeJson(response, 200, { assignments: state.credentialAssignments });
   if (method === 'POST' && pathname === '/aep/v1/admin/credential-assignments') return createAssignment(response, state.credentialAssignments, jsonBody(rawBody), 'credential');
@@ -251,6 +372,7 @@ function patchRecord(response, collection, pathname, input) {
   const record = collection.find(item => item.id === pathname.split('/').at(-1));
   if (!record) return writeJson(response, 404, { code: 'NOT_FOUND' });
   Object.assign(record, input);
+  if (input.state === 'active' || input.state === 'withdrawn') record.enabled = input.state === 'active';
   return writeJson(response, 200, record);
 }
 
@@ -330,4 +452,13 @@ async function waitForAttribute(locator, name, expected) {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   throw new Error(`Timed out waiting for ${name}=${expected}`);
+}
+
+async function waitForValue(read, expected) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (read() === expected) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for value ${String(expected)}`);
 }
