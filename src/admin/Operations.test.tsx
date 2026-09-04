@@ -159,6 +159,26 @@ describe('admin operations', () => {
     await waitFor(() => expect(client.putDataPlane).toHaveBeenCalledWith({ revision: 'rev-1', routes: [expect.objectContaining({ modelId: 'chat', endpoint: '/v1/responses', providerType: 'deepseek' })] }));
   });
 
+  test('requires confirmation before removing a Data Plane route', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      dataPlane: vi.fn().mockResolvedValue({
+        desired: { deploymentId: 'demo', revision: 'rev-1', routes: [{ modelId: 'chat', enabled: true, endpoint: '/v1/chat', upstreamModel: 'deepseek-chat', protocol: 'openai-compatible', providerType: 'deepseek' }], publishedAt: null, contentHash: 'a'.repeat(64) },
+        status: { state: 'ready', observedRevision: 'rev-1', contentHash: 'a'.repeat(64), lastAppliedAt: '2026-09-04T00:01:00Z', resourceCount: 1 },
+      }),
+      putDataPlane: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Operations client={client as never} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '数据平面' }));
+    expect(await screen.findByText('chat', { exact: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(screen.getByText('删除这条路由？')).toBeInTheDocument();
+    expect(screen.getByText('chat', { exact: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '确认删除路由' }));
+    await waitFor(() => expect(screen.getByText('暂无网关路由')).toBeInTheDocument());
+    expect(client.putDataPlane).not.toHaveBeenCalled();
+  });
+
   test('keeps license status readable but hides import and revoke without write permissions', async () => {
     const client = {
       licenses: vi.fn().mockResolvedValue([{
