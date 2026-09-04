@@ -12,6 +12,7 @@ import {
   Moon,
   RefreshCw,
   ShieldCheck,
+  Settings2,
   Sun,
   Users,
   type LucideIcon,
@@ -46,9 +47,10 @@ import {
 import { AdminResourceTab, Resources } from './Resources.js';
 import { Models } from './Models.js';
 import { Events } from './Events.js';
+import { Operations } from './Operations.js';
 
 const language: AdminLanguage = 'zh';
-const AdminPage = { Overview: 'overview', Resources: 'resources', Models: 'models', Events: 'events' } as const;
+const AdminPage = { Overview: 'overview', Resources: 'resources', Models: 'models', Events: 'events', Operations: 'operations' } as const;
 type AdminPage = (typeof AdminPage)[keyof typeof AdminPage];
 
 const navigation = [
@@ -56,6 +58,7 @@ const navigation = [
   { page: AdminPage.Resources, label: 'resources', icon: Boxes },
   { page: AdminPage.Models, label: 'models', icon: Cpu },
   { page: AdminPage.Events, label: 'events', icon: ClipboardList },
+  { page: AdminPage.Operations, label: 'operations', icon: Settings2 },
 ] as const;
 
 const OVERVIEW_CARDS = [
@@ -145,7 +148,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
         </nav>
         <PageTransition pageKey={page}>
-          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Teams, AdminResourceTab.Roles, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
+          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : page === AdminPage.Operations ? <Operations client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Teams, AdminResourceTab.Roles, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
         </PageTransition>
       </div>
     </main>

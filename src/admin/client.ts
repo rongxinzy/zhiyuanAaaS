@@ -7,6 +7,9 @@ import {
   type ModelAssignment,
   type CurrentIdentity,
   type JsonObject,
+  type License,
+  type LicenseImportRequest,
+  type Query,
   type PlatformUser,
   type Permission,
   type Role,
@@ -92,6 +95,15 @@ export interface AdminResources {
 export interface AdminModels {
   readonly models: readonly AdminModel[];
   readonly assignments: readonly ModelAssignment[];
+}
+
+export interface AdminUserSession {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly topic: string;
+  readonly createdAt: string;
+  readonly lastSeenAt: string;
+  readonly revokedAt?: string | null;
 }
 
 export interface AdminEventRecord {
@@ -295,6 +307,41 @@ export class AdminConsoleClient {
 
   async deleteModelAssignment(assignmentId: string): Promise<void> {
     await this.#requireClient().deleteModelAssignment(assignmentId);
+  }
+
+  async licenses(): Promise<readonly License[]> {
+    const client = this.#requireClient();
+    const licenses: License[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listLicenses({ ...(cursor ? { cursor } : {}), limit: 200 });
+      licenses.push(...page.items);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return licenses;
+      cursor = nextCursor;
+    }
+  }
+
+  async importLicense(input: LicenseImportRequest): Promise<License> {
+    return this.#requireClient().importLicense(input);
+  }
+
+  async revokeLicense(licenseId: string): Promise<void> {
+    await this.#requireClient().revokeLicense(licenseId);
+  }
+
+  async sessions(userId?: string): Promise<readonly AdminUserSession[]> {
+    const client = this.#requireClient();
+    const sessions: AdminUserSession[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const result = await client.listUserSessions({ ...(userId ? { userId } : {}), ...(cursor ? { cursor } : {}), limit: 200 } satisfies Query);
+      const items = arrayFrom(result, 'items');
+      sessions.push(...parseSessions(items));
+      const nextCursor = valueString(result, 'nextCursor');
+      if (!nextCursor || nextCursor === cursor) return sessions;
+      cursor = nextCursor;
+    }
   }
 
   async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
@@ -502,6 +549,34 @@ function arrayFrom(value: unknown, key: string): unknown[] {
   if (!value || typeof value !== 'object') return [];
   const items = (value as Record<string, unknown>)[key];
   return Array.isArray(items) ? items : [];
+}
+
+function valueString(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === 'string' && candidate ? candidate : null;
+}
+
+function parseSessions(items: unknown[]): AdminUserSession[] {
+  return items.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.sessionId !== 'string' ||
+      typeof record.userId !== 'string' ||
+      typeof record.topic !== 'string' ||
+      typeof record.createdAt !== 'string' ||
+      typeof record.lastSeenAt !== 'string'
+    ) return [];
+    return [{
+      sessionId: record.sessionId,
+      userId: record.userId,
+      topic: record.topic,
+      createdAt: record.createdAt,
+      lastSeenAt: record.lastSeenAt,
+      ...(typeof record.revokedAt === 'string' || record.revokedAt === null ? { revokedAt: record.revokedAt } : {}),
+    }];
+  });
 }
 
 function pendingEventCount(value: unknown): number {
