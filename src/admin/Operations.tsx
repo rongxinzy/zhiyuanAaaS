@@ -30,10 +30,12 @@ import { Spinner } from '../ui/components/ui/spinner.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from '../ui/components/ui/tabs.js';
 import { ToggleGroup, ToggleGroupItem } from '../ui/components/ui/toggle-group.js';
+import { runBatch } from './batch.js';
 
 const language: AdminLanguage = 'zh';
 const OperationsTab = { Licenses: 'licenses', Sessions: 'sessions', Credentials: 'credentials', DataPlane: 'data-plane' } as const;
 type OperationsTab = (typeof OperationsTab)[keyof typeof OperationsTab];
+type CredentialGrantTarget = { readonly credential: CredentialMetadata; readonly assignments: readonly CredentialAssignment[] };
 
 export function Operations({ client }: { readonly client: AdminConsoleClient }) {
   const [tab, setTab] = useState<OperationsTab>(OperationsTab.Licenses);
@@ -154,7 +156,7 @@ function CredentialPanel({ client }: { readonly client: AdminConsoleClient }) {
   const [teams, setTeams] = useState<readonly Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [granting, setGranting] = useState<CredentialMetadata | null>(null);
+  const [granting, setGranting] = useState<CredentialGrantTarget | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     setError(false);
@@ -181,8 +183,8 @@ function CredentialPanel({ client }: { readonly client: AdminConsoleClient }) {
     </div>
     {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialsLoadFailed')}</AlertDescription></Alert> : null}
     <CredentialEditorDialog client={client} open={undefined} onOpenChange={() => undefined} onChanged={load} onError={() => setError(true)} />
-    {loading && !state ? <CredentialSkeleton /> : state ? <CredentialList credentials={state.credentials} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError(true)} onGrant={setGranting} /> : null}
-    {granting ? <CredentialGrantDialog client={client} credential={granting} users={users} roles={roles} teams={teams} open onOpenChange={nextOpen => { if (!nextOpen) setGranting(null); }} onChanged={load} onError={() => setError(true)} /> : null}
+    {loading && !state ? <CredentialSkeleton /> : state ? <CredentialList credentials={state.credentials} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError(true)} onGrant={(credential, assignments) => setGranting({ credential, assignments })} /> : null}
+    {granting ? <CredentialGrantDialog client={client} credential={granting.credential} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} open onOpenChange={nextOpen => { if (!nextOpen) setGranting(null); }} onChanged={load} onError={() => setError(true)} /> : null}
   </div>;
 }
 
@@ -195,10 +197,10 @@ function CredentialList({ credentials, assignments, users, roles, teams, client,
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
-  readonly onGrant: (credential: CredentialMetadata) => void;
+  readonly onGrant: (credential: CredentialMetadata, assignments: readonly CredentialAssignment[]) => void;
 }) {
   if (credentials.length === 0) return <Empty><EmptyHeader><EmptyMedia><KeyRound aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noCredentials')}</EmptyTitle><EmptyDescription>{translate(language, 'noCredentialsHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="flex flex-col gap-4"><div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'credential')}</TableHead><TableHead>{translate(language, 'credentialService')}</TableHead><TableHead>{translate(language, 'deliveryMode')}</TableHead><TableHead>{translate(language, 'credentialStatus')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{credentials.map(credential => <CredentialRow key={credential.id} credential={credential} assignments={assignments.filter(item => item.resourceId === credential.id)} users={users} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(credential)} />)}</TableBody></Table></div><div className="flex items-center gap-2 text-xs text-tertiary-foreground"><KeyRound className="size-3.5" aria-hidden="true" />{translate(language, 'credentialSecretHint')}</div></div>;
+  return <div className="flex flex-col gap-4"><div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'credential')}</TableHead><TableHead>{translate(language, 'credentialService')}</TableHead><TableHead>{translate(language, 'deliveryMode')}</TableHead><TableHead>{translate(language, 'credentialStatus')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{credentials.map(credential => { const credentialAssignments = assignments.filter(item => item.resourceId === credential.id); return <CredentialRow key={credential.id} credential={credential} assignments={credentialAssignments} users={users} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(credential, credentialAssignments)} />; })}</TableBody></Table></div><div className="flex items-center gap-2 text-xs text-tertiary-foreground"><KeyRound className="size-3.5" aria-hidden="true" />{translate(language, 'credentialSecretHint')}</div></div>;
 }
 
 function CredentialRow({ credential, assignments, users, client, onChanged, onError, onGrant }: {
@@ -270,14 +272,15 @@ function CredentialRotateDialog({ client, credential, open, onOpenChange, onChan
   return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'rotateCredential')}</DialogTitle><DialogDescription>{translate(language, 'rotateCredentialDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialRotateFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="rotate-credential-value">{translate(language, 'credentialValue')}</FieldLabel><Input id="rotate-credential-value" type="password" value={value} onChange={event => setValue(event.target.value)} autoComplete="new-password" disabled={pending} /></Field></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'rotateCredential')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
-function CredentialGrantDialog({ client, credential, users, roles, teams, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential: CredentialMetadata; readonly users: readonly PlatformUser[]; readonly roles: readonly Role[]; readonly teams: readonly Team[]; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function CredentialGrantDialog({ client, credential, existingAssignments, users, roles, teams, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential: CredentialMetadata; readonly existingAssignments: readonly CredentialAssignment[]; readonly users: readonly PlatformUser[]; readonly roles: readonly Role[]; readonly teams: readonly Team[]; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => { if (open) { setSelected(new Set()); setFailed(false); } }, [open, credential.id]);
+  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
+  useEffect(() => { if (open) { setSelected(new Set()); setFailed(false); setFailedSubjects([]); } }, [open, credential.id]);
   const toggle = useCallback((key: string) => setSelected(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }), []);
-  const submit = async () => { if (selected.size === 0) return; setPending(true); setFailed(false); try { await Promise.all([...selected].map(key => { const separator = key.indexOf(':'); const type = key.slice(0, separator) as 'user' | 'role' | 'team'; const id = key.slice(separator + 1); return client.createCredentialAssignment({ credentialId: credential.id, subject: { type, id } }); })); onOpenChange(false); await onChanged(); } catch { setFailed(true); onError(); } finally { setPending(false); } };
-  return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'grantCredential')}</DialogTitle><DialogDescription>{translate(language, 'grantCredentialDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialAssignmentFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><SubjectMultiPicker users={users} roles={roles} teams={teams} selected={selected} onToggle={toggle} disabled={pending} /></Field></FieldGroup></div><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : <UsersRound data-icon="inline-start" />}{translate(language, pending ? 'granting' : 'grant')}</Button></DialogFooter></DialogContent></Dialog>;
+  const submit = async () => { if (selected.size === 0) return; setPending(true); setFailed(false); setFailedSubjects([]); try { const results = await runBatch([...selected], async key => { const separator = key.indexOf(':'); const type = key.slice(0, separator) as 'user' | 'role' | 'team'; const id = key.slice(separator + 1); await client.createCredentialAssignment({ credentialId: credential.id, subject: { type, id } }); }); const failures = results.filter(result => !result.ok).map(result => result.item); if (failures.length > 0) { setFailed(true); setFailedSubjects(failures); setSelected(new Set(failures)); await onChanged(); return; } onOpenChange(false); await onChanged(); } catch { setFailed(true); onError(); } finally { setPending(false); } };
+  return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'grantCredential')}</DialogTitle><DialogDescription>{translate(language, 'grantCredentialDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription><p>{translate(language, 'credentialAssignmentFailed')}</p>{failedSubjects.length > 0 ? <p className="mt-1 text-xs">{translate(language, 'grantFailedSubjects')}: {failedSubjects.join(', ')}</p> : null}</AlertDescription></Alert> : null}<FieldGroup><Field><SubjectMultiPicker users={users} roles={roles} teams={teams} excluded={new Set(existingAssignments.map(item => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggle} disabled={pending} /></Field></FieldGroup></div><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : <UsersRound data-icon="inline-start" />}{translate(language, pending ? 'granting' : 'grant')}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function CredentialSkeleton() { return <div className="overflow-hidden rounded-lg border border-border bg-card">{Array.from({ length: 3 }, (_, index) => <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}><Skeleton className="size-8 shrink-0 rounded-lg" /><div className="min-w-0 flex-1 flex flex-col gap-2"><Skeleton className="h-3.5 w-1/3" /><Skeleton className="h-3 w-1/2" /></div><Skeleton className="h-7 w-24" /></div>)}</div>; }

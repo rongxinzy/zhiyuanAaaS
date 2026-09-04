@@ -33,6 +33,7 @@ import { Spinner } from '../ui/components/ui/spinner.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
 import { Input } from '../ui/components/ui/input.js';
 import { cn } from '../ui/lib/utils.js';
+import { runBatch } from './batch.js';
 
 const language: AdminLanguage = 'zh';
 type AdminUser = PlatformUser & { readonly email?: string | null };
@@ -57,7 +58,7 @@ export function Resources({ client, tab }: ResourcesProps) {
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{ readonly created: number; readonly rejected: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ readonly created: number; readonly rejected: number; readonly errors: readonly string[] } | null>(null);
   const [editor, setEditor] = useState<{ readonly kind: 'user' | 'team' | 'role' | 'skill'; readonly id?: string } | null>(null);
   const [versionSkill, setVersionSkill] = useState<AdminSkill | null>(null);
   const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
@@ -97,8 +98,8 @@ export function Resources({ client, tab }: ResourcesProps) {
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
         {loading && !resources ? <ResourceListSkeleton /> : resources ? <>
           <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} onVersion={setVersionSkill} />
-          {importResult ? <Alert><Check aria-hidden="true" /><AlertDescription>{translate(language, 'usersImported')}: {importResult.created} / {translate(language, 'usersRejected')}: {importResult.rejected}</AlertDescription></Alert> : null}
-          {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} roles={resources.roles} teams={resources.teams} skills={resources.skills} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
+          {importResult ? <Alert><Check aria-hidden="true" /><AlertDescription><p>{translate(language, 'usersImported')}: {importResult.created} / {translate(language, 'usersRejected')}: {importResult.rejected}</p>{importResult.errors.length > 0 ? <div className="mt-1 text-xs"><p>{translate(language, 'usersImportErrors')}</p><ul className="list-disc pl-4">{importResult.errors.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul></div> : null}</AlertDescription></Alert> : null}
+            {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} roles={resources.roles} teams={resources.teams} skills={resources.skills} existingAssignments={resources.assignments} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
           {tab === AdminResourceTab.Users ? <UserImportDialog client={client} open={importing} onOpenChange={setImporting} onChanged={async result => { setImportResult(result); await load(); }} onError={reportError} /> : null}
           {editor?.kind === 'user' ? <UserEditorDialog client={client} user={editor.id ? resources.users.find(item => item.id === editor.id) : undefined} roles={resources.roles} teams={resources.teams} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'team' ? <TeamEditorDialog client={client} team={editor.id ? resources.teams.find(item => item.id === editor.id) : undefined} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
@@ -313,7 +314,7 @@ function SkillVersionDialog({ client, skill, open, onOpenChange, onChanged, onEr
   return <Dialog open={open} onOpenChange={nextOpen => { if (!pending && pendingVersion === null) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'uploadVersion')}: {skill.name}</DialogTitle><DialogDescription>{translate(language, 'skillEditorDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, failed)}</AlertDescription></Alert> : null}<form onSubmit={upload} noValidate className="flex flex-col gap-4"><FieldGroup className="gap-4"><Field><FieldLabel htmlFor="skill-version">{translate(language, 'skillVersion')}</FieldLabel><Input id="skill-version" value={version} onChange={event => setVersion(event.target.value)} placeholder="1.0.0" disabled={pending || pendingVersion !== null} /></Field><Field><FieldLabel htmlFor="skill-package">{translate(language, 'skillPackage')}</FieldLabel><Input id="skill-package" type="file" accept=".zip,application/zip" onChange={event => setArchive(event.target.files?.[0] ?? null)} disabled={pending || pendingVersion !== null} /></Field></FieldGroup><Button type="submit" className="self-start" disabled={pending || pendingVersion !== null}>{pending ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'uploadVersion')}</Button></form><div className="flex flex-col gap-2"><p className="text-sm font-semibold">{translate(language, 'versions')}</p>{skill.versions.length === 0 ? <p className="text-sm text-muted-foreground">{translate(language, 'noVersions')}</p> : <div className="flex flex-col gap-2">{skill.versions.map(item => <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3" key={item.version}><div className="min-w-0"><p className="truncate text-sm font-normal">{item.version}</p><p className="truncate text-xs text-tertiary-foreground">{item.sha256} · {item.size} {translate(language, 'bytes')}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={item.state === 'published' ? 'success' : 'outline'}>{translate(language, versionStateLabel(item.state))}</Badge>{item.state === 'draft' ? <Button type="button" size="sm" variant="outline" disabled={pending || pendingVersion !== null} onClick={() => void publish(item.version)}>{pendingVersion === item.version ? <Spinner data-icon="inline-start" /> : null}{translate(language, pendingVersion === item.version ? 'publishing' : 'publishVersion')}</Button> : null}</div></div>)}</div>}</div></div><DialogFooter><Button type="button" variant="ghost" disabled={pending || pendingVersion !== null} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
-type UserImportResult = { readonly created: number; readonly rejected: number };
+type UserImportResult = { readonly created: number; readonly rejected: number; readonly errors: readonly string[] };
 
 function UserImportDialog({ client, open, onOpenChange, onChanged, onError }: {
   readonly client: AdminConsoleClient;
@@ -347,8 +348,9 @@ function UserImportDialog({ client, open, onOpenChange, onChanged, onError }: {
       const result = await client.importUsers(payload);
       const created = typeof result.created === 'number' ? result.created : 0;
       const rejected = typeof result.rejected === 'number' ? result.rejected : 0;
+      const errors = Array.isArray(result.errors) ? result.errors.filter((item): item is string => typeof item === 'string').slice(0, 20) : [];
       onOpenChange(false);
-      await onChanged({ created, rejected });
+      await onChanged({ created, rejected, errors });
     } catch {
       setFailed(true);
       onError();
@@ -505,13 +507,14 @@ function PasswordResetDialog({ client, user, open, onOpenChange, onChanged, onEr
   return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'resetPasswordTitle')}</DialogTitle><DialogDescription>{translate(language, 'resetPasswordDescription')} <span className="font-normal text-foreground">{user.displayName}</span></DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'resetPasswordFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="reset-temp-password">{translate(language, 'temporaryPassword')}</FieldLabel><Input id="reset-temp-password" type="password" value={temporaryPassword} onChange={event => setTemporaryPassword(event.target.value)} placeholder={translate(language, 'temporaryPasswordPlaceholder')} disabled={pending} /></Field><Button type="button" variant="outline" role="checkbox" aria-checked={requirePasswordChange} disabled={pending} onClick={() => setRequirePasswordChange(value => !value)}>{translate(language, 'requirePasswordChange')}</Button></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
-function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenChange, onChanged, onError }: {
+function SkillGrantDialog({ client, open, users, roles, teams, skills, existingAssignments, onOpenChange, onChanged, onError }: {
   readonly client: AdminConsoleClient;
   readonly open: boolean;
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
   readonly skills: readonly AdminSkill[];
+  readonly existingAssignments: readonly AdminSkillAssignment[];
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
@@ -520,7 +523,8 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const reset = useCallback(() => { setSkillId(null); setSelected(new Set()); setFailed(false); }, []);
+  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
+  const reset = useCallback(() => { setSkillId(null); setSelected(new Set()); setFailed(false); setFailedSubjects([]); }, []);
   useEffect(() => {
     if (open) reset();
   }, [open, reset]);
@@ -536,13 +540,23 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
     if (!skillId || selected.size === 0) return;
     setPending(true);
     setFailed(false);
+    setFailedSubjects([]);
     try {
-      await Promise.all([...selected].map(subjectKey => {
+      const subjectKeys = [...selected];
+      const results = await runBatch(subjectKeys, subjectKey => {
         const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminSubjectType;
         const id = subjectKey.slice(separator + 1);
         return client.createSkillAssignment({ skillId, subject: { type, id } });
-      }));
+      });
+      const failures = results.filter(result => !result.ok).map(result => result.item);
+      if (failures.length > 0) {
+        setFailed(true);
+        setFailedSubjects(failures);
+        setSelected(new Set(failures));
+        await onChanged();
+        return;
+      }
       onOpenChange(false);
       await onChanged();
     } catch {
@@ -558,7 +572,7 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
           <DialogTitle>{translate(language, 'grantSkillTitle')}</DialogTitle>
           <DialogDescription>{translate(language, 'grantSkillDescription')}</DialogDescription>
         </DialogHeader>
-        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'grantFailed')}</AlertDescription></Alert> : null}
+        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription><p>{translate(language, 'grantFailed')}</p>{failedSubjects.length > 0 ? <p className="mt-1 text-xs">{translate(language, 'grantFailedSubjects')}: {failedSubjects.join(', ')}</p> : null}</AlertDescription></Alert> : null}
         <div className="flex flex-col gap-3">
           <FieldGroup className="gap-3">
             <Field>
@@ -574,7 +588,7 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
                 ))}
               </div>
             </Field>
-            <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
+            <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} excluded={new Set(existingAssignments.filter(item => item.skillId === skillId).map(item => `${item.subjectType}:${item.subjectId}`))} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
           </FieldGroup>
         </div>
         <DialogFooter>
@@ -586,10 +600,11 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
   );
 }
 
-export function SubjectMultiPicker({ users, roles, teams, selected, onToggle, disabled }: {
+export function SubjectMultiPicker({ users, roles, teams, excluded = new Set(), selected, onToggle, disabled }: {
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
+  readonly excluded?: ReadonlySet<string>;
   readonly selected: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
   readonly disabled: boolean;
@@ -598,7 +613,7 @@ export function SubjectMultiPicker({ users, roles, teams, selected, onToggle, di
     ...users.map(user => ({ key: `${AdminSubjectType.User}:${user.id}`, label: user.displayName, description: user.username, type: translate(language, 'user') })),
     ...roles.map(role => ({ key: `${AdminSubjectType.Role}:${role.id}`, label: role.name, description: role.id, type: translate(language, 'role') })),
     ...teams.map(team => ({ key: `${AdminSubjectType.Team}:${team.id}`, label: team.name, description: team.id, type: translate(language, 'team') })),
-  ];
+  ].filter(option => !excluded.has(option.key));
   return <><FieldLabel>{translate(language, 'selectSubjects')}</FieldLabel><div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">{options.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">{translate(language, 'noMatchingSubjects')}</p> : options.map(option => <Button key={option.key} type="button" variant="ghost" size="sm" role="checkbox" aria-checked={selected.has(option.key)} disabled={disabled} className="justify-between" onClick={() => onToggle(option.key)}><span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0 text-left"><span className="block truncate">{option.label} <span className="text-xs text-tertiary-foreground">({option.type})</span></span><span className="block truncate text-xs text-tertiary-foreground">{option.description}</span></span></span><span aria-hidden="true" className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', selected.has(option.key) ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>{selected.has(option.key) ? <CheckMark /> : null}</span></Button>)}</div><p className="flex items-center gap-1.5 text-xs text-tertiary-foreground">{translate(language, 'selectedSubjectsLabel')}<Badge variant="secondary">{selected.size}</Badge></p></>;
 }
 

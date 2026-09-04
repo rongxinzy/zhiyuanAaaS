@@ -35,10 +35,12 @@ import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
 import { Skeleton } from '../ui/components/ui/skeleton.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
+import { runBatch } from './batch.js';
 
 const ModelSourceType = { Gateway: 'gateway' } as const;
 const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
 const language: AdminLanguage = 'zh';
+type ModelGrantTarget = { readonly model: AdminModel; readonly assignments: readonly ModelAssignment[] };
 
 export function Models({ client }: { readonly client: AdminConsoleClient }) {
   const [state, setState] = useState<AdminModels | null>(null);
@@ -47,7 +49,7 @@ export function Models({ client }: { readonly client: AdminConsoleClient }) {
   const [teams, setTeams] = useState<readonly Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const [granting, setGranting] = useState<AdminModel | null>(null);
+  const [granting, setGranting] = useState<ModelGrantTarget | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -60,7 +62,7 @@ export function Models({ client }: { readonly client: AdminConsoleClient }) {
     } catch { setError('modelsLoadFailed'); } finally { setLoading(false); }
   }, [client]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}<ModelCreateForm client={client} onCreated={load} />{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={setGranting} /> : null}{granting ? <ModelGrantDialog client={client} model={granting} users={users} roles={roles} teams={teams} onOpenChange={setGranting} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}<ModelCreateForm client={client} onCreated={load} />{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={(model, assignments) => setGranting({ model, assignments })} /> : null}{granting ? <ModelGrantDialog client={client} model={granting.model} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} onOpenChange={() => setGranting(null)} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
 }
 
 function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleClient; readonly onCreated: () => Promise<void> }) {
@@ -117,10 +119,10 @@ function ModelList({ models, assignments, users, roles, teams, client, onChanged
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
-  readonly onGrant: (model: AdminModel) => void;
+  readonly onGrant: (model: AdminModel, assignments: readonly ModelAssignment[]) => void;
 }) {
   if (models.length === 0) return <Empty><EmptyHeader><EmptyMedia><ShieldCheck aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'modelsEmpty')}</EmptyTitle><EmptyDescription>{translate(language, 'modelsEmptyHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="flex flex-col gap-4">{models.map(model => <ModelRow key={model.id} model={model} assignments={assignments.filter(item => item.resourceId === model.id)} users={users} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(model)} />)}</div>;
+  return <div className="flex flex-col gap-4">{models.map(model => { const modelAssignments = assignments.filter(item => item.resourceId === model.id); return <ModelRow key={model.id} model={model} assignments={modelAssignments} users={users} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(model, modelAssignments)} />; })}</div>;
 }
 
 function ModelRow({ model, assignments, users, client, onChanged, onError, onGrant }: {
@@ -183,9 +185,10 @@ function ModelEditorDialog({ client, model, open, onOpenChange, onChanged, onErr
   return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'editModel')}</DialogTitle><DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="edit-model-name">{translate(language, 'modelName')}</FieldLabel><Input id="edit-model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="edit-model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="edit-model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field><Button type="button" variant="outline" role="checkbox" aria-checked={enabled} disabled={pending} onClick={() => setEnabled(value => !value)}>{translate(language, 'status')}: {translate(language, enabled ? 'enabled' : 'disabled')}</Button><Button type="button" variant="outline" role="checkbox" aria-checked={isDefault} disabled={pending} onClick={() => setIsDefault(value => !value)}>{translate(language, 'defaultModel')}: {translate(language, isDefault ? 'enabled' : 'disabled')}</Button></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
-function ModelGrantDialog({ client, model, users, roles, teams, onOpenChange, onChanged, onError }: {
+function ModelGrantDialog({ client, model, existingAssignments, users, roles, teams, onOpenChange, onChanged, onError }: {
   readonly client: AdminConsoleClient;
   readonly model: AdminModel;
+  readonly existingAssignments: readonly ModelAssignment[];
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
@@ -196,7 +199,8 @@ function ModelGrantDialog({ client, model, users, roles, teams, onOpenChange, on
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => { if (model) { setSelected(new Set()); setFailed(false); } }, [model]);
+  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
+  useEffect(() => { if (model) { setSelected(new Set()); setFailed(false); setFailedSubjects([]); } }, [model]);
   const toggleSubject = useCallback((subjectKey: string) => {
     setSelected(current => {
       const next = new Set(current);
@@ -209,13 +213,22 @@ function ModelGrantDialog({ client, model, users, roles, teams, onOpenChange, on
     if (selected.size === 0) return;
     setPending(true);
     setFailed(false);
+    setFailedSubjects([]);
     try {
-      await Promise.all([...selected].map(subjectKey => {
+      const results = await runBatch([...selected], subjectKey => {
         const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
         const id = subjectKey.slice(separator + 1);
         return client.createModelAssignment({ modelId: model.id, subject: { type, id } });
-      }));
+      });
+      const failures = results.filter(result => !result.ok).map(result => result.item);
+      if (failures.length > 0) {
+        setFailed(true);
+        setFailedSubjects(failures);
+        setSelected(new Set(failures));
+        await onChanged();
+        return;
+      }
       onOpenChange(null);
       await onChanged();
     } catch {
@@ -231,8 +244,8 @@ function ModelGrantDialog({ client, model, users, roles, teams, onOpenChange, on
           <DialogTitle>{translate(language, 'grantModelTitle')}</DialogTitle>
           <DialogDescription>{translate(language, 'grantModelDescription')} <span className="font-normal text-foreground">{model.displayName}</span></DialogDescription>
         </DialogHeader>
-        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'grantFailed')}</AlertDescription></Alert> : null}
-        <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
+        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription><p>{translate(language, 'grantFailed')}</p>{failedSubjects.length > 0 ? <p className="mt-1 text-xs">{translate(language, 'grantFailedSubjects')}: {failedSubjects.join(', ')}</p> : null}</AlertDescription></Alert> : null}
+        <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} excluded={new Set(existingAssignments.map(item => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
         <DialogFooter>
           <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(null)}>{translate(language, 'cancel')}</Button>
           <Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'granting' : 'grant')}</Button>

@@ -52,6 +52,46 @@ describe('admin models', () => {
     expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'user', id: 'u2' } });
   });
 
+  test('does not offer subjects that already have a model assignment', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({
+        models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+        assignments: [{ id: 'a1', resourceType: 'model', resourceId: 'chat', subject: { type: 'user', id: 'u1' } }],
+      }),
+      resources: vi.fn().mockResolvedValue({ users: [
+        { id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' },
+        { id: 'u2', displayName: '李四', username: 'lisi', status: 'active' },
+      ], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
+    };
+    render(<Models client={client as never} />);
+    fireEvent.click(await screen.findByRole('button', { name: '分配模型' }));
+    expect(screen.queryByRole('checkbox', { name: /张三/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /李四/ })).toBeInTheDocument();
+  });
+
+  test('reports partial model assignment failures and keeps failed subjects selected', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({
+        models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+        assignments: [],
+      }),
+      resources: vi.fn().mockResolvedValue({ users: [
+        { id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' },
+        { id: 'u2', displayName: '李四', username: 'lisi', status: 'active' },
+      ], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
+      createModelAssignment: vi.fn(async ({ subject }: { readonly subject: { readonly id: string } }) => {
+        if (subject.id === 'u2') throw new Error('already assigned');
+      }),
+    };
+    render(<Models client={client as never} />);
+    fireEvent.click(await screen.findByRole('button', { name: '分配模型' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /张三/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /李四/ }));
+    fireEvent.click(screen.getByRole('button', { name: '授权' }));
+    expect(await screen.findByText(/失败主体/)).toBeInTheDocument();
+    expect(screen.getByText(/user:u2/)).toBeInTheDocument();
+  });
+
   test('edits and deletes a model', async () => {
     const client = {
       models: vi.fn().mockResolvedValue({ models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }], assignments: [] }),
