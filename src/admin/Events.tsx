@@ -12,13 +12,65 @@ import { Button } from '../ui/components/ui/button.js';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/components/ui/card.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/components/ui/dialog.js';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
-import { Field, FieldLabel } from '../ui/components/ui/field.js';
+import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
 import { Input } from '../ui/components/ui/input.js';
 import { Spinner } from '../ui/components/ui/spinner.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
+import { ToggleGroup, ToggleGroupItem } from '../ui/components/ui/toggle-group.js';
 
 const language: AdminLanguage = 'zh';
 type EventFilters = Record<string, string | number>;
+
+const ControlEventType = {
+  SkillManifestChanged: 'skill.manifest.changed',
+  PluginManifestChanged: 'plugin.manifest.changed',
+  CredentialAssignmentsChanged: 'credential.assignments.changed',
+  ModelCatalogChanged: 'model.catalog.changed',
+} as const;
+type ControlEventType = (typeof ControlEventType)[keyof typeof ControlEventType];
+
+const ControlEventScopeType = {
+  Global: 'global',
+  Team: 'team',
+  User: 'user',
+} as const;
+type ControlEventScopeType = (typeof ControlEventScopeType)[keyof typeof ControlEventScopeType];
+
+const ControlEventResourceType = {
+  Skill: 'skill',
+  Plugin: 'plugin',
+  Credential: 'credential',
+  Model: 'model',
+} as const;
+type ControlEventResourceType = (typeof ControlEventResourceType)[keyof typeof ControlEventResourceType];
+
+const CONTROL_EVENT_TASKS: Record<ControlEventType, string> = {
+  [ControlEventType.SkillManifestChanged]: 'skill.reconcile',
+  [ControlEventType.PluginManifestChanged]: 'plugin.reconcile',
+  [ControlEventType.CredentialAssignmentsChanged]: 'credential.reconcile',
+  [ControlEventType.ModelCatalogChanged]: 'model.reconcile',
+};
+
+const CONTROL_EVENT_RESOURCES: Record<ControlEventType, ControlEventResourceType> = {
+  [ControlEventType.SkillManifestChanged]: 'skill',
+  [ControlEventType.PluginManifestChanged]: 'plugin',
+  [ControlEventType.CredentialAssignmentsChanged]: 'credential',
+  [ControlEventType.ModelCatalogChanged]: 'model',
+};
+
+const CONTROL_EVENT_RESOURCE_TYPES = [
+  ControlEventResourceType.Skill,
+  ControlEventResourceType.Plugin,
+  ControlEventResourceType.Credential,
+  ControlEventResourceType.Model,
+] as const;
+
+const CONTROL_EVENT_RESOURCE_LABELS: Record<ControlEventResourceType, AdminTranslationKey> = {
+  [ControlEventResourceType.Skill]: 'skillResource',
+  [ControlEventResourceType.Plugin]: 'pluginResource',
+  [ControlEventResourceType.Credential]: 'credentialResource',
+  [ControlEventResourceType.Model]: 'modelResource',
+};
 
 function withoutEmpty(filters: Record<string, string>): EventFilters {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim() !== ''));
@@ -71,11 +123,10 @@ export function Events({ client }: { readonly client: AdminConsoleClient }) {
       setStatus('error');
     }
   };
-  const publish = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const publish = async (input: JsonObject) => {
     setStatus('loading');
     try {
-      const result = await client.publishControlEvent({ type: 'model.catalog.changed', scope: { type: 'global' }, task: { type: 'model.reconcile' }, expiresAt: new Date(Date.now() + 300_000).toISOString(), supersedesKey: 'admin-console:model-catalog' } as JsonObject);
+      const result = await client.publishControlEvent(input);
       const id = typeof result.eventId === 'string' ? result.eventId : '';
       setEventId(id);
       setPublished(id || 'created');
@@ -99,7 +150,41 @@ export function Events({ client }: { readonly client: AdminConsoleClient }) {
     setControlFilters(filters);
     await loadControlEvents(filters);
   };
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'events')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'eventsDescription')}</p></div>{status === 'error' || controlEventsError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'eventsFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><Card><CardHeader><div className="flex items-center gap-2"><Send className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'publishEvent')}</CardTitle></div></CardHeader><CardContent><form className="flex flex-col gap-4" onSubmit={publish}><p className="text-sm text-muted-foreground">{translate(language, 'globalEventDescription')}</p><Button className="self-start" type="submit" disabled={status === 'loading'}>{status === 'loading' ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}{translate(language, 'publish')}</Button>{published ? <p className="text-xs text-success">{translate(language, 'eventCreated')}: {published}</p> : null}</form></CardContent></Card><AuditSearchCard type={type} onTypeChange={setType} filters={auditFilters} onFiltersChange={setAuditFilters} onSubmit={search} loading={status === 'loading'} /></div><ControlEventList events={controlEvents} loading={controlEventsLoading} nextCursor={controlNextCursor} client={client} onChanged={() => loadControlEvents(controlFilters)} onLoadMore={() => loadControlEvents({ ...controlFilters, cursor: controlNextCursor ?? '' }, true)} onSearch={searchControlEvents} onError={() => setControlEventsError(true)} /><AuditList records={records} nextCursor={auditNextCursor} loading={status === 'loading'} eventId={eventId} client={client} onLoadMore={loadMoreAudit} onError={() => setControlEventsError(true)} /></div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'events')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'eventsDescription')}</p></div>{status === 'error' || controlEventsError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'eventsFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><ControlEventPublishCard pending={status === 'loading'} published={published} onPublish={publish} /><AuditSearchCard type={type} onTypeChange={setType} filters={auditFilters} onFiltersChange={setAuditFilters} onSubmit={search} loading={status === 'loading'} /></div><ControlEventList events={controlEvents} loading={controlEventsLoading} nextCursor={controlNextCursor} client={client} onChanged={() => loadControlEvents(controlFilters)} onLoadMore={() => loadControlEvents({ ...controlFilters, cursor: controlNextCursor ?? '' }, true)} onSearch={searchControlEvents} onError={() => setControlEventsError(true)} /><AuditList records={records} nextCursor={auditNextCursor} loading={status === 'loading'} eventId={eventId} client={client} onLoadMore={loadMoreAudit} onError={() => setControlEventsError(true)} /></div></section>;
+}
+
+function ControlEventPublishCard({ pending, published, onPublish }: { readonly pending: boolean; readonly published: string | null; readonly onPublish: (input: JsonObject) => Promise<void> }) {
+  const [type, setType] = useState<ControlEventType>(ControlEventType.ModelCatalogChanged);
+  const [scopeType, setScopeType] = useState<ControlEventScopeType>(ControlEventScopeType.Global);
+  const [scopeId, setScopeId] = useState('');
+  const [resourceType, setResourceType] = useState<ControlEventResourceType>(ControlEventResourceType.Model);
+  const [resourceId, setResourceId] = useState('');
+  const [resourceRevision, setResourceRevision] = useState('');
+  const [expiresInMinutes, setExpiresInMinutes] = useState('5');
+  const [supersedesKey, setSupersedesKey] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const ttl = Number(expiresInMinutes);
+    const hasResource = Boolean(resourceId.trim() || resourceRevision.trim());
+    if ((scopeType !== ControlEventScopeType.Global && !scopeId.trim()) || !Number.isInteger(ttl) || ttl < 1 || ttl > 1440 || (hasResource && (!resourceId.trim() || !resourceRevision.trim()))) {
+      setFailed(true);
+      return;
+    }
+    setFailed(false);
+    const input: JsonObject = {
+      type,
+      scope: scopeType === ControlEventScopeType.Global ? { type: scopeType } : { type: scopeType, id: scopeId.trim() },
+      task: { type: CONTROL_EVENT_TASKS[type] },
+      expiresAt: new Date(Date.now() + ttl * 60_000).toISOString(),
+      ...(hasResource ? { resource: { type: resourceType, id: resourceId.trim(), revision: resourceRevision.trim() } } : {}),
+      ...(supersedesKey.trim() ? { supersedesKey: supersedesKey.trim() } : {}),
+    };
+    await onPublish(input);
+  };
+
+  return <Card><CardHeader><div className="flex items-center gap-2"><Send className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'publishEvent')}</CardTitle></div></CardHeader><CardContent><form className="flex flex-col gap-4" onSubmit={submit} noValidate>{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'eventFormFailed')}</AlertDescription></Alert> : null}<p className="text-sm text-muted-foreground">{translate(language, 'publishEventDescription')}</p><FieldGroup><Field><FieldLabel>{translate(language, 'eventType')}</FieldLabel><ToggleGroup value={[type]} onValueChange={next => { if (next[0]) { const nextType = next[0] as ControlEventType; setType(nextType); setResourceType(CONTROL_EVENT_RESOURCES[nextType]); } }} variant="outline" className="flex-wrap" aria-label={translate(language, 'publishEventType')}><ToggleGroupItem value={ControlEventType.SkillManifestChanged}>{translate(language, 'skillManifestChanged')}</ToggleGroupItem><ToggleGroupItem value={ControlEventType.PluginManifestChanged}>{translate(language, 'pluginManifestChanged')}</ToggleGroupItem><ToggleGroupItem value={ControlEventType.CredentialAssignmentsChanged}>{translate(language, 'credentialAssignmentsChanged')}</ToggleGroupItem><ToggleGroupItem value={ControlEventType.ModelCatalogChanged}>{translate(language, 'modelCatalogChanged')}</ToggleGroupItem></ToggleGroup></Field><Field><FieldLabel>{translate(language, 'scopeType')}</FieldLabel><ToggleGroup value={[scopeType]} onValueChange={next => { if (next[0]) { const nextScope = next[0] as ControlEventScopeType; setScopeType(nextScope); if (nextScope === ControlEventScopeType.Global) setScopeId(''); } }} variant="outline" aria-label={translate(language, 'publishScopeType')}><ToggleGroupItem value={ControlEventScopeType.Global}>{translate(language, 'globalScope')}</ToggleGroupItem><ToggleGroupItem value={ControlEventScopeType.Team}>{translate(language, 'teamScope')}</ToggleGroupItem><ToggleGroupItem value={ControlEventScopeType.User}>{translate(language, 'userScope')}</ToggleGroupItem></ToggleGroup></Field>{scopeType !== ControlEventScopeType.Global ? <Field data-invalid={failed && !scopeId.trim()}><FieldLabel htmlFor="publish-scope-id">{translate(language, 'publishScopeId')}</FieldLabel><Input id="publish-scope-id" value={scopeId} onChange={event => setScopeId(event.target.value)} aria-invalid={failed && !scopeId.trim()} disabled={pending} /></Field> : null}<FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-3"><Field><FieldLabel>{translate(language, 'eventResourceType')}</FieldLabel><ToggleGroup value={[resourceType]} onValueChange={next => { if (next[0]) setResourceType(next[0] as ControlEventResourceType); }} variant="outline" className="flex-wrap" aria-label={translate(language, 'publishResourceType')}>{CONTROL_EVENT_RESOURCE_TYPES.map(value => <ToggleGroupItem key={value} value={value}>{translate(language, CONTROL_EVENT_RESOURCE_LABELS[value])}</ToggleGroupItem>)}</ToggleGroup></Field><Field><FieldLabel htmlFor="publish-resource-id">{translate(language, 'publishResourceId')}</FieldLabel><Input id="publish-resource-id" value={resourceId} onChange={event => setResourceId(event.target.value)} placeholder={translate(language, 'optional')} disabled={pending} /></Field><Field><FieldLabel htmlFor="publish-resource-revision">{translate(language, 'publishResourceRevision')}</FieldLabel><Input id="publish-resource-revision" value={resourceRevision} onChange={event => setResourceRevision(event.target.value)} placeholder={translate(language, 'optional')} disabled={pending} /></Field></FieldGroup><FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Field data-invalid={failed && (!Number.isInteger(Number(expiresInMinutes)) || Number(expiresInMinutes) < 1 || Number(expiresInMinutes) > 1440)}><FieldLabel htmlFor="publish-expires-in">{translate(language, 'publishExpiresInMinutes')}</FieldLabel><Input id="publish-expires-in" type="number" min={1} max={1440} step={1} value={expiresInMinutes} onChange={event => setExpiresInMinutes(event.target.value)} aria-invalid={failed && (!Number.isInteger(Number(expiresInMinutes)) || Number(expiresInMinutes) < 1 || Number(expiresInMinutes) > 1440)} disabled={pending} /></Field><Field><FieldLabel htmlFor="publish-supersedes-key">{translate(language, 'publishSupersedesKey')}</FieldLabel><Input id="publish-supersedes-key" value={supersedesKey} onChange={event => setSupersedesKey(event.target.value)} placeholder={translate(language, 'optional')} disabled={pending} /></Field></FieldGroup></FieldGroup><Button className="self-start" type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}{translate(language, 'publish')}</Button>{published ? <p className="text-xs text-success">{translate(language, 'eventCreated')}: {published}</p> : null}</form></CardContent></Card>;
 }
 
 function AuditSearchCard({ type, onTypeChange, filters, onFiltersChange, onSubmit, loading }: { readonly type: string; readonly onTypeChange: (value: string) => void; readonly filters: EventFilters; readonly onFiltersChange: (filters: EventFilters) => void; readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void; readonly loading: boolean }) {
