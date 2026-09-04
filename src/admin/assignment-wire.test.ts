@@ -21,9 +21,9 @@ function startAepStub() {
     request.on('end', () => {
       requests.push({ method: request.method ?? '', path: request.url ?? '', body: raw ? JSON.parse(raw) : null });
       response.setHeader('Content-Type', 'application/json');
-      if (request.method === 'GET' && request.url === '/aep/v1/agent/me') {
+      if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
         response.writeHead(200);
-        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, enterprise: { id: 'demo', name: '演示企业' }, roles: ['admin'] }));
+        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
         return;
       }
       if (request.method === 'POST' && request.url === '/aep/v1/admin/skill-assignments') {

@@ -1,4 +1,4 @@
-import { Bot, Boxes, CircleAlert, KeyRound, RefreshCw, UserRound, type LucideIcon } from 'lucide-react';
+import { Boxes, CircleAlert, KeyRound, RefreshCw, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { PlatformUser } from '@aep/sdk-node';
@@ -37,7 +37,7 @@ const language: AdminLanguage = 'zh';
 
 export const AdminResourceTab = {
   Users: 'users',
-  Agents: 'agents',
+  Teams: 'teams',
   Skills: 'skills',
   Assignments: 'assignments',
 } as const;
@@ -98,7 +98,7 @@ function ResourceTable({ tab, resources, client, onChanged, onError, onGrant }: 
   readonly onGrant: () => void;
 }) {
   if (tab === AdminResourceTab.Users) return <UsersTable users={resources.users} client={client} onChanged={onChanged} onError={onError} />;
-  if (tab === AdminResourceTab.Agents) return <AgentsTable agents={resources.agents} />;
+  if (tab === AdminResourceTab.Teams) return <TeamsTable teams={resources.teams} />;
   if (tab === AdminResourceTab.Skills) return <SkillsTable skills={resources.skills} client={client} onChanged={onChanged} onError={onError} />;
   return <AssignmentsTable assignments={resources.assignments} skills={resources.skills} users={resources.users} client={client} onChanged={onChanged} onError={onError} onGrant={onGrant} />;
 }
@@ -125,9 +125,9 @@ function UsersTable({ users, client, onChanged, onError }: { readonly users: rea
   return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'user')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{users.map(user => <TableRow key={user.id}><TableCell><div className="flex min-w-0 items-center gap-3"><UserRound className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{user.displayName}</div><div className="truncate text-xs text-tertiary-foreground">{user.username}</div></div></div></TableCell><TableCell><Badge variant={user.status === 'active' ? 'success' : 'outline'}>{translate(language, user.status === 'active' ? 'active' : 'disabled')}</Badge></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(user.id, async () => { await client.updateUser(user.id, { status: user.status === 'active' ? 'disabled' : 'active' }); })}>{translate(language, user.status === 'active' ? 'disable' : 'enable')}</Button></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
-function AgentsTable({ agents }: { readonly agents: AdminResources['agents'] }) {
-  if (agents.length === 0) return <EmptyState label="agentsEmpty" hint="agentsEmptyHint" icon={Bot} />;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'agent')}</TableHead><TableHead className="text-right">{translate(language, 'lastSeen')}</TableHead></TableRow></TableHeader><TableBody>{agents.map(agent => <TableRow key={agent.agentId}><TableCell><div className="flex min-w-0 items-center gap-3"><Bot className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{agent.agentId}</div><div className="text-xs text-tertiary-foreground">{agent.platform} · {agent.agentVersion}</div></div></div></TableCell><TableCell className="text-right text-xs text-tertiary-foreground">{formatTimestamp(agent.lastSeenAt)}</TableCell></TableRow>)}</TableBody></Table></div>;
+function TeamsTable({ teams }: { readonly teams: AdminResources['teams'] }) {
+  if (teams.length === 0) return <EmptyState label="teamsEmpty" hint="teamsEmptyHint" icon={Users} />;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'team')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'members')}</TableHead></TableRow></TableHeader><TableBody>{teams.map(team => <TableRow key={team.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Users className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{team.name}</div><div className="truncate text-xs text-tertiary-foreground">{team.id}</div></div></div></TableCell><TableCell><Badge variant={team.enabled ? 'success' : 'outline'}>{translate(language, team.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell className="text-right text-xs text-tertiary-foreground">{team.memberCount}</TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
 function SkillsTable({ skills, client, onChanged, onError }: { readonly skills: readonly AdminSkill[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
@@ -247,7 +247,7 @@ function ResourceListSkeleton({ rows = 6 }: { readonly rows?: number }) {
 
 function resourceTitle(tab: AdminResourceTab): AdminTranslationKey {
   if (tab === AdminResourceTab.Users) return 'users';
-  if (tab === AdminResourceTab.Agents) return 'agents';
+  if (tab === AdminResourceTab.Teams) return 'teams';
   if (tab === AdminResourceTab.Skills) return 'skills';
   return 'assignments';
 }

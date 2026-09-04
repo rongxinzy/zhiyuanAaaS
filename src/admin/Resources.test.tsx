@@ -13,7 +13,8 @@ describe('admin resources', () => {
     const client = {
       resources: vi.fn().mockResolvedValue({
         users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
-        agents: [],
+        teams: [],
+        roles: [],
         skills: [],
         assignments: [],
       }),
@@ -31,7 +32,7 @@ describe('admin resources', () => {
 
   test('renders assignment and revokes it after confirmation', async () => {
     const client = {
-      resources: vi.fn().mockResolvedValue({ users: [], agents: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
       updateUser: vi.fn(),
       updateSkill: vi.fn(),
       deleteSkillAssignment: vi.fn().mockResolvedValue(undefined),
@@ -47,7 +48,8 @@ describe('admin resources', () => {
     const client = {
       resources: vi.fn().mockResolvedValue({
         users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
-        agents: [],
+        teams: [],
+        roles: [],
         skills: [{ id: 's1', name: '写作', enabled: true }],
         assignments: [],
       }),
@@ -74,7 +76,8 @@ describe('admin resources', () => {
           { id: 'u2', displayName: '李四', username: 'lisi', status: 'active' },
           { id: 'u3', displayName: '王五', username: 'wangwu', status: 'active' },
         ],
-        agents: [],
+        teams: [],
+        roles: [],
         skills: [{ id: 's1', name: '写作', enabled: true }],
         assignments: [],
       }),
