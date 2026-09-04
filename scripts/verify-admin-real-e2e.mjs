@@ -97,17 +97,9 @@ try {
 }
 
 async function createUserAndMemberships() {
-  await page.getByRole('button', { name: '新增用户' }).click();
-  let current = dialog();
-  await current.getByLabel('用户名').fill(names.user);
-  await current.getByLabel('显示名称').fill(names.display);
-  await current.getByLabel('临时密码').fill(`Temporary-${suffix}-password`);
-  await current.getByRole('button', { name: '保存' }).click();
-  await waitText(names.display);
-
   await page.getByRole('tab', { name: 'Team' }).click();
   await page.getByRole('button', { name: '新增 Team' }).click();
-  current = dialog();
+  let current = dialog();
   await current.getByLabel('Team ID').fill(names.team);
   await current.getByLabel('名称').fill(`Console Team ${suffix}`);
   await current.getByRole('button', { name: '保存' }).click();
@@ -122,11 +114,19 @@ async function createUserAndMemberships() {
   await waitText(`Console Role ${suffix}`);
 
   await page.getByRole('tab', { name: '用户' }).click();
+  await page.getByRole('button', { name: '新增用户' }).click();
+  current = dialog();
+  await current.getByLabel('用户名').fill(names.user);
+  await current.getByLabel('显示名称').fill(names.display);
+  await current.getByLabel('临时密码').fill(`Temporary-${suffix}-password`);
+  await current.getByRole('checkbox', { name: `Console Role ${suffix}` }).click();
+  await current.getByRole('checkbox', { name: `Console Team ${suffix}` }).click();
+  await current.getByRole('button', { name: '保存' }).click();
+  await waitText(names.display);
+
   await row(names.user).getByRole('button', { name: '编辑' }).click();
   current = dialog();
   await current.getByLabel('显示名称').fill(`${names.display} Updated`);
-  await current.getByRole('checkbox', { name: `Console Role ${suffix}` }).click();
-  await current.getByRole('checkbox', { name: `Console Team ${suffix}` }).click();
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`${names.display} Updated`);
 
@@ -137,7 +137,7 @@ async function createUserAndMemberships() {
 
   await page.getByRole('button', { name: '导入用户' }).click();
   current = dialog();
-  const importPayload = JSON.stringify({ users: [{ externalRowId: `row-${suffix}`, username: names.imported, displayName: `Imported ${suffix}`, temporaryPassword: `Imported-${suffix}-password` }] });
+  const importPayload = JSON.stringify({ users: [{ externalRowId: `row-${suffix}`, username: names.imported, displayName: `Imported ${suffix}`, temporaryPassword: `Imported-${suffix}-password`, roleIds: ['admin'], teamIds: ['all-users'] }] });
   await current.getByLabel('用户 JSON 文件').setInputFiles({ name: 'users.json', mimeType: 'application/json', buffer: Buffer.from(importPayload) });
   await current.getByRole('button', { name: '导入用户' }).click();
   await waitText(`Imported ${suffix}`);

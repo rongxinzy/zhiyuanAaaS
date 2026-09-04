@@ -7,7 +7,7 @@ contract test. Not every resource has a physical `DELETE` operation.
 
 | Resource | Create | Read | Update | Delete or terminal action | Coverage |
 | --- | --- | --- | --- | --- | --- |
-| Users | Create user; JSON import | Paginated list | Profile, status, password reset, role/team membership replacement | Disable account; the AEP contract intentionally has no user delete | `Resources.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
+| Users | Create user; JSON import (each row must include at least one Role and one Team) | Paginated list | Profile, status, password reset, role/team membership replacement | Disable account; the AEP contract intentionally has no user delete | `Resources.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Teams | Create | List | Name, description, enabled | Delete non-built-in team | `Resources.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Roles | Create | List and permission catalog | Name, description, enabled, permissions | Delete non-built-in role | `Resources.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Skills | Create | List with state and versions | Name, description, active/withdrawn state | Delete Skill; upload/publish/withdraw individual versions | `Resources.test.tsx`, `assignment-wire.test.ts`; `scripts/verify-admin-crud-browser.mjs` |

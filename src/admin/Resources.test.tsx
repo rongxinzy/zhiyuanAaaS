@@ -126,14 +126,19 @@ describe('admin resources', () => {
 
   test('imports users from a JSON envelope and refreshes the list', async () => {
     const client = {
-      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        permissions: [], skills: [], assignments: [],
+      }),
       importUsers: vi.fn().mockResolvedValue({ created: 2, rejected: 1, errors: ['row-3: username already exists'] }),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     fireEvent.click(await screen.findByRole('button', { name: '导入用户' }));
     const payload = JSON.stringify({ users: [
-      { externalRowId: 'row-1', username: 'one', displayName: '用户一', temporaryPassword: 'temporary-password-1' },
-      { externalRowId: 'row-2', username: 'two', displayName: '用户二', temporaryPassword: 'temporary-password-2' },
+      { externalRowId: 'row-1', username: 'one', displayName: '用户一', temporaryPassword: 'temporary-password-1', roleIds: ['role-1'], teamIds: ['team-1'] },
+      { externalRowId: 'row-2', username: 'two', displayName: '用户二', temporaryPassword: 'temporary-password-2', roleIds: ['role-1'], teamIds: ['team-1'] },
     ] });
     fireEvent.change(screen.getByLabelText('用户 JSON 文件'), { target: { files: [new File([payload], 'users.json', { type: 'application/json' })] } });
     fireEvent.click((await screen.findAllByRole('button', { name: '导入用户' })).at(-1)!);
@@ -143,6 +148,20 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.resources).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/已创建用户: 2/)).toBeInTheDocument();
     expect(screen.getByText('row-3: username already exists')).toBeInTheDocument();
+  });
+
+  test('rejects user import rows without Role and Team memberships', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
+      importUsers: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '导入用户' }));
+    const payload = JSON.stringify({ users: [{ externalRowId: 'row-1', username: 'one', displayName: '用户一', temporaryPassword: 'temporary-password-1' }] });
+    fireEvent.change(screen.getByLabelText('用户 JSON 文件'), { target: { files: [new File([payload], 'users.json', { type: 'application/json' })] } });
+    fireEvent.click((await screen.findAllByRole('button', { name: '导入用户' })).at(-1)!);
+    expect(await screen.findByText('用户导入失败，请检查 JSON 格式、必填字段和临时密码长度。')).toBeInTheDocument();
+    expect(client.importUsers).not.toHaveBeenCalled();
   });
 
   test('rejects malformed user import before calling the client', async () => {

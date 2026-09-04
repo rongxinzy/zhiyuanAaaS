@@ -411,6 +411,7 @@ function normalizeUserImport(value: unknown): JsonObject {
     if ((item.temporaryPassword as string).length < 12) throw new Error('Temporary password is too short.');
     for (const key of ['teamIds', 'roleIds']) {
       if (item[key] !== undefined && (!Array.isArray(item[key]) || item[key].some(entry => typeof entry !== 'string'))) throw new Error(`Invalid ${key}.`);
+      if (!Array.isArray(item[key]) || item[key].length === 0) throw new Error(`Missing ${key}.`);
     }
     if (item.requirePasswordChange !== undefined && typeof item.requirePasswordChange !== 'boolean') throw new Error('Invalid requirePasswordChange.');
   }
