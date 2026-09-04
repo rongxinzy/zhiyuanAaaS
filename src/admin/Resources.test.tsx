@@ -184,4 +184,77 @@ describe('admin resources', () => {
     fireEvent.click(deleteButtons.at(-1)!);
     await waitFor(() => expect(client.deleteTeam).toHaveBeenCalledWith('team-1'));
   });
+
+  test('creates a Skill from the lifecycle editor', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] }),
+      createSkill: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+    fireEvent.click(await screen.findByRole('button', { name: '新增 Skill' }));
+    fireEvent.change(screen.getByLabelText('Skill ID'), { target: { value: 'writing' } });
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '写作助手' } });
+    fireEvent.change(screen.getByLabelText('描述'), { target: { value: '生成文案' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.createSkill).toHaveBeenCalledWith({ id: 'writing', name: '写作助手', description: '生成文案', enabled: true }));
+  });
+
+  test('edits and deletes a Skill', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '旧名称', description: '旧描述', enabled: true, versions: [] }], assignments: [] }),
+      updateSkill: vi.fn().mockResolvedValue(undefined),
+      deleteSkill: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新名称' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.updateSkill).toHaveBeenCalledWith('s1', { name: '新名称', description: '旧描述', enabled: true }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
+    fireEvent.click(deleteButtons.at(-1)!);
+    await waitFor(() => expect(client.deleteSkill).toHaveBeenCalledWith('s1'));
+  });
+
+  test('uploads and publishes a Skill version', async () => {
+    const client = {
+      resources: vi.fn()
+        .mockResolvedValueOnce({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '写作', description: '', enabled: true, versions: [] }], assignments: [] })
+        .mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '写作', description: '', enabled: true, versions: [{ version: '1.0.0', state: 'draft', sha256: 'a'.repeat(64), size: 3 }] }], assignments: [] }),
+      uploadSkillVersion: vi.fn().mockResolvedValue(undefined),
+      publishSkillVersion: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+    fireEvent.click(await screen.findByRole('button', { name: '上传版本' }));
+    fireEvent.change(screen.getByLabelText('版本号'), { target: { value: '1.0.0' } });
+    const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText('Skill ZIP 包'), { target: { files: [archive] } });
+    fireEvent.click(screen.getByRole('button', { name: '上传版本' }));
+    await waitFor(() => expect(client.uploadSkillVersion).toHaveBeenCalledWith('s1', '1.0.0', expect.any(Uint8Array)));
+    fireEvent.click(await screen.findByRole('button', { name: '发布版本' }));
+    await waitFor(() => expect(client.publishSkillVersion).toHaveBeenCalledWith('s1', '1.0.0'));
+  });
+
+  test('grants a Skill to a role and a team', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        roles: [{ id: 'role-1', name: '编辑者', description: '', builtIn: false, enabled: true, permissions: [] }],
+        permissions: [],
+        skills: [{ id: 's1', name: '写作', enabled: true, versions: [] }],
+        assignments: [],
+      }),
+      createSkillAssignment: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
+    fireEvent.click((await screen.findAllByRole('button', { name: '授权 Skill' }))[0]!);
+    fireEvent.click(await screen.findByRole('button', { name: '写作' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /编辑者/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
+    fireEvent.click(screen.getByRole('button', { name: '授权' }));
+    await waitFor(() => expect(client.createSkillAssignment).toHaveBeenCalledTimes(2));
+    expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'role', id: 'role-1' } });
+    expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'team', id: 'team-1' } });
+  });
 });

@@ -1,4 +1,4 @@
-import { Boxes, Check, CircleAlert, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { Boxes, Check, CircleAlert, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
@@ -7,6 +7,7 @@ import {
   AdminSubjectType,
   type AdminResources,
   type AdminSkill,
+  type AdminSkillVersion,
   type AdminSkillAssignment,
 } from './client.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
@@ -21,7 +22,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../ui/components/ui/alert-dialog.js';
-import { UserMultiPicker } from './UserMultiPicker.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
 import { Badge } from '../ui/components/ui/badge.js';
 import { Button } from '../ui/components/ui/button.js';
@@ -56,13 +56,16 @@ export function Resources({ client, tab }: ResourcesProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState(false);
-  const [editor, setEditor] = useState<{ readonly kind: 'user' | 'team' | 'role'; readonly id?: string } | null>(null);
+  const [editor, setEditor] = useState<{ readonly kind: 'user' | 'team' | 'role' | 'skill'; readonly id?: string } | null>(null);
+  const [versionSkill, setVersionSkill] = useState<AdminSkill | null>(null);
   const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setResources(await client.resources());
+      const next = await client.resources();
+      setResources(next);
+      setVersionSkill(current => current ? next.skills.find(item => item.id === current.id) ?? current : null);
     } catch {
       setError('resourcesLoadFailed');
     } finally {
@@ -81,6 +84,7 @@ export function Resources({ client, tab }: ResourcesProps) {
             {tab === AdminResourceTab.Users ? <Button size="sm" onClick={() => setEditor({ kind: 'user' })}><Plus data-icon="inline-start" />{translate(language, 'addUser')}</Button> : null}
             {tab === AdminResourceTab.Teams ? <Button size="sm" onClick={() => setEditor({ kind: 'team' })}><Plus data-icon="inline-start" />{translate(language, 'addTeam')}</Button> : null}
             {tab === AdminResourceTab.Roles ? <Button size="sm" onClick={() => setEditor({ kind: 'role' })}><Plus data-icon="inline-start" />{translate(language, 'addRole')}</Button> : null}
+            {tab === AdminResourceTab.Skills ? <Button size="sm" onClick={() => setEditor({ kind: 'skill' })}><Plus data-icon="inline-start" />{translate(language, 'addSkill')}</Button> : null}
             {tab === AdminResourceTab.Assignments && resources ? <Button size="sm" onClick={() => setGranting(true)}><UserRound data-icon="inline-start" />{translate(language, 'grantSkill')}</Button> : null}
             <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>
               {loading ? <Spinner /> : <RefreshCw />}
@@ -89,32 +93,35 @@ export function Resources({ client, tab }: ResourcesProps) {
         </div>
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
         {loading && !resources ? <ResourceListSkeleton /> : resources ? <>
-          <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} />
-          {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} skills={resources.skills} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
+          <ResourceTable tab={tab} resources={resources} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} onVersion={setVersionSkill} />
+          {tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} roles={resources.roles} teams={resources.teams} skills={resources.skills} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'user' ? <UserEditorDialog client={client} user={editor.id ? resources.users.find(item => item.id === editor.id) : undefined} roles={resources.roles} teams={resources.teams} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'team' ? <TeamEditorDialog client={client} team={editor.id ? resources.teams.find(item => item.id === editor.id) : undefined} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {editor?.kind === 'role' ? <RoleEditorDialog client={client} role={editor.id ? resources.roles.find(item => item.id === editor.id) : undefined} permissions={resources.permissions} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
+          {editor?.kind === 'skill' ? <SkillEditorDialog client={client} skill={editor.id ? resources.skills.find(item => item.id === editor.id) : undefined} open onOpenChange={open => { if (!open) setEditor(null); }} onChanged={load} onError={reportError} /> : null}
           {resetUser ? <PasswordResetDialog client={client} user={resetUser} open onOpenChange={open => { if (!open) setResetUser(null); }} onChanged={load} onError={reportError} /> : null}
+          {versionSkill ? <SkillVersionDialog client={client} skill={versionSkill} open onOpenChange={open => { if (!open) setVersionSkill(null); }} onChanged={load} onError={reportError} /> : null}
         </> : null}
       </div>
     </section>
   );
 }
 
-function ResourceTable({ tab, resources, client, onChanged, onError, onGrant, onEdit, onResetUser }: {
+function ResourceTable({ tab, resources, client, onChanged, onError, onGrant, onEdit, onResetUser, onVersion }: {
   readonly tab: AdminResourceTab;
   readonly resources: AdminResources;
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
   readonly onGrant: () => void;
-  readonly onEdit: (editor: { readonly kind: 'user' | 'team' | 'role'; readonly id?: string }) => void;
+  readonly onEdit: (editor: { readonly kind: 'user' | 'team' | 'role' | 'skill'; readonly id?: string }) => void;
   readonly onResetUser: (user: PlatformUser) => void;
+  readonly onVersion: (skill: AdminSkill) => void;
 }) {
   if (tab === AdminResourceTab.Users) return <UsersTable users={resources.users} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} onResetUser={onResetUser} />;
   if (tab === AdminResourceTab.Teams) return <TeamsTable teams={resources.teams} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
   if (tab === AdminResourceTab.Roles) return <RolesTable roles={resources.roles} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
-  if (tab === AdminResourceTab.Skills) return <SkillsTable skills={resources.skills} client={client} onChanged={onChanged} onError={onError} />;
+  if (tab === AdminResourceTab.Skills) return <SkillsTable skills={resources.skills} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} onVersion={onVersion} />;
   return <AssignmentsTable assignments={resources.assignments} skills={resources.skills} users={resources.users} client={client} onChanged={onChanged} onError={onError} onGrant={onGrant} />;
 }
 
@@ -152,10 +159,17 @@ function RolesTable({ roles, client, onChanged, onError, onEdit }: { readonly ro
   return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'role')}</TableHead><TableHead>{translate(language, 'permissions')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{roles.map(role => <TableRow key={role.id}><TableCell><div className="flex min-w-0 items-center gap-3"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{role.name}</div><div className="truncate text-xs text-tertiary-foreground">{role.id}</div></div>{role.builtIn ? <Badge variant="info">{translate(language, 'builtIn')}</Badge> : null}</div></TableCell><TableCell className="text-xs text-tertiary-foreground">{role.permissions.length}</TableCell><TableCell><Badge variant={role.enabled ? 'success' : 'outline'}>{translate(language, role.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'role', id: role.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(role.id, async () => { await client.updateRole(role.id, { enabled: !role.enabled }); })}>{translate(language, role.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null || role.builtIn} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteRoleTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteResourceDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void run(role.id, async () => { await client.deleteRole(role.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
-function SkillsTable({ skills, client, onChanged, onError }: { readonly skills: readonly AdminSkill[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function SkillsTable({ skills, client, onChanged, onError, onEdit, onVersion }: {
+  readonly skills: readonly AdminSkill[];
+  readonly client: AdminConsoleClient;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+  readonly onEdit: (editor: { readonly kind: 'skill'; readonly id: string }) => void;
+  readonly onVersion: (skill: AdminSkill) => void;
+}) {
   const { pendingId, run } = useRowMutation(onChanged, onError);
   if (skills.length === 0) return <EmptyState label="skillsEmpty" hint="skillsEmptyHint" icon={Boxes} />;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{skills.map(skill => <TableRow key={skill.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Boxes className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{skill.name}</div><div className="truncate text-xs text-tertiary-foreground">{skill.description || skill.id}</div></div></div></TableCell><TableCell><Badge variant={skill.enabled ? 'success' : 'outline'}>{translate(language, skill.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(skill.id, async () => { await client.updateSkill(skill.id, { enabled: !skill.enabled }); })}>{translate(language, skill.enabled ? 'disable' : 'enable')}</Button></TableCell></TableRow>)}</TableBody></Table></div>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'skill')}</TableHead><TableHead>{translate(language, 'versions')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{skills.map(skill => <TableRow key={skill.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Boxes className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{skill.name}</div><div className="truncate text-xs text-tertiary-foreground">{skill.description || skill.id}</div></div></div></TableCell><TableCell><div className="flex min-w-0 flex-col gap-1">{skill.versions.length === 0 ? <span className="text-xs text-muted-foreground">{translate(language, 'noVersions')}</span> : skill.versions.slice(0, 3).map(version => <span className="flex items-center gap-1.5 text-xs" key={version.version}><span className="truncate text-tertiary-foreground">{version.version}</span><Badge variant={version.state === 'published' ? 'success' : 'outline'}>{translate(language, versionStateLabel(version.state))}</Badge></span>)}{skill.versions.length > 3 ? <span className="text-xs text-tertiary-foreground">+{skill.versions.length - 3}</span> : null}</div></TableCell><TableCell><Badge variant={skill.enabled ? 'success' : 'outline'}>{translate(language, skill.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell><div className="flex flex-wrap justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'skill', id: skill.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => onVersion(skill)}><Upload data-icon="inline-start" />{translate(language, 'uploadVersion')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(skill.id, async () => { await client.updateSkill(skill.id, { enabled: !skill.enabled }); })}>{translate(language, skill.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteSkillTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'skillDeleteDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void run(skill.id, async () => { await client.deleteSkill(skill.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
 function AssignmentsTable({ assignments, skills, users, client, onChanged, onError, onGrant }: { readonly assignments: readonly AdminSkillAssignment[]; readonly skills: readonly AdminSkill[]; readonly users: readonly PlatformUser[]; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onGrant: () => void }) {
@@ -187,6 +201,102 @@ function SelectionList({ label, options, selected, onToggle, disabled }: {
 
 function CheckMark() {
   return <Check className="size-3" aria-hidden="true" />;
+}
+
+function SkillEditorDialog({ client, skill, open, onOpenChange, onChanged, onError }: {
+  readonly client: AdminConsoleClient;
+  readonly skill: AdminSkill | undefined;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const editing = Boolean(skill);
+  const [id, setId] = useState(skill?.id ?? '');
+  const [name, setName] = useState(skill?.name ?? '');
+  const [description, setDescription] = useState(skill?.description ?? '');
+  const [enabled, setEnabled] = useState(skill?.enabled !== false);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setId(skill?.id ?? '');
+    setName(skill?.name ?? '');
+    setDescription(skill?.description ?? '');
+    setEnabled(skill?.enabled !== false);
+    setFailed(false);
+  }, [skill]);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!id.trim() || !name.trim()) { setFailed(true); return; }
+    setPending(true);
+    setFailed(false);
+    try {
+      if (skill) await client.updateSkill(skill.id, { name: name.trim(), description: description.trim(), enabled });
+      else await client.createSkill({ id: id.trim(), name: name.trim(), description: description.trim(), enabled });
+      onOpenChange(false);
+      await onChanged();
+    } catch {
+      setFailed(true);
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, editing ? 'skillEditTitle' : 'skillEditorTitle')}</DialogTitle><DialogDescription>{translate(language, 'skillEditorDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'skillFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4">{editing ? null : <Field><FieldLabel htmlFor="skill-id">{translate(language, 'skillId')}</FieldLabel><Input id="skill-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} /></Field>}<Field><FieldLabel htmlFor="skill-name">{translate(language, 'skillName')}</FieldLabel><Input id="skill-name" value={name} onChange={event => setName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="skill-description">{translate(language, 'description')}</FieldLabel><Input id="skill-description" value={description} onChange={event => setDescription(event.target.value)} placeholder={translate(language, 'descriptionPlaceholder')} disabled={pending} /></Field>{editing ? <Button type="button" variant="outline" role="checkbox" aria-checked={enabled} disabled={pending} onClick={() => setEnabled(value => !value)}>{translate(language, 'status')}: {translate(language, enabled ? 'enabled' : 'disabled')}</Button> : null}</FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function SkillVersionDialog({ client, skill, open, onOpenChange, onChanged, onError }: {
+  readonly client: AdminConsoleClient;
+  readonly skill: AdminSkill;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [version, setVersion] = useState('');
+  const [archive, setArchive] = useState<File | null>(null);
+  const [pending, setPending] = useState(false);
+  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const [failed, setFailed] = useState<AdminTranslationKey | null>(null);
+  useEffect(() => {
+    if (open) {
+      setVersion('');
+      setArchive(null);
+      setFailed(null);
+      setPendingVersion(null);
+    }
+  }, [open, skill.id]);
+  const upload = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!version.trim() || !archive) { setFailed('skillUploadFailed'); return; }
+    setPending(true);
+    setFailed(null);
+    try {
+      await client.uploadSkillVersion(skill.id, version.trim(), new Uint8Array(await archive.arrayBuffer()));
+      setVersion('');
+      setArchive(null);
+      await onChanged();
+    } catch {
+      setFailed('skillUploadFailed');
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  const publish = async (candidate: string) => {
+    setPendingVersion(candidate);
+    setFailed(null);
+    try {
+      await client.publishSkillVersion(skill.id, candidate);
+      await onChanged();
+    } catch {
+      setFailed('skillPublishFailed');
+      onError();
+    } finally {
+      setPendingVersion(null);
+    }
+  };
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending && pendingVersion === null) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'uploadVersion')}: {skill.name}</DialogTitle><DialogDescription>{translate(language, 'skillEditorDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, failed)}</AlertDescription></Alert> : null}<form onSubmit={upload} noValidate className="flex flex-col gap-4"><FieldGroup className="gap-4"><Field><FieldLabel htmlFor="skill-version">{translate(language, 'skillVersion')}</FieldLabel><Input id="skill-version" value={version} onChange={event => setVersion(event.target.value)} placeholder="1.0.0" disabled={pending || pendingVersion !== null} /></Field><Field><FieldLabel htmlFor="skill-package">{translate(language, 'skillPackage')}</FieldLabel><Input id="skill-package" type="file" accept=".zip,application/zip" onChange={event => setArchive(event.target.files?.[0] ?? null)} disabled={pending || pendingVersion !== null} /></Field></FieldGroup><Button type="submit" className="self-start" disabled={pending || pendingVersion !== null}>{pending ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'uploadVersion')}</Button></form><div className="flex flex-col gap-2"><p className="text-sm font-semibold">{translate(language, 'versions')}</p>{skill.versions.length === 0 ? <p className="text-sm text-muted-foreground">{translate(language, 'noVersions')}</p> : <div className="flex flex-col gap-2">{skill.versions.map(item => <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3" key={item.version}><div className="min-w-0"><p className="truncate text-sm font-normal">{item.version}</p><p className="truncate text-xs text-tertiary-foreground">{item.sha256} · {item.size} {translate(language, 'bytes')}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={item.state === 'published' ? 'success' : 'outline'}>{translate(language, versionStateLabel(item.state))}</Badge>{item.state === 'draft' ? <Button type="button" size="sm" variant="outline" disabled={pending || pendingVersion !== null} onClick={() => void publish(item.version)}>{pendingVersion === item.version ? <Spinner data-icon="inline-start" /> : null}{translate(language, pendingVersion === item.version ? 'publishing' : 'publishVersion')}</Button> : null}</div></div>)}</div>}</div></div><DialogFooter><Button type="button" variant="ghost" disabled={pending || pendingVersion !== null} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function UserEditorDialog({ client, user, roles, teams, open, onOpenChange, onChanged, onError }: {
@@ -295,10 +405,12 @@ function PasswordResetDialog({ client, user, open, onOpenChange, onChanged, onEr
   return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'resetPasswordTitle')}</DialogTitle><DialogDescription>{translate(language, 'resetPasswordDescription')} <span className="font-normal text-foreground">{user.displayName}</span></DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'resetPasswordFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="reset-temp-password">{translate(language, 'temporaryPassword')}</FieldLabel><Input id="reset-temp-password" type="password" value={temporaryPassword} onChange={event => setTemporaryPassword(event.target.value)} placeholder={translate(language, 'temporaryPasswordPlaceholder')} disabled={pending} /></Field><Button type="button" variant="outline" role="checkbox" aria-checked={requirePasswordChange} disabled={pending} onClick={() => setRequirePasswordChange(value => !value)}>{translate(language, 'requirePasswordChange')}</Button></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
-function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged, onError }: {
+function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenChange, onChanged, onError }: {
   readonly client: AdminConsoleClient;
   readonly open: boolean;
   readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
   readonly skills: readonly AdminSkill[];
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
@@ -312,11 +424,11 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
   useEffect(() => {
     if (open) reset();
   }, [open, reset]);
-  const toggleUser = useCallback((userId: string) => {
+  const toggleSubject = useCallback((subjectKey: string) => {
     setSelected(current => {
       const next = new Set(current);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(subjectKey)) next.delete(subjectKey);
+      else next.add(subjectKey);
       return next;
     });
   }, []);
@@ -325,7 +437,12 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
     setPending(true);
     setFailed(false);
     try {
-      await Promise.all([...selected].map(userId => client.createSkillAssignment({ skillId, subject: { type: AdminSubjectType.User, id: userId } })));
+      await Promise.all([...selected].map(subjectKey => {
+        const separator = subjectKey.indexOf(':');
+        const type = subjectKey.slice(0, separator) as AdminSubjectType;
+        const id = subjectKey.slice(separator + 1);
+        return client.createSkillAssignment({ skillId, subject: { type, id } });
+      }));
       onOpenChange(false);
       await onChanged();
     } catch {
@@ -357,9 +474,7 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
                 ))}
               </div>
             </Field>
-            <Field>
-              <UserMultiPicker users={users} selected={selected} onToggle={toggleUser} disabled={pending} />
-            </Field>
+            <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
           </FieldGroup>
         </div>
         <DialogFooter>
@@ -369,6 +484,22 @@ function SkillGrantDialog({ client, open, users, skills, onOpenChange, onChanged
       </DialogContent>
     </Dialog>
   );
+}
+
+function SubjectMultiPicker({ users, roles, teams, selected, onToggle, disabled }: {
+  readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (key: string) => void;
+  readonly disabled: boolean;
+}) {
+  const options = [
+    ...users.map(user => ({ key: `${AdminSubjectType.User}:${user.id}`, label: user.displayName, description: user.username, type: translate(language, 'user') })),
+    ...roles.map(role => ({ key: `${AdminSubjectType.Role}:${role.id}`, label: role.name, description: role.id, type: translate(language, 'role') })),
+    ...teams.map(team => ({ key: `${AdminSubjectType.Team}:${team.id}`, label: team.name, description: team.id, type: translate(language, 'team') })),
+  ];
+  return <><FieldLabel>{translate(language, 'selectSubjects')}</FieldLabel><div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">{options.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">{translate(language, 'noMatchingSubjects')}</p> : options.map(option => <Button key={option.key} type="button" variant="ghost" size="sm" role="checkbox" aria-checked={selected.has(option.key)} disabled={disabled} className="justify-between" onClick={() => onToggle(option.key)}><span className="flex min-w-0 items-center gap-2"><UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0 text-left"><span className="block truncate">{option.label} <span className="text-xs text-tertiary-foreground">({option.type})</span></span><span className="block truncate text-xs text-tertiary-foreground">{option.description}</span></span></span><span aria-hidden="true" className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', selected.has(option.key) ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>{selected.has(option.key) ? <CheckMark /> : null}</span></Button>)}</div><p className="flex items-center gap-1.5 text-xs text-tertiary-foreground">{translate(language, 'selectedSubjectsLabel')}<Badge variant="secondary">{selected.size}</Badge></p></>;
 }
 
 function EmptyState({ label, hint, icon: Icon }: { readonly label: AdminTranslationKey; readonly hint: AdminTranslationKey; readonly icon: LucideIcon }) {
@@ -394,4 +525,10 @@ function resourceTitle(tab: AdminResourceTab): AdminTranslationKey {
   if (tab === AdminResourceTab.Teams) return 'teams';
   if (tab === AdminResourceTab.Skills) return 'skills';
   return 'assignments';
+}
+
+function versionStateLabel(state: AdminSkillVersion['state']): AdminTranslationKey {
+  if (state === 'published') return 'versionPublished';
+  if (state === 'withdrawn') return 'versionWithdrawn';
+  return 'versionDraft';
 }
