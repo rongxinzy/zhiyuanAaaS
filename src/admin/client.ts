@@ -6,6 +6,12 @@ import {
   type AdminModel,
   type ModelAssignment,
   type CurrentIdentity,
+  type CredentialAssignment,
+  type CredentialAssignmentWrite,
+  type CredentialCreate,
+  type CredentialMetadata,
+  type CredentialPatch,
+  type CredentialRotate,
   type JsonObject,
   type License,
   type LicenseImportRequest,
@@ -104,6 +110,11 @@ export interface AdminUserSession {
   readonly createdAt: string;
   readonly lastSeenAt: string;
   readonly revokedAt?: string | null;
+}
+
+export interface AdminCredentials {
+  readonly credentials: readonly CredentialMetadata[];
+  readonly assignments: readonly CredentialAssignment[];
 }
 
 export interface AdminEventRecord {
@@ -342,6 +353,42 @@ export class AdminConsoleClient {
       if (!nextCursor || nextCursor === cursor) return sessions;
       cursor = nextCursor;
     }
+  }
+
+  async credentials(): Promise<AdminCredentials> {
+    const client = this.#requireClient();
+    const [credentials, assignments] = await Promise.all([
+      client.listCredentials(),
+      client.listCredentialAssignments(),
+    ]);
+    return {
+      credentials: credentials.credentials,
+      assignments: assignments.assignments,
+    };
+  }
+
+  async createCredential(input: CredentialCreate): Promise<CredentialMetadata> {
+    return this.#requireClient().createCredential(input);
+  }
+
+  async updateCredential(credentialId: string, input: CredentialPatch): Promise<CredentialMetadata> {
+    return this.#requireClient().updateCredential(credentialId, input);
+  }
+
+  async rotateCredential(credentialId: string, input: CredentialRotate): Promise<CredentialMetadata> {
+    return this.#requireClient().rotateCredential(credentialId, input);
+  }
+
+  async deleteCredential(credentialId: string): Promise<void> {
+    await this.#requireClient().deleteCredential(credentialId);
+  }
+
+  async createCredentialAssignment(input: CredentialAssignmentWrite): Promise<CredentialAssignment> {
+    return this.#requireClient().createCredentialAssignment(input);
+  }
+
+  async deleteCredentialAssignment(assignmentId: string): Promise<void> {
+    await this.#requireClient().deleteCredentialAssignment(assignmentId);
   }
 
   async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
