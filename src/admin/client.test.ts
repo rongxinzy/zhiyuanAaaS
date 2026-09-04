@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { hasAdminConsoleAccess, type AdminIdentity } from './client.js';
+import { hasAdminConsoleAccess, hasAnyAdminConsoleAccess, type AdminIdentity } from './client.js';
 
 const fullPermissions = [
   'users.read', 'users.write', 'roles.read', 'roles.write', 'teams.read', 'teams.write',
@@ -34,5 +34,15 @@ describe('admin console access', () => {
 
   test('rejects a partial permission set instead of showing a broken full console', () => {
     expect(hasAdminConsoleAccess(identity({ roles: ['operations-admin'], permissions: fullPermissions.slice(0, -1) }))).toBe(false);
+  });
+
+  test('allows a partial permission set into its readable console surface', () => {
+    const partial = identity({ roles: ['model-reader'], permissions: ['models.read'] });
+    expect(hasAnyAdminConsoleAccess(partial)).toBe(true);
+    expect(hasAdminConsoleAccess(partial)).toBe(false);
+  });
+
+  test('rejects an identity without any management permission', () => {
+    expect(hasAnyAdminConsoleAccess(identity({ roles: ['member'], permissions: [] }))).toBe(false);
   });
 });

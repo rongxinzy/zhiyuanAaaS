@@ -4,13 +4,35 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const client = {
-  restore: vi.fn(),
-  login: vi.fn(),
-  logout: vi.fn(),
-  overview: vi.fn(),
-  resources: vi.fn(),
-};
+const { client, AdminPermission, hasAdminPermission } = vi.hoisted(() => {
+  const permissions = {
+    UsersRead: 'users.read', UsersWrite: 'users.write',
+    RolesRead: 'roles.read', RolesWrite: 'roles.write',
+    TeamsRead: 'teams.read', TeamsWrite: 'teams.write',
+    SkillsRead: 'skills.read', SkillsWrite: 'skills.write', SkillsAssign: 'skills.assign',
+    ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
+    CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
+    LicensesRead: 'licenses.read', LicensesRevoke: 'licenses.revoke',
+    EventsRead: 'events.read', EventsWrite: 'events.write',
+    DataPlaneWrite: 'data_plane.write',
+  } as const;
+  return {
+    client: {
+      restore: vi.fn(),
+      login: vi.fn(),
+      logout: vi.fn(),
+      overview: vi.fn(),
+      resources: vi.fn(),
+      models: vi.fn(),
+    },
+    AdminPermission: permissions,
+    hasAdminPermission: (identity: { readonly roles?: readonly string[]; readonly permissions?: readonly string[] } | undefined, permission: string) => {
+      if (!identity) return true;
+      if (identity.roles?.some(role => role.toLowerCase() === 'admin')) return true;
+      return identity.permissions?.includes(permission) ?? false;
+    },
+  };
+});
 
 vi.mock('./client.js', () => ({
   AdminConsoleClient: class {
@@ -19,7 +41,10 @@ vi.mock('./client.js', () => ({
     logout = client.logout;
     overview = client.overview;
     resources = client.resources;
+    models = client.models;
   },
+  AdminPermission,
+  hasAdminPermission,
   AdminConsoleStatus: {
     SignedOut: 'signed-out',
     Authenticated: 'authenticated',
@@ -45,6 +70,7 @@ describe('admin console', () => {
     });
     client.overview.mockResolvedValue({ users: 4, teams: 2, skills: 3, models: 1, pendingEvents: 0 });
     client.resources.mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] });
+    client.models.mockResolvedValue({ models: [], assignments: [] });
     client.logout.mockResolvedValue(undefined);
   });
 
@@ -69,8 +95,31 @@ describe('admin console', () => {
     expect(screen.getByText(/普通用户/)).toBeInTheDocument();
   });
 
+  test('allows a partial administrator and only shows readable destinations', async () => {
+    client.restore.mockResolvedValue({
+      status: 'authenticated',
+      identity: {
+        user: { id: 'u2', displayName: '模型审阅员' },
+        deployment: { id: 'demo', name: '知远' },
+        deploymentId: 'demo',
+        roles: ['model-reader'],
+        permissions: ['models.read'],
+      },
+    });
+    render(<AdminApp />);
+
+    expect((await screen.findAllByRole('button', { name: '概览' }))).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: '企业模型' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: '资源管理' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '事件与审计' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '平台运维' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('企业模型')).toHaveLength(3);
+    expect(screen.queryByText('用户')).not.toBeInTheDocument();
+    expect(client.overview).toHaveBeenCalledWith(expect.objectContaining({ permissions: ['models.read'] }));
+  });
+
   test('renders refreshed overview counts', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
     expect(await screen.findByText('4')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
@@ -81,7 +130,7 @@ describe('admin console', () => {
   });
 
   test('uses Tea menu tokens and regular weight for active navigation', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
 
     const activeItems = await screen.findAllByRole('button', { name: '概览' });
@@ -94,7 +143,7 @@ describe('admin console', () => {
   });
 
   test('keeps the compact header sign-out hover target around its icon', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
 
     const signOutButtons = await screen.findAllByRole('button', { name: '退出登录' });
@@ -104,7 +153,7 @@ describe('admin console', () => {
   });
 
   test('uses Zhiyuan line tabs and a sliding indicator for resources', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
 
     fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
@@ -117,7 +166,7 @@ describe('admin console', () => {
   });
 
   test('labels the Role resource tab correctly', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
 
     fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);

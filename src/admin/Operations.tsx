@@ -2,7 +2,7 @@ import { AlertCircle, Check, FileKey2, KeyRound, Pencil, Plus, RefreshCw, Rotate
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { CredentialAssignment, CredentialMetadata, DataPlaneDesiredState, DataPlaneRoute, DataPlaneStatus, License, LicenseImportRequest, PlatformUser, Role, Team } from '@aep/sdk-node';
 
-import { AdminConsoleClient, AdminSubjectType, type AdminCredentials, type AdminDataPlane, type AdminUserSession } from './client.js';
+import { AdminConsoleClient, AdminPermission, AdminSubjectType, hasAdminPermission, type AdminCredentials, type AdminDataPlane, type AdminIdentity, type AdminUserSession } from './client.js';
 import { formatTimestamp } from './format.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
 import { SubjectMultiPicker } from './Resources.js';
@@ -37,8 +37,10 @@ const OperationsTab = { Licenses: 'licenses', Sessions: 'sessions', Credentials:
 type OperationsTab = (typeof OperationsTab)[keyof typeof OperationsTab];
 type CredentialGrantTarget = { readonly credential: CredentialMetadata; readonly assignments: readonly CredentialAssignment[] };
 
-export function Operations({ client }: { readonly client: AdminConsoleClient }) {
+export function Operations({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
   const [tab, setTab] = useState<OperationsTab>(OperationsTab.Licenses);
+  const operationTabs = ([OperationsTab.Licenses, OperationsTab.Sessions, OperationsTab.Credentials, OperationsTab.DataPlane] as const).filter(candidate => candidate === OperationsTab.Licenses ? hasAdminPermission(identity, AdminPermission.LicensesRead) : candidate === OperationsTab.Sessions ? hasAdminPermission(identity, AdminPermission.UsersRead) : candidate === OperationsTab.Credentials ? hasAdminPermission(identity, AdminPermission.CredentialsRead) : hasAdminPermission(identity, AdminPermission.DataPlaneWrite));
+  const activeTab = operationTabs.includes(tab) ? tab : operationTabs[0] ?? OperationsTab.Licenses;
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -48,17 +50,14 @@ export function Operations({ client }: { readonly client: AdminConsoleClient }) 
           <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'operationsDescription')}</p>
         </div>
         <div className="border-b border-border">
-          <Tabs value={tab} onValueChange={value => setTab(value as OperationsTab)}>
+          <Tabs value={activeTab} onValueChange={value => setTab(value as OperationsTab)}>
             <TabsList variant="line" className="w-max">
-              <TabsTrigger value={OperationsTab.Licenses} className="px-3">{translate(language, 'licenses')}</TabsTrigger>
-              <TabsTrigger value={OperationsTab.Sessions} className="px-3">{translate(language, 'sessions')}</TabsTrigger>
-              <TabsTrigger value={OperationsTab.Credentials} className="px-3">{translate(language, 'credentials')}</TabsTrigger>
-              <TabsTrigger value={OperationsTab.DataPlane} className="px-3">{translate(language, 'dataPlane')}</TabsTrigger>
+              {operationTabs.map(candidate => <TabsTrigger key={candidate} value={candidate} className="px-3">{translate(language, candidate === OperationsTab.Licenses ? 'licenses' : candidate === OperationsTab.Sessions ? 'sessions' : candidate === OperationsTab.Credentials ? 'credentials' : 'dataPlane')}</TabsTrigger>)}
               <TabsIndicator />
             </TabsList>
           </Tabs>
         </div>
-        {tab === OperationsTab.Licenses ? <LicensePanel client={client} /> : tab === OperationsTab.Sessions ? <SessionPanel client={client} /> : tab === OperationsTab.Credentials ? <CredentialPanel client={client} /> : <DataPlanePanel client={client} />}
+        {activeTab === OperationsTab.Licenses ? <LicensePanel client={client} /> : activeTab === OperationsTab.Sessions ? <SessionPanel client={client} /> : activeTab === OperationsTab.Credentials ? <CredentialPanel client={client} identity={identity} /> : <DataPlanePanel client={client} />}
       </div>
     </section>
   );
@@ -149,7 +148,7 @@ function SessionPanel({ client }: { readonly client: AdminConsoleClient }) {
   return <div className="flex flex-col gap-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><UsersRound className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'sessions')}</div><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'sessionsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div><form className="flex items-end gap-2" onSubmit={submit}><Field className="min-w-0 flex-1"><FieldLabel htmlFor="session-user-id">{translate(language, 'filterUserId')}</FieldLabel><Input id="session-user-id" value={userId} onChange={event => setUserId(event.target.value)} placeholder="user-id" disabled={loading} /></Field><Button type="submit" variant="outline" disabled={loading}>{translate(language, 'search')}</Button></form>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'sessionsLoadFailed')}</AlertDescription></Alert> : null}{loading && !sessions ? <SessionSkeleton /> : sessions ? <SessionTable sessions={sessions} /> : null}</div>;
 }
 
-function CredentialPanel({ client }: { readonly client: AdminConsoleClient }) {
+function CredentialPanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
   const [state, setState] = useState<AdminCredentials | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [roles, setRoles] = useState<readonly Role[]>([]);
@@ -161,7 +160,7 @@ function CredentialPanel({ client }: { readonly client: AdminConsoleClient }) {
     setLoading(true);
     setError(false);
     try {
-      const [credentials, resources] = await Promise.all([client.credentials(), client.resources()]);
+      const [credentials, resources] = await Promise.all([client.credentials(), client.resources(identity)]);
       setState(credentials);
       setUsers(resources.users);
       setRoles(resources.roles);
@@ -171,7 +170,7 @@ function CredentialPanel({ client }: { readonly client: AdminConsoleClient }) {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [client, identity]);
   useEffect(() => { void load(); }, [load]);
   return <div className="flex flex-col gap-4">
     <div className="flex items-start justify-between gap-3">

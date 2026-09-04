@@ -5,6 +5,7 @@ import type { JsonObject, Permission, PlatformUser, Role, Team } from '@aep/sdk-
 import {
   AdminConsoleClient,
   AdminSubjectType,
+  type AdminIdentity,
   type AdminResources,
   type AdminSkill,
   type AdminSkillVersion,
@@ -50,9 +51,10 @@ export type AdminResourceTab = (typeof AdminResourceTab)[keyof typeof AdminResou
 interface ResourcesProps {
   readonly client: AdminConsoleClient;
   readonly tab: AdminResourceTab;
+  readonly identity?: AdminIdentity | undefined;
 }
 
-export function Resources({ client, tab }: ResourcesProps) {
+export function Resources({ client, tab, identity }: ResourcesProps) {
   const [resources, setResources] = useState<AdminResources | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
@@ -66,7 +68,7 @@ export function Resources({ client, tab }: ResourcesProps) {
     setLoading(true);
     setError(null);
     try {
-      const next = await client.resources();
+      const next = await client.resources(identity);
       setResources(next);
       setVersionSkill(current => current ? next.skills.find(item => item.id === current.id) ?? current : null);
     } catch {
@@ -74,7 +76,7 @@ export function Resources({ client, tab }: ResourcesProps) {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [client, identity]);
   useEffect(() => { void load(); }, [load]);
   const reportError = useCallback(() => setError('resourcesLoadFailed'), []);
 

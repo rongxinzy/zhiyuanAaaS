@@ -2,7 +2,7 @@ import { Check, CircleAlert, Cpu, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, 
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import type { AdminModel, ModelAssignment, PlatformUser, Role, Team } from '@aep/sdk-node';
 
-import { AdminConsoleClient, AdminModelSubjectType, type AdminModels } from './client.js';
+import { AdminConsoleClient, AdminModelSubjectType, type AdminIdentity, type AdminModels } from './client.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
 import { SubjectCell, SubjectMultiPicker } from './Resources.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
@@ -42,7 +42,7 @@ const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
 const language: AdminLanguage = 'zh';
 type ModelGrantTarget = { readonly model: AdminModel; readonly assignments: readonly ModelAssignment[] };
 
-export function Models({ client }: { readonly client: AdminConsoleClient }) {
+export function Models({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
   const [state, setState] = useState<AdminModels | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [roles, setRoles] = useState<readonly Role[]>([]);
@@ -54,13 +54,13 @@ export function Models({ client }: { readonly client: AdminConsoleClient }) {
     setLoading(true);
     setError(null);
     try {
-      const [models, resources] = await Promise.all([client.models(), client.resources()]);
+      const [models, resources] = await Promise.all([client.models(), client.resources(identity)]);
       setState(models);
       setUsers(resources.users);
       setRoles(resources.roles);
       setTeams(resources.teams);
     } catch { setError('modelsLoadFailed'); } finally { setLoading(false); }
-  }, [client]);
+  }, [client, identity]);
   useEffect(() => { void load(); }, [load]);
   return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}<ModelCreateForm client={client} onCreated={load} />{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={(model, assignments) => setGranting({ model, assignments })} /> : null}{granting ? <ModelGrantDialog client={client} model={granting.model} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} onOpenChange={() => setGranting(null)} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
 }

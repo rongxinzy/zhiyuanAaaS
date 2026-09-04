@@ -22,6 +22,8 @@ import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent, type
 import {
   AdminConsoleClient,
   AdminConsoleStatus,
+  AdminPermission,
+  hasAdminPermission,
   type AdminOverview,
   type AdminSession,
 } from './client.js';
@@ -54,19 +56,19 @@ const AdminPage = { Overview: 'overview', Resources: 'resources', Models: 'model
 type AdminPage = (typeof AdminPage)[keyof typeof AdminPage];
 
 const navigation = [
-  { page: AdminPage.Overview, label: 'overview', icon: LayoutDashboard },
-  { page: AdminPage.Resources, label: 'resources', icon: Boxes },
-  { page: AdminPage.Models, label: 'models', icon: Cpu },
-  { page: AdminPage.Events, label: 'events', icon: ClipboardList },
-  { page: AdminPage.Operations, label: 'operations', icon: Settings2 },
+  { page: AdminPage.Overview, label: 'overview', icon: LayoutDashboard, permissions: [] },
+  { page: AdminPage.Resources, label: 'resources', icon: Boxes, permissions: [AdminPermission.UsersRead, AdminPermission.TeamsRead, AdminPermission.RolesRead, AdminPermission.SkillsRead] },
+  { page: AdminPage.Models, label: 'models', icon: Cpu, permissions: [AdminPermission.ModelsRead] },
+  { page: AdminPage.Events, label: 'events', icon: ClipboardList, permissions: [AdminPermission.EventsRead] },
+  { page: AdminPage.Operations, label: 'operations', icon: Settings2, permissions: [AdminPermission.LicensesRead, AdminPermission.UsersRead, AdminPermission.CredentialsRead, AdminPermission.DataPlaneWrite] },
 ] as const;
 
 const OVERVIEW_CARDS = [
-  { key: 'users', icon: Users },
-  { key: 'teams', icon: Users },
-  { key: 'skills', icon: Boxes },
-  { key: 'models', icon: Cpu },
-  { key: 'pendingEvents', icon: ClipboardList },
+  { key: 'users', icon: Users, permission: AdminPermission.UsersRead },
+  { key: 'teams', icon: Users, permission: AdminPermission.TeamsRead },
+  { key: 'skills', icon: Boxes, permission: AdminPermission.SkillsRead },
+  { key: 'models', icon: Cpu, permission: AdminPermission.ModelsRead },
+  { key: 'pendingEvents', icon: ClipboardList, permission: AdminPermission.EventsRead },
 ] as const;
 
 export function AdminApp() {
@@ -111,9 +113,21 @@ function LoadingView() {
   return <main className="flex min-h-full items-center justify-center bg-background"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner />{translate(language, 'loadingConsole')}</div></main>;
 }
 
-function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: { readonly client: AdminConsoleClient; readonly identity?: AdminSession['identity']; readonly pending: boolean; readonly page: AdminPage; readonly setPage: (page: AdminPage) => void; readonly onSignOut: () => Promise<void> }) {
+function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: { readonly client: AdminConsoleClient; readonly identity?: AdminSession['identity'] | undefined; readonly pending: boolean; readonly page: AdminPage; readonly setPage: (page: AdminPage) => void; readonly onSignOut: () => Promise<void> }) {
   const [resourceTab, setResourceTab] = useState<AdminResourceTab>(AdminResourceTab.Users);
-  const activeLabel = navigation.find(item => item.page === page)?.label ?? 'overview';
+  const visibleNavigation = navigation.filter(item => item.permissions.length === 0 || item.permissions.some(permission => hasAdminPermission(identity, permission)));
+  const visiblePages = new Set(visibleNavigation.map(item => item.page));
+  const activePage = visiblePages.has(page) ? page : AdminPage.Overview;
+  const activeLabel = navigation.find(item => item.page === activePage)?.label ?? 'overview';
+  const resourceTabs = ([AdminResourceTab.Users, AdminResourceTab.Teams, AdminResourceTab.Roles, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).filter(tab => {
+    if (tab === AdminResourceTab.Users) return hasAdminPermission(identity, AdminPermission.UsersRead);
+    if (tab === AdminResourceTab.Teams) return hasAdminPermission(identity, AdminPermission.TeamsRead);
+    if (tab === AdminResourceTab.Roles) return hasAdminPermission(identity, AdminPermission.RolesRead);
+    if (tab === AdminResourceTab.Skills) return hasAdminPermission(identity, AdminPermission.SkillsRead);
+    if (tab === AdminResourceTab.Assignments) return hasAdminPermission(identity, AdminPermission.SkillsAssign);
+    return false;
+  });
+  const activeResourceTab = resourceTabs.includes(resourceTab) ? resourceTab : resourceTabs[0] ?? AdminResourceTab.Users;
   return (
     <main className="flex min-h-full bg-background">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
@@ -124,7 +138,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
         <div className="flex flex-1 flex-col p-3">
           <div className="flex flex-col gap-1">
             <span className="px-3 pb-1 text-xs font-normal text-tertiary-foreground">{translate(language, 'workspaceLabel')}</span>
-            {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} />)}
+            {visibleNavigation.map(item => <NavItem key={item.page} icon={item.icon} active={activePage === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} />)}
           </div>
           <div className="mt-auto border-t border-border px-3 pt-4">
             <div className="flex items-center gap-2 text-xs font-normal"><CircleGauge className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'controlPlane')}</div>
@@ -145,10 +159,10 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="size-8 rounded-lg p-0 md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut className="size-4" /></Button></div>
         </header>
           <nav className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
-          {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
+          {visibleNavigation.map(item => <NavItem key={item.page} icon={item.icon} active={activePage === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
         </nav>
         <PageTransition pageKey={page}>
-          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : page === AdminPage.Operations ? <Operations client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Teams, AdminResourceTab.Roles, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
+          {activePage === AdminPage.Overview ? <OverviewView client={client} identity={identity} /> : activePage === AdminPage.Models ? <Models client={client} identity={identity} /> : activePage === AdminPage.Events ? <Events client={client} /> : activePage === AdminPage.Operations ? <Operations client={client} identity={identity} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={activeResourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{resourceTabs.map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={activeResourceTab} identity={identity} /></div>}
         </PageTransition>
       </div>
     </main>
@@ -224,15 +238,15 @@ function ForbiddenView({ identity }: { readonly identity: string | undefined }) 
   return <main className="flex min-h-full items-center justify-center bg-muted p-6"><Alert variant="warning" className="max-w-md"><AlertCircle aria-hidden="true" /><AlertTitle>{translate(language, 'accessDeniedTitle')}</AlertTitle><AlertDescription>{translate(language, 'accessDeniedDescription')}{identity ? ` (${identity})` : ''}</AlertDescription></Alert></main>;
 }
 
-function OverviewView({ client }: { readonly client: AdminConsoleClient }) {
+function OverviewView({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminSession['identity'] | undefined }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview()); } catch { setError(true); } finally { setLoading(false); } }, [client]);
+  const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview(identity)); } catch { setError(true); } finally { setLoading(false); } }, [client, identity]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="success"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.filter(card => hasAdminPermission(identity, card.permission)).map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="success"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
 }
 
-function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | undefined; readonly icon: LucideIcon }) {
-  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-tertiary-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
+function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | null | undefined; readonly icon: LucideIcon }) {
+  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-tertiary-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : value === null ? <div className="text-sm font-normal text-muted-foreground">{translate(language, 'notAvailable')}</div> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
 }

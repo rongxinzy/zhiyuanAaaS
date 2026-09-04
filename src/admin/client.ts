@@ -34,11 +34,11 @@ export const AdminConsoleStatus = {
 export type AdminConsoleStatus = (typeof AdminConsoleStatus)[keyof typeof AdminConsoleStatus];
 
 export interface AdminOverview {
-  readonly users: number;
-  readonly teams: number;
-  readonly skills: number;
-  readonly models: number;
-  readonly pendingEvents: number;
+  readonly users: number | null;
+  readonly teams: number | null;
+  readonly skills: number | null;
+  readonly models: number | null;
+  readonly pendingEvents: number | null;
 }
 
 export interface AdminSession {
@@ -51,24 +51,33 @@ export interface AdminSession {
 // can still be type-checked while the service and SDK roll forward together.
 export type AdminIdentity = CurrentIdentity & { readonly permissions?: readonly string[] };
 
-const ADMIN_CONSOLE_PERMISSIONS = [
-  'users.read', 'users.write',
-  'roles.read', 'roles.write',
-  'teams.read', 'teams.write',
-  'skills.read', 'skills.write', 'skills.assign',
-  'models.read', 'models.write', 'models.assign',
-  'credentials.read', 'credentials.write', 'credentials.assign',
-  'licenses.read', 'licenses.revoke',
-  'events.read', 'events.write',
-  'data_plane.write',
-] as const;
+export const AdminPermission = {
+  UsersRead: 'users.read', UsersWrite: 'users.write',
+  RolesRead: 'roles.read', RolesWrite: 'roles.write',
+  TeamsRead: 'teams.read', TeamsWrite: 'teams.write',
+  SkillsRead: 'skills.read', SkillsWrite: 'skills.write', SkillsAssign: 'skills.assign',
+  ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
+  CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
+  LicensesRead: 'licenses.read', LicensesRevoke: 'licenses.revoke',
+  EventsRead: 'events.read', EventsWrite: 'events.write',
+  DataPlaneWrite: 'data_plane.write',
+} as const;
+export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermission];
+
+const ADMIN_CONSOLE_PERMISSIONS: readonly AdminPermission[] = Object.values(AdminPermission);
+
+export function hasAdminPermission(identity: AdminIdentity | undefined, permission: AdminPermission): boolean {
+  if (!identity) return true;
+  if (identity.roles.some(role => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()))) return true;
+  return new Set(identity.permissions ?? []).has(permission);
+}
 
 export function hasAdminConsoleAccess(identity: AdminIdentity): boolean {
-  if (identity.roles.some(role => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()))) {
-    return true;
-  }
-  const permissions = new Set(identity.permissions ?? []);
-  return ADMIN_CONSOLE_PERMISSIONS.every(permission => permissions.has(permission));
+  return ADMIN_CONSOLE_PERMISSIONS.every(permission => hasAdminPermission(identity, permission));
+}
+
+export function hasAnyAdminConsoleAccess(identity: AdminIdentity): boolean {
+  return ADMIN_CONSOLE_PERMISSIONS.some(permission => hasAdminPermission(identity, permission));
 }
 
 export interface AdminSkill {
@@ -230,33 +239,33 @@ export class AdminConsoleClient {
     this.#client = null;
   }
 
-  async overview(): Promise<AdminOverview> {
+  async overview(identity?: AdminIdentity): Promise<AdminOverview> {
     const client = this.#requireClient();
     const [users, teams, skills, models, events] = await Promise.all([
-      this.#listAllUsers(client),
-      client.listTeams(),
-      client.listSkills(),
-      client.listAdminModels(),
-      client.searchEvents({ limit: 100 }),
+      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? client.listTeams() : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.SkillsRead) ? client.listSkills() : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.ModelsRead) ? client.listAdminModels() : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.EventsRead) ? client.searchEvents({ limit: 100 }) : Promise.resolve(null),
     ]);
     return {
-      users: users.length,
-      teams: teams.teams.length,
-      skills: listCount(skills),
-      models: listCount(models),
-      pendingEvents: pendingEventCount(events),
+      users: users ? users.length : null,
+      teams: teams ? teams.teams.length : null,
+      skills: skills ? listCount(skills) : null,
+      models: models ? listCount(models) : null,
+      pendingEvents: events ? pendingEventCount(events) : null,
     };
   }
 
-  async resources(): Promise<AdminResources> {
+  async resources(identity?: AdminIdentity): Promise<AdminResources> {
     const client = this.#requireClient();
     const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
-      this.#listAllUsers(client),
-      client.listTeams(),
-      client.listRoles(),
-      client.listPermissions(),
-      client.listSkills(),
-      client.listSkillAssignments(),
+      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve([]),
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? client.listTeams() : Promise.resolve({ teams: [] }),
+      hasAdminPermission(identity, AdminPermission.RolesRead) ? client.listRoles() : Promise.resolve({ roles: [] }),
+      hasAdminPermission(identity, AdminPermission.RolesRead) ? client.listPermissions() : Promise.resolve({ permissions: [] }),
+      hasAdminPermission(identity, AdminPermission.SkillsRead) ? client.listSkills() : Promise.resolve({ skills: [] }),
+      hasAdminPermission(identity, AdminPermission.SkillsAssign) ? client.listSkillAssignments() : Promise.resolve({ items: [] }),
     ]);
     return {
       users,
@@ -565,7 +574,7 @@ export class AdminConsoleClient {
   async #identitySession(client: AepClient): Promise<AdminSession> {
     const identity = await client.getCurrentIdentity() as AdminIdentity;
     this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
-    return hasAdminConsoleAccess(identity)
+    return hasAnyAdminConsoleAccess(identity)
       ? { status: AdminConsoleStatus.Authenticated, identity }
       : { status: AdminConsoleStatus.Forbidden, identity };
   }
