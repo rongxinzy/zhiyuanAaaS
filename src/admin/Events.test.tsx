@@ -86,4 +86,20 @@ describe('admin events', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '查询' }).at(-1)!);
     await waitFor(() => expect(client.controlEvents).toHaveBeenLastCalledWith({ scopeType: 'user', scopeId: 'u1', limit: 100 }));
   });
+
+  test('surfaces delivery lookup failures in the page error state', async () => {
+    const client = {
+      controlEvents: vi.fn().mockResolvedValue({ items: [activeEvent], nextCursor: null }),
+      publishControlEvent: vi.fn().mockResolvedValue({ eventId: 'event-1' }),
+      searchAudit: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      deliverySummary: vi.fn().mockRejectedValue(new Error('control service unavailable')),
+    };
+    render(<Events client={client as never} />);
+    expect(await screen.findByText('model.catalog.changed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '发布' }));
+    await waitFor(() => expect(client.publishControlEvent).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: '查看投递状态' }));
+    await waitFor(() => expect(client.deliverySummary).toHaveBeenCalledWith('event-1', { limit: 100 }));
+    expect(await screen.findByText('事件操作失败，请稍后重试。')).toBeInTheDocument();
+  });
 });
