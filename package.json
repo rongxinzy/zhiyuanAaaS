@@ -29,7 +29,7 @@
     "verify:sdk": "node scripts/verify-sdk.mjs"
   },
   "dependencies": {
-    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.6/aep-sdk-node-0.2.6.tgz",
+    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.7/aep-sdk-node-0.2.7.tgz",
     "@base-ui/react": "^1.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

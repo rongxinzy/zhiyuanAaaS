@@ -297,6 +297,10 @@ export class AdminConsoleClient {
     await this.#requireClient().publishSkillVersion(skillId, version);
   }
 
+  async deleteSkillVersion(skillId: string, version: string): Promise<void> {
+    await this.#requireClient().deleteSkillVersion(skillId, version);
+  }
+
   async createSkillAssignment(input: { readonly skillId: string; readonly subject: AdminAssignmentSubject }): Promise<void> {
     await this.#requireClient().createSkillAssignment({ skillId: input.skillId, subject: { type: input.subject.type, id: input.subject.id } });
   }
