@@ -129,10 +129,38 @@ export interface AdminDataPlane {
 export interface AdminEventRecord {
   readonly eventId?: string;
   readonly type?: string;
+  readonly userId?: string;
+  readonly resourceType?: string;
+  readonly resourceId?: string;
+  readonly result?: string;
   readonly scopeType?: string;
   readonly scopeId?: string;
   readonly receivedAt?: string;
   readonly createdAt?: string;
+}
+
+export interface AdminEventPage {
+  readonly items: readonly AdminEventRecord[];
+  readonly nextCursor: string | null;
+}
+
+export interface AdminDeliveryRecord {
+  readonly deliveryId: string;
+  readonly eventId: string;
+  readonly sessionId?: string | null;
+  readonly state: string;
+  readonly attemptCount?: number;
+  readonly createdAt?: string;
+  readonly receivedAt?: string | null;
+  readonly completedAt?: string | null;
+  readonly updatedAt?: string;
+  readonly errorCode?: string | null;
+  readonly message?: string | null;
+}
+
+export interface AdminDeliveryPage {
+  readonly items: readonly AdminDeliveryRecord[];
+  readonly nextCursor: string | null;
 }
 
 export interface AdminControlEvents {
@@ -445,24 +473,36 @@ export class AdminConsoleClient {
     return this.#requireClient().createControlEvent(input) as Promise<Record<string, unknown>>;
   }
 
-  async deliverySummary(eventId: string): Promise<unknown> {
-    return this.#requireClient().listControlEventDeliveries(eventId);
+  async deliverySummary(eventId: string, filters?: Query): Promise<AdminDeliveryPage> {
+    const result = await this.#requireClient().listControlEventDeliveries(eventId, filters);
+    const items = Array.isArray(result.items) ? result.items.flatMap(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (typeof record.deliveryId !== 'string' || typeof record.eventId !== 'string' || typeof record.state !== 'string') return [];
+      return [record as unknown as AdminDeliveryRecord];
+    }) : [];
+    return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
   }
 
-  async searchAudit(filters?: Record<string, string | number>): Promise<readonly AdminEventRecord[]> {
+  async searchAudit(filters?: Query): Promise<AdminEventPage> {
     const result = await this.#requireClient().searchEvents(filters);
-    return arrayFrom(result, 'items').flatMap(item => {
+    const items = arrayFrom(result, 'items').flatMap(item => {
       if (!item || typeof item !== 'object') return [];
       const record = item as Record<string, unknown>;
       return [{
         ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
         ...(typeof record.type === 'string' ? { type: record.type } : {}),
+        ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
+        ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
+        ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
+        ...(typeof record.result === 'string' ? { result: record.result } : {}),
         ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
         ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
         ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
         ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
       }];
     });
+    return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
   }
 
   #getClient(): AepClient {
