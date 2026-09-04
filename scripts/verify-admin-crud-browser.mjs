@@ -18,6 +18,12 @@ const state = {
   modelAssignments: [],
   credentials: [],
   credentialAssignments: [],
+  licenses: [],
+  controlEvents: [],
+  dataPlane: {
+    desired: { deploymentId: 'demo', revision: 'rev-1', routes: [], publishedAt: null, contentHash: '' },
+    status: { state: 'ready', observedRevision: 'rev-1', contentHash: '', lastAppliedAt: null, resourceCount: 0 },
+  },
   requests: [],
   nextId: 1,
 };
@@ -145,6 +151,20 @@ try {
   await waitForText(page, '启用');
   assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.enabled, true);
 
+  await page.getByRole('button', { name: '上传版本' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('版本号').fill('1.0.0');
+  await dialog.getByLabel('Skill ZIP 包').setInputFiles({ name: 'e2e-skill.zip', mimeType: 'application/zip', buffer: Buffer.from('zip') });
+  await dialog.getByRole('button', { name: '上传版本' }).click();
+  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 1);
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/skills/e2e-skill/versions'));
+  await dialog.getByRole('button', { name: '发布版本' }).click();
+  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions[0]?.state, 'published');
+  await dialog.getByRole('button', { name: '取消' }).click();
+  await page.getByRole('button', { name: '撤回版本' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤回版本' }).click();
+  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 0);
+
   await page.getByRole('tab', { name: 'Skill 授权' }).click();
   while (state.skillAssignments.length > 0) {
     const expectedLength = state.skillAssignments.length - 1;
@@ -249,6 +269,59 @@ try {
   await waitForNoText(page, 'E2E Credential Updated');
   assert.equal(state.credentials.length, 0);
 
+  await page.getByRole('tab', { name: 'License' }).click();
+  await page.getByRole('button', { name: '导入 License' }).click();
+  dialog = page.getByRole('dialog');
+  const licenseEnvelope = JSON.stringify({ format: 'zhiyuan-license-v1', keyId: 'e2e-key', payload: { licenseId: 'e2e-license' }, signature: 'e2e-signature' });
+  await dialog.getByLabel('License 文件').setInputFiles({ name: 'e2e-license.json', mimeType: 'application/json', buffer: Buffer.from(licenseEnvelope) });
+  await dialog.getByRole('button', { name: '导入 License' }).click();
+  await waitForText(page, 'e2e-license');
+  assert.equal(state.licenses.length, 1);
+  await page.getByRole('button', { name: '撤销 License' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销 License' }).click();
+  await waitForValue(() => state.licenses[0]?.status, 'revoked');
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/licenses/e2e-license/revoke'));
+
+  await page.getByRole('button', { name: '事件与审计' }).click();
+  await waitForText(page, '暂无管控事件');
+  await page.getByRole('button', { name: '发布' }).click();
+  await waitForText(page, 'model.catalog.changed');
+  assert.equal(state.controlEvents.length, 1);
+  const eventId = state.controlEvents[0].eventId;
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/control-events'));
+  await page.getByRole('button', { name: '查看详情' }).click();
+  await page.getByText(new RegExp(eventId)).first().waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: '关闭' }).click();
+  await page.getByRole('button', { name: '取消事件' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认取消事件' }).click();
+  await waitForValue(() => state.controlEvents[0]?.state, 'cancelled');
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === `/aep/v1/admin/control-events/${eventId}/cancel`));
+
+  await page.getByRole('button', { name: '平台运维' }).click();
+  await page.getByRole('tab', { name: '数据平面' }).click();
+  await waitForText(page, 'rev-1');
+  await page.getByRole('button', { name: '添加路由' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('模型 ID').fill('e2e-route');
+  await dialog.getByLabel('网关路径').fill('/v1/chat/completions');
+  await dialog.getByLabel('上游模型').fill('deepseek-chat');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'e2e-route');
+  assert.equal(state.dataPlane.desired.routes.length, 0);
+  await page.getByLabel('版本号').fill('rev-2');
+  await page.getByRole('button', { name: '发布期望状态' }).click();
+  await waitForValue(() => state.dataPlane.desired.revision, 'rev-2');
+  assert.equal(state.dataPlane.desired.routes.length, 1);
+  assert.ok(state.requests.some(item => item.method === 'PUT' && item.path === '/aep/v1/admin/data-plane/desired-state'));
+  await page.getByRole('button', { name: '编辑' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('网关路径').fill('/v1/responses');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, '/v1/responses');
+  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('button', { name: '发布期望状态' }).click();
+  await waitForValue(() => state.dataPlane.desired.routes.length, 0);
+
   await page.getByRole('button', { name: '资源管理' }).click();
   await page.getByRole('tab', { name: 'Team' }).click();
   await page.getByRole('button', { name: '删除' }).click();
@@ -278,7 +351,7 @@ try {
   await page.getByRole('tab', { name: '用户' }).click();
   await waitForText(page, 'E2E 用户 Updated');
   assert.ok(state.requests.some(item => item.path === '/aep/v1/user/me'));
-  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'reload session restore'], requests: state.requests.length }));
+  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke/version publish/withdraw', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'license import/revoke', 'control event publish/detail/cancel', 'data plane route create/update/delete/publish', 'reload session restore'], requests: state.requests.length }));
 } finally {
   await browser?.close().catch(() => undefined);
   if (staticServer) staticServer.kill();
@@ -325,6 +398,26 @@ async function route(method, pathname, rawBody, response) {
   if (method === 'GET' && pathname === '/aep/v1/admin/skills') return writeJson(response, 200, { skills: state.skills });
   if (method === 'POST' && pathname === '/aep/v1/admin/skills') return createRecord(response, state.skills, { ...jsonBody(rawBody), state: 'active', enabled: true, versions: [] });
   if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/skills/')) return patchRecord(response, state.skills, pathname, jsonBody(rawBody));
+  if (method === 'POST' && pathname.endsWith('/versions') && pathname.startsWith('/aep/v1/admin/skills/')) {
+    const skill = state.skills.find(item => item.id === pathname.split('/').at(-2));
+    if (!skill) return writeJson(response, 404, { code: 'NOT_FOUND' });
+    skill.versions = [{ version: '1.0.0', state: 'draft', sha256: 'a'.repeat(64), size: 3 }];
+    return writeJson(response, 201, skill.versions[0]);
+  }
+  if (method === 'POST' && pathname.endsWith('/publish') && pathname.startsWith('/aep/v1/admin/skills/')) {
+    const parts = pathname.split('/');
+    const skill = state.skills.find(item => item.id === parts.at(-4));
+    const version = skill?.versions.find(item => item.version === parts.at(-2));
+    if (!version) return writeJson(response, 404, { code: 'NOT_FOUND' });
+    version.state = 'published';
+    return writeJson(response, 200, version);
+  }
+  if (method === 'DELETE' && pathname.includes('/versions/')) {
+    const parts = pathname.split('/');
+    const skill = state.skills.find(item => item.id === parts.at(-3));
+    if (skill) skill.versions = skill.versions.filter(item => item.version !== parts.at(-1));
+    return response.writeHead(204).end();
+  }
   if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/skills/') && pathname.split('/').length === 6) return deleteRecord(response, state.skills, pathname);
   if (method === 'GET' && pathname === '/aep/v1/admin/skill-assignments') return writeJson(response, 200, { items: state.skillAssignments });
   if (method === 'POST' && pathname === '/aep/v1/admin/skill-assignments') return createAssignment(response, state.skillAssignments, jsonBody(rawBody), 'skill');
@@ -353,12 +446,46 @@ async function route(method, pathname, rawBody, response) {
   if (method === 'GET' && pathname === '/aep/v1/admin/credential-assignments') return writeJson(response, 200, { assignments: state.credentialAssignments });
   if (method === 'POST' && pathname === '/aep/v1/admin/credential-assignments') return createAssignment(response, state.credentialAssignments, jsonBody(rawBody), 'credential');
   if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/credential-assignments/')) return deleteRecord(response, state.credentialAssignments, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/licenses') return writeJson(response, 200, { items: [], nextCursor: null });
+  if (method === 'GET' && pathname === '/aep/v1/admin/licenses') return writeJson(response, 200, { items: state.licenses, nextCursor: null });
+  if (method === 'POST' && pathname === '/aep/v1/admin/licenses/import') {
+    const license = { licenseId: 'e2e-license', customerId: 'e2e-customer', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'e2e-key', status: 'active', issuedAt: '2026-09-01T00:00:00Z', expiresAt: '2027-09-01T00:00:00Z', graceEndsAt: '2027-09-08T00:00:00Z', limits: { users: 10, activations: 10 }, features: ['model_gateway'], activeUsers: 1, activeActivations: 1, revokedAt: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' };
+    state.licenses.push(license);
+    return writeJson(response, 201, license);
+  }
+  if (method === 'POST' && pathname.endsWith('/revoke') && pathname.startsWith('/aep/v1/admin/licenses/')) {
+    const license = state.licenses.find(item => item.licenseId === pathname.split('/').at(-2));
+    if (!license) return writeJson(response, 404, { code: 'NOT_FOUND' });
+    license.status = 'revoked';
+    license.revokedAt = new Date().toISOString();
+    return writeJson(response, 200, license);
+  }
   if (method === 'GET' && pathname === '/aep/v1/admin/events') return writeJson(response, 200, { items: [], nextCursor: null });
-  if (method === 'GET' && pathname === '/aep/v1/admin/control-events') return writeJson(response, 200, { items: [], nextCursor: null });
+  if (method === 'GET' && pathname === '/aep/v1/admin/control-events') return writeJson(response, 200, { items: state.controlEvents, nextCursor: null });
+  if (method === 'POST' && pathname === '/aep/v1/admin/control-events') {
+    const input = jsonBody(rawBody);
+    const event = { ...input, eventId: `e2e-event-${state.nextId++}`, state: 'active', createdAt: new Date().toISOString(), createdBy: 'admin', deliverySummary: { pending: 1, received: 0, running: 0, succeeded: 0, failed: 0, expired: 0, superseded: 0 } };
+    state.controlEvents.push(event);
+    return writeJson(response, 201, event);
+  }
+  if (method === 'GET' && pathname.startsWith('/aep/v1/admin/control-events/') && !pathname.endsWith('/deliveries')) {
+    const event = state.controlEvents.find(item => item.eventId === pathname.split('/').at(-1));
+    return event ? writeJson(response, 200, event) : writeJson(response, 404, { code: 'NOT_FOUND' });
+  }
+  if (method === 'POST' && pathname.endsWith('/cancel') && pathname.startsWith('/aep/v1/admin/control-events/')) {
+    const event = state.controlEvents.find(item => item.eventId === pathname.split('/').at(-2));
+    if (!event) return writeJson(response, 404, { code: 'NOT_FOUND' });
+    event.state = 'cancelled';
+    return writeJson(response, 200, event);
+  }
   if (method === 'GET' && pathname === '/aep/v1/admin/sessions') return writeJson(response, 200, { items: [], nextCursor: null });
-  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/desired-state') return writeJson(response, 200, { deploymentId: 'demo', revision: 'rev-1', routes: [], publishedAt: null, contentHash: '' });
-  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/status') return writeJson(response, 200, { state: 'ready', observedRevision: 'rev-1', contentHash: '', lastAppliedAt: null, resourceCount: 0 });
+  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/desired-state') return writeJson(response, 200, state.dataPlane.desired);
+  if (method === 'PUT' && pathname === '/aep/v1/admin/data-plane/desired-state') {
+    const input = jsonBody(rawBody);
+    state.dataPlane.desired = { ...state.dataPlane.desired, ...input, publishedAt: new Date().toISOString() };
+    state.dataPlane.status = { ...state.dataPlane.status, observedRevision: state.dataPlane.desired.revision, resourceCount: state.dataPlane.desired.routes.length };
+    return writeJson(response, 200, state.dataPlane.desired);
+  }
+  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/status') return writeJson(response, 200, state.dataPlane.status);
   return writeJson(response, 404, { code: 'NOT_FOUND', path: pathname });
 }
 
