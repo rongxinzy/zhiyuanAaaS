@@ -268,6 +268,28 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.publishSkillVersion).toHaveBeenCalledWith('s1', '1.0.0'));
   });
 
+  test('withdraws a Skill version after confirmation and refreshes the list', async () => {
+    const client = {
+      resources: vi.fn()
+        .mockResolvedValueOnce({
+          users: [],
+          teams: [],
+          roles: [],
+          permissions: [],
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, versions: [{ version: '1.0.0', state: 'published', sha256: 'a'.repeat(64), size: 3 }] }],
+          assignments: [],
+        })
+        .mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '写作', description: '', enabled: true, versions: [] }], assignments: [] }),
+      deleteSkillVersion: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+    expect(await screen.findByText('1.0.0')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '撤回版本' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认撤回版本' }));
+    await waitFor(() => expect(client.deleteSkillVersion).toHaveBeenCalledWith('s1', '1.0.0'));
+    await waitFor(() => expect(client.resources).toHaveBeenCalledTimes(2));
+  });
+
   test('grants a Skill to a role and a team', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({
