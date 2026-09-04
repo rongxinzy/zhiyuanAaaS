@@ -64,6 +64,7 @@ export function Operations({ client, identity }: { readonly client: AdminConsole
 }
 
 function LicensePanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
+  const canImport = hasAdminPermission(identity, AdminPermission.LicensesWrite);
   const canRevoke = hasAdminPermission(identity, AdminPermission.LicensesRevoke);
   const [licenses, setLicenses] = useState<readonly License[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,13 +87,13 @@ function LicensePanel({ client, identity }: { readonly client: AdminConsoleClien
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold"><FileKey2 className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'licenses')}</div>
         <div className="flex items-center gap-1.5">
-          <Button size="sm" onClick={() => setImportOpen(true)}><Upload data-icon="inline-start" />{translate(language, 'importLicense')}</Button>
+          {canImport ? <Button size="sm" onClick={() => setImportOpen(true)}><Upload data-icon="inline-start" />{translate(language, 'importLicense')}</Button> : null}
           <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button>
         </div>
       </div>
       {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
       {loading && !licenses ? <LicenseSkeleton /> : licenses ? <LicenseTable licenses={licenses} canRevoke={canRevoke} client={client} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
-      <LicenseImportDialog client={client} open={importOpen} onOpenChange={setImportOpen} onChanged={load} onError={() => setError('licensesLoadFailed')} />
+      {canImport ? <LicenseImportDialog client={client} open={importOpen} onOpenChange={setImportOpen} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
     </div>
   );
 }

@@ -124,7 +124,7 @@ describe('admin operations', () => {
     await waitFor(() => expect(client.putDataPlane).toHaveBeenCalledWith({ revision: 'rev-1', routes: [expect.objectContaining({ modelId: 'chat', endpoint: '/v1/responses', providerType: 'deepseek' })] }));
   });
 
-  test('keeps license import readable but hides revoke without revoke permission', async () => {
+  test('keeps license status readable but hides import and revoke without write permissions', async () => {
     const client = {
       licenses: vi.fn().mockResolvedValue([{
         licenseId: 'license-1', customerId: 'customer-1', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'license-prod-1',
@@ -138,7 +138,19 @@ describe('admin operations', () => {
     render(<Operations client={client as never} identity={{ roles: [], permissions: ['licenses.read'] } as never} />);
 
     expect(await screen.findByText('license-1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '导入 License' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '导入 License' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '撤销 License' })).not.toBeInTheDocument();
+  });
+
+  test('allows License import with write permission while keeping revoke separate', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      importLicense: vi.fn(),
+      revokeLicense: vi.fn(),
+    };
+    render(<Operations client={client as never} identity={{ roles: [], permissions: ['licenses.read', 'licenses.write'] } as never} />);
+
+    expect(await screen.findByRole('button', { name: '导入 License' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '撤销 License' })).not.toBeInTheDocument();
   });
 

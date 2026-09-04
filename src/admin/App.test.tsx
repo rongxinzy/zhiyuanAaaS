@@ -12,7 +12,7 @@ const { client, AdminPermission, hasAdminPermission } = vi.hoisted(() => {
     SkillsRead: 'skills.read', SkillsWrite: 'skills.write', SkillsAssign: 'skills.assign',
     ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
     CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
-    LicensesRead: 'licenses.read', LicensesRevoke: 'licenses.revoke',
+    LicensesRead: 'licenses.read', LicensesWrite: 'licenses.write', LicensesRevoke: 'licenses.revoke',
     EventsRead: 'events.read', EventsWrite: 'events.write',
     DataPlaneWrite: 'data_plane.write',
   } as const;
