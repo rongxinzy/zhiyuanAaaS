@@ -64,16 +64,7 @@ try {
   await page.getByRole('button', { name: '资源管理' }).click();
   await waitForText(page, 'admin');
 
-  await page.getByRole('button', { name: '新增用户' }).click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByLabel('用户名').fill('e2e-user');
-  await dialog.getByLabel('显示名称').fill('E2E 用户');
-  await dialog.getByLabel('临时密码').fill('e2e-temporary-password');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E 用户');
-  const createdUser = state.users.find(item => item.username === 'e2e-user');
-  assert.ok(createdUser, 'user create request did not reach the mock service');
-
   await page.getByRole('tab', { name: 'Team' }).click();
   await page.getByRole('button', { name: '新增 Team' }).click();
   dialog = page.getByRole('dialog');
@@ -115,6 +106,19 @@ try {
   await page.getByRole('button', { name: '启用' }).click();
   await waitForText(page, '启用');
   assert.equal(state.roles.find(item => item.id === 'e2e-role')?.enabled, true);
+
+  await page.getByRole('tab', { name: '用户' }).click();
+  await page.getByRole('button', { name: '新增用户' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('用户名').fill('e2e-user');
+  await dialog.getByLabel('显示名称').fill('E2E 用户');
+  await dialog.getByLabel('临时密码').fill('e2e-temporary-password');
+  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
+  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await waitForText(page, 'E2E 用户');
+  const createdUser = state.users.find(item => item.username === 'e2e-user');
+  assert.ok(createdUser, 'user create request did not reach the mock service');
 
   await page.getByRole('tab', { name: 'Skill', exact: true }).click();
   await page.getByRole('button', { name: '新增 Skill' }).click();
