@@ -50,4 +50,40 @@ describe('admin events', () => {
     await waitFor(() => expect(client.controlEvents).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('model.catalog.changed')).toBeInTheDocument();
   });
+
+  test('filters and paginates audit records', async () => {
+    const client = {
+      controlEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      publishControlEvent: vi.fn(),
+      searchAudit: vi.fn()
+        .mockResolvedValueOnce({ items: [{ eventId: 'audit-1', type: 'skill.changed', userId: 'u1', result: 'success' }], nextCursor: 'audit-page-2' })
+        .mockResolvedValueOnce({ items: [{ eventId: 'audit-2', type: 'skill.failed', userId: 'u1', result: 'failure' }], nextCursor: null }),
+    };
+    render(<Events client={client as never} />);
+    fireEvent.change(screen.getByLabelText('用户 ID'), { target: { value: 'u1' } });
+    fireEvent.change(screen.getByLabelText('资源类型'), { target: { value: 'skill' } });
+    const searchButtons = screen.getAllByRole('button', { name: '查询' });
+    fireEvent.click(searchButtons.at(-1)!);
+    expect(await screen.findByText('skill.changed')).toBeInTheDocument();
+    await waitFor(() => expect(client.searchAudit).toHaveBeenCalledWith({ userId: 'u1', resourceType: 'skill', limit: 100 }));
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText('skill.failed')).toBeInTheDocument();
+    await waitFor(() => expect(client.searchAudit).toHaveBeenLastCalledWith({ userId: 'u1', resourceType: 'skill', cursor: 'audit-page-2', limit: 100 }));
+  });
+
+  test('filters control events by scope and time', async () => {
+    const client = {
+      controlEvents: vi.fn()
+        .mockResolvedValueOnce({ items: [activeEvent], nextCursor: null })
+        .mockResolvedValueOnce({ items: [activeEvent], nextCursor: null }),
+      publishControlEvent: vi.fn(),
+      searchAudit: vi.fn(),
+    };
+    render(<Events client={client as never} />);
+    expect(await screen.findByText('model.catalog.changed')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('作用域类型'), { target: { value: 'user' } });
+    fireEvent.change(screen.getByLabelText('作用域 ID'), { target: { value: 'u1' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '查询' }).at(-1)!);
+    await waitFor(() => expect(client.controlEvents).toHaveBeenLastCalledWith({ scopeType: 'user', scopeId: 'u1', limit: 100 }));
+  });
 });
