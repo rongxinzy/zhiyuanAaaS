@@ -4,6 +4,7 @@ import {
   MemoryTokenStore,
   type AepTokenStore,
   type AdminModel,
+  type AdminModelList,
   type ModelAssignment,
   type CurrentIdentity,
   type AdminControlEvent,
@@ -11,12 +12,14 @@ import {
   type CredentialAssignmentWrite,
   type CredentialCreate,
   type CredentialMetadata,
+  type CredentialList,
   type CredentialPatch,
   type CredentialRotate,
   type DataPlaneDesiredState,
   type DataPlaneDesiredStateWrite,
   type DataPlaneStatus,
   type JsonObject,
+  type JsonValue,
   type License,
   type LicenseImportRequest,
   type Query,
@@ -243,14 +246,14 @@ export class AdminConsoleClient {
     const client = this.#requireClient();
     const [users, teams, skills, models, events] = await Promise.all([
       hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.TeamsRead) ? client.listTeams() : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.SkillsRead) ? client.listSkills() : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.ModelsRead) ? client.listAdminModels() : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve(null),
+      hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : Promise.resolve(null),
       hasAdminPermission(identity, AdminPermission.EventsRead) ? client.searchEvents({ limit: 100 }) : Promise.resolve(null),
     ]);
     return {
       users: users ? users.length : null,
-      teams: teams ? teams.teams.length : null,
+      teams: teams ? teams.length : null,
       skills: skills ? listCount(skills) : null,
       models: models ? listCount(models) : null,
       pendingEvents: events ? pendingEventCount(events) : null,
@@ -261,16 +264,16 @@ export class AdminConsoleClient {
     const client = this.#requireClient();
     const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
       hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve([]),
-      hasAdminPermission(identity, AdminPermission.TeamsRead) ? client.listTeams() : Promise.resolve({ teams: [] }),
-      hasAdminPermission(identity, AdminPermission.RolesRead) ? client.listRoles() : Promise.resolve({ roles: [] }),
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve([]),
+      hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : Promise.resolve([]),
       hasAdminPermission(identity, AdminPermission.RolesRead) ? client.listPermissions() : Promise.resolve({ permissions: [] }),
-      hasAdminPermission(identity, AdminPermission.SkillsRead) ? client.listSkills() : Promise.resolve({ skills: [] }),
+      hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve({ skills: [] }),
       hasAdminPermission(identity, AdminPermission.SkillsAssign) ? client.listSkillAssignments() : Promise.resolve({ items: [] }),
     ]);
     return {
       users,
-      teams: teams.teams,
-      roles: roles.roles,
+      teams,
+      roles,
       permissions: permissions.permissions,
       skills: parseSkills(skills),
       assignments: parseAssignments(assignments),
@@ -378,7 +381,7 @@ export class AdminConsoleClient {
   async models(identity?: AdminIdentity): Promise<AdminModels> {
     const client = this.#requireClient();
     const [models, assignments] = await Promise.all([
-      client.listAdminModels(),
+      this.#listAllModels(client),
       hasAdminPermission(identity, AdminPermission.ModelsAssign) ? client.listModelAssignments() : Promise.resolve({ assignments: [] }),
     ]);
     return { models: models.models, assignments: assignments.assignments };
@@ -442,7 +445,7 @@ export class AdminConsoleClient {
   async credentials(identity?: AdminIdentity): Promise<AdminCredentials> {
     const client = this.#requireClient();
     const [credentials, assignments] = await Promise.all([
-      client.listCredentials(),
+      this.#listAllCredentials(client),
       hasAdminPermission(identity, AdminPermission.CredentialsAssign) ? client.listCredentialAssignments() : Promise.resolve({ assignments: [] }),
     ]);
     return {
@@ -557,6 +560,66 @@ export class AdminConsoleClient {
   #requireClient(): AepClient {
     if (!this.#client) throw new Error('Admin console is not authenticated.');
     return this.#client;
+  }
+
+  async #listAllRoles(client: AepClient): Promise<readonly Role[]> {
+    const roles: Role[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listRoles({ ...(cursor ? { cursor } : {}), limit: 200 });
+      roles.push(...page.roles);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return roles;
+      cursor = nextCursor;
+    }
+  }
+
+  async #listAllTeams(client: AepClient): Promise<readonly Team[]> {
+    const teams: Team[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listTeams({ ...(cursor ? { cursor } : {}), limit: 200 });
+      teams.push(...page.teams);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return teams;
+      cursor = nextCursor;
+    }
+  }
+
+  async #listAllSkills(client: AepClient): Promise<JsonObject> {
+    const skills: JsonValue[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listSkills({ ...(cursor ? { cursor } : {}), limit: 200 });
+      skills.push(...arrayFrom(page, 'skills') as JsonValue[]);
+      const nextCursor = valueString(page, 'nextCursor');
+      if (!nextCursor || nextCursor === cursor) return { skills };
+      cursor = nextCursor;
+    }
+  }
+
+  async #listAllCredentials(client: AepClient): Promise<CredentialList> {
+    const credentials: CredentialMetadata[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listCredentials({ ...(cursor ? { cursor } : {}), limit: 200 });
+      credentials.push(...page.credentials);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return { credentials, nextCursor: null };
+      cursor = nextCursor;
+    }
+  }
+
+  async #listAllModels(client: AepClient): Promise<AdminModelList> {
+    const models: AdminModel[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await client.listAdminModels({ ...(cursor ? { cursor } : {}), limit: 200 });
+      models.push(...page.models);
+      const nextCursor = page.nextCursor ?? null;
+      if (!nextCursor || nextCursor === cursor) return { models, nextCursor: null };
+      cursor = nextCursor;
+    }
   }
 
   async #listAllUsers(client: AepClient): Promise<readonly PlatformUser[]> {

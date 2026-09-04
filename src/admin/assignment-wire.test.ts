@@ -224,4 +224,74 @@ describe('admin console assignment wire contract', () => {
     await client.restore();
     await expect(client.overview()).resolves.toMatchObject({ users: 0, teams: 0, skills: 1, models: 0, pendingEvents: 0 });
   });
+
+  test('aggregates cursor-paginated roles, teams, and Skills for resources', async () => {
+    const requests: string[] = [];
+    const stub = http.createServer((request, response) => {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      requests.push(url.pathname + url.search);
+      response.setHeader('Content-Type', 'application/json');
+      if (url.pathname === '/aep/v1/user/me') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/users') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ items: [], nextCursor: null }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/permissions') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ permissions: [] }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/skill-assignments') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ items: [] }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/roles') {
+        const secondPage = url.searchParams.get('cursor') === 'role-1';
+        response.writeHead(200);
+        response.end(JSON.stringify({ roles: [{ id: secondPage ? 'role-2' : 'role-1', name: 'Role', description: '', builtIn: false, enabled: true, permissions: [] }], nextCursor: secondPage ? null : 'role-1' }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/teams') {
+        const secondPage = url.searchParams.get('cursor') === 'team-1';
+        response.writeHead(200);
+        response.end(JSON.stringify({ teams: [{ id: secondPage ? 'team-2' : 'team-1', name: 'Team', description: '', builtIn: false, enabled: true, memberCount: 0 }], nextCursor: secondPage ? null : 'team-1' }));
+        return;
+      }
+      if (url.pathname === '/aep/v1/admin/skills') {
+        const secondPage = url.searchParams.get('cursor') === 'skill-1';
+        response.writeHead(200);
+        response.end(JSON.stringify({ skills: [{ id: secondPage ? 'skill-2' : 'skill-1', name: 'Skill', description: '', state: 'active', versions: [] }], nextCursor: secondPage ? null : 'skill-1' }));
+        return;
+      }
+      response.writeHead(404);
+      response.end(JSON.stringify({ title: 'not found' }));
+    });
+    await new Promise<void>(resolve => stub.listen(0, '127.0.0.1', resolve));
+    server = stub;
+    const port = (stub.address() as AddressInfo).port;
+    const tokenStore = new MemoryTokenStore();
+    await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
+    const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
+
+    await client.restore();
+    await expect(client.resources()).resolves.toMatchObject({
+      roles: [{ id: 'role-1' }, { id: 'role-2' }],
+      teams: [{ id: 'team-1' }, { id: 'team-2' }],
+      skills: [{ id: 'skill-1' }, { id: 'skill-2' }],
+    });
+    expect(requests).toEqual(expect.arrayContaining([
+      '/aep/v1/admin/roles?limit=200',
+      '/aep/v1/admin/roles?cursor=role-1&limit=200',
+      '/aep/v1/admin/teams?limit=200',
+      '/aep/v1/admin/teams?cursor=team-1&limit=200',
+      '/aep/v1/admin/skills?limit=200',
+      '/aep/v1/admin/skills?cursor=skill-1&limit=200',
+    ]));
+  });
 });
