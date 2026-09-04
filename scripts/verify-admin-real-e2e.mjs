@@ -328,6 +328,7 @@ async function exerciseDataPlane() {
   await current.getByRole('button', { name: '保存' }).click();
   await waitText('/v1/responses');
   await row(`route-${suffix}`).getByRole('button', { name: '删除' }).click();
+  await confirm('确认删除路由');
   await page.getByRole('button', { name: '发布期望状态' }).click();
 }
 
