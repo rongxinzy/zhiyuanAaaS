@@ -59,6 +59,7 @@ npm run typecheck
 npm test
 npm run build
 npm run verify:admin
+npm run verify:admin:real-e2e  # requires a running AEP Control Service
 npm run verify:bundle
 npm run verify:manifest
 npm run verify:agent-control:e2e
