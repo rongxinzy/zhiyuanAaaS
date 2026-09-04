@@ -140,7 +140,7 @@ main: min-h-full / bg-background
 | 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、Team、Role、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
 | 企业模型 | 页面标题行、添加模型按钮、模型卡片列表 | 添加模型通过 Dialog；模型启用状态用 success/outline Badge；授权用户通过 Dialog 多选 |
 | 事件与审计 | 发布控管事件卡片、审计查询卡片、审计结果 | 发布和查询使用 Field + Input + Button；结果为空显示 Empty；事件成功后保留 event id 并提供投递查询 |
-| 平台运维 | 页面标题行、License/用户会话/凭证线性页签、当前记录列表 | License 支持导入和撤销；会话只读查询；凭证支持元数据 CRUD、轮换和 User/Role/Team 授权；敏感值不在列表中展示 |
+| 平台运维 | 页面标题行、License/用户会话/凭证/Data Plane 线性页签、当前记录列表 | License 支持导入和撤销；会话只读查询；凭证支持元数据 CRUD、轮换和 User/Role/Team 授权；Data Plane 支持期望状态发布与运行状态查询；敏感值不在列表中展示 |
 
 页面新增区块必须说明它属于哪个页面职责、它消耗哪个 API 数据、它的 loading/error/empty/success 状态，以及完成后如何回到当前页面上下文。不要把 API 字段、网络错误或后端状态直接当作视觉规则。
 
