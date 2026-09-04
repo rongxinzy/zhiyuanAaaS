@@ -48,6 +48,41 @@ describe('admin operations', () => {
     await waitFor(() => expect(client.sessions).toHaveBeenLastCalledWith('user-1'));
   });
 
+  test('revokes active sessions with the dedicated permission and refreshes state', async () => {
+    let currentSessions = [
+      { sessionId: 'session-active', userId: 'user-1', topic: 'user:user-1', createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null },
+      { sessionId: 'session-revoked', userId: 'user-1', topic: 'user:user-1', createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: '2026-09-04T01:00:00Z' },
+    ];
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      sessions: vi.fn().mockImplementation(async () => currentSessions),
+      revokeUserSession: vi.fn().mockImplementation(async (sessionId: string) => {
+        currentSessions = currentSessions.map(session => session.sessionId === sessionId ? { ...session, revokedAt: '2026-09-04T02:00:00Z' } : session);
+      }),
+    };
+    render(<Operations client={client as never} identity={{ roles: [], permissions: ['users.read', 'sessions.write'] } as never} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '用户会话' }));
+    expect(await screen.findByText('session-active')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '撤销会话' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '撤销会话' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认撤销会话' }));
+    await waitFor(() => expect(client.revokeUserSession).toHaveBeenCalledWith('session-active'));
+    await waitFor(() => expect(client.sessions).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('button', { name: '撤销会话' })).not.toBeInTheDocument();
+  });
+
+  test('hides session revocation without sessions.write', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      sessions: vi.fn().mockResolvedValue([{ sessionId: 'session-1', userId: 'user-1', topic: 'user:user-1', createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null }]),
+      revokeUserSession: vi.fn(),
+    };
+    render(<Operations client={client as never} identity={{ roles: [], permissions: ['users.read'] } as never} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '用户会话' }));
+    expect(await screen.findByText('session-1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '撤销会话' })).not.toBeInTheDocument();
+  });
+
   test('creates, edits, rotates, deletes, and assigns a credential', async () => {
     const client = {
       licenses: vi.fn().mockResolvedValue([]),

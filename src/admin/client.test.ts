@@ -6,7 +6,7 @@ const fullPermissions = [
   'users.read', 'users.write', 'roles.read', 'roles.write', 'teams.read', 'teams.write',
   'skills.read', 'skills.write', 'skills.assign', 'models.read', 'models.write', 'models.assign',
   'credentials.read', 'credentials.write', 'credentials.assign', 'licenses.read', 'licenses.write', 'licenses.revoke',
-  'events.read', 'events.write', 'data_plane.write',
+  'sessions.write', 'events.read', 'events.write', 'data_plane.write',
 ];
 
 function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
