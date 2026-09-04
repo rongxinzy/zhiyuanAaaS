@@ -287,6 +287,10 @@ export class AdminConsoleClient {
     await this.#requireClient().updateModel(modelId, input);
   }
 
+  async deleteModel(modelId: string): Promise<void> {
+    await this.#requireClient().deleteModel(modelId);
+  }
+
   async createModelAssignment(input: { readonly modelId: string; readonly subject: AdminModelAssignmentSubject }): Promise<void> {
     await this.#requireClient().createModelAssignment({ modelId: input.modelId, subject: { type: input.subject.type, id: input.subject.id } });
   }

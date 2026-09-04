@@ -1,11 +1,10 @@
-import { Check, CircleAlert, Cpu, Plus, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { Check, CircleAlert, Cpu, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import type { AdminModel, ModelAssignment, PlatformUser } from '@aep/sdk-node';
+import type { AdminModel, ModelAssignment, PlatformUser, Role, Team } from '@aep/sdk-node';
 
 import { AdminConsoleClient, AdminModelSubjectType, type AdminModels } from './client.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
-import { SubjectCell } from './Resources.js';
-import { UserMultiPicker } from './UserMultiPicker.js';
+import { SubjectCell, SubjectMultiPicker } from './Resources.js';
 import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
 import {
   AlertDialog,
@@ -44,6 +43,8 @@ const language: AdminLanguage = 'zh';
 export function Models({ client }: { readonly client: AdminConsoleClient }) {
   const [state, setState] = useState<AdminModels | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
+  const [roles, setRoles] = useState<readonly Role[]>([]);
+  const [teams, setTeams] = useState<readonly Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState<AdminModel | null>(null);
@@ -51,13 +52,15 @@ export function Models({ client }: { readonly client: AdminConsoleClient }) {
     setLoading(true);
     setError(null);
     try {
-      const [models, members] = await Promise.all([client.models(), client.users()]);
+      const [models, resources] = await Promise.all([client.models(), client.resources()]);
       setState(models);
-      setUsers(members);
+      setUsers(resources.users);
+      setRoles(resources.roles);
+      setTeams(resources.teams);
     } catch { setError('modelsLoadFailed'); } finally { setLoading(false); }
   }, [client]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}<ModelCreateForm client={client} onCreated={load} />{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={setGranting} /> : null}{granting ? <ModelGrantDialog client={client} model={granting} users={users} onOpenChange={setGranting} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}<ModelCreateForm client={client} onCreated={load} />{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} roles={roles} teams={teams} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={setGranting} /> : null}{granting ? <ModelGrantDialog client={client} model={granting} users={users} roles={roles} teams={teams} onOpenChange={setGranting} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
 }
 
 function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleClient; readonly onCreated: () => Promise<void> }) {
@@ -105,10 +108,12 @@ function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleC
   );
 }
 
-function ModelList({ models, assignments, users, client, onChanged, onError, onGrant }: {
+function ModelList({ models, assignments, users, roles, teams, client, onChanged, onError, onGrant }: {
   readonly models: readonly AdminModel[];
   readonly assignments: readonly ModelAssignment[];
   readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
@@ -128,17 +133,62 @@ function ModelRow({ model, assignments, users, client, onChanged, onError, onGra
   readonly onGrant: () => void;
 }) {
   const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState(false);
   const run = async (operation: () => Promise<void>) => { setPending(true); try { await operation(); await onChanged(); } catch { onError(); } finally { setPending(false); } };
   const userNames = new Map(users.map(user => [user.id, user]));
-  return <Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Cpu className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><CardTitle className="truncate">{model.displayName}</CardTitle><p className="break-all text-xs text-tertiary-foreground">{model.id} / {model.upstreamModel || model.localModelRef || translate(language, 'notProvided')}</p></div></div><div className="flex items-center gap-2"><Badge variant={model.enabled ? 'success' : 'outline'}>{translate(language, model.enabled ? 'enabled' : 'disabled')}</Badge>{model.isDefault ? <Badge variant="info">{translate(language, 'defaultModel')}</Badge> : null}</div></div></CardHeader><CardContent className="flex flex-col gap-4"><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'modelEndpoint')}</dt><dd className="break-all font-normal">{model.endpoint || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'assignments')}</dt><dd className="font-normal">{assignments.length}</dd></div></dl><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { enabled: !model.enabled }); })}>{translate(language, model.enabled ? 'disable' : 'enable')}</Button>{!model.isDefault ? <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { isDefault: true }); })}>{translate(language, 'makeDefault')}</Button> : null}<Button size="sm" onClick={onGrant}><UserRound data-icon="inline-start" />{translate(language, 'grantModel')}</Button></div>{assignments.length > 0 ? <div className="flex flex-col gap-2 border-t border-border pt-3">{assignments.map(assignment => <div className="flex items-center justify-between gap-3 text-sm" key={assignment.id}><SubjectCell subjectType={assignment.subject.type} subjectId={assignment.subject.id} user={userNames.get(assignment.subject.id)} /><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteModelAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div> : null}</CardContent></Card>;
+  return <><Card><CardHeader><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Cpu className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><CardTitle className="truncate">{model.displayName}</CardTitle><p className="break-all text-xs text-tertiary-foreground">{model.id} / {model.upstreamModel || model.localModelRef || translate(language, 'notProvided')}</p></div></div><div className="flex items-center gap-2"><Badge variant={model.enabled ? 'success' : 'outline'}>{translate(language, model.enabled ? 'enabled' : 'disabled')}</Badge>{model.isDefault ? <Badge variant="info">{translate(language, 'defaultModel')}</Badge> : null}</div></div></CardHeader><CardContent className="flex flex-col gap-4"><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'modelEndpoint')}</dt><dd className="break-all font-normal">{model.endpoint || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'assignments')}</dt><dd className="font-normal">{assignments.length}</dd></div></dl><div className="flex flex-wrap gap-2"><Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(true)}><Pencil data-icon="inline-start" />{translate(language, 'editModel')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { enabled: !model.enabled }); })}>{translate(language, model.enabled ? 'disable' : 'enable')}</Button>{!model.isDefault ? <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { isDefault: true }); })}>{translate(language, 'makeDefault')}</Button> : null}<Button size="sm" onClick={onGrant}><UserRound data-icon="inline-start" />{translate(language, 'grantModel')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteModelTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteModelDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteModel(model.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>{assignments.length > 0 ? <div className="flex flex-col gap-2 border-t border-border pt-3">{assignments.map(assignment => <div className="flex items-center justify-between gap-3 text-sm" key={assignment.id}><SubjectCell subjectType={assignment.subject.type} subjectId={assignment.subject.id} user={userNames.get(assignment.subject.id)} /><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'revoke')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteModelAssignment(assignment.id); })}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div> : null}</CardContent></Card>{editing ? <ModelEditorDialog client={client} model={model} open={editing} onOpenChange={setEditing} onChanged={onChanged} onError={onError} /> : null}</>;
 }
 
 function ModelCatalogSkeleton() { return <div className="flex flex-col gap-4">{Array.from({ length: 2 }, (_, index) => <Card key={index}><CardHeader><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Skeleton className="size-4" /><div className="min-w-0 flex flex-col gap-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-64" /></div></div><Skeleton className="h-6 w-14" /></div></CardHeader><CardContent className="flex flex-col gap-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><Skeleton className="h-9 w-full max-w-xs" /><Skeleton className="h-9 w-full max-w-32" /></div><Skeleton className="h-7 w-24" /></CardContent></Card>)}</div>; }
 
-function ModelGrantDialog({ client, model, users, onOpenChange, onChanged, onError }: {
+function ModelEditorDialog({ client, model, open, onOpenChange, onChanged, onError }: {
+  readonly client: AdminConsoleClient;
+  readonly model: AdminModel;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(model.displayName);
+  const [endpoint, setEndpoint] = useState(model.endpoint ?? '');
+  const [upstreamModel, setUpstreamModel] = useState(model.upstreamModel ?? '');
+  const [enabled, setEnabled] = useState(model.enabled);
+  const [isDefault, setIsDefault] = useState(model.isDefault);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setDisplayName(model.displayName);
+    setEndpoint(model.endpoint ?? '');
+    setUpstreamModel(model.upstreamModel ?? '');
+    setEnabled(model.enabled);
+    setIsDefault(model.isDefault);
+    setFailed(false);
+  }, [model]);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setFailed(true); return; }
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.updateModel(model.id, { displayName: displayName.trim(), endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), enabled, isDefault });
+      onOpenChange(false);
+      await onChanged();
+    } catch {
+      setFailed(true);
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'editModel')}</DialogTitle><DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="edit-model-name">{translate(language, 'modelName')}</FieldLabel><Input id="edit-model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="edit-model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="edit-model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field><Button type="button" variant="outline" role="checkbox" aria-checked={enabled} disabled={pending} onClick={() => setEnabled(value => !value)}>{translate(language, 'status')}: {translate(language, enabled ? 'enabled' : 'disabled')}</Button><Button type="button" variant="outline" role="checkbox" aria-checked={isDefault} disabled={pending} onClick={() => setIsDefault(value => !value)}>{translate(language, 'defaultModel')}: {translate(language, isDefault ? 'enabled' : 'disabled')}</Button></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function ModelGrantDialog({ client, model, users, roles, teams, onOpenChange, onChanged, onError }: {
   readonly client: AdminConsoleClient;
   readonly model: AdminModel;
   readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
   readonly onOpenChange: (model: AdminModel | null) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
@@ -147,11 +197,11 @@ function ModelGrantDialog({ client, model, users, onOpenChange, onChanged, onErr
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { if (model) { setSelected(new Set()); setFailed(false); } }, [model]);
-  const toggleUser = useCallback((userId: string) => {
+  const toggleSubject = useCallback((subjectKey: string) => {
     setSelected(current => {
       const next = new Set(current);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(subjectKey)) next.delete(subjectKey);
+      else next.add(subjectKey);
       return next;
     });
   }, []);
@@ -160,7 +210,12 @@ function ModelGrantDialog({ client, model, users, onOpenChange, onChanged, onErr
     setPending(true);
     setFailed(false);
     try {
-      await Promise.all([...selected].map(userId => client.createModelAssignment({ modelId: model.id, subject: { type: AdminModelSubjectType.User, id: userId } })));
+      await Promise.all([...selected].map(subjectKey => {
+        const separator = subjectKey.indexOf(':');
+        const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
+        const id = subjectKey.slice(separator + 1);
+        return client.createModelAssignment({ modelId: model.id, subject: { type, id } });
+      }));
       onOpenChange(null);
       await onChanged();
     } catch {
@@ -177,9 +232,7 @@ function ModelGrantDialog({ client, model, users, onOpenChange, onChanged, onErr
           <DialogDescription>{translate(language, 'grantModelDescription')} <span className="font-normal text-foreground">{model.displayName}</span></DialogDescription>
         </DialogHeader>
         {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'grantFailed')}</AlertDescription></Alert> : null}
-        <Field>
-          <UserMultiPicker users={users} selected={selected} onToggle={toggleUser} disabled={pending} />
-        </Field>
+        <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
         <DialogFooter>
           <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(null)}>{translate(language, 'cancel')}</Button>
           <Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'granting' : 'grant')}</Button>

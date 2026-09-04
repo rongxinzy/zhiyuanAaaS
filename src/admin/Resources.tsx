@@ -486,7 +486,7 @@ function SkillGrantDialog({ client, open, users, roles, teams, skills, onOpenCha
   );
 }
 
-function SubjectMultiPicker({ users, roles, teams, selected, onToggle, disabled }: {
+export function SubjectMultiPicker({ users, roles, teams, selected, onToggle, disabled }: {
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
