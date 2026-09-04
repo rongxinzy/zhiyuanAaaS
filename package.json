@@ -14,6 +14,7 @@
     "serve:admin": "npm run build:admin && node scripts/serve-admin.mjs",
     "verify:admin": "npm run build:admin && node scripts/verify-admin-console.mjs",
     "verify:admin:e2e": "npm run build:admin && node scripts/verify-admin-crud-browser.mjs",
+    "verify:admin:real-e2e": "npm run build:admin && node scripts/verify-admin-real-e2e.mjs",
     "build:extension": "tsup",
     "build:ui": "vite build",
     "check": "npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest && npm run verify:admin",
