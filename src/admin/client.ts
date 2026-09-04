@@ -633,6 +633,9 @@ function listCount(value: unknown): number {
   if (value && typeof value === 'object' && Array.isArray((value as { models?: unknown[] }).models)) {
     return (value as { models: unknown[] }).models.length;
   }
+  if (value && typeof value === 'object' && Array.isArray((value as { skills?: unknown[] }).skills)) {
+    return (value as { skills: unknown[] }).skills.length;
+  }
   return 0;
 }
 
