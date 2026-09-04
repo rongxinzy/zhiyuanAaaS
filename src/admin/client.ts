@@ -39,6 +39,15 @@ export interface AdminSkill {
   readonly name: string;
   readonly description?: string;
   readonly enabled: boolean;
+  readonly versions: readonly AdminSkillVersion[];
+}
+
+export interface AdminSkillVersion {
+  readonly version: string;
+  readonly state: 'draft' | 'published' | 'withdrawn';
+  readonly sha256: string;
+  readonly size: number;
+  readonly createdAt?: string;
 }
 
 export interface AdminSkillAssignment {
@@ -233,8 +242,24 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteTeam(teamId);
   }
 
-  async updateSkill(skillId: string, input: { readonly enabled: boolean }): Promise<void> {
+  async createSkill(input: { readonly id: string; readonly name: string; readonly description: string; readonly enabled?: boolean }): Promise<void> {
+    await this.#requireClient().createSkill(input);
+  }
+
+  async updateSkill(skillId: string, input: { readonly name?: string; readonly description?: string; readonly enabled?: boolean }): Promise<void> {
     await this.#requireClient().updateSkill(skillId, input);
+  }
+
+  async deleteSkill(skillId: string): Promise<void> {
+    await this.#requireClient().deleteSkill(skillId);
+  }
+
+  async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {
+    await this.#requireClient().uploadSkillVersion(skillId, version, archive);
+  }
+
+  async publishSkillVersion(skillId: string, version: string): Promise<void> {
+    await this.#requireClient().publishSkillVersion(skillId, version);
   }
 
   async createSkillAssignment(input: { readonly skillId: string; readonly subject: AdminAssignmentSubject }): Promise<void> {
@@ -419,11 +444,18 @@ function parseSkills(value: unknown): AdminSkill[] {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     if (typeof record.id !== 'string' || typeof record.name !== 'string') return [];
+    const versions = Array.isArray(record.versions) ? record.versions.flatMap(version => {
+      if (!version || typeof version !== 'object') return [];
+      const item = version as Record<string, unknown>;
+      if (typeof item.version !== 'string' || typeof item.state !== 'string' || typeof item.sha256 !== 'string' || typeof item.size !== 'number') return [];
+      return [{ version: item.version, state: item.state as AdminSkillVersion['state'], sha256: item.sha256, size: item.size, ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}) }];
+    }) : [];
     return [{
       id: record.id,
       name: record.name,
       ...(typeof record.description === 'string' ? { description: record.description } : {}),
       enabled: record.enabled !== false,
+      versions,
     }];
   });
 }
