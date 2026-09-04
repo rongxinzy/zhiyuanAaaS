@@ -176,4 +176,52 @@ describe('admin console assignment wire contract', () => {
       { method: 'PATCH', path: '/aep/v1/admin/skills/skill-1', body: { state: 'active' } },
     ]);
   });
+
+  test('counts Skills returned in the standard admin list envelope', async () => {
+    const stub = http.createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+      if (path === '/aep/v1/user/me') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        return;
+      }
+      if (path === '/aep/v1/admin/users') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ items: [], nextCursor: null }));
+        return;
+      }
+      if (path === '/aep/v1/admin/teams') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ teams: [] }));
+        return;
+      }
+      if (path === '/aep/v1/admin/skills') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ skills: [{ id: 'skill-1', name: '写作', description: '', state: 'active', versions: [] }] }));
+        return;
+      }
+      if (path === '/aep/v1/admin/models') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ models: [] }));
+        return;
+      }
+      if (path === '/aep/v1/admin/events') {
+        response.writeHead(200);
+        response.end(JSON.stringify({ items: [], nextCursor: null }));
+        return;
+      }
+      response.writeHead(404);
+      response.end(JSON.stringify({ title: 'not found' }));
+    });
+    await new Promise<void>(resolve => stub.listen(0, '127.0.0.1', resolve));
+    server = stub;
+    const port = (stub.address() as AddressInfo).port;
+    const tokenStore = new MemoryTokenStore();
+    await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
+    const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
+
+    await client.restore();
+    await expect(client.overview()).resolves.toMatchObject({ users: 0, teams: 0, skills: 1, models: 0, pendingEvents: 0 });
+  });
 });
