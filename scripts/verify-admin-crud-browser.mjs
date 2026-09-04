@@ -323,6 +323,7 @@ try {
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, '/v1/responses');
   await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认删除路由' }).click();
   await page.getByRole('button', { name: '发布期望状态' }).click();
   await waitForValue(() => state.dataPlane.desired.routes.length, 0);
 
