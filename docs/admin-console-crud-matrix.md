@@ -17,7 +17,7 @@ contract test. Not every resource has a physical `DELETE` operation.
 | Credentials | Create | List masked metadata | Metadata, enabled, secret rotation | Delete credential; revoke assignment | `Operations.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Credential assignments | Grant to user, role, or team | List under credential | N/A; assignments are immutable | Revoke assignment | `Operations.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Licenses | Import signed license envelope | List | N/A; signed payload is immutable | Revoke license | `Operations.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
-| Sessions | N/A | Filtered list | N/A | N/A; session revocation is not exposed by the current AEP contract | `Operations.test.tsx` |
+| Sessions | N/A | Filtered list | N/A | Revoke active session with `sessions.write` | `Operations.test.tsx`; AEP session-revoke contract |
 | Control events | Publish | Filtered, paginated list and detail | N/A after publication | Cancel active event | `Events.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
 | Audit records and deliveries | N/A | Filtered, paginated records and delivery detail | N/A | N/A; immutable audit trail | `Events.test.tsx` |
 | Data plane desired state | N/A | Desired state and observed status | Edit routes and publish revision | Remove a route from the next desired state | `Operations.test.tsx`; `scripts/verify-admin-crud-browser.mjs` |
