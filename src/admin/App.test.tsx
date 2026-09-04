@@ -115,4 +115,14 @@ describe('admin console', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Team' }));
     expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('data-active');
   });
+
+  test('labels the Role resource tab correctly', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
+    render(<AdminApp />);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
+    fireEvent.click(screen.getByRole('tab', { name: 'Role' }));
+
+    expect(await screen.findByRole('heading', { name: 'Role' })).toBeInTheDocument();
+  });
 });
