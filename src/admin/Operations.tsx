@@ -1,8 +1,8 @@
-import { AlertCircle, Check, FileKey2, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ShieldAlert, Trash2, Upload, UsersRound } from 'lucide-react';
+import { AlertCircle, Check, FileKey2, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ServerCog, ShieldAlert, Trash2, Upload, UsersRound } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { CredentialAssignment, CredentialMetadata, License, LicenseImportRequest, PlatformUser, Role, Team } from '@aep/sdk-node';
+import type { CredentialAssignment, CredentialMetadata, DataPlaneDesiredState, DataPlaneRoute, DataPlaneStatus, License, LicenseImportRequest, PlatformUser, Role, Team } from '@aep/sdk-node';
 
-import { AdminConsoleClient, AdminSubjectType, type AdminCredentials, type AdminUserSession } from './client.js';
+import { AdminConsoleClient, AdminSubjectType, type AdminCredentials, type AdminDataPlane, type AdminUserSession } from './client.js';
 import { formatTimestamp } from './format.js';
 import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
 import { SubjectMultiPicker } from './Resources.js';
@@ -32,7 +32,7 @@ import { Tabs, TabsIndicator, TabsList, TabsTrigger } from '../ui/components/ui/
 import { ToggleGroup, ToggleGroupItem } from '../ui/components/ui/toggle-group.js';
 
 const language: AdminLanguage = 'zh';
-const OperationsTab = { Licenses: 'licenses', Sessions: 'sessions', Credentials: 'credentials' } as const;
+const OperationsTab = { Licenses: 'licenses', Sessions: 'sessions', Credentials: 'credentials', DataPlane: 'data-plane' } as const;
 type OperationsTab = (typeof OperationsTab)[keyof typeof OperationsTab];
 
 export function Operations({ client }: { readonly client: AdminConsoleClient }) {
@@ -51,11 +51,12 @@ export function Operations({ client }: { readonly client: AdminConsoleClient }) 
               <TabsTrigger value={OperationsTab.Licenses} className="px-3">{translate(language, 'licenses')}</TabsTrigger>
               <TabsTrigger value={OperationsTab.Sessions} className="px-3">{translate(language, 'sessions')}</TabsTrigger>
               <TabsTrigger value={OperationsTab.Credentials} className="px-3">{translate(language, 'credentials')}</TabsTrigger>
+              <TabsTrigger value={OperationsTab.DataPlane} className="px-3">{translate(language, 'dataPlane')}</TabsTrigger>
               <TabsIndicator />
             </TabsList>
           </Tabs>
         </div>
-        {tab === OperationsTab.Licenses ? <LicensePanel client={client} /> : tab === OperationsTab.Sessions ? <SessionPanel client={client} /> : <CredentialPanel client={client} />}
+        {tab === OperationsTab.Licenses ? <LicensePanel client={client} /> : tab === OperationsTab.Sessions ? <SessionPanel client={client} /> : tab === OperationsTab.Credentials ? <CredentialPanel client={client} /> : <DataPlanePanel client={client} />}
       </div>
     </section>
   );
@@ -280,6 +281,94 @@ function CredentialGrantDialog({ client, credential, users, roles, teams, open, 
 }
 
 function CredentialSkeleton() { return <div className="overflow-hidden rounded-lg border border-border bg-card">{Array.from({ length: 3 }, (_, index) => <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}><Skeleton className="size-8 shrink-0 rounded-lg" /><div className="min-w-0 flex-1 flex flex-col gap-2"><Skeleton className="h-3.5 w-1/3" /><Skeleton className="h-3 w-1/2" /></div><Skeleton className="h-7 w-24" /></div>)}</div>; }
+
+const DataPlaneProvider = { OpenAi: 'openai', DeepSeek: 'deepseek' } as const;
+type DataPlaneProvider = (typeof DataPlaneProvider)[keyof typeof DataPlaneProvider];
+
+function DataPlanePanel({ client }: { readonly client: AdminConsoleClient }) {
+  const [state, setState] = useState<AdminDataPlane | null>(null);
+  const [revision, setRevision] = useState('');
+  const [routes, setRoutes] = useState<readonly DataPlaneRoute[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<AdminTranslationKey | null>(null);
+  const [routeOpen, setRouteOpen] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await client.dataPlane();
+      setState(next);
+      setRevision(next.desired.revision);
+      setRoutes(next.desired.routes);
+    } catch {
+      setError('dataPlaneLoadFailed');
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+  useEffect(() => { void load(); }, [load]);
+  const save = async () => {
+    if (!revision.trim()) { setError('dataPlaneRevisionRequired'); return; }
+    setPending(true);
+    setError(null);
+    try {
+      await client.putDataPlane({ revision: revision.trim(), routes: [...routes] });
+      await load();
+    } catch {
+      setError('dataPlaneSaveFailed');
+    } finally {
+      setPending(false);
+    }
+  };
+  const editRoute = (index: number | null) => { setEditingIndex(index); setRouteOpen(true); };
+  const route = editingIndex === null ? undefined : routes[editingIndex];
+  return <div className="flex flex-col gap-4">
+    <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><ServerCog className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'dataPlane')}</div><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'dataPlaneDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading || pending} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>
+    {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
+    {loading && !state ? <DataPlaneSkeleton /> : <>
+      {state ? <DataPlaneStatusCard status={state.status} desired={state.desired} /> : null}
+      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>{translate(language, 'desiredState')}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'desiredStateDescription')}</p></div><Button size="sm" variant="outline" disabled={pending} onClick={() => editRoute(null)}><Plus data-icon="inline-start" />{translate(language, 'addRoute')}</Button></div></CardHeader><CardContent className="flex flex-col gap-4"><Field><FieldLabel htmlFor="data-plane-revision">{translate(language, 'revision')}</FieldLabel><Input id="data-plane-revision" value={revision} onChange={event => setRevision(event.target.value)} placeholder={translate(language, 'revisionPlaceholder')} disabled={pending} /></Field><DataPlaneRouteTable routes={routes} onEdit={editRoute} onDelete={index => setRoutes(current => current.filter((_, candidate) => candidate !== index))} disabled={pending} /><div className="flex justify-end"><Button disabled={pending} onClick={() => void save()}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'publishDesiredState')}</Button></div></CardContent></Card>
+    </>}
+    <DataPlaneRouteDialog route={route} open={routeOpen} onOpenChange={open => { setRouteOpen(open); if (!open) setEditingIndex(null); }} onSave={nextRoute => { setRoutes(current => editingIndex === null ? [...current, nextRoute] : current.map((item, index) => index === editingIndex ? nextRoute : item)); setRouteOpen(false); setEditingIndex(null); }} />
+  </div>;
+}
+
+function DataPlaneStatusCard({ status, desired }: { readonly status: DataPlaneStatus; readonly desired: DataPlaneDesiredState }) {
+  const variant = status.state === 'ready' ? 'success' : status.state === 'error' ? 'destructive' : 'warning';
+  return <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>{translate(language, 'dataPlaneStatus')}</CardTitle><Badge variant={variant}>{translate(language, dataPlaneStatusLabel(status.state))}</Badge></div></CardHeader><CardContent><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'observedRevision')}</dt><dd className="truncate">{status.observedRevision || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'resourceCount')}</dt><dd>{status.resourceCount ?? desired.routes.length}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'lastAppliedAt')}</dt><dd className="text-xs text-tertiary-foreground">{formatTimestamp(status.lastAppliedAt ?? null)}</dd></div></dl>{status.message ? <p className="mt-3 break-words text-sm text-muted-foreground">{status.message}</p> : null}</CardContent></Card>;
+}
+
+function DataPlaneRouteTable({ routes, onEdit, onDelete, disabled }: { readonly routes: readonly DataPlaneRoute[]; readonly onEdit: (index: number) => void; readonly onDelete: (index: number) => void; readonly disabled: boolean }) {
+  if (routes.length === 0) return <Empty><EmptyHeader><EmptyMedia><ServerCog aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noRoutes')}</EmptyTitle><EmptyDescription>{translate(language, 'noRoutesHint')}</EmptyDescription></EmptyHeader></Empty>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'routeModel')}</TableHead><TableHead>{translate(language, 'routeEndpoint')}</TableHead><TableHead>{translate(language, 'routeProvider')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{routes.map((route, index) => <TableRow key={`${route.modelId}-${index}`}><TableCell><div className="min-w-0"><div className="truncate font-normal">{route.modelId}</div><div className="truncate text-xs text-tertiary-foreground">{route.upstreamModel}</div></div></TableCell><TableCell className="max-w-48 truncate text-xs text-tertiary-foreground">{route.endpoint}</TableCell><TableCell><Badge variant="info">{translate(language, route.providerType === DataPlaneProvider.DeepSeek ? 'deepSeekProvider' : 'openAiProvider')}</Badge></TableCell><TableCell><Badge variant={route.enabled ? 'success' : 'outline'}>{translate(language, route.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={disabled} onClick={() => onEdit(index)}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={disabled} onClick={() => onDelete(index)}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</Button></div></TableCell></TableRow>)}</TableBody></Table></div>;
+}
+
+function DataPlaneRouteDialog({ route, open, onOpenChange, onSave }: { readonly route: DataPlaneRoute | undefined; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onSave: (route: DataPlaneRoute) => void }) {
+  const [modelId, setModelId] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [upstreamModel, setUpstreamModel] = useState('');
+  const [providerType, setProviderType] = useState<DataPlaneProvider>(DataPlaneProvider.OpenAi);
+  const [enabled, setEnabled] = useState(true);
+  const [credentialName, setCredentialName] = useState('');
+  const [credentialKey, setCredentialKey] = useState('');
+  const [credentialNamespace, setCredentialNamespace] = useState('');
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { if (open) { setModelId(route?.modelId ?? ''); setEndpoint(route?.endpoint ?? ''); setUpstreamModel(route?.upstreamModel ?? ''); setProviderType(route?.providerType ?? DataPlaneProvider.OpenAi); setEnabled(route?.enabled !== false); setCredentialName(route?.credentialRef?.name ?? ''); setCredentialKey(route?.credentialRef?.key ?? ''); setCredentialNamespace(route?.credentialRef?.namespace ?? ''); setFailed(false); } }, [open, route]);
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!modelId.trim() || !endpoint.trim() || !upstreamModel.trim() || Boolean(credentialName.trim()) !== Boolean(credentialKey.trim())) { setFailed(true); return; } onSave({ modelId: modelId.trim(), enabled, endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), protocol: 'openai-compatible', providerType, ...(credentialName.trim() && credentialKey.trim() ? { credentialRef: { name: credentialName.trim(), key: credentialKey.trim(), namespace: credentialNamespace.trim() || null } } : {}) }); };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, route ? 'editRoute' : 'addRoute')}</DialogTitle><DialogDescription>{translate(language, 'routeEditorDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'routeFormFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="route-model-id">{translate(language, 'routeModel')}</FieldLabel><Input id="route-model-id" value={modelId} onChange={event => setModelId(event.target.value)} /></Field><Field><FieldLabel htmlFor="route-endpoint">{translate(language, 'routeEndpoint')}</FieldLabel><Input id="route-endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'routeEndpointPlaceholder')} /></Field><Field><FieldLabel htmlFor="route-upstream-model">{translate(language, 'upstreamModel')}</FieldLabel><Input id="route-upstream-model" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} /></Field><Field><FieldLabel>{translate(language, 'routeProvider')}</FieldLabel><ToggleGroup value={[providerType]} onValueChange={next => { if (next[0]) setProviderType(next[0] as DataPlaneProvider); }} variant="outline" aria-label={translate(language, 'routeProvider')}><ToggleGroupItem value={DataPlaneProvider.OpenAi}>{translate(language, 'openAiProvider')}</ToggleGroupItem><ToggleGroupItem value={DataPlaneProvider.DeepSeek}>{translate(language, 'deepSeekProvider')}</ToggleGroupItem></ToggleGroup></Field><Field><FieldLabel htmlFor="route-credential-name">{translate(language, 'credentialRefName')}</FieldLabel><Input id="route-credential-name" value={credentialName} onChange={event => setCredentialName(event.target.value)} placeholder={translate(language, 'credentialRefPlaceholder')} /></Field><Field><FieldLabel htmlFor="route-credential-key">{translate(language, 'credentialRefKey')}</FieldLabel><Input id="route-credential-key" value={credentialKey} onChange={event => setCredentialKey(event.target.value)} /></Field><Field><FieldLabel htmlFor="route-credential-namespace">{translate(language, 'credentialRefNamespace')}</FieldLabel><Input id="route-credential-namespace" value={credentialNamespace} onChange={event => setCredentialNamespace(event.target.value)} /></Field><Button type="button" variant="outline" role="checkbox" aria-checked={enabled} onClick={() => setEnabled(current => !current)}>{translate(language, 'routeEnabled')}: {translate(language, enabled ? 'enabled' : 'disabled')}</Button></FieldGroup><DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit"><Check data-icon="inline-start" />{translate(language, 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function dataPlaneStatusLabel(state: DataPlaneStatus['state']): AdminTranslationKey {
+  if (state === 'ready') return 'ready';
+  if (state === 'applying') return 'applying';
+  if (state === 'degraded') return 'degraded';
+  if (state === 'error') return 'error';
+  return 'pending';
+}
+
+function DataPlaneSkeleton() { return <div className="flex flex-col gap-4"><Card><CardHeader><Skeleton className="h-5 w-32" /></CardHeader><CardContent className="flex flex-col gap-3"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-1/2" /></CardContent></Card><Card><CardHeader><Skeleton className="h-5 w-40" /></CardHeader><CardContent><Skeleton className="h-32 w-full" /></CardContent></Card></div>; }
 
 function SessionTable({ sessions }: { readonly sessions: readonly AdminUserSession[] }) {
   if (sessions.length === 0) return <Empty><EmptyHeader><EmptyMedia><UsersRound aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noSessions')}</EmptyTitle><EmptyDescription>{translate(language, 'noSessionsHint')}</EmptyDescription></EmptyHeader></Empty>;

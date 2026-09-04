@@ -104,4 +104,23 @@ describe('admin operations', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(client.createCredential).toHaveBeenCalledWith({ name: 'Search API', service: 'search', type: 'api_key', deliveryMode: 'server_only', value: 'secret', enabled: true }));
   });
+
+  test('edits and publishes Data Plane routes', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      dataPlane: vi.fn().mockResolvedValue({
+        desired: { deploymentId: 'demo', revision: 'rev-1', routes: [{ modelId: 'chat', enabled: true, endpoint: '/v1/chat', upstreamModel: 'deepseek-chat', protocol: 'openai-compatible', providerType: 'deepseek' }], publishedAt: '2026-09-04T00:00:00Z', contentHash: 'a'.repeat(64) },
+        status: { state: 'ready', observedRevision: 'rev-1', contentHash: 'a'.repeat(64), lastAppliedAt: '2026-09-04T00:01:00Z', resourceCount: 1 },
+      }),
+      putDataPlane: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Operations client={client as never} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '数据平面' }));
+    expect(await screen.findByText('rev-1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    fireEvent.change(screen.getByLabelText('网关路径'), { target: { value: '/v1/responses' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.click(screen.getByRole('button', { name: '发布期望状态' }));
+    await waitFor(() => expect(client.putDataPlane).toHaveBeenCalledWith({ revision: 'rev-1', routes: [expect.objectContaining({ modelId: 'chat', endpoint: '/v1/responses', providerType: 'deepseek' })] }));
+  });
 });

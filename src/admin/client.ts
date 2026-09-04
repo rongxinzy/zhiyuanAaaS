@@ -12,6 +12,9 @@ import {
   type CredentialMetadata,
   type CredentialPatch,
   type CredentialRotate,
+  type DataPlaneDesiredState,
+  type DataPlaneDesiredStateWrite,
+  type DataPlaneStatus,
   type JsonObject,
   type License,
   type LicenseImportRequest,
@@ -115,6 +118,11 @@ export interface AdminUserSession {
 export interface AdminCredentials {
   readonly credentials: readonly CredentialMetadata[];
   readonly assignments: readonly CredentialAssignment[];
+}
+
+export interface AdminDataPlane {
+  readonly desired: DataPlaneDesiredState;
+  readonly status: DataPlaneStatus;
 }
 
 export interface AdminEventRecord {
@@ -389,6 +397,19 @@ export class AdminConsoleClient {
 
   async deleteCredentialAssignment(assignmentId: string): Promise<void> {
     await this.#requireClient().deleteCredentialAssignment(assignmentId);
+  }
+
+  async dataPlane(): Promise<AdminDataPlane> {
+    const client = this.#requireClient();
+    const [desired, status] = await Promise.all([
+      client.getDataPlaneDesiredState(),
+      client.getDataPlaneStatus(),
+    ]);
+    return { desired, status };
+  }
+
+  async putDataPlane(input: DataPlaneDesiredStateWrite): Promise<DataPlaneDesiredState> {
+    return this.#requireClient().putDataPlaneDesiredState(input);
   }
 
   async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
