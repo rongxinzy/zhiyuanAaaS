@@ -209,6 +209,7 @@ try {
   await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
   await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
   await dialog.getByRole('button', { name: '授权' }).click();
+  await waitForValue(() => state.modelAssignments.length, 3);
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/model-assignments'), 'model assignment request did not reach the mock service');
   assert.equal(state.modelAssignments.length, 3);
   assert.deepEqual(new Set(state.modelAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
