@@ -67,9 +67,6 @@ try {
   await waitForText(page, 'E2E 用户');
   const createdUser = state.users.find(item => item.username === 'e2e-user');
   assert.ok(createdUser, 'user create request did not reach the mock service');
-  await page.getByRole('button', { name: '停用' }).last().click();
-  await waitForText(page, '停用');
-  assert.equal(createdUser.status, 'disabled');
 
   await page.getByRole('tab', { name: 'Team' }).click();
   await page.getByRole('button', { name: '新增 Team' }).click();
@@ -127,6 +124,7 @@ try {
   dialog = page.getByRole('dialog');
   await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
   await dialog.getByRole('button', { name: '授权' }).click();
+  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/model-assignments'), 'model assignment request did not reach the mock service');
   assert.equal(state.modelAssignments.length, 1);
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
@@ -153,6 +151,13 @@ try {
   await page.getByRole('alertdialog').getByRole('button', { name: '确认删除凭证' }).click();
   await waitForNoText(page, 'E2E Credential Updated');
   assert.equal(state.credentials.length, 0);
+
+  await page.getByRole('button', { name: '资源管理' }).click();
+  await page.getByRole('tab', { name: '用户' }).click();
+  await waitForText(page, 'E2E 用户');
+  await page.getByRole('button', { name: '停用' }).last().click();
+  await waitForText(page, '停用');
+  assert.equal(createdUser.status, 'disabled');
 
   await page.reload({ waitUntil: 'networkidle' });
   await waitForText(page, '概览');
