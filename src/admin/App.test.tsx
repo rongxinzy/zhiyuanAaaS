@@ -35,14 +35,15 @@ describe('admin console', () => {
       status: 'authenticated',
       identity: {
         user: { id: 'u1', displayName: '管理员' },
-        enterprise: { id: 'demo', name: '知远' },
+        deployment: { id: 'demo', name: '知远' },
+        deploymentId: 'demo',
         roles: ['admin'],
         sessionExpiresAt: '2026-08-27T12:00:00Z',
         passwordChangeRequired: false,
       },
     });
-    client.overview.mockResolvedValue({ users: 4, agents: 2, skills: 3, models: 1, pendingEvents: 0 });
-    client.resources.mockResolvedValue({ users: [], agents: [], skills: [], assignments: [] });
+    client.overview.mockResolvedValue({ users: 4, teams: 2, skills: 3, models: 1, pendingEvents: 0 });
+    client.resources.mockResolvedValue({ users: [], teams: [], roles: [], skills: [], assignments: [] });
     client.logout.mockResolvedValue(undefined);
   });
 
@@ -56,7 +57,7 @@ describe('admin console', () => {
     expect(await screen.findByRole('heading', { name: '登录企业控制台' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
-    await waitFor(() => expect(client.login).toHaveBeenCalledWith({ enterpriseId: 'demo', username: 'admin', password: 'secret' }));
+    await waitFor(() => expect(client.login).toHaveBeenCalledWith({ deploymentId: 'demo', username: 'admin', password: 'secret' }));
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
 
@@ -101,7 +102,7 @@ describe('admin console', () => {
     expect(headerSignOut.querySelector('svg')).toHaveClass('size-4');
   });
 
-  test('uses RongxinAI line tabs and a sliding indicator for resources', async () => {
+  test('uses Zhiyuan line tabs and a sliding indicator for resources', async () => {
     client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' } } });
     render(<AdminApp />);
 
@@ -110,7 +111,7 @@ describe('admin console', () => {
     expect(document.querySelector('[data-slot="tabs-indicator"]')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-active');
 
-    fireEvent.click(screen.getByRole('tab', { name: '智能体' }));
-    expect(screen.getByRole('tab', { name: '智能体' })).toHaveAttribute('data-active');
+    fireEvent.click(screen.getByRole('tab', { name: 'Team' }));
+    expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('data-active');
   });
 });

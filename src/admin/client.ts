@@ -3,17 +3,15 @@ import {
   FetchTransport,
   MemoryTokenStore,
   type AepTokenStore,
-  type AdminAgent,
   type AdminModel,
   type ModelAssignment,
   type CurrentIdentity,
   type JsonObject,
   type Page,
   type PlatformUser,
+  type Role,
+  type Team,
 } from '@aep/sdk-node';
-
-const ADMIN_AGENT_VERSION = '0.1.0';
-const ADMIN_AGENT_STORAGE_KEY = 'zhiyuan.admin.agent-id';
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -24,7 +22,7 @@ export type AdminConsoleStatus = (typeof AdminConsoleStatus)[keyof typeof AdminC
 
 export interface AdminOverview {
   readonly users: number;
-  readonly agents: number;
+  readonly teams: number;
   readonly skills: number;
   readonly models: number;
   readonly pendingEvents: number;
@@ -52,6 +50,7 @@ export interface AdminSkillAssignment {
 export const AdminSubjectType = {
   User: 'user',
   Role: 'role',
+  Team: 'team',
 } as const;
 export type AdminSubjectType = (typeof AdminSubjectType)[keyof typeof AdminSubjectType];
 
@@ -61,10 +60,9 @@ export interface AdminAssignmentSubject {
 }
 
 export const AdminModelSubjectType = {
-  Enterprise: 'enterprise',
-  Organization: 'organization',
   User: 'user',
-  Agent: 'agent',
+  Role: 'role',
+  Team: 'team',
 } as const;
 export type AdminModelSubjectType = (typeof AdminModelSubjectType)[keyof typeof AdminModelSubjectType];
 
@@ -75,7 +73,8 @@ export interface AdminModelAssignmentSubject {
 
 export interface AdminResources {
   readonly users: readonly PlatformUser[];
-  readonly agents: readonly AdminAgent[];
+  readonly teams: readonly Team[];
+  readonly roles: readonly Role[];
   readonly skills: readonly AdminSkill[];
   readonly assignments: readonly AdminSkillAssignment[];
 }
@@ -88,7 +87,8 @@ export interface AdminModels {
 export interface AdminEventRecord {
   readonly eventId?: string;
   readonly type?: string;
-  readonly agentId?: string;
+  readonly scopeType?: string;
+  readonly scopeId?: string;
   readonly receivedAt?: string;
   readonly createdAt?: string;
 }
@@ -112,7 +112,7 @@ export class AdminConsoleClient {
   }
 
   async login(input: {
-    readonly enterpriseId: string;
+    readonly deploymentId: string;
     readonly username: string;
     readonly password: string;
   }): Promise<AdminSession> {
@@ -129,16 +129,16 @@ export class AdminConsoleClient {
 
   async overview(): Promise<AdminOverview> {
     const client = this.#requireClient();
-    const [users, agents, skills, models, events] = await Promise.all([
+    const [users, teams, skills, models, events] = await Promise.all([
       client.listUsers(),
-      client.listAgents(),
+      client.listTeams(),
       client.listSkills(),
       client.listAdminModels(),
       client.searchEvents({ limit: 100 }),
     ]);
     return {
       users: pageCount(users),
-      agents: pageCount(agents),
+      teams: teams.teams.length,
       skills: listCount(skills),
       models: listCount(models),
       pendingEvents: pendingEventCount(events),
@@ -147,15 +147,17 @@ export class AdminConsoleClient {
 
   async resources(): Promise<AdminResources> {
     const client = this.#requireClient();
-    const [users, agents, skills, assignments] = await Promise.all([
+    const [users, teams, roles, skills, assignments] = await Promise.all([
       client.listUsers(),
-      client.listAgents(),
+      client.listTeams(),
+      client.listRoles(),
       client.listSkills(),
       client.listSkillAssignments(),
     ]);
     return {
       users: users.items,
-      agents: agents.items,
+      teams: teams.teams,
+      roles: roles.roles,
       skills: parseSkills(skills),
       assignments: parseAssignments(assignments),
     };
@@ -223,7 +225,8 @@ export class AdminConsoleClient {
       return [{
         ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
         ...(typeof record.type === 'string' ? { type: record.type } : {}),
-        ...(typeof record.agentId === 'string' ? { agentId: record.agentId } : {}),
+        ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
+        ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
         ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
         ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
       }];
@@ -233,12 +236,9 @@ export class AdminConsoleClient {
   #getClient(): AepClient {
     if (!this.#client) {
       this.#client = new AepClient({
-      baseUrl: this.#baseUrl,
-      agentId: adminAgentId(),
-      agentVersion: ADMIN_AGENT_VERSION,
-      platform: platform(),
-      tokenStore: this.#tokenStore,
-      transport: new FetchTransport({fetch: runtimeFetch()}),
+        baseUrl: this.#baseUrl,
+        tokenStore: this.#tokenStore,
+        transport: new FetchTransport({fetch: runtimeFetch()}),
       });
     }
     return this.#client;
@@ -291,14 +291,6 @@ function ensureRequestIdCrypto(): void {
   }
 }
 
-function adminAgentId(): string {
-  const existing = globalThis.sessionStorage?.getItem(ADMIN_AGENT_STORAGE_KEY);
-  if (existing && /^[a-zA-Z0-9._:-]{8,128}$/.test(existing)) return existing;
-  const generated = `zhiyuan-admin-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
-  globalThis.sessionStorage?.setItem(ADMIN_AGENT_STORAGE_KEY, generated);
-  return generated;
-}
-
 export class SessionTokenStore implements AepTokenStore {
   static readonly STORAGE_KEY = 'zhiyuan.admin.session';
   readonly #memory = new MemoryTokenStore();
@@ -342,10 +334,6 @@ function defaultBaseUrl(): string {
     return window.location.origin;
   }
   return 'http://localhost:8080';
-}
-
-function platform(): 'windows' | 'macos' | 'linux' {
-  return 'linux';
 }
 
 function pageCount(value: Page<unknown> | { items?: unknown[] }): number {

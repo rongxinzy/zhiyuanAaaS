@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  Bot,
   Boxes,
   CheckCircle2,
   CircleGauge,
@@ -61,7 +60,7 @@ const navigation = [
 
 const OVERVIEW_CARDS = [
   { key: 'users', icon: Users },
-  { key: 'agents', icon: Bot },
+  { key: 'teams', icon: Users },
   { key: 'skills', icon: Boxes },
   { key: 'models', icon: Cpu },
   { key: 'pendingEvents', icon: ClipboardList },
@@ -79,7 +78,7 @@ export function AdminApp() {
     void client.restore().then(setSession).catch(() => setSession({ status: AdminConsoleStatus.SignedOut })).finally(() => setLoading(false));
   }, [client]);
 
-  const signIn = async (input: { enterpriseId: string; username: string; password: string }) => {
+  const signIn = async (input: { deploymentId: string; username: string; password: string }) => {
     setPending(true);
     setError(null);
     try {
@@ -130,7 +129,7 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           </div>
         </div>
         <div className="border-t border-border p-3">
-          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-normal">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-tertiary-foreground">{identity?.enterprise?.name ?? translate(language, 'enterprise')}</div></div></div>
+          <div className="mb-2 flex min-w-0 items-center gap-2 px-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">{(identity?.user.displayName ?? 'A').slice(0, 1)}</div><div className="min-w-0"><div className="truncate text-sm font-normal">{identity?.user.displayName ?? translate(language, 'username')}</div><div className="truncate text-xs text-tertiary-foreground">{identity?.deployment?.name ?? translate(language, 'deployment')}</div></div></div>
           <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" disabled={pending} onClick={() => void onSignOut()}><LogOut data-icon="inline-start" />{translate(language, 'signOut')}</Button>
         </div>
       </aside>
@@ -142,11 +141,11 @@ function ConsoleLayout({ client, identity, pending, page, setPage, onSignOut }: 
           <div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark /></div><p className="truncate text-base font-semibold">{translate(language, activeLabel)}</p></div>
           <div className="flex items-center gap-1"><ThemeToggle /><Button variant="ghost" size="icon" className="size-8 rounded-lg p-0 md:hidden" disabled={pending} onClick={() => void onSignOut()} aria-label={translate(language, 'signOut')}><LogOut className="size-4" /></Button></div>
         </header>
-        <nav className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
+          <nav className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden" aria-label={translate(language, 'navigation')}>
           {navigation.map(item => <NavItem key={item.page} icon={item.icon} active={page === item.page} label={translate(language, item.label)} onClick={() => setPage(item.page)} compact />)}
         </nav>
         <PageTransition pageKey={page}>
-          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Agents, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
+          {page === AdminPage.Overview ? <OverviewView client={client} /> : page === AdminPage.Models ? <Models client={client} /> : page === AdminPage.Events ? <Events client={client} /> : <div className="flex min-h-0 flex-1 flex-col"><div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6"><Tabs value={resourceTab} onValueChange={value => setResourceTab(value as AdminResourceTab)}><TabsList variant="line" className="w-max">{([AdminResourceTab.Users, AdminResourceTab.Teams, AdminResourceTab.Skills, AdminResourceTab.Assignments] as const).map(tab => <TabsTrigger key={tab} value={tab} className="px-3">{translate(language, tab)}</TabsTrigger>)}<TabsIndicator /></TabsList></Tabs></div><Resources client={client} tab={resourceTab} /></div>}
         </PageTransition>
       </div>
     </main>
@@ -202,20 +201,20 @@ function ThemeToggle() {
   );
 }
 
-function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; readonly error: AdminTranslationKey | null; readonly onSubmit: (input: { enterpriseId: string; username: string; password: string }) => Promise<void> }) {
+function LoginView({ pending, error, onSubmit }: { readonly pending: boolean; readonly error: AdminTranslationKey | null; readonly onSubmit: (input: { deploymentId: string; username: string; password: string }) => Promise<void> }) {
   const [validationError, setValidationError] = useState<AdminTranslationKey | null>(null);
   const displayedError = validationError ?? error;
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
-    const enterpriseId = String(values.get('enterpriseId') ?? '').trim();
+    const deploymentId = String(values.get('deploymentId') ?? '').trim();
     const username = String(values.get('username') ?? '').trim();
     const password = String(values.get('password') ?? '');
-    if (!enterpriseId || !username || !password) { setValidationError('requiredFields'); return; }
+    if (!deploymentId || !username || !password) { setValidationError('requiredFields'); return; }
     setValidationError(null);
-    void onSubmit({ enterpriseId, username, password });
+    void onSubmit({ deploymentId, username, password });
   };
-  return <main className="relative flex min-h-full items-center justify-center bg-background p-6"><div className="absolute right-4 top-4"><ThemeToggle /></div><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-4"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-5" aria-hidden="true" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><div className="flex flex-col gap-1.5"><h1 className="text-lg font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></div></header><form className="flex flex-col gap-5" noValidate aria-busy={pending} onSubmit={handleSubmit}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel><Input id="admin-enterprise-id" name="enterpriseId" defaultValue="demo" placeholder={translate(language, 'enterpriseIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field data-invalid={Boolean(validationError)}><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} aria-invalid={Boolean(validationError)} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
+  return <main className="relative flex min-h-full items-center justify-center bg-background p-6"><div className="absolute right-4 top-4"><ThemeToggle /></div><section className="flex w-full max-w-md flex-col gap-6"><header className="flex flex-col gap-4"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-lg border bg-card"><ShieldCheck className="size-5" aria-hidden="true" /></div><span className="text-base font-semibold">{translate(language, 'brand')}</span></div><div className="flex flex-col gap-1.5"><h1 className="text-lg font-semibold leading-snug">{translate(language, 'signInTitle')}</h1><p className="text-sm text-muted-foreground">{translate(language, 'signInDescription')}</p></div></header><form className="flex flex-col gap-5" noValidate aria-busy={pending} onSubmit={handleSubmit}>{displayedError ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, displayedError)}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="admin-deployment-id">{translate(language, 'deploymentId')}</FieldLabel><Input id="admin-deployment-id" name="deploymentId" defaultValue="demo" placeholder={translate(language, 'deploymentIdPlaceholder')} disabled={pending} /></Field><Field><FieldLabel htmlFor="admin-username">{translate(language, 'username')}</FieldLabel><Input id="admin-username" name="username" defaultValue="admin" placeholder={translate(language, 'usernamePlaceholder')} autoComplete="username" disabled={pending} /></Field><Field data-invalid={Boolean(validationError)}><FieldLabel htmlFor="admin-password">{translate(language, 'password')}</FieldLabel><Input id="admin-password" name="password" type="password" placeholder={translate(language, 'passwordPlaceholder')} autoComplete="current-password" disabled={pending} aria-invalid={Boolean(validationError)} />{validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}</Field></FieldGroup><Button type="submit" size="lg" disabled={pending} className="w-full" aria-busy={pending}>{pending ? <Spinner data-icon="inline-start" /> : <LogIn data-icon="inline-start" />}{translate(language, pending ? 'signingIn' : 'signIn')}</Button></form></section></main>;
 }
 
 function ForbiddenView({ identity }: { readonly identity: string | undefined }) {
