@@ -123,4 +123,48 @@ describe('admin operations', () => {
     fireEvent.click(screen.getByRole('button', { name: '发布期望状态' }));
     await waitFor(() => expect(client.putDataPlane).toHaveBeenCalledWith({ revision: 'rev-1', routes: [expect.objectContaining({ modelId: 'chat', endpoint: '/v1/responses', providerType: 'deepseek' })] }));
   });
+
+  test('keeps license import readable but hides revoke without revoke permission', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([{
+        licenseId: 'license-1', customerId: 'customer-1', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'license-prod-1',
+        status: 'active', issuedAt: '2026-09-01T00:00:00Z', expiresAt: '2027-09-01T00:00:00Z', graceEndsAt: '2027-09-08T00:00:00Z',
+        limits: { users: 100, activations: 120 }, features: ['model_gateway'], activeUsers: 2, activeActivations: 3,
+        revokedAt: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+      }]),
+      importLicense: vi.fn(),
+      revokeLicense: vi.fn(),
+    };
+    render(<Operations client={client as never} identity={{ roles: [], permissions: ['licenses.read'] } as never} />);
+
+    expect(await screen.findByText('license-1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '导入 License' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '撤销 License' })).not.toBeInTheDocument();
+  });
+
+  test('hides credential mutations and assignment controls for a read-only operator', async () => {
+    const client = {
+      licenses: vi.fn().mockResolvedValue([]),
+      credentials: vi.fn().mockResolvedValue({
+        credentials: [{ id: 'cred-1', name: 'DeepSeek', service: 'model-gateway', type: 'api_key', deliveryMode: 'server_only', maskedValue: 'sk-***123', enabled: true, updatedAt: '2026-09-04T00:00:00Z' }],
+        assignments: [],
+      }),
+      resources: vi.fn().mockResolvedValue({ users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
+      createCredential: vi.fn(),
+      updateCredential: vi.fn(),
+      rotateCredential: vi.fn(),
+      deleteCredential: vi.fn(),
+      createCredentialAssignment: vi.fn(),
+      deleteCredentialAssignment: vi.fn(),
+    };
+    render(<Operations client={client as never} identity={{ roles: [], permissions: ['credentials.read'] } as never} />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: '凭证' }));
+    expect(await screen.findByText('DeepSeek')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加凭证' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '轮换凭证' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '授权凭证' })).not.toBeInTheDocument();
+    expect(client.credentials).toHaveBeenCalledWith(expect.objectContaining({ permissions: ['credentials.read'] }));
+  });
 });

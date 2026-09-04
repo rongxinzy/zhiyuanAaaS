@@ -144,4 +144,20 @@ describe('admin events', () => {
     await waitFor(() => expect(client.deliverySummary).toHaveBeenCalledWith('event-1', { limit: 100 }));
     expect(await screen.findByText('事件操作失败，请稍后重试。')).toBeInTheDocument();
   });
+
+  test('hides event mutations for a read-only operator', async () => {
+    const client = {
+      controlEvents: vi.fn().mockResolvedValue({ items: [activeEvent], nextCursor: null }),
+      getControlEvent: vi.fn().mockResolvedValue(activeEvent),
+      cancelControlEvent: vi.fn(),
+      publishControlEvent: vi.fn(),
+      searchAudit: vi.fn(),
+    };
+    render(<Events client={client as never} identity={{ roles: [], permissions: ['events.read'] } as never} />);
+
+    expect(await screen.findByText('model.catalog.changed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '发布' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '取消事件' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看详情' })).toBeInTheDocument();
+  });
 });
