@@ -15,6 +15,7 @@ describe('admin resources', () => {
         users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
         teams: [],
         roles: [],
+        permissions: [],
         skills: [],
         assignments: [],
       }),
@@ -32,7 +33,7 @@ describe('admin resources', () => {
 
   test('renders assignment and revokes it after confirmation', async () => {
     const client = {
-      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),
       updateUser: vi.fn(),
       updateSkill: vi.fn(),
       deleteSkillAssignment: vi.fn().mockResolvedValue(undefined),
@@ -50,6 +51,7 @@ describe('admin resources', () => {
         users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
         teams: [],
         roles: [],
+        permissions: [],
         skills: [{ id: 's1', name: '写作', enabled: true }],
         assignments: [],
       }),
@@ -78,6 +80,7 @@ describe('admin resources', () => {
         ],
         teams: [],
         roles: [],
+        permissions: [],
         skills: [{ id: 's1', name: '写作', enabled: true }],
         assignments: [],
       }),
@@ -96,5 +99,89 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.createSkillAssignment).toHaveBeenCalledTimes(2));
     expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'user', id: 'u1' } });
     expect(client.createSkillAssignment).toHaveBeenCalledWith({ skillId: 's1', subject: { type: 'user', id: 'u2' } });
+  });
+
+  test('creates a user with role and team memberships', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [],
+        teams: [{ id: 'team-1', name: '平台组', description: '平台', builtIn: false, enabled: true, memberCount: 0 }],
+        roles: [{ id: 'role-1', name: '管理员', description: '管理权限', builtIn: false, enabled: true, permissions: ['users.read'] }],
+        permissions: [],
+        skills: [],
+        assignments: [],
+      }),
+      createUser: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '新增用户' }));
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'new-user' } });
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新用户' } });
+    fireEvent.change(screen.getByLabelText('临时密码'), { target: { value: 'temporary-password' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /管理员/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.createUser).toHaveBeenCalledWith(expect.objectContaining({ username: 'new-user', displayName: '新用户', temporaryPassword: 'temporary-password', roleIds: ['role-1'], teamIds: ['team-1'], requirePasswordChange: true })));
+  });
+
+  test('creates a role with selected permissions', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [{ id: 'models.read', description: '读取模型' }], skills: [], assignments: [] }),
+      createRole: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
+    fireEvent.click(await screen.findByRole('button', { name: '新增 Role' }));
+    fireEvent.change(screen.getByLabelText('Role ID'), { target: { value: 'model-reader' } });
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '模型读取者' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /models\.read/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.createRole).toHaveBeenCalledWith({ id: 'model-reader', name: '模型读取者', description: '', permissions: ['models.read'] }));
+  });
+
+  test('updates user profile and replaces RBAC memberships separately', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [{ id: 'u1', username: 'existing', displayName: '旧用户', status: 'active', roleIds: [], teamIds: [] }],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 1 }],
+        roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        permissions: [],
+        skills: [],
+        assignments: [],
+      }),
+      updateUser: vi.fn().mockResolvedValue(undefined),
+      replaceUserRBAC: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新用户' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /管理员/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.updateUser).toHaveBeenCalledWith('u1', { displayName: '新用户', email: null, status: 'active' }));
+    await waitFor(() => expect(client.replaceUserRBAC).toHaveBeenCalledWith('u1', { roleIds: ['role-1'], teamIds: ['team-1'] }));
+  });
+
+  test('edits a team through the update client method', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [{ id: 'team-1', name: '旧名称', description: '旧描述', builtIn: false, enabled: true, memberCount: 2 }], roles: [], permissions: [], skills: [], assignments: [] }),
+      updateTeam: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新名称' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(client.updateTeam).toHaveBeenCalledWith('team-1', { name: '新名称', description: '旧描述', enabled: true }));
+  });
+
+  test('deletes a non-built-in team after confirmation', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({ users: [], teams: [{ id: 'team-1', name: '临时组', description: '', builtIn: false, enabled: true, memberCount: 0 }], roles: [], permissions: [], skills: [], assignments: [] }),
+      deleteTeam: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
+    fireEvent.click(deleteButtons.at(-1)!);
+    await waitFor(() => expect(client.deleteTeam).toHaveBeenCalledWith('team-1'));
   });
 });

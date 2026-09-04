@@ -21,7 +21,7 @@
 | `src/ui/components/ui/*` | 可复用的视觉和交互原语；新增页面优先组合它们 |
 | `src/admin/theme.ts` | 浅色、深色、跟随系统的主题状态、媒体查询和持久化；不引入第二套 `useTheme` 实现 |
 | `src/admin/App.tsx` | 会话门控、全局 shell、导航和主题切换 |
-| `src/admin/Resources.tsx` | 用户、智能体、Skill、Skill 授权四个资源页签 |
+| `src/admin/Resources.tsx` | 用户、Team、Role、Skill、Skill 授权五个资源页签 |
 | `src/admin/Models.tsx` | 企业模型列表、创建和授权模型 |
 | `src/admin/Events.tsx` | 控管事件发布和审计查询 |
 
@@ -128,7 +128,7 @@ main: min-h-full / bg-background
 - 导航只有四个一级目的地：概览、资源管理、企业模型、事件与审计。增加目的地前必须同时更新 `AdminPage`、`navigation`、i18n 和测试。
 - 桌面端使用左侧 `aside`；窄视口隐藏 aside，在顶部行显示品牌标记、主题切换和图标化退出登录，并在其下显示横向滚动的一级导航。
 - 一级导航和移动导航必须表达同一个 `page` 状态，不能维护两套选中逻辑。
-- 资源管理的二级页签固定为：用户、智能体、Skill、Skill 授权。使用线性页签，不改成胶囊分段控件。
+- 资源管理的二级页签固定为：用户、Team、Role、Skill、Skill 授权。使用线性页签，不改成胶囊分段控件。
 - 所有横向内容必须允许收缩：外层用 `min-w-0`，长 ID、用户名、版本和 endpoint 使用 `truncate` 或 `break-all`，不能撑宽 shell。
 - `md` 断点只改变导航布局；内容宽度、颜色、字重、控件语义在两种视口保持一致。
 
@@ -137,7 +137,7 @@ main: min-h-full / bg-background
 | 页面 | 首屏结构 | 数据/操作规则 |
 | ---- | -------- | -------------- |
 | 概览 | 页面标题行、5 个统计卡片、连接状态卡片 | 统计数据加载时卡片原地显示 Skeleton；刷新按钮只刷新概览，不改变导航状态 |
-| 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、智能体、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
+| 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、Team、Role、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
 | 企业模型 | 页面标题行、添加模型按钮、模型卡片列表 | 添加模型通过 Dialog；模型启用状态用 success/outline Badge；授权用户通过 Dialog 多选 |
 | 事件与审计 | 发布控管事件卡片、审计查询卡片、审计结果 | 发布和查询使用 Field + Input + Button；结果为空显示 Empty；事件成功后保留 event id 并提供投递查询 |
 
