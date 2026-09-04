@@ -43,7 +43,32 @@ export interface AdminOverview {
 
 export interface AdminSession {
   readonly status: AdminConsoleStatus;
-  readonly identity?: CurrentIdentity;
+  readonly identity?: AdminIdentity;
+}
+
+// The permissions field was added to AEP CurrentIdentity after the initial
+// Console release. Keep it optional at this boundary so an older SDK package
+// can still be type-checked while the service and SDK roll forward together.
+export type AdminIdentity = CurrentIdentity & { readonly permissions?: readonly string[] };
+
+const ADMIN_CONSOLE_PERMISSIONS = [
+  'users.read', 'users.write',
+  'roles.read', 'roles.write',
+  'teams.read', 'teams.write',
+  'skills.read', 'skills.write', 'skills.assign',
+  'models.read', 'models.write', 'models.assign',
+  'credentials.read', 'credentials.write', 'credentials.assign',
+  'licenses.read', 'licenses.revoke',
+  'events.read', 'events.write',
+  'data_plane.write',
+] as const;
+
+export function hasAdminConsoleAccess(identity: AdminIdentity): boolean {
+  if (identity.roles.some(role => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()))) {
+    return true;
+  }
+  const permissions = new Set(identity.permissions ?? []);
+  return ADMIN_CONSOLE_PERMISSIONS.every(permission => permissions.has(permission));
 }
 
 export interface AdminSkill {
@@ -538,12 +563,9 @@ export class AdminConsoleClient {
   }
 
   async #identitySession(client: AepClient): Promise<AdminSession> {
-    const identity = await client.getCurrentIdentity();
+    const identity = await client.getCurrentIdentity() as AdminIdentity;
     this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
-    const hasAdminRole = identity.roles.some(role =>
-      ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()),
-    );
-    return hasAdminRole
+    return hasAdminConsoleAccess(identity)
       ? { status: AdminConsoleStatus.Authenticated, identity }
       : { status: AdminConsoleStatus.Forbidden, identity };
   }
