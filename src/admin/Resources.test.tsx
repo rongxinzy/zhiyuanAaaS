@@ -219,6 +219,27 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.replaceUserRBAC).toHaveBeenCalledWith('u1', { roleIds: ['role-1'], teamIds: ['team-1'] }));
   });
 
+  test('blocks a user save when no Role or Team is selected', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        users: [{ id: 'u1', username: 'existing', displayName: '旧用户', status: 'active', roleIds: [], teamIds: [] }],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        permissions: [],
+        skills: [],
+        assignments: [],
+      }),
+      updateUser: vi.fn(),
+      replaceUserRBAC: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('至少选择一个 Role 和一个 Team。')).toBeInTheDocument();
+    expect(client.updateUser).not.toHaveBeenCalled();
+    expect(client.replaceUserRBAC).not.toHaveBeenCalled();
+  });
+
   test('edits a team through the update client method', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({ users: [], teams: [{ id: 'team-1', name: '旧名称', description: '旧描述', builtIn: false, enabled: true, memberCount: 2 }], roles: [], permissions: [], skills: [], assignments: [] }),
