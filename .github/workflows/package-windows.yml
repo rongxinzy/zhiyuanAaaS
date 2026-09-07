@@ -156,7 +156,7 @@ jobs:
             $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($installer.Name)"
           }
-          $lines | Set-Content zhiyuan-core/release/SHA256SUMS.txt -Encoding ascii
+          $lines | Set-Content zhiyuan-core/release/SHA256SUMS.txt -Encoding utf8NoBOM
           $lines
 
       - name: Verify installer checksums
