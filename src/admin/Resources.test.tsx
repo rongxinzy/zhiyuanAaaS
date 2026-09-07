@@ -31,6 +31,63 @@ describe('admin resources', () => {
     await waitFor(() => expect(client.updateUser).toHaveBeenCalledWith('u1', { status: 'disabled' }));
   });
 
+  test('shows deduplicated effective Skill and model access across User, Role, and Team', async () => {
+    const resources = {
+      users: [
+        { id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active', roleIds: ['r1'], teamIds: ['t1'] },
+        { id: 'u2', displayName: '李四', username: 'lisi', status: 'disabled', roleIds: ['r1'], teamIds: ['t1'] },
+      ],
+      teams: [{ id: 't1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 2 }],
+      roles: [{ id: 'r1', name: '编辑者', description: '', builtIn: false, enabled: true, permissions: [] }],
+      permissions: [],
+      skills: [
+        { id: 's-direct', name: '直接 Skill', enabled: true, state: 'active' },
+        { id: 's-role', name: 'Role Skill', enabled: true, state: 'active' },
+        { id: 's-disabled', name: '停用 Skill', enabled: false, state: 'active' },
+        { id: 's-withdrawn', name: '撤回 Skill', enabled: true, state: 'withdrawn' },
+      ],
+      assignments: [
+        { id: 'sa-1', skillId: 's-direct', subjectType: 'user', subjectId: 'u1' },
+        { id: 'sa-2', skillId: 's-direct', subjectType: 'team', subjectId: 't1' },
+        { id: 'sa-3', skillId: 's-role', subjectType: 'role', subjectId: 'r1' },
+        { id: 'sa-4', skillId: 's-disabled', subjectType: 'user', subjectId: 'u1' },
+        { id: 'sa-5', skillId: 's-withdrawn', subjectType: 'user', subjectId: 'u1' },
+      ],
+    };
+    const client = {
+      resources: vi.fn().mockResolvedValue(resources),
+      models: vi.fn().mockResolvedValue({
+        models: [
+          { id: 'm1', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false },
+          { id: 'm2', displayName: '停用模型', endpoint: 'http://localhost:8081/v1', upstreamModel: 'disabled', enabled: false, isDefault: false },
+        ],
+        assignments: [
+          { id: 'ma-1', resourceType: 'model', resourceId: 'm1', subject: { type: 'user', id: 'u1' } },
+          { id: 'ma-2', resourceType: 'model', resourceId: 'm1', subject: { type: 'role', id: 'r1' } },
+          { id: 'ma-3', resourceType: 'model', resourceId: 'm2', subject: { type: 'team', id: 't1' } },
+        ],
+      }),
+    };
+
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+    expect(screen.getByText('2 Skill')).toBeInTheDocument();
+    expect(screen.getByText('1 企业模型')).toBeInTheDocument();
+    expect(screen.getByText('0 Skill')).toBeInTheDocument();
+
+    cleanup();
+    render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
+    expect(await screen.findByText('编辑者')).toBeInTheDocument();
+    expect(screen.getByText('1 Skill')).toBeInTheDocument();
+    expect(screen.getByText('1 企业模型')).toBeInTheDocument();
+
+    cleanup();
+    render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+    expect(await screen.findByText('平台组')).toBeInTheDocument();
+    expect(screen.getByText('1 Skill')).toBeInTheDocument();
+    expect(screen.getByText('0 企业模型')).toBeInTheDocument();
+  });
+
   test('renders assignment and revokes it after confirmation', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [{ id: 's1', name: '写作' }], assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }] }),

@@ -1,7 +1,7 @@
 import { Boxes, Check, CircleAlert, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import type { JsonObject, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
+import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
 import {
   AdminConsoleClient,
   AdminPermission,
@@ -58,6 +58,7 @@ interface ResourcesProps {
 
 export function Resources({ client, tab, identity }: ResourcesProps) {
   const [resources, setResources] = useState<AdminResources | null>(null);
+  const [modelResources, setModelResources] = useState<{ readonly models: readonly AdminModel[]; readonly assignments: readonly ModelAssignment[] }>({ models: [], assignments: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState(false);
@@ -70,8 +71,14 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
     setLoading(true);
     setError(null);
     try {
-      const next = await client.resources(identity);
+      const [next, models] = await Promise.all([
+        client.resources(identity),
+        hasAdminPermission(identity, AdminPermission.ModelsRead) && typeof client.models === 'function'
+          ? client.models(identity)
+          : Promise.resolve({ models: [], assignments: [] }),
+      ]);
       setResources(next);
+      setModelResources(models);
       setVersionSkill(current => current ? next.skills.find(item => item.id === current.id) ?? current : null);
     } catch {
       setError('resourcesLoadFailed');
@@ -110,7 +117,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
         </div>
         {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
         {loading && !resources ? <ResourceListSkeleton /> : resources ? <>
-          <ResourceTable tab={tab} resources={resources} canMutate={canMutate} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} onVersion={setVersionSkill} />
+          <ResourceTable tab={tab} resources={resources} modelResources={modelResources} canMutate={canMutate} onChanged={load} client={client} onError={reportError} onGrant={() => setGranting(true)} onEdit={kind => setEditor(kind)} onResetUser={setResetUser} onVersion={setVersionSkill} />
           {importResult ? <Alert><Check aria-hidden="true" /><AlertDescription><p>{translate(language, 'usersImported')}: {importResult.created} / {translate(language, 'usersRejected')}: {importResult.rejected}</p>{importResult.errors.length > 0 ? <div className="mt-1 text-xs"><p>{translate(language, 'usersImportErrors')}</p><ul className="list-disc pl-4">{importResult.errors.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul></div> : null}</AlertDescription></Alert> : null}
             {canMutate && tab === AdminResourceTab.Assignments ? <SkillGrantDialog client={client} open={granting} users={resources.users} roles={resources.roles} teams={resources.teams} skills={resources.skills} existingAssignments={resources.assignments} onOpenChange={setGranting} onChanged={load} onError={reportError} /> : null}
           {canMutate && tab === AdminResourceTab.Users ? <UserImportDialog client={client} open={importing} onOpenChange={setImporting} onChanged={async result => { setImportResult(result); await load(); }} onError={reportError} /> : null}
@@ -126,9 +133,10 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
   );
 }
 
-function ResourceTable({ tab, resources, canMutate, client, onChanged, onError, onGrant, onEdit, onResetUser, onVersion }: {
+function ResourceTable({ tab, resources, modelResources, canMutate, client, onChanged, onError, onGrant, onEdit, onResetUser, onVersion }: {
   readonly tab: AdminResourceTab;
   readonly resources: AdminResources;
+  readonly modelResources: { readonly models: readonly AdminModel[]; readonly assignments: readonly ModelAssignment[] };
   readonly canMutate: boolean;
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
@@ -138,11 +146,40 @@ function ResourceTable({ tab, resources, canMutate, client, onChanged, onError, 
   readonly onResetUser: (user: PlatformUser) => void;
   readonly onVersion: (skill: AdminSkill) => void;
 }) {
-  if (tab === AdminResourceTab.Users) return <UsersTable users={resources.users} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} onResetUser={onResetUser} />;
-  if (tab === AdminResourceTab.Teams) return <TeamsTable teams={resources.teams} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
-  if (tab === AdminResourceTab.Roles) return <RolesTable roles={resources.roles} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
+  const access = createResourceAccess(resources, modelResources);
+  if (tab === AdminResourceTab.Users) return <UsersTable users={resources.users} access={access} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} onResetUser={onResetUser} />;
+  if (tab === AdminResourceTab.Teams) return <TeamsTable teams={resources.teams} access={access} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
+  if (tab === AdminResourceTab.Roles) return <RolesTable roles={resources.roles} access={access} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} />;
   if (tab === AdminResourceTab.Skills) return <SkillsTable skills={resources.skills} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onEdit={onEdit} onVersion={onVersion} />;
   return <AssignmentsTable assignments={resources.assignments} skills={resources.skills} users={resources.users} canMutate={canMutate} client={client} onChanged={onChanged} onError={onError} onGrant={onGrant} />;
+}
+
+type ResourceAccess = {
+  readonly forUser: (user: PlatformUser) => { readonly skills: number; readonly models: number };
+  readonly forSubject: (type: 'role' | 'team', id: string) => { readonly skills: number; readonly models: number };
+};
+
+function createResourceAccess(resources: AdminResources, modelResources: { readonly models: readonly AdminModel[]; readonly assignments: readonly ModelAssignment[] }): ResourceAccess {
+  const enabledSkills = new Set(resources.skills.filter(skill => skill.enabled && skill.state === 'active').map(skill => skill.id));
+  const enabledModels = new Set(modelResources.models.filter(model => model.enabled).map(model => model.id));
+  const roles = new Map(resources.roles.map(role => [role.id, role]));
+  const teams = new Map(resources.teams.map(team => [team.id, team]));
+  const count = (subjects: readonly { readonly type: 'user' | 'role' | 'team'; readonly id: string }[]) => {
+    const keys = new Set(subjects.map(subject => `${subject.type}:${subject.id}`));
+    return {
+      skills: new Set(resources.assignments.filter(item => enabledSkills.has(item.skillId) && keys.has(`${item.subjectType}:${item.subjectId}`)).map(item => item.skillId)).size,
+      models: new Set(modelResources.assignments.filter(item => enabledModels.has(item.resourceId) && keys.has(`${item.subject.type}:${item.subject.id}`)).map(item => item.resourceId)).size,
+    };
+  };
+  return {
+    forUser: user => {
+      if (user.status !== 'active') return { skills: 0, models: 0 };
+      const roleSubjects = (user.roleIds ?? []).filter(id => roles.get(id)?.enabled).map(id => ({ type: 'role' as const, id }));
+      const teamSubjects = (user.teamIds ?? []).filter(id => teams.get(id)?.enabled).map(id => ({ type: 'team' as const, id }));
+      return count([{ type: 'user', id: user.id }, ...roleSubjects, ...teamSubjects]);
+    },
+    forSubject: (type, id) => count([{ type, id }]),
+  };
 }
 
 function useRowMutation(onDone: () => Promise<void>, onError: () => void) {
@@ -161,22 +198,102 @@ function useRowMutation(onDone: () => Promise<void>, onError: () => void) {
   return { pendingId, run };
 }
 
-function UsersTable({ users, canMutate, client, onChanged, onError, onEdit, onResetUser }: { readonly users: readonly PlatformUser[]; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'user'; readonly id: string }) => void; readonly onResetUser: (user: PlatformUser) => void }) {
+function UsersTable({ users, access, canMutate, client, onChanged, onError, onEdit, onResetUser }: { readonly users: readonly PlatformUser[]; readonly access: ResourceAccess; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'user'; readonly id: string }) => void; readonly onResetUser: (user: PlatformUser) => void }) {
   const { pendingId, run } = useRowMutation(onChanged, onError);
   if (users.length === 0) return <EmptyState label="usersEmpty" hint="usersEmptyHint" icon={UserRound} />;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'user')}</TableHead><TableHead>{translate(language, 'status')}</TableHead>{canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{users.map(user => <TableRow key={user.id}><TableCell><div className="flex min-w-0 items-center gap-3"><UserRound className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{user.displayName}</div><div className="truncate text-xs text-tertiary-foreground">{user.username}</div></div></div></TableCell><TableCell><Badge variant={user.status === 'active' ? 'success' : 'outline'}>{translate(language, user.status === 'active' ? 'active' : 'disabled')}</Badge></TableCell>{canMutate ? <TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'user', id: user.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onResetUser(user)}><RotateCcw data-icon="inline-start" />{translate(language, 'resetPassword')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(user.id, async () => { await client.updateUser(user.id, { status: user.status === 'active' ? 'disabled' : 'active' }); })}>{translate(language, user.status === 'active' ? 'disable' : 'enable')}</Button></div></TableCell> : null}</TableRow>)}</TableBody></Table></div>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'user')}</TableHead><TableHead>{translate(language, 'effectiveResources')}</TableHead><TableHead>{translate(language, 'status')}</TableHead>{canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{users.map(user => <TableRow key={user.id}><TableCell><div className="flex min-w-0 items-center gap-3"><UserRound className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{user.displayName}</div><div className="truncate text-xs text-tertiary-foreground">{user.username}</div></div></div></TableCell><TableCell><ResourceAccessBadges access={access.forUser(user)} /></TableCell><TableCell><Badge variant={user.status === 'active' ? 'success' : 'outline'}>{translate(language, user.status === 'active' ? 'active' : 'disabled')}</Badge></TableCell>{canMutate ? <TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'user', id: user.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onResetUser(user)}><RotateCcw data-icon="inline-start" />{translate(language, 'resetPassword')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(user.id, async () => { await client.updateUser(user.id, { status: user.status === 'active' ? 'disabled' : 'active' }); })}>{translate(language, user.status === 'active' ? 'disable' : 'enable')}</Button></div></TableCell> : null}</TableRow>)}</TableBody></Table></div>;
 }
 
-function TeamsTable({ teams, canMutate, client, onChanged, onError, onEdit }: { readonly teams: AdminResources['teams']; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'team'; readonly id: string }) => void }) {
+function TeamsTable({ teams, access, canMutate, client, onChanged, onError, onEdit }: { readonly teams: AdminResources['teams']; readonly access: ResourceAccess; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'team'; readonly id: string }) => void }) {
   const { pendingId, run } = useRowMutation(onChanged, onError);
   if (teams.length === 0) return <EmptyState label="teamsEmpty" hint="teamsEmptyHint" icon={Users} />;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'team')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead>{translate(language, 'members')}</TableHead>{canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{teams.map(team => <TableRow key={team.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Users className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{team.name}</div><div className="truncate text-xs text-tertiary-foreground">{team.id}</div></div></div></TableCell><TableCell><Badge variant={team.enabled ? 'success' : 'outline'}>{translate(language, team.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell className="text-xs text-tertiary-foreground">{team.memberCount}</TableCell>{canMutate ? <TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'team', id: team.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(team.id, async () => { await client.updateTeam(team.id, { enabled: !team.enabled }); })}>{translate(language, team.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null || team.builtIn} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteTeamTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteResourceDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void run(team.id, async () => { await client.deleteTeam(team.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell> : null}</TableRow>)}</TableBody></Table></div>;
+  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'team')}</TableHead><TableHead>{translate(language, 'effectiveResources')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead>{translate(language, 'members')}</TableHead>{canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{teams.map(team => <TableRow key={team.id}><TableCell><div className="flex min-w-0 items-center gap-3"><Users className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{team.name}</div><div className="truncate text-xs text-tertiary-foreground">{team.id}</div></div></div></TableCell><TableCell><ResourceAccessBadges access={access.forSubject('team', team.id)} /></TableCell><TableCell><Badge variant={team.enabled ? 'success' : 'outline'}>{translate(language, team.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell className="text-xs text-tertiary-foreground">{team.memberCount}</TableCell>{canMutate ? <TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'team', id: team.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(team.id, async () => { await client.updateTeam(team.id, { enabled: !team.enabled }); })}>{translate(language, team.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null || team.builtIn} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteTeamTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteResourceDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void run(team.id, async () => { await client.deleteTeam(team.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell> : null}</TableRow>)}</TableBody></Table></div>;
 }
 
-function RolesTable({ roles, canMutate, client, onChanged, onError, onEdit }: { readonly roles: readonly Role[]; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'role'; readonly id: string }) => void }) {
+function RolesTable({ roles, access, canMutate, client, onChanged, onError, onEdit }: { readonly roles: readonly Role[]; readonly access: ResourceAccess; readonly canMutate: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void; readonly onEdit: (editor: { readonly kind: 'role'; readonly id: string }) => void }) {
   const { pendingId, run } = useRowMutation(onChanged, onError);
   if (roles.length === 0) return <EmptyState label="rolesEmpty" hint="rolesEmptyHint" icon={ShieldCheck} />;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'role')}</TableHead><TableHead>{translate(language, 'permissions')}</TableHead><TableHead>{translate(language, 'status')}</TableHead>{canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{roles.map(role => <TableRow key={role.id}><TableCell><div className="flex min-w-0 items-center gap-3"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><div className="min-w-0"><div className="truncate font-normal">{role.name}</div><div className="truncate text-xs text-tertiary-foreground">{role.id}</div></div>{role.builtIn ? <Badge variant="info">{translate(language, 'builtIn')}</Badge> : null}</div></TableCell><TableCell className="text-xs text-tertiary-foreground">{role.permissions.length}</TableCell><TableCell><Badge variant={role.enabled ? 'success' : 'outline'}>{translate(language, role.enabled ? 'enabled' : 'disabled')}</Badge></TableCell>{canMutate ? <TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'role', id: role.id })}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(role.id, async () => { await client.updateRole(role.id, { enabled: !role.enabled }); })}>{translate(language, role.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null || role.builtIn} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteRoleTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteResourceDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void run(role.id, async () => { await client.deleteRole(role.id); })}>{translate(language, 'delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell> : null}</TableRow>)}</TableBody></Table></div>;
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{translate(language, 'role')}</TableHead>
+            <TableHead>{translate(language, 'permissions')}</TableHead>
+            <TableHead>{translate(language, 'effectiveResources')}</TableHead>
+            <TableHead>{translate(language, 'status')}</TableHead>
+            {canMutate ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {roles.map(role => (
+            <TableRow key={role.id}>
+              <TableCell>
+                <div className="flex min-w-0 items-center gap-3">
+                  <ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="truncate font-normal">{role.name}</div>
+                    <div className="truncate text-xs text-tertiary-foreground">{role.id}</div>
+                  </div>
+                  {role.builtIn ? <Badge variant="info">{translate(language, 'builtIn')}</Badge> : null}
+                </div>
+              </TableCell>
+              <TableCell className="text-xs text-tertiary-foreground">{role.permissions.length}</TableCell>
+              <TableCell>
+                <ResourceAccessBadges access={access.forSubject('role', role.id)} />
+              </TableCell>
+              <TableCell>
+                <Badge variant={role.enabled ? 'success' : 'outline'}>
+                  {translate(language, role.enabled ? 'enabled' : 'disabled')}
+                </Badge>
+              </TableCell>
+              {canMutate ? (
+                <TableCell>
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    <Button size="sm" variant="ghost" disabled={pendingId !== null} onClick={() => onEdit({ kind: 'role', id: role.id })}>
+                      <Pencil data-icon="inline-start" />
+                      {translate(language, 'edit')}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={pendingId !== null} onClick={() => void run(role.id, async () => { await client.updateRole(role.id, { enabled: !role.enabled }); })}>
+                      {translate(language, role.enabled ? 'disable' : 'enable')}
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null || role.builtIn} />}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {translate(language, 'delete')}
+                      </AlertDialogTrigger>
+                      <AlertDialogContent size="sm">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{translate(language, 'deleteRoleTitle')}</AlertDialogTitle>
+                          <AlertDialogDescription>{translate(language, 'deleteResourceDescription')}</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
+                            disabled={pendingId !== null}
+                            onClick={() => void run(role.id, async () => { await client.deleteRole(role.id); })}
+                          >
+                            {translate(language, 'delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </TableCell>
+              ) : null}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ResourceAccessBadges({ access }: { readonly access: { readonly skills: number; readonly models: number } }) {
+  return <div className="flex flex-wrap items-center gap-1.5"><Badge variant="secondary">{access.skills} {translate(language, 'skills')}</Badge><Badge variant="secondary">{access.models} {translate(language, 'models')}</Badge></div>;
 }
 
 function SkillsTable({ skills, canMutate, client, onChanged, onError, onEdit, onVersion }: {
