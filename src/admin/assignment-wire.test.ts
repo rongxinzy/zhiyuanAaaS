@@ -192,8 +192,8 @@ describe('admin console assignment wire contract', () => {
         return;
       }
       if (path === '/aep/v1/admin/teams') {
-        response.writeHead(200);
-        response.end(JSON.stringify({ teams: [] }));
+        response.writeHead(404);
+        response.end(JSON.stringify({ title: 'not found' }));
         return;
       }
       if (path === '/aep/v1/admin/skills') {
@@ -222,7 +222,7 @@ describe('admin console assignment wire contract', () => {
     const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
 
     await client.restore();
-    await expect(client.overview()).resolves.toMatchObject({ users: 0, teams: 0, skills: 1, models: 0, pendingEvents: 0 });
+    await expect(client.overview()).resolves.toMatchObject({ users: 0, teams: null, skills: 1, models: 0, pendingEvents: 0, failed: ['teams'] });
   });
 
   test('aggregates cursor-paginated roles, teams, and Skills for resources', async () => {

@@ -130,6 +130,17 @@ describe('admin console', () => {
     expect(client.overview).toHaveBeenCalledTimes(2);
   });
 
+  test('keeps available overview counts when one metric fails', async () => {
+    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
+    client.overview.mockResolvedValue({ users: 4, teams: null, skills: 3, models: 1, pendingEvents: 0, failed: ['teams'] });
+    render(<AdminApp />);
+
+    expect(await screen.findByText('4')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('概览数据刷新失败，请稍后重试。')).toBeInTheDocument();
+    expect(screen.getByText('加载失败')).toBeInTheDocument();
+  });
+
   test('uses Tea menu tokens and regular weight for active navigation', async () => {
     client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
