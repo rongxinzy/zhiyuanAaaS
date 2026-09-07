@@ -42,7 +42,17 @@ export interface AdminOverview {
   readonly skills: number | null;
   readonly models: number | null;
   readonly pendingEvents: number | null;
+  readonly failed?: readonly AdminOverviewMetric[];
 }
+
+export const AdminOverviewMetric = {
+  Users: 'users',
+  Teams: 'teams',
+  Skills: 'skills',
+  Models: 'models',
+  PendingEvents: 'pendingEvents',
+} as const;
+export type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
 
 export interface AdminSession {
   readonly status: AdminConsoleStatus;
@@ -245,19 +255,34 @@ export class AdminConsoleClient {
 
   async overview(identity?: AdminIdentity): Promise<AdminOverview> {
     const client = this.#requireClient();
-    const [users, teams, skills, models, events] = await Promise.all([
+    const results = await Promise.all([
       hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
       hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve(null),
       hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve(null),
       hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : Promise.resolve(null),
       hasAdminPermission(identity, AdminPermission.EventsRead) ? client.searchEvents({ limit: 100 }) : Promise.resolve(null),
-    ]);
+    ].map(request => request.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))));
+    const failed: AdminOverviewMetric[] = [];
+    const valueAt = <T>(index: number, metric: AdminOverviewMetric): T | null => {
+      const result = results[index]!;
+      if (!result.ok) {
+        failed.push(metric);
+        return null;
+      }
+      return result.value as T | null;
+    };
+    const users = valueAt<readonly PlatformUser[]>(0, AdminOverviewMetric.Users);
+    const teams = valueAt<readonly Team[]>(1, AdminOverviewMetric.Teams);
+    const skills = valueAt<JsonObject>(2, AdminOverviewMetric.Skills);
+    const models = valueAt<AdminModelList>(3, AdminOverviewMetric.Models);
+    const events = valueAt<JsonObject>(4, AdminOverviewMetric.PendingEvents);
     return {
       users: users ? users.length : null,
       teams: teams ? teams.length : null,
       skills: skills ? listCount(skills) : null,
       models: models ? listCount(models) : null,
       pendingEvents: events ? pendingEventCount(events) : null,
+      ...(failed.length ? { failed } : {}),
     };
   }
 

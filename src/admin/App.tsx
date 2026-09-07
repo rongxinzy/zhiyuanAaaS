@@ -242,11 +242,23 @@ function OverviewView({ client, identity }: { readonly client: AdminConsoleClien
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(false); try { setOverview(await client.overview(identity)); } catch { setError(true); } finally { setLoading(false); } }, [client, identity]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const result = await client.overview(identity);
+      setOverview(result);
+      setError(Boolean(result.failed?.length));
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, identity]);
   useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.filter(card => hasAdminPermission(identity, card.permission)).map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="success"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
+  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'overviewEyebrow')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'overview')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'overviewDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'refreshFailed')}</AlertDescription></Alert> : null}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{OVERVIEW_CARDS.filter(card => hasAdminPermission(identity, card.permission)).map(({ key, icon }) => <OverviewCard key={key} label={translate(language, key)} icon={icon} value={overview?.[key]} failed={overview?.failed?.includes(key) ?? false} />)}</div><Card><CardHeader className="flex-row flex-wrap items-center gap-2"><ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" /><CardTitle>{translate(language, 'overviewStatusTitle')}</CardTitle><Badge variant="success"><CheckCircle2 data-icon="inline-start" />{translate(language, 'connected')}</Badge></CardHeader><CardContent><p className="text-sm text-muted-foreground">{translate(language, 'overviewStatusDescription')}</p></CardContent></Card></div></section>;
 }
 
-function OverviewCard({ label, value, icon: Icon }: { readonly label: string; readonly value: number | null | undefined; readonly icon: LucideIcon }) {
-  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-tertiary-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : value === null ? <div className="text-sm font-normal text-muted-foreground">{translate(language, 'notAvailable')}</div> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
+function OverviewCard({ label, value, failed, icon: Icon }: { readonly label: string; readonly value: number | null | undefined; readonly failed: boolean; readonly icon: LucideIcon }) {
+  return <Card className="min-h-28 justify-between"><div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{label}</span><Icon className="size-4 text-tertiary-foreground" aria-hidden="true" /></div>{value === undefined ? <Skeleton className="h-7 w-12" /> : value === null ? <div className="text-sm font-normal text-muted-foreground">{translate(language, failed ? 'metricLoadFailed' : 'notAvailable')}</div> : <div className="text-lg font-semibold leading-tight">{value}</div>}</Card>;
 }
