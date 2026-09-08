@@ -57,7 +57,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.goto(`http://127.0.0.1:${staticPort}/`, { waitUntil: 'networkidle' });
 
-  await page.getByLabel('密码').fill('change-this-admin-password');
+  await page.getByLabel('密码', { exact: true }).fill('change-this-admin-password');
   await page.getByRole('button', { name: '登录' }).click();
   await waitForText(page, '概览');
 
