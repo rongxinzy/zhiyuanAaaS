@@ -22,12 +22,12 @@
     "commit": "e2ffe8dd299c6b9dfd378a93b6f6f5abd9a172b4"
   },
   "aepProtocol": {
-    "commit": "bd6a7748acbdd3af00c818c860d7c1bc65ffea8f"
+    "commit": "cfce30a1e55dc8c452f79b53413d2814524ee027"
   },
   "aepSdk": {
-    "version": "0.2.9",
-    "releaseTag": "sdk-node-v0.2.9",
-    "asset": "aep-sdk-node-0.2.9.tgz",
-    "sha256": "e0e319a198852f935147a198723c303e5fb28e187f990265995682dc42d88abc"
+    "version": "0.2.10",
+    "releaseTag": "sdk-node-v0.2.10",
+    "asset": "aep-sdk-node-0.2.10.tgz",
+    "sha256": "cc079fe0fe0f0af7c4585b607428a30c41ef8c07f93a2d45dff78f836517a4dc"
   }
 }

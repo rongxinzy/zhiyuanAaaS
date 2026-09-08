@@ -19,15 +19,6 @@ export const InboxState = {
 } as const;
 export type InboxState = (typeof InboxState)[keyof typeof InboxState];
 
-/** Canonical heartbeat shape introduced with the session/RBAC control-event contract. */
-export interface CanonicalHeartbeatResponse {
-  serverTime: string;
-  controlEvents: {pending: boolean; watermark: string};
-  nextHeartbeatAfterSeconds: number;
-}
-
-export type AgentHeartbeatResponse = HeartbeatResponse | CanonicalHeartbeatResponse;
-
 export const SkillSyncStatus = {
   Installed: 'installed',
   Updated: 'updated',
@@ -41,7 +32,7 @@ export interface AgentControlClient {
   downloadSkillPackage(skillId: string, version: string): Promise<Uint8Array>;
   reportSkillSyncResult(result: JsonObject): Promise<void>;
   uploadEventBatch(events: JsonObject[]): Promise<JsonObject>;
-  heartbeat(input: JsonObject): Promise<AgentHeartbeatResponse>;
+  heartbeat(input: JsonObject): Promise<HeartbeatResponse>;
   listControlEvents(afterCursor?: string, limit?: number): Promise<ControlEventPage>;
   acknowledgeControlEvent(deliveryId: string, receivedAt: string): Promise<void>;
   reportControlEventResult(deliveryId: string, result: JsonObject): Promise<void>;

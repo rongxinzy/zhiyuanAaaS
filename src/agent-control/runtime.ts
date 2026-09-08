@@ -72,10 +72,7 @@ export class AgentControlRuntime {
       status: 'online',
       lastControlEventCursor: this.#options.state.getValue(CONTROL_CURSOR_KEY),
     });
-    const pending = 'controlEvents' in heartbeat
-      ? heartbeat.controlEvents.pending
-      : heartbeat.hasPendingControlEvents;
-    if (pending) await this.#receiveControlEvents();
+    if (heartbeat.controlEvents.pending) await this.#receiveControlEvents();
     await this.#resumeInbox();
     await this.flushTelemetry();
     return Math.min(
