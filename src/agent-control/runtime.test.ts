@@ -254,8 +254,7 @@ function clientFixture(overrides: Partial<AgentControlClient> = {}): AgentContro
 function heartbeat(hasPendingControlEvents: boolean) {
   return {
     serverTime: now.toISOString(),
-    hasPendingControlEvents,
-    controlEventWatermark: null,
+    controlEvents: {pending: hasPendingControlEvents, watermark: ''},
     nextHeartbeatAfterSeconds: 30,
   };
 }

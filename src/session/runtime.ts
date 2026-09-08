@@ -62,14 +62,7 @@ export async function createZhiyuanSessionRuntimeComponents(
     protectedStorage,
   });
   const session = new ZhiyuanPasswordSession(client);
-  const licenseActivation = config.license
-    ? await ZhiyuanLicenseActivation.create({
-        resourcesPath: context.paths.resources,
-        config: config.license,
-        session,
-        client,
-      })
-    : null;
+  const licenseActivation = ZhiyuanLicenseActivation.create({session, client});
   return Object.freeze({
     session,
     client,

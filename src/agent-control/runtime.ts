@@ -68,14 +68,14 @@ export class AgentControlRuntime {
   async #runCycle(): Promise<number> {
     await this.flushTelemetry();
     await this.#resumeInbox();
-    const skills = this.#options.state.managedSkills();
     const heartbeat = await this.#options.client.heartbeat({
-      agentVersion: this.#options.agentVersion,
-      platform: this.#options.platform,
-      appliedSkillRevision: this.#options.state.getValue(SKILL_REVISION_KEY),
-      installedSkillIds: skills.map(skill => skill.skillId),
+      status: 'online',
+      lastControlEventCursor: this.#options.state.getValue(CONTROL_CURSOR_KEY),
     });
-    if (heartbeat.hasPendingControlEvents) await this.#receiveControlEvents();
+    const pending = 'controlEvents' in heartbeat
+      ? heartbeat.controlEvents.pending
+      : heartbeat.hasPendingControlEvents;
+    if (pending) await this.#receiveControlEvents();
     await this.#resumeInbox();
     await this.flushTelemetry();
     return Math.min(

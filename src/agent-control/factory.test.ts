@@ -41,8 +41,7 @@ function clientFixture(): AgentControlClient {
     uploadEventBatch: async () => ({ accepted: [], rejected: [] }),
     heartbeat: async () => ({
       serverTime: '2026-08-26T00:00:00.000Z',
-      hasPendingControlEvents: false,
-      controlEventWatermark: null,
+      controlEvents: {pending: false, watermark: ''},
       nextHeartbeatAfterSeconds: 30,
     }),
     listControlEvents: async () => ({ items: [], nextCursor: null }),

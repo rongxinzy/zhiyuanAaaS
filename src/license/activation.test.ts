@@ -1,34 +1,33 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { ZhiyuanLicenseActivation } from './activation.js';
-import { LicenseInvalidReason, LicenseStatus } from './types.js';
+import { LicenseStatus } from './types.js';
 
 describe('ZhiyuanLicenseActivation', () => {
-  test('keeps startup usable when the separately deployed license is absent', async () => {
-    const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'zhiyuan-license-'));
+  test('exchanges an authenticated session without receiving a License file', async () => {
+    let authenticated = true;
     const session = {
-      snapshot: () => ({ status: 'signed-out' as const }),
+      snapshot: () => ({status: authenticated ? 'authenticated' as const : 'signed-out' as const}),
       onDidChange: () => () => undefined,
     };
+    const activateEnterpriseLicense = vi.fn(async () => ({
+      entitlementToken: 'entitlement', tokenType: 'Bearer' as const,
+      expiresAt: '2026-09-09T00:00:00.000Z', expiresIn: 3600,
+      licenseId: 'lic-1', licenseDigest: 'sha256:digest', deploymentId: 'deployment-1',
+      features: ['enterprise.models'], modelScopes: ['enterprise-chat'],
+    }));
 
-    const activation = await ZhiyuanLicenseActivation.create({
-      resourcesPath,
-      config: {
-        file: 'license.zylic',
-        deploymentId: 'deployment-1',
-        trustedKeys: { 'license-prod-1': 'public-key' },
-      },
+    const activation = ZhiyuanLicenseActivation.create({
       session: session as never,
-      client: { activateEnterpriseLicense: async () => { throw new Error('not expected'); } },
+      client: {activateEnterpriseLicense},
     });
+    const result = await activation.activate();
 
-    expect(activation.snapshot()).toMatchObject({
-      status: LicenseStatus.Invalid,
-      reason: LicenseInvalidReason.Malformed,
-    });
+    expect(activateEnterpriseLicense).toHaveBeenCalledWith({});
+    expect(result?.licenseId).toBe('lic-1');
+    expect(activation.snapshot()).toMatchObject({status: LicenseStatus.Active, licenseId: 'lic-1'});
+    authenticated = false;
+    activation.stop();
+    expect(activation.entitlement()).toBeNull();
   });
 });

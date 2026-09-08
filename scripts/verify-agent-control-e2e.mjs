@@ -10,14 +10,13 @@ import yazl from 'yazl';
 const require = createRequire(import.meta.url);
 const { createZhiyuanAgentControlBackend } = require('../dist/extension.cjs');
 const baseUrl = process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080';
-const enterpriseId = process.env.ZHIYUAN_AEP_ENTERPRISE_ID ?? 'demo';
+const deploymentId = process.env.ZHIYUAN_AEP_DEPLOYMENT_ID ?? 'demo';
 const adminUsername = process.env.ZHIYUAN_AEP_ADMIN_USERNAME ?? 'admin';
 const adminPassword =
   process.env.ZHIYUAN_AEP_ADMIN_PASSWORD ?? 'change-this-admin-password';
 const runId = Date.now().toString(36);
 const username = `aaas-e2e-${runId}`;
 const password = `Zhiyuan-e2e-${runId}-password`;
-const agentId = `aaas-agent-${runId}`;
 const skillId = `aaas-skill-${runId}`;
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'zhiyuan-aaas-e2e-'));
 
@@ -29,17 +28,17 @@ let backend;
 try {
   admin = client(`aaas-admin-${runId}`);
   await admin.loginWithPassword({
-    enterpriseId,
+    deploymentId,
     username: adminUsername,
     password: adminPassword,
   });
   user = await admin.createUser({
-    enterpriseId,
+    deploymentId,
     username,
     displayName: `Zhiyuan AaaS E2E ${runId}`,
     temporaryPassword: password,
-    organizationIds: [],
-    roleIds: [],
+    teamIds: ['all-users'],
+    roleIds: ['admin'],
     requirePasswordChange: false,
   });
 
@@ -57,8 +56,8 @@ try {
     subject: { type: 'user', id: user.id },
   });
 
-  const agent = client(agentId);
-  await agent.loginWithPassword({ enterpriseId, username, password });
+  const agent = client(`aaas-session-${runId}`);
+  await agent.loginWithPassword({ deploymentId, username, password });
   backend = createZhiyuanAgentControlBackend({
     client: agent,
     databasePath: path.join(temporaryDirectory, 'agent-control.sqlite'),
@@ -78,10 +77,7 @@ try {
   assert.equal(fs.readFileSync(installedDefinition, 'utf8'), '# Zhiyuan E2E Skill\n');
   await assertDelivery(admin, installEvent.eventId, 'succeeded');
 
-  const registeredAgent = await admin.getAgent(agentId);
-  assert.equal(registeredAgent.installedSkillIds?.includes(skillId), true);
-  assert.notEqual(registeredAgent.appliedSkillRevision, null);
-  const telemetry = await admin.searchEvents({ agentId });
+  const telemetry = await admin.searchEvents({ userId: user.id });
   assert.equal(
     telemetry.items.some(item => item.type === 'skill.sync.completed'),
     true,
@@ -99,13 +95,13 @@ try {
       {
         status: 'passed',
         baseUrl,
-        agentId,
+        userId: user.id,
         skillId,
         checks: [
-          'password login and Agent binding',
+          'password login and user-session binding',
           'persisted control delivery acknowledgement',
           'authorized Skill download and safe installation',
-          'Skill sync result and Agent state',
+          'Skill sync result and user audit state',
           'telemetry upload',
           'assignment revocation and managed Skill removal',
         ],
@@ -139,7 +135,7 @@ function client(clientAgentId) {
 async function publishSkillEvent(adminClient, phase) {
   return adminClient.createControlEvent({
     type: 'skill.manifest.changed',
-    scope: { type: 'agent', id: agentId },
+    scope: { type: 'user', id: user.id },
     resource: { type: 'skill', id: skillId, revision: phase },
     task: { type: 'skill.reconcile' },
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
