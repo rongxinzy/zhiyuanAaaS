@@ -22,3 +22,24 @@ jobs:
       - run: npm run verify:admin:e2e
       - run: npm run verify:electron-rc
       - run: npm run verify:sdk
+
+      - name: Checkout AEP control plane for Agent control E2E
+        uses: actions/checkout@v4
+        with:
+          repository: rongxinzy/Agent-Enterprise-Protocol
+          path: aep-protocol
+          ref: main
+      - name: Start AEP control plane
+        working-directory: aep-protocol
+        run: npm ci && npm run compose:up
+      - name: Wait for AEP control plane
+        run: curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/healthz
+      - name: Verify Agent control compatibility
+        env:
+          ZHIYUAN_AEP_BASE_URL: http://127.0.0.1:8080
+          ZHIYUAN_AEP_DEPLOYMENT_ID: demo
+        run: npm run verify:agent-control:e2e
+      - name: Stop AEP control plane
+        if: always()
+        working-directory: aep-protocol
+        run: npm run compose:down

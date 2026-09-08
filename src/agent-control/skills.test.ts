@@ -240,8 +240,7 @@ function skillClient(
     uploadEventBatch: vi.fn(async () => ({})),
     heartbeat: vi.fn(async () => ({
       serverTime: '2026-08-26T00:00:00.000Z',
-      hasPendingControlEvents: false,
-      controlEventWatermark: null,
+      controlEvents: {pending: false, watermark: ''},
       nextHeartbeatAfterSeconds: 30,
     })),
     listControlEvents: vi.fn(async () => ({ items: [], nextCursor: null })),
