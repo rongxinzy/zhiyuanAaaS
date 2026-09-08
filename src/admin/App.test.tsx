@@ -89,6 +89,16 @@ describe('admin console', () => {
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
 
+  test('toggles password visibility on the login form', async () => {
+    render(<AdminApp />);
+    const password = await screen.findByLabelText('密码');
+    expect(password).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: '显示密码' }));
+    expect(password).toHaveAttribute('type', 'text');
+    fireEvent.click(screen.getByRole('button', { name: '隐藏密码' }));
+    expect(password).toHaveAttribute('type', 'password');
+  });
+
   test('blocks non-admin accounts', async () => {
     client.restore.mockResolvedValue({ status: 'forbidden', identity: { user: { displayName: '普通用户' } } });
     render(<AdminApp />);

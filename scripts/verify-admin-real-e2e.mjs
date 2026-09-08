@@ -54,7 +54,7 @@ try {
   await waitForHttp(`${adminOrigin}/aep/v1/metadata`);
   accessToken = await loginApi();
   await page.goto(adminOrigin, { waitUntil: 'networkidle' });
-  await page.getByLabel('密码').fill(adminPassword);
+  await page.getByLabel('密码', { exact: true }).fill(adminPassword);
   await page.getByRole('button', { name: '登录' }).click();
   await waitText('概览');
 
