@@ -5,6 +5,8 @@ import {
   type ModelCapabilities,
   type ProviderConfig,
   type ProviderModelPiRuntimeConfig,
+  type ProviderModelPiThinkingLevel,
+  type ProviderModelPiThinkingLevelMap,
   type ZhiyuanManagedProviderSource,
 } from '../host-contract.js';
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
@@ -159,11 +161,12 @@ function toProviderModel(model: AgentModel): NonNullable<ProviderConfig['models'
   };
 }
 
-type AepReasoningAwareAgentModel = AgentModel & {
+type AepReasoningAwareAgentModel = Omit<AgentModel, 'reasoningCompatibility'> & {
   readonly reasoningCompatibility?: {
-    readonly thinkingFormat: 'deepseek';
+    readonly thinkingFormat: 'deepseek' | 'zai';
     readonly supportsReasoningEffort: true;
     readonly requiresReasoningContentOnAssistantMessages: true;
+    readonly thinkingLevelMap?: Partial<Record<ProviderModelPiThinkingLevel, string | null>>;
   };
 };
 
@@ -171,7 +174,7 @@ function mapPiRuntime(model: AgentModel): ProviderModelPiRuntimeConfig | undefin
   const value = (model as AepReasoningAwareAgentModel).reasoningCompatibility;
   if (value === undefined) return undefined;
   if (
-    value.thinkingFormat !== 'deepseek' ||
+    (value.thinkingFormat !== 'deepseek' && value.thinkingFormat !== 'zai') ||
     value.supportsReasoningEffort !== true ||
     value.requiresReasoningContentOnAssistantMessages !== true
   ) {
@@ -180,12 +183,26 @@ function mapPiRuntime(model: AgentModel): ProviderModelPiRuntimeConfig | undefin
   return {
     api: 'openai-completions',
     reasoning: true,
+    ...(value.thinkingLevelMap ? { thinkingLevelMap: normalizeThinkingLevelMap(value.thinkingLevelMap) } : {}),
     compat: {
-      thinkingFormat: 'deepseek',
+      thinkingFormat: value.thinkingFormat,
       supportsReasoningEffort: true,
       requiresReasoningContentOnAssistantMessages: true,
     },
   };
+}
+
+function normalizeThinkingLevelMap(
+  value: Partial<Record<ProviderModelPiThinkingLevel, string | null>>,
+): ProviderModelPiThinkingLevelMap {
+  const normalized: ProviderModelPiThinkingLevelMap = {};
+  for (const level of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+    const mapped = value[level];
+    if (mapped === null || typeof mapped === 'string' && mapped.trim() !== '') {
+      normalized[level] = mapped;
+    }
+  }
+  return normalized;
 }
 
 function mapCapabilities(values: string[]): Partial<ModelCapabilities> {
