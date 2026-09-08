@@ -169,11 +169,11 @@ reopening personal providers; the exclusive policy remains active independently.
 ## Runtime Configuration
 
 Enterprise packaging must provide `resources/zhiyuan-enterprise/config.json`; use
-`build/enterprise-config.example.json` as the schema reference. It contains the AEP base URL, the
-explicit insecure-HTTP development switch, and (when license activation is enabled) the license
-file name, deployment ID, and trusted public keys. Customer credentials and license private keys
-are never build inputs. Each installation creates a stable UUID under the application user-data
-directory for AEP Agent binding.
+`build/enterprise-config.example.json` as the schema reference. It contains the AEP base URL and
+the explicit insecure-HTTP development switch. License files and vendor public keys belong only
+to the Control Service deployment; the client requests activation from the authenticated server
+and never receives License material. Each installation creates a stable UUID under the application
+user-data directory for session compatibility.
 
 The extension registers its password-session provider through public session capability v1 and its
 managed Skill root through Skill capability v1. It uses Electron platform encryption for refresh-token
