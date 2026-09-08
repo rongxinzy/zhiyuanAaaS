@@ -33,7 +33,7 @@ jobs:
         working-directory: aep-protocol
         run: npm ci && npm run compose:up
       - name: Wait for AEP control plane
-        run: curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/healthz
+        run: curl --fail --retry 60 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/healthz
       - name: Verify Agent control compatibility
         env:
           ZHIYUAN_AEP_BASE_URL: http://127.0.0.1:8080
