@@ -38,9 +38,23 @@ export type ProviderModelPiThinkingFormat =
   | 'string-thinking'
   | 'ant-ling';
 
+export type ProviderModelPiThinkingLevel =
+  | 'off'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max';
+
+export type ProviderModelPiThinkingLevelMap = Partial<
+  Record<ProviderModelPiThinkingLevel, string | null>
+>;
+
 export interface ProviderModelPiRuntimeConfig {
   readonly api?: ProviderModelPiApi;
   readonly reasoning?: boolean;
+  readonly thinkingLevelMap?: ProviderModelPiThinkingLevelMap;
   readonly compat?: {
     readonly supportsReasoningEffort?: boolean;
     readonly requiresReasoningContentOnAssistantMessages?: boolean;

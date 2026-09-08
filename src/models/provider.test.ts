@@ -27,9 +27,10 @@ describe('ZhiyuanModelProvider', () => {
           model({
             capabilities: ['text', 'streaming', 'tools', 'vision', 'reasoning'],
             reasoningCompatibility: {
-              thinkingFormat: 'deepseek',
+              thinkingFormat: 'zai',
               supportsReasoningEffort: true,
               requiresReasoningContentOnAssistantMessages: true,
+              thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
             },
             contextWindow: 128_000,
           }),
@@ -65,8 +66,9 @@ describe('ZhiyuanModelProvider', () => {
           piRuntime: {
             api: 'openai-completions',
             reasoning: true,
+            thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
             compat: {
-              thinkingFormat: 'deepseek',
+              thinkingFormat: 'zai',
               supportsReasoningEffort: true,
               requiresReasoningContentOnAssistantMessages: true,
             },
@@ -198,15 +200,16 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
   };
 }
 
-type ReasoningAwareAgentModel = AgentModel & {
+type ReasoningAwareAgentModel = Omit<AgentModel, 'reasoningCompatibility'> & {
   reasoningCompatibility?: {
-    thinkingFormat: 'deepseek';
+    thinkingFormat: 'deepseek' | 'zai';
     supportsReasoningEffort: boolean;
     requiresReasoningContentOnAssistantMessages: boolean;
+    thinkingLevelMap?: Partial<Record<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max', string | null>>;
   };
 };
 
-function model(overrides: Partial<ReasoningAwareAgentModel> = {}): ReasoningAwareAgentModel {
+function model(overrides: Partial<ReasoningAwareAgentModel> = {}): AgentModel {
   return {
     id: 'enterprise-chat',
     displayName: 'Enterprise Chat',
@@ -216,7 +219,7 @@ function model(overrides: Partial<ReasoningAwareAgentModel> = {}): ReasoningAwar
     isDefault: true,
     enabled: true,
     ...overrides,
-  };
+  } as unknown as AgentModel;
 }
 
 function connection(): ModelConnection {
