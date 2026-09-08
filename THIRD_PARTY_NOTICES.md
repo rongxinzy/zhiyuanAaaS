@@ -2,7 +2,7 @@
 
 ## Agent Enterprise Protocol Node SDK
 
-This distribution includes `@aep/sdk-node` version 0.2.0, licensed under the Apache License 2.0.
+This distribution includes `@aep/sdk-node` version 0.2.11, licensed under the Apache License 2.0.
 
 Copyright notices and license terms are available in the upstream AEP Node SDK Release and at:
 
