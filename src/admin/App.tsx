@@ -52,6 +52,7 @@ import { AdminResourceTab, Resources } from './Resources.js';
 import { Models } from './Models.js';
 import { Events } from './Events.js';
 import { Operations } from './Operations.js';
+import { AdminNotificationKind, AdminNotificationViewport, notify } from './notifications.js';
 
 const language: AdminLanguage = 'zh';
 const AdminPage = { Overview: 'overview', Resources: 'resources', Models: 'models', Events: 'events', Operations: 'operations' } as const;
@@ -90,9 +91,11 @@ export function AdminApp() {
     setError(null);
     try {
       setSession(await client.login(input));
+      notify(AdminNotificationKind.Success, translate(language, 'signInSucceeded'));
     } catch (cause) {
       console.error('[ZhiyuanAdmin] login failed before session creation', cause);
       setError('signInFailed');
+      notify(AdminNotificationKind.Error, translate(language, 'signInFailed'));
     } finally {
       setPending(false);
     }
@@ -105,10 +108,10 @@ export function AdminApp() {
     setPending(false);
   };
 
-  if (loading) return <LoadingView />;
-  if (!session || session.status === AdminConsoleStatus.SignedOut) return <LoginView pending={pending} error={error} onSubmit={signIn} />;
-  if (session.status === AdminConsoleStatus.Forbidden) return <ForbiddenView identity={session.identity?.user.displayName} />;
-  return <ConsoleLayout client={client} identity={session.identity} pending={pending} page={page} setPage={setPage} onSignOut={signOut} />;
+  if (loading) return <><AdminNotificationViewport /><LoadingView /></>;
+  if (!session || session.status === AdminConsoleStatus.SignedOut) return <><AdminNotificationViewport /><LoginView pending={pending} error={error} onSubmit={signIn} /></>;
+  if (session.status === AdminConsoleStatus.Forbidden) return <><AdminNotificationViewport /><ForbiddenView identity={session.identity?.user.displayName} /></>;
+  return <><AdminNotificationViewport /><ConsoleLayout client={client} identity={session.identity} pending={pending} page={page} setPage={setPage} onSignOut={signOut} /></>;
 }
 
 function LoadingView() {

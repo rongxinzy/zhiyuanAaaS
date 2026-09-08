@@ -311,7 +311,8 @@ describe('admin resources', () => {
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    expect(await screen.findByText('至少选择一个 Role 和一个 Team。')).toBeInTheDocument();
+    expect(await screen.findByText('请至少选择一个 Role。')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '选择 Role' })).toHaveAttribute('aria-invalid', 'true');
     expect(client.updateUser).not.toHaveBeenCalled();
     expect(client.replaceUserRBAC).not.toHaveBeenCalled();
   });
