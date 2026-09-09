@@ -216,7 +216,7 @@ async function exerciseSkill() {
   await waitText('1.0.0');
   await current.getByRole('button', { name: '发布版本' }).click();
   await waitText('已发布');
-  await current.getByRole('button', { name: '取消' }).click();
+  await current.waitFor({ state: 'hidden' });
   await row(names.skill).getByRole('button', { name: '撤回版本' }).click();
   await confirm('确认撤回版本');
 
