@@ -385,6 +385,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             {canMutate && editor?.kind === "user" ? (
               <UserEditorDialog
                 client={client}
+                existingUsernames={resources.users.map((item) => item.username)}
                 user={
                   editor.id
                     ? resources.users.find((item) => item.id === editor.id)
@@ -403,6 +404,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             {canMutate && editor?.kind === "team" ? (
               <TeamEditorDialog
                 client={client}
+                existingTeams={resources.teams}
                 team={
                   editor.id
                     ? resources.teams.find((item) => item.id === editor.id)
@@ -419,6 +421,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             {canMutate && editor?.kind === "role" ? (
               <RoleEditorDialog
                 client={client}
+                existingRoleIds={resources.roles.map((item) => item.id)}
                 role={
                   editor.id
                     ? resources.roles.find((item) => item.id === editor.id)
@@ -436,6 +439,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             {canMutate && editor?.kind === "skill" ? (
               <SkillEditorDialog
                 client={client}
+                existingSkillIds={resources.skills.map((item) => item.id)}
                 skill={
                   editor.id
                     ? resources.skills.find((item) => item.id === editor.id)
@@ -470,7 +474,6 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
                   if (!open) setVersionSkill(null);
                 }}
                 onChanged={load}
-                onError={reportError}
               />
             ) : null}
           </>
@@ -1594,6 +1597,7 @@ function CheckMark() {
 
 function SkillEditorDialog({
   client,
+  existingSkillIds,
   skill,
   open,
   onOpenChange,
@@ -1601,6 +1605,7 @@ function SkillEditorDialog({
   onError,
 }: {
   readonly client: AdminConsoleClient;
+  readonly existingSkillIds: readonly string[];
   readonly skill: AdminSkill | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -1621,6 +1626,14 @@ function SkillEditorDialog({
   }, [skill]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedId = id.trim();
+    if (!skill && existingSkillIds.includes(normalizedId)) {
+      notify(
+        AdminNotificationKind.Error,
+        translate(language, "skillIdAlreadyExists"),
+      );
+      return;
+    }
     setPending(true);
     try {
       if (skill)
@@ -1631,7 +1644,7 @@ function SkillEditorDialog({
         });
       else
         await client.createSkill({
-          id: id.trim(),
+          id: normalizedId,
           name: name.trim(),
           description: description.trim(),
           enabled,
@@ -1747,36 +1760,34 @@ function SkillVersionDialog({
   open,
   onOpenChange,
   onChanged,
-  onError,
 }: {
   readonly client: AdminConsoleClient;
   readonly skill: AdminSkill;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
 }) {
   const [version, setVersion] = useState("");
   const [archive, setArchive] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
-  const [failed, setFailed] = useState<AdminTranslationKey | null>(null);
   useEffect(() => {
     if (open) {
       setVersion("");
       setArchive(null);
-      setFailed(null);
       setPendingVersion(null);
     }
   }, [open, skill.id]);
   const upload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!version.trim() || !archive) {
-      setFailed("skillUploadFailed");
+      notify(
+        AdminNotificationKind.Error,
+        translate(language, "skillUploadFailed"),
+      );
       return;
     }
     setPending(true);
-    setFailed(null);
     try {
       await client.uploadSkillVersion(
         skill.id,
@@ -1786,22 +1797,34 @@ function SkillVersionDialog({
       setVersion("");
       setArchive(null);
       await onChanged();
+      notify(
+        AdminNotificationKind.Success,
+        translate(language, "versionUploaded"),
+      );
     } catch {
-      setFailed("skillUploadFailed");
-      onError();
+      notify(
+        AdminNotificationKind.Error,
+        translate(language, "skillUploadFailed"),
+      );
     } finally {
       setPending(false);
     }
   };
   const publish = async (candidate: string) => {
     setPendingVersion(candidate);
-    setFailed(null);
     try {
       await client.publishSkillVersion(skill.id, candidate);
       await onChanged();
+      onOpenChange(false);
+      notify(
+        AdminNotificationKind.Success,
+        translate(language, "changesSaved"),
+      );
     } catch {
-      setFailed("skillPublishFailed");
-      onError();
+      notify(
+        AdminNotificationKind.Error,
+        translate(language, "skillPublishFailed"),
+      );
     } finally {
       setPendingVersion(null);
     }
@@ -1813,7 +1836,7 @@ function SkillVersionDialog({
         if (!pending && pendingVersion === null) onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="min-w-0 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {translate(language, "uploadVersion")}: {skill.name}
@@ -1822,14 +1845,8 @@ function SkillVersionDialog({
             {translate(language, "skillEditorDescription")}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          {failed ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden="true" />
-              <AlertDescription>{translate(language, failed)}</AlertDescription>
-            </Alert>
-          ) : null}
-          <form onSubmit={upload} noValidate className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
+          <form onSubmit={upload} noValidate className="flex min-w-0 flex-col gap-4">
             <FieldGroup className="gap-4">
               <Field>
                 <FieldLabel htmlFor="skill-version">
@@ -1847,15 +1864,32 @@ function SkillVersionDialog({
                 <FieldLabel htmlFor="skill-package">
                   {translate(language, "skillPackage")}
                 </FieldLabel>
-                <Input
-                  id="skill-package"
-                  type="file"
-                  accept=".zip,application/zip"
-                  onChange={(event) =>
-                    setArchive(event.target.files?.[0] ?? null)
-                  }
-                  disabled={pending || pendingVersion !== null}
-                />
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="relative shrink-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={pending || pendingVersion !== null}
+                    >
+                      <Upload data-icon="inline-start" />
+                      {translate(language, "chooseSkillPackage")}
+                    </Button>
+                    <Input
+                      id="skill-package"
+                      type="file"
+                      accept=".zip,application/zip"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      onChange={(event) =>
+                        setArchive(event.target.files?.[0] ?? null)
+                      }
+                      disabled={pending || pendingVersion !== null}
+                      aria-label={translate(language, "skillPackage")}
+                    />
+                  </div>
+                  <span className="min-w-0 truncate text-sm text-muted-foreground">
+                    {archive?.name ?? translate(language, "noFileSelected")}
+                  </span>
+                </div>
               </Field>
             </FieldGroup>
             <Button
@@ -1871,7 +1905,7 @@ function SkillVersionDialog({
               {translate(language, pending ? "saving" : "uploadVersion")}
             </Button>
           </form>
-          <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <p className="text-sm font-semibold">
               {translate(language, "versions")}
             </p>
@@ -1966,7 +2000,6 @@ function UserImportDialog({
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     if (open) {
       setFile(null);
@@ -2114,6 +2147,7 @@ function normalizeUserImport(value: unknown): JsonObject {
 
 function UserEditorDialog({
   client,
+  existingUsernames,
   user,
   roles,
   teams,
@@ -2123,6 +2157,7 @@ function UserEditorDialog({
   onError,
 }: {
   readonly client: AdminConsoleClient;
+  readonly existingUsernames: readonly string[];
   readonly user: AdminUser | undefined;
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
@@ -2170,6 +2205,15 @@ function UserEditorDialog({
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedUsername = username.trim();
+    if (!user && existingUsernames.includes(normalizedUsername)) {
+      setErrorField("username");
+      notify(
+        AdminNotificationKind.Error,
+        translate(language, "usernameAlreadyExists"),
+      );
+      return;
+    }
     if (roleIds.size === 0) {
       setErrorField("role");
       notify(AdminNotificationKind.Error, translate(language, "roleRequired"));
@@ -2195,7 +2239,7 @@ function UserEditorDialog({
         });
       } else
         await client.createUser({
-          username: username.trim(),
+          username: normalizedUsername,
           displayName: displayName.trim(),
           email: email.trim() || null,
           temporaryPassword,
@@ -2241,7 +2285,7 @@ function UserEditorDialog({
         >
           <FieldGroup className="gap-4">
             {editing ? null : (
-              <Field>
+              <Field data-invalid={errorField === "username"}>
                 <FieldLabel htmlFor="user-username">
                   {translate(language, "username")}
                 </FieldLabel>
@@ -2249,10 +2293,17 @@ function UserEditorDialog({
                   id="user-username"
                   autoComplete="off"
                   value={username}
-                  onChange={(event) => setUsername(event.target.value)}
+                  onChange={(event) => {
+                    setUsername(event.target.value);
+                    if (errorField === "username") setErrorField(null);
+                  }}
                   disabled={pending}
                   required
+                  aria-invalid={errorField === "username"}
                 />
+                {errorField === "username" ? (
+                  <FieldError>{translate(language, "usernameAlreadyExists")}</FieldError>
+                ) : null}
               </Field>
             )}
             <Field>
@@ -2394,6 +2445,7 @@ function UserEditorDialog({
 
 function TeamEditorDialog({
   client,
+  existingTeams,
   team,
   open,
   onOpenChange,
@@ -2401,6 +2453,7 @@ function TeamEditorDialog({
   onError,
 }: {
   readonly client: AdminConsoleClient;
+  readonly existingTeams: readonly Team[];
   readonly team: Team | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -2421,6 +2474,12 @@ function TeamEditorDialog({
   }, [team]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedId = id.trim();
+    const normalizedName = name.trim();
+    if (!team && existingTeams.some((item) => item.id === normalizedId)) {
+      notify(AdminNotificationKind.Error, translate(language, "teamIdAlreadyExists"));
+      return;
+    }
     setPending(true);
     try {
       if (team)
@@ -2431,8 +2490,8 @@ function TeamEditorDialog({
         });
       else
         await client.createTeam({
-          id: id.trim(),
-          name: name.trim(),
+          id: normalizedId,
+          name: normalizedName,
           description: description.trim(),
         });
       onOpenChange(false);
@@ -2544,6 +2603,7 @@ function TeamEditorDialog({
 
 function RoleEditorDialog({
   client,
+  existingRoleIds,
   role,
   permissions,
   open,
@@ -2552,6 +2612,7 @@ function RoleEditorDialog({
   onError,
 }: {
   readonly client: AdminConsoleClient;
+  readonly existingRoleIds: readonly string[];
   readonly role: Role | undefined;
   readonly permissions: readonly Permission[];
   readonly open: boolean;
@@ -2586,6 +2647,11 @@ function RoleEditorDialog({
     });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedId = id.trim();
+    if (!role && existingRoleIds.includes(normalizedId)) {
+      notify(AdminNotificationKind.Error, translate(language, "roleIdAlreadyExists"));
+      return;
+    }
     setPending(true);
     setFailed(false);
     try {
@@ -2598,7 +2664,7 @@ function RoleEditorDialog({
         });
       else
         await client.createRole({
-          id: id.trim(),
+          id: normalizedId,
           name: name.trim(),
           description: description.trim(),
           permissions: [...selected],
@@ -2761,8 +2827,6 @@ function PasswordResetDialog({
       setTemporaryPassword("");
       await onChanged();
     } catch {
-      setFailureMessage("resetPasswordFailed");
-      setFailed(true);
       onError();
     } finally {
       setPending(false);

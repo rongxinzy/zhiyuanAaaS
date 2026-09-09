@@ -164,7 +164,7 @@ try {
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/skills/e2e-skill/versions'));
   await dialog.getByRole('button', { name: '发布版本' }).click();
   await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions[0]?.state, 'published');
-  await dialog.getByRole('button', { name: '取消' }).click();
+  await dialog.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: '撤回版本' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '确认撤回版本' }).click();
   await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 0);
