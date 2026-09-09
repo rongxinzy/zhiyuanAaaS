@@ -257,7 +257,7 @@ async function exerciseModel() {
   await waitText(`${names.display} Updated`);
   await page.getByRole('button', { name: '撤销' }).first().click();
   await confirm('确认撤销');
-  await page.getByRole('button', { name: '删除' }).last().click();
+  await page.locator('[data-slot="card"]').filter({ hasText: `Console Model Updated ${suffix}` }).getByRole('button', { name: '删除' }).click();
   await confirm('删除');
   await waitGone(`Console Model Updated ${suffix}`);
 }
