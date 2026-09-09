@@ -8,15 +8,51 @@ import { InboxState, type InboxItem, type ManagedSkill } from './types.js';
 
 const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
 
+const CURRENT_SCHEMA_VERSION = 2;
+
 export class AgentControlState {
   readonly #database: DatabaseSyncType;
 
   constructor(databasePath: string) {
     fs.mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
     this.#database = new DatabaseSync(databasePath);
+    try {
+      this.#database.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+      this.#migrate();
+    } catch (error) {
+      this.#database.close();
+      throw error;
+    }
+  }
+
+  #migrate(): void {
+    const row = this.#database.prepare('PRAGMA user_version').get() as { user_version: number };
+    const currentVersion = Number(row.user_version ?? 0);
+    if (!Number.isInteger(currentVersion) || currentVersion < 0) {
+      throw new Error('Agent control SQLite schema version is invalid.');
+    }
+    if (currentVersion > CURRENT_SCHEMA_VERSION) {
+      throw new Error(
+        `Agent control SQLite schema version ${currentVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}.`,
+      );
+    }
+
+    for (let version = currentVersion + 1; version <= CURRENT_SCHEMA_VERSION; version += 1) {
+      this.#database.exec('BEGIN IMMEDIATE');
+      try {
+        if (version === 1) this.#migrateToV1();
+        if (version === 2) this.#migrateToV2();
+        this.#database.exec(`PRAGMA user_version = ${version}`);
+        this.#database.exec('COMMIT');
+      } catch (error) {
+        this.#database.exec('ROLLBACK');
+        throw new Error(`Agent control SQLite migration to version ${version} failed.`, { cause: error });
+      }
+    }
+  }
+
+  #migrateToV1(): void {
     this.#database.exec(`
-      PRAGMA journal_mode=WAL;
-      PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS agent_control_kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -39,6 +75,17 @@ export class AgentControlState {
         path TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+    `);
+  }
+
+  #migrateToV2(): void {
+    this.#database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_agent_control_inbox_pending
+        ON agent_control_inbox(state, updated_at, delivery_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_control_outbox_created
+        ON agent_control_outbox(created_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_control_skills_updated
+        ON agent_control_skills(updated_at, skill_id);
     `);
   }
 

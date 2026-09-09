@@ -16,6 +16,35 @@ afterEach(() => {
 });
 
 describe('Agent control state', () => {
+  test('migrates a legacy database and persists the schema version', () => {
+    const directory = createTemporaryDirectory();
+    const databasePath = path.join(directory, 'legacy.sqlite');
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec('CREATE TABLE agent_control_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    legacy.prepare('INSERT INTO agent_control_kv(key,value) VALUES(?,?)').run('legacy', 'preserved');
+    legacy.close();
+
+    const state = new AgentControlState(databasePath);
+    const database = new DatabaseSync(databasePath);
+    expect(database.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
+    expect(database.prepare('SELECT value FROM agent_control_kv WHERE key=?').get('legacy')).toEqual({ value: 'preserved' });
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get('idx_agent_control_inbox_pending')).toEqual({ name: 'idx_agent_control_inbox_pending' });
+    database.close();
+    state.close();
+  });
+
+  test('rejects a database created by a newer extension', () => {
+    const directory = createTemporaryDirectory();
+    const databasePath = path.join(directory, 'future.sqlite');
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const database = new DatabaseSync(databasePath);
+    database.exec('PRAGMA user_version = 99');
+    database.close();
+
+    expect(() => new AgentControlState(databasePath)).toThrow('newer than supported version 2');
+  });
+
   test('persists inbox, outbox, cursor, and managed Skills across restarts', () => {
     const directory = createTemporaryDirectory();
     const databasePath = path.join(directory, 'agent-control.sqlite');
