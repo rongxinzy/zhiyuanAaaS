@@ -58,18 +58,18 @@ export function AdminNotificationViewport() {
     >
       <Alert
         variant="default"
-        className="w-auto min-w-52 max-w-md rounded-2xl border-0 bg-foreground px-4 py-3 text-background shadow-lg"
+        className="w-fit min-w-52 max-w-md rounded-2xl border-0 bg-foreground px-4 py-3 text-background shadow-lg"
       >
-        <>
+        <div className="flex items-center justify-center gap-2">
           {success ? (
             <CheckCircle2 className="text-success" aria-hidden="true" />
           ) : (
             <CircleAlert className="text-destructive" aria-hidden="true" />
           )}
-        </>
-        <AlertDescription className="font-semibold text-background">
-          {notification.message}
-        </AlertDescription>
+          <AlertDescription className="font-semibold text-background">
+            {notification.message}
+          </AlertDescription>
+        </div>
       </Alert>
     </div>
   );

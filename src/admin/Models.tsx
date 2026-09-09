@@ -75,18 +75,18 @@ function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleC
   const [endpoint, setEndpoint] = useState('');
   const [upstreamModel, setUpstreamModel] = useState('');
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<'fields' | 'save' | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!id.trim() || !displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setError(true); return; }
-    setPending(true); setError(false);
+    if (!id.trim() || !displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setError('fields'); return; }
+    setPending(true); setError(null);
     try {
       await client.createModel({ id: id.trim(), displayName: displayName.trim(), sourceType: ModelSourceType.Gateway, protocol: ModelProtocol.OpenAiCompatible, endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), capabilities: [], isDefault: false, enabled: true });
       setId(''); setDisplayName(''); setEndpoint(''); setUpstreamModel(''); setOpen(false); await onCreated();
-    } catch { setError(true); } finally { setPending(false); }
+    } catch { setError('save'); } finally { setPending(false); }
   };
   return (
-    <Dialog open={open} onOpenChange={nextOpen => { setOpen(nextOpen); if (!nextOpen) setError(false); }}>
+    <Dialog open={open} onOpenChange={nextOpen => { setOpen(nextOpen); if (!nextOpen) setError(null); }}>
       <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}>
         <Plus data-icon="inline-start" />{translate(language, 'addModel')}
       </DialogTrigger>
@@ -95,13 +95,13 @@ function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleC
           <DialogTitle>{translate(language, 'addModel')}</DialogTitle>
           <DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          {error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          {error === 'save' ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}
           <FieldGroup>
-            <Field><FieldLabel htmlFor="model-id">{translate(language, 'modelId')}</FieldLabel><Input id="model-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} /></Field>
-            <Field><FieldLabel htmlFor="model-name">{translate(language, 'modelName')}</FieldLabel><Input id="model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field>
-            <Field><FieldLabel htmlFor="model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} /></Field>
-            <Field><FieldLabel htmlFor="model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field>
+            <Field><FieldLabel htmlFor="model-id">{translate(language, 'modelId')}</FieldLabel><Input id="model-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} required /></Field>
+            <Field><FieldLabel htmlFor="model-name">{translate(language, 'modelName')}</FieldLabel><Input id="model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} required /></Field>
+            <Field><FieldLabel htmlFor="model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} required /></Field>
+            <Field><FieldLabel htmlFor="model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} required /></Field>
           </FieldGroup>
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="ghost" disabled={pending} />}>{translate(language, 'cancel')}</DialogClose>
@@ -266,32 +266,32 @@ function ModelEditorDialog({ client, model, open, onOpenChange, onChanged, onErr
   const [enabled, setEnabled] = useState(model.enabled);
   const [isDefault, setIsDefault] = useState(model.isDefault);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<'fields' | 'save' | null>(null);
   useEffect(() => {
     setDisplayName(model.displayName);
     setEndpoint(model.endpoint ?? '');
     setUpstreamModel(model.upstreamModel ?? '');
     setEnabled(model.enabled);
     setIsDefault(model.isDefault);
-    setFailed(false);
+    setFailed(null);
   }, [model]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setFailed(true); return; }
+    if (!displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setFailed('fields'); return; }
     setPending(true);
-    setFailed(false);
+    setFailed(null);
     try {
       await client.updateModel(model.id, { displayName: displayName.trim(), endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), enabled, isDefault });
       onOpenChange(false);
       await onChanged();
     } catch {
-      setFailed(true);
+      setFailed('save');
       onError();
     } finally {
       setPending(false);
     }
   };
-  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'editModel')}</DialogTitle><DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="edit-model-name">{translate(language, 'modelName')}</FieldLabel><Input id="edit-model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="edit-model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor="edit-model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="edit-model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} /></Field><BooleanSwitch id="edit-model-enabled" label={`${translate(language, 'status')}: ${translate(language, enabled ? 'enabled' : 'disabled')}`} checked={enabled} onCheckedChange={setEnabled} disabled={pending} /><BooleanSwitch id="edit-model-default" label={`${translate(language, 'defaultModel')}: ${translate(language, isDefault ? 'enabled' : 'disabled')}`} checked={isDefault} onCheckedChange={setIsDefault} disabled={pending} /></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'editModel')}</DialogTitle><DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} className="flex flex-col gap-4">{failed === 'save' ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="edit-model-name">{translate(language, 'modelName')}</FieldLabel><Input id="edit-model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} required /></Field><Field><FieldLabel htmlFor="edit-model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="edit-model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} disabled={pending} required /></Field><Field><FieldLabel htmlFor="edit-model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="edit-model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} required /></Field><BooleanSwitch id="edit-model-enabled" label={`${translate(language, 'status')}: ${translate(language, enabled ? 'enabled' : 'disabled')}`} checked={enabled} onCheckedChange={setEnabled} disabled={pending} /><BooleanSwitch id="edit-model-default" label={`${translate(language, 'defaultModel')}: ${translate(language, isDefault ? 'enabled' : 'disabled')}`} checked={isDefault} onCheckedChange={setIsDefault} disabled={pending} /></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function ModelGrantDialog({ client, model, existingAssignments, users, roles, teams, onOpenChange, onChanged, onError }: {
