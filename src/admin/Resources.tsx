@@ -16,7 +16,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 
 import type {
   AdminModel,
@@ -57,6 +57,7 @@ import {
 import { Alert, AlertDescription } from "../ui/components/ui/alert.js";
 import { Badge } from "../ui/components/ui/badge.js";
 import { Button } from "../ui/components/ui/button.js";
+import { Checkbox } from "../ui/components/ui/checkbox.js";
 import {
   Dialog,
   DialogContent,
@@ -77,10 +78,13 @@ import {
   FieldDescription,
   FieldError,
   FieldGroup,
+  FieldLegend,
   FieldLabel,
+  FieldSet,
 } from "../ui/components/ui/field.js";
 import { Skeleton } from "../ui/components/ui/skeleton.js";
 import { Spinner } from "../ui/components/ui/spinner.js";
+import { BooleanSwitch } from "./BooleanSwitch.js";
 import { Input } from "../ui/components/ui/input.js";
 import { cn } from "../ui/lib/utils.js";
 import { runBatch } from "./batch.js";
@@ -1536,63 +1540,56 @@ function SelectionList({
   readonly error?: string | undefined;
   readonly errorId?: string;
 }) {
+  const listId = useId();
   return (
-    <Field data-invalid={Boolean(error)}>
-      <FieldLabel>{label}</FieldLabel>
+    <FieldSet
+      data-invalid={Boolean(error)}
+      aria-label={label}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? errorId : undefined}
+      className="gap-2"
+    >
+      <FieldLegend variant="label">{label}</FieldLegend>
       <div
         className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1"
-        role="group"
-        aria-label={label}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? errorId : undefined}
       >
         {options.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">
             {translate(language, "noOptions")}
           </p>
         ) : (
-          options.map((option) => (
-            <Button
-              key={option.id}
-              type="button"
-              variant="ghost"
-              size="sm"
-              role="checkbox"
-              aria-checked={selected.has(option.id)}
-              disabled={disabled}
-              className="justify-between"
-              onClick={() => onToggle(option.id)}
-            >
-              <span className="min-w-0 text-left">
-                <span className="block truncate">{option.label}</span>
-                {option.description ? (
-                  <span className="block truncate text-xs text-tertiary-foreground">
-                    {option.description}
-                  </span>
-                ) : null}
-              </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                  selected.has(option.id)
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input",
-                )}
+          options.map((option, index) => {
+            const checkboxId = `${listId}-option-${index}`;
+            return (
+              <div
+                key={option.id}
+                className="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
               >
-                {selected.has(option.id) ? <CheckMark /> : null}
-              </span>
-            </Button>
-          ))
+                <Checkbox
+                  id={checkboxId}
+                  checked={selected.has(option.id)}
+                  onCheckedChange={() => onToggle(option.id)}
+                  disabled={disabled}
+                />
+                <FieldLabel
+                  htmlFor={checkboxId}
+                  className="min-w-0 flex-1 cursor-pointer font-normal"
+                >
+                  <span className="block truncate">{option.label}</span>
+                  {option.description ? (
+                    <span className="block truncate text-xs text-tertiary-foreground">
+                      {option.description}
+                    </span>
+                  ) : null}
+                </FieldLabel>
+              </div>
+            );
+          })
         )}
       </div>
       {error ? <FieldError id={errorId}>{error}</FieldError> : null}
-    </Field>
+    </FieldSet>
   );
-}
-
-function CheckMark() {
-  return <Check className="size-3" aria-hidden="true" />;
 }
 
 function SkillEditorDialog({
@@ -1721,17 +1718,13 @@ function SkillEditorDialog({
               />
             </Field>
             {editing ? (
-              <Button
-                type="button"
-                variant="outline"
-                role="checkbox"
-                aria-checked={enabled}
+              <BooleanSwitch
+                id="skill-enabled"
+                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
+                checked={enabled}
+                onCheckedChange={setEnabled}
                 disabled={pending}
-                onClick={() => setEnabled((value) => !value)}
-              >
-                {translate(language, "status")}:{" "}
-                {translate(language, enabled ? "enabled" : "disabled")}
-              </Button>
+              />
             ) : null}
           </FieldGroup>
           <DialogFooter>
@@ -2399,28 +2392,21 @@ function UserEditorDialog({
               errorId="user-teams-error"
             />
             {editing ? (
-              <Button
-                type="button"
-                variant={enabled ? "outline" : "secondary"}
-                role="checkbox"
-                aria-checked={enabled}
+              <BooleanSwitch
+                id="user-enabled"
+                label={`${translate(language, "accountEnabled")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
+                checked={enabled}
+                onCheckedChange={setEnabled}
                 disabled={pending}
-                onClick={() => setEnabled((value) => !value)}
-              >
-                {translate(language, "accountEnabled")}:{" "}
-                {translate(language, enabled ? "enabled" : "disabled")}
-              </Button>
+              />
             ) : (
-              <Button
-                type="button"
-                variant={requirePasswordChange ? "outline" : "ghost"}
-                role="checkbox"
-                aria-checked={requirePasswordChange}
+              <BooleanSwitch
+                id="user-require-password-change"
+                label={translate(language, "requirePasswordChange")}
+                checked={requirePasswordChange}
+                onCheckedChange={setRequirePasswordChange}
                 disabled={pending}
-                onClick={() => setRequirePasswordChange((value) => !value)}
-              >
-                {translate(language, "requirePasswordChange")}
-              </Button>
+              />
             )}
           </FieldGroup>
           <DialogFooter>
@@ -2568,17 +2554,13 @@ function TeamEditorDialog({
               />
             </Field>
             {editing ? (
-              <Button
-                type="button"
-                variant="outline"
-                role="checkbox"
-                aria-checked={enabled}
+              <BooleanSwitch
+                id="team-enabled"
+                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
+                checked={enabled}
+                onCheckedChange={setEnabled}
                 disabled={pending}
-                onClick={() => setEnabled((value) => !value)}
-              >
-                {translate(language, "status")}:{" "}
-                {translate(language, enabled ? "enabled" : "disabled")}
-              </Button>
+              />
             ) : null}
           </FieldGroup>
           <DialogFooter>
@@ -2751,17 +2733,13 @@ function RoleEditorDialog({
               disabled={pending}
             />
             {editing ? (
-              <Button
-                type="button"
-                variant="outline"
-                role="checkbox"
-                aria-checked={enabled}
+              <BooleanSwitch
+                id="role-enabled"
+                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
+                checked={enabled}
+                onCheckedChange={setEnabled}
                 disabled={pending}
-                onClick={() => setEnabled((value) => !value)}
-              >
-                {translate(language, "status")}:{" "}
-                {translate(language, enabled ? "enabled" : "disabled")}
-              </Button>
+              />
             ) : null}
           </FieldGroup>
           <DialogFooter>
@@ -2884,16 +2862,13 @@ function PasswordResetDialog({
                 {translate(language, "passwordPolicy")}
               </FieldDescription>
             </Field>
-            <Button
-              type="button"
-              variant="outline"
-              role="checkbox"
-              aria-checked={requirePasswordChange}
+            <BooleanSwitch
+              id="reset-require-password-change"
+              label={translate(language, "requirePasswordChange")}
+              checked={requirePasswordChange}
+              onCheckedChange={setRequirePasswordChange}
               disabled={pending}
-              onClick={() => setRequirePasswordChange((value) => !value)}
-            >
-              {translate(language, "requirePasswordChange")}
-            </Button>
+            />
           </FieldGroup>
           <DialogFooter>
             <Button
@@ -3123,6 +3098,7 @@ export function SubjectMultiPicker({
   readonly onToggle: (key: string) => void;
   readonly disabled: boolean;
 }) {
+  const listId = useId();
   const options = [
     ...users.map((user) => ({
       key: `${AdminSubjectType.User}:${user.id}`,
@@ -3152,48 +3128,44 @@ export function SubjectMultiPicker({
             {translate(language, "noMatchingSubjects")}
           </p>
         ) : (
-          options.map((option) => (
-            <Button
-              key={option.key}
-              type="button"
-              variant="ghost"
-              size="sm"
-              role="checkbox"
-              aria-checked={selected.has(option.key)}
-              disabled={disabled}
-              className="justify-between"
-              onClick={() => onToggle(option.key)}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <UserRound
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
+          options.map((option, index) => {
+            const checkboxId = `${listId}-subject-${index}`;
+            return (
+              <div
+                key={option.key}
+                className="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
+              >
+                <Checkbox
+                  id={checkboxId}
+                  checked={selected.has(option.key)}
+                  onCheckedChange={() => onToggle(option.key)}
+                  disabled={disabled}
                 />
-                <span className="min-w-0 text-left">
-                  <span className="block truncate">
-                    {option.label}{" "}
-                    <span className="text-xs text-tertiary-foreground">
-                      ({option.type})
+                <FieldLabel
+                  htmlFor={checkboxId}
+                  className="min-w-0 flex-1 cursor-pointer font-normal"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <UserRound
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 text-left">
+                      <span className="block truncate">
+                        {option.label}{" "}
+                        <span className="text-xs text-tertiary-foreground">
+                          ({option.type})
+                        </span>
+                      </span>
+                      <span className="block truncate text-xs text-tertiary-foreground">
+                        {option.description}
+                      </span>
                     </span>
                   </span>
-                  <span className="block truncate text-xs text-tertiary-foreground">
-                    {option.description}
-                  </span>
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                  selected.has(option.key)
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input",
-                )}
-              >
-                {selected.has(option.key) ? <CheckMark /> : null}
-              </span>
-            </Button>
-          ))
+                </FieldLabel>
+              </div>
+            );
+          })
         )}
       </div>
       <p className="flex items-center gap-1.5 text-xs text-tertiary-foreground">
