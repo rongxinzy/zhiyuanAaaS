@@ -485,7 +485,7 @@ Button 当前支持的标准 variant 为 `default`、`outline`、`secondary`、`
 - 所有跨页面的操作成功、失败、撤销、发布和登录反馈统一使用 `AdminNotificationViewport`；禁止各页面自行制作悬浮提示。
 - 通知固定在页面顶部正中，使用深色圆角表面；成功配绿色图标、失败配红色图标，文本必须简短且走 `i18n.ts`。
 - 入场仅使用从上方滑入和淡入（200ms）；成功 3 秒后消失，失败 5 秒后消失，同时仅显示最新一条。
-- 通知使用 `role="status"` 与 `aria-live="polite"`。字段格式、必填项等可修正错误仍必须保留在对应 `Field` 内，以 `aria-invalid` 和 `FieldError` 指向具体输入项。
+- 通知使用 `role="status"` 与 `aria-live="polite"`。字段格式、必填项等可修正错误应使用原生表单校验气泡（或对应 `FieldError`），一次只定位第一个错误字段，不得重复占用表单高度。
 
 - 每个页面只有一个清晰的页面级标题；区块标题用 `h2` 或组件提供的标题语义，不用普通 `div` 冒充层级。
 - 输入必须有 `FieldLabel` 和稳定 `id`；错误使用 `aria-invalid`、`FieldError` 和 `role="alert"`，不能只依赖红色边框。

@@ -1,11 +1,38 @@
-import { Check, CircleAlert, Cpu, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import type { AdminModel, ModelAssignment, PlatformUser, Role, Team } from '@aep/sdk-node';
-
-import { AdminConsoleClient, AdminModelSubjectType, AdminPermission, hasAdminPermission, type AdminIdentity, type AdminModels } from './client.js';
-import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
-import { SubjectCell, SubjectMultiPicker } from './Resources.js';
-import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
+import {
+  Check,
+  CircleAlert,
+  Cpu,
+  Pencil,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+} from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  AepProblem,
+  type AdminModel,
+  type ModelAssignment,
+  type PlatformUser,
+  type Role,
+  type Team,
+} from "@aep/sdk-node";
+import {
+  AdminConsoleClient,
+  AdminModelSubjectType,
+  AdminPermission,
+  hasAdminPermission,
+  type AdminIdentity,
+  type AdminModels,
+} from "./client.js";
+import {
+  translate,
+  type AdminLanguage,
+  type AdminTranslationKey,
+} from "./i18n.js";
+import { SubjectCell, SubjectMultiPicker } from "./Resources.js";
+import { Alert, AlertDescription } from "../ui/components/ui/alert.js";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,11 +43,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '../ui/components/ui/alert-dialog.js';
-import { Badge } from '../ui/components/ui/badge.js';
-import { Button } from '../ui/components/ui/button.js';
-import { BooleanSwitch } from './BooleanSwitch.js';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '../ui/components/ui/card.js';
+} from "../ui/components/ui/alert-dialog.js";
+import { Badge } from "../ui/components/ui/badge.js";
+import { Button } from "../ui/components/ui/button.js";
+import { BooleanSwitch } from "./BooleanSwitch.js";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "../ui/components/ui/card.js";
 import {
   Dialog,
   DialogClose,
@@ -30,20 +63,45 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '../ui/components/ui/dialog.js';
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
-import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
-import { Input } from '../ui/components/ui/input.js';
-import { Skeleton } from '../ui/components/ui/skeleton.js';
-import { Spinner } from '../ui/components/ui/spinner.js';
-import { runBatch } from './batch.js';
+} from "../ui/components/ui/dialog.js";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/components/ui/empty.js";
+import { Field, FieldGroup, FieldLabel } from "../ui/components/ui/field.js";
+import { Input } from "../ui/components/ui/input.js";
+import { Skeleton } from "../ui/components/ui/skeleton.js";
+import { Spinner } from "../ui/components/ui/spinner.js";
+import { runBatch } from "./batch.js";
+import { AdminNotificationKind, notify } from "./notifications.js";
 
-const ModelSourceType = { Gateway: 'gateway' } as const;
-const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
-const language: AdminLanguage = 'zh';
-type ModelGrantTarget = { readonly model: AdminModel; readonly assignments: readonly ModelAssignment[] };
+const ModelSourceType = { Gateway: "gateway" } as const;
+const ModelProtocol = { OpenAiCompatible: "openai-compatible" } as const;
+const language: AdminLanguage = "zh";
+type ModelGrantTarget = {
+  readonly model: AdminModel;
+  readonly assignments: readonly ModelAssignment[];
+};
 
-export function Models({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
+function modelSaveMessage(error: unknown): string {
+  if (
+    error instanceof AepProblem &&
+    (error.code === "MODEL_EXISTS" || error.status === 409)
+  )
+    return translate(language, "modelIdExists");
+  return translate(language, "operationUnavailable");
+}
+
+export function Models({
+  client,
+  identity,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
   const canWrite = hasAdminPermission(identity, AdminPermission.ModelsWrite);
   const canAssign = hasAdminPermission(identity, AdminPermission.ModelsAssign);
   const [state, setState] = useState<AdminModels | null>(null);
@@ -57,55 +115,225 @@ export function Models({ client, identity }: { readonly client: AdminConsoleClie
     setLoading(true);
     setError(null);
     try {
-      const [models, resources] = await Promise.all([client.models(identity), client.resources(identity)]);
+      const [models, resources] = await Promise.all([
+        client.models(identity),
+        client.resources(identity),
+      ]);
       setState(models);
       setUsers(resources.users);
       setRoles(resources.roles);
       setTeams(resources.teams);
-    } catch { setError('modelsLoadFailed'); } finally { setLoading(false); }
+    } catch {
+      setError("modelsLoadFailed");
+    } finally {
+      setLoading(false);
+    }
   }, [client, identity]);
-  useEffect(() => { void load(); }, [load]);
-  return <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"><div className="mx-auto flex w-full max-w-4xl flex-col gap-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p><h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'models')}</h2><p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'modelsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>{error ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}{canWrite ? <ModelCreateForm client={client} onCreated={load} /> : null}{loading && !state ? <ModelCatalogSkeleton /> : null}{state ? <ModelList models={state.models} assignments={state.assignments} users={users} roles={roles} teams={teams} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={load} onError={() => setError('modelsLoadFailed')} onGrant={(model, assignments) => setGranting({ model, assignments })} /> : null}{canAssign && granting ? <ModelGrantDialog client={client} model={granting.model} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} onOpenChange={() => setGranting(null)} onChanged={load} onError={() => setError('modelsLoadFailed')} /> : null}</div></section>;
+  useEffect(() => {
+    void load();
+  }, [load]);
+  return (
+    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs text-tertiary-foreground">
+              {translate(language, "workspaceLabel")}
+            </p>
+            <h2 className="mt-1 text-lg font-semibold leading-snug">
+              {translate(language, "models")}
+            </h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {translate(language, "modelsDescription")}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={translate(language, "refresh")}
+            title={translate(language, "refresh")}
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            {loading ? <Spinner /> : <RefreshCw />}
+          </Button>
+        </div>
+        {error ? (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>{translate(language, error)}</AlertDescription>
+          </Alert>
+        ) : null}
+        {canWrite ? <ModelCreateForm client={client} onCreated={load} /> : null}
+        {loading && !state ? <ModelCatalogSkeleton /> : null}
+        {state ? (
+          <ModelList
+            models={state.models}
+            assignments={state.assignments}
+            users={users}
+            roles={roles}
+            teams={teams}
+            canWrite={canWrite}
+            canAssign={canAssign}
+            client={client}
+            onChanged={load}
+            onError={() => setError("modelsLoadFailed")}
+            onGrant={(model, assignments) =>
+              setGranting({ model, assignments })
+            }
+          />
+        ) : null}
+        {canAssign && granting ? (
+          <ModelGrantDialog
+            client={client}
+            model={granting.model}
+            existingAssignments={granting.assignments}
+            users={users}
+            roles={roles}
+            teams={teams}
+            onOpenChange={() => setGranting(null)}
+            onChanged={load}
+            onError={() => setError("modelsLoadFailed")}
+          />
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
-function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleClient; readonly onCreated: () => Promise<void> }) {
+function ModelCreateForm({
+  client,
+  onCreated,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly onCreated: () => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
-  const [id, setId] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [upstreamModel, setUpstreamModel] = useState('');
+  const [id, setId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [endpoint, setEndpoint] = useState("");
+  const [upstreamModel, setUpstreamModel] = useState("");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<'fields' | 'save' | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!id.trim() || !displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setError('fields'); return; }
-    setPending(true); setError(null);
+    setPending(true);
     try {
-      await client.createModel({ id: id.trim(), displayName: displayName.trim(), sourceType: ModelSourceType.Gateway, protocol: ModelProtocol.OpenAiCompatible, endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), capabilities: [], isDefault: false, enabled: true });
-      setId(''); setDisplayName(''); setEndpoint(''); setUpstreamModel(''); setOpen(false); await onCreated();
-    } catch { setError('save'); } finally { setPending(false); }
+      await client.createModel({
+        id: id.trim(),
+        displayName: displayName.trim(),
+        sourceType: ModelSourceType.Gateway,
+        protocol: ModelProtocol.OpenAiCompatible,
+        endpoint: endpoint.trim(),
+        upstreamModel: upstreamModel.trim(),
+        capabilities: [],
+        isDefault: false,
+        enabled: true,
+      });
+      setId("");
+      setDisplayName("");
+      setEndpoint("");
+      setUpstreamModel("");
+      setOpen(false);
+      await onCreated();
+      notify(
+        AdminNotificationKind.Success,
+        translate(language, "changesSaved"),
+      );
+    } catch (error) {
+      notify(AdminNotificationKind.Error, modelSaveMessage(error));
+    } finally {
+      setPending(false);
+    }
   };
   return (
-    <Dialog open={open} onOpenChange={nextOpen => { setOpen(nextOpen); if (!nextOpen) setError(null); }}>
-      <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}>
-        <Plus data-icon="inline-start" />{translate(language, 'addModel')}
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+      }}
+    >
+      <DialogTrigger
+        render={<Button variant="outline" size="sm" className="self-start" />}
+      >
+        <Plus data-icon="inline-start" />
+        {translate(language, "addModel")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{translate(language, 'addModel')}</DialogTitle>
-          <DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription>
+          <DialogTitle>{translate(language, "addModel")}</DialogTitle>
+          <DialogDescription>
+            {translate(language, "addModelDescription")}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-4">
-          {error === 'save' ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}
           <FieldGroup>
-            <Field><FieldLabel htmlFor="model-id">{translate(language, 'modelId')}</FieldLabel><Input id="model-id" value={id} onChange={event => setId(event.target.value)} disabled={pending} required /></Field>
-            <Field><FieldLabel htmlFor="model-name">{translate(language, 'modelName')}</FieldLabel><Input id="model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} required /></Field>
-            <Field><FieldLabel htmlFor="model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} required /></Field>
-            <Field><FieldLabel htmlFor="model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} required /></Field>
+            <Field>
+              <FieldLabel htmlFor="model-id">
+                {translate(language, "modelId")}
+              </FieldLabel>
+              <Input
+                id="model-id"
+                value={id}
+                onChange={(event) => setId(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-name">
+                {translate(language, "modelName")}
+              </FieldLabel>
+              <Input
+                id="model-name"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-endpoint">
+                {translate(language, "modelEndpoint")}
+              </FieldLabel>
+              <Input
+                id="model-endpoint"
+                type="url"
+                value={endpoint}
+                onChange={(event) => setEndpoint(event.target.value)}
+                placeholder={translate(language, "modelEndpointPlaceholder")}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-upstream">
+                {translate(language, "upstreamModel")}
+              </FieldLabel>
+              <Input
+                id="model-upstream"
+                value={upstreamModel}
+                onChange={(event) => setUpstreamModel(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
           </FieldGroup>
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="ghost" disabled={pending} />}>{translate(language, 'cancel')}</DialogClose>
-            <Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button>
+            <DialogClose
+              render={
+                <Button type="button" variant="ghost" disabled={pending} />
+              }
+            >
+              {translate(language, "cancel")}
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {pending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Check data-icon="inline-start" />
+              )}
+              {translate(language, pending ? "saving" : "save")}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -113,7 +341,19 @@ function ModelCreateForm({ client, onCreated }: { readonly client: AdminConsoleC
   );
 }
 
-function ModelList({ models, assignments, users, roles, teams, canWrite, canAssign, client, onChanged, onError, onGrant }: {
+function ModelList({
+  models,
+  assignments,
+  users,
+  roles,
+  teams,
+  canWrite,
+  canAssign,
+  client,
+  onChanged,
+  onError,
+  onGrant,
+}: {
   readonly models: readonly AdminModel[];
   readonly assignments: readonly ModelAssignment[];
   readonly users: readonly PlatformUser[];
@@ -124,13 +364,61 @@ function ModelList({ models, assignments, users, roles, teams, canWrite, canAssi
   readonly client: AdminConsoleClient;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
-  readonly onGrant: (model: AdminModel, assignments: readonly ModelAssignment[]) => void;
+  readonly onGrant: (
+    model: AdminModel,
+    assignments: readonly ModelAssignment[],
+  ) => void;
 }) {
-  if (models.length === 0) return <Empty><EmptyHeader><EmptyMedia><ShieldCheck aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'modelsEmpty')}</EmptyTitle><EmptyDescription>{translate(language, 'modelsEmptyHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="flex flex-col gap-4">{models.map(model => { const modelAssignments = assignments.filter(item => item.resourceId === model.id); return <ModelRow key={model.id} model={model} assignments={modelAssignments} users={users} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(model, modelAssignments)} />; })}</div>;
+  if (models.length === 0)
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia>
+            <ShieldCheck aria-hidden="true" />
+          </EmptyMedia>
+          <EmptyTitle>{translate(language, "modelsEmpty")}</EmptyTitle>
+          <EmptyDescription>
+            {translate(language, "modelsEmptyHint")}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  return (
+    <div className="flex flex-col gap-4">
+      {models.map((model) => {
+        const modelAssignments = assignments.filter(
+          (item) => item.resourceId === model.id,
+        );
+        return (
+          <ModelRow
+            key={model.id}
+            model={model}
+            assignments={modelAssignments}
+            users={users}
+            canWrite={canWrite}
+            canAssign={canAssign}
+            client={client}
+            onChanged={onChanged}
+            onError={onError}
+            onGrant={() => onGrant(model, modelAssignments)}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
-function ModelRow({ model, assignments, users, canWrite, canAssign, client, onChanged, onError, onGrant }: {
+function ModelRow({
+  model,
+  assignments,
+  users,
+  canWrite,
+  canAssign,
+  client,
+  onChanged,
+  onError,
+  onGrant,
+}: {
   readonly model: AdminModel;
   readonly assignments: readonly ModelAssignment[];
   readonly users: readonly PlatformUser[];
@@ -143,36 +431,64 @@ function ModelRow({ model, assignments, users, canWrite, canAssign, client, onCh
 }) {
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState(false);
-  const run = async (operation: () => Promise<void>) => { setPending(true); try { await operation(); await onChanged(); } catch { onError(); } finally { setPending(false); } };
-  const userNames = new Map(users.map(user => [user.id, user]));
+  const run = async (operation: () => Promise<void>) => {
+    setPending(true);
+    try {
+      await operation();
+      await onChanged();
+    } catch {
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  const userNames = new Map(users.map((user) => [user.id, user]));
   return (
     <>
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <Cpu className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Cpu
+                className="mt-1 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
               <div className="min-w-0">
                 <CardTitle className="truncate">{model.displayName}</CardTitle>
                 <p className="break-all text-xs text-tertiary-foreground">
-                  {model.id} / {model.upstreamModel || model.localModelRef || translate(language, 'notProvided')}
+                  {model.id} /{" "}
+                  {model.upstreamModel ||
+                    model.localModelRef ||
+                    translate(language, "notProvided")}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={model.enabled ? 'success' : 'outline'}>{translate(language, model.enabled ? 'enabled' : 'disabled')}</Badge>
-              {model.isDefault ? <Badge variant="info">{translate(language, 'defaultModel')}</Badge> : null}
+              <Badge variant={model.enabled ? "success" : "outline"}>
+                {translate(language, model.enabled ? "enabled" : "disabled")}
+              </Badge>
+              {model.isDefault ? (
+                <Badge variant="info">
+                  {translate(language, "defaultModel")}
+                </Badge>
+              ) : null}
             </div>
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-tertiary-foreground">{translate(language, 'modelEndpoint')}</dt>
-              <dd className="break-all font-normal">{model.endpoint || translate(language, 'notProvided')}</dd>
+              <dt className="text-xs text-tertiary-foreground">
+                {translate(language, "modelEndpoint")}
+              </dt>
+              <dd className="break-all font-normal">
+                {model.endpoint || translate(language, "notProvided")}
+              </dd>
             </div>
             <div>
-              <dt className="text-xs text-tertiary-foreground">{translate(language, 'assignments')}</dt>
+              <dt className="text-xs text-tertiary-foreground">
+                {translate(language, "assignments")}
+              </dt>
               <dd className="font-normal">{assignments.length}</dd>
             </div>
           </dl>
@@ -180,30 +496,82 @@ function ModelRow({ model, assignments, users, canWrite, canAssign, client, onCh
             <div className="flex flex-wrap gap-2">
               {canWrite ? (
                 <>
-                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(true)}>
-                    <Pencil data-icon="inline-start" />{translate(language, 'editModel')}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pending}
+                    onClick={() => setEditing(true)}
+                  >
+                    <Pencil data-icon="inline-start" />
+                    {translate(language, "editModel")}
                   </Button>
-                  <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { enabled: !model.enabled }); })}>
-                    {translate(language, model.enabled ? 'disable' : 'enable')}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() =>
+                      void run(async () => {
+                        await client.updateModel(model.id, {
+                          enabled: !model.enabled,
+                        });
+                      })
+                    }
+                  >
+                    {translate(language, model.enabled ? "disable" : "enable")}
                   </Button>
                   {!model.isDefault ? (
-                    <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateModel(model.id, { isDefault: true }); })}>
-                      {translate(language, 'makeDefault')}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() =>
+                        void run(async () => {
+                          await client.updateModel(model.id, {
+                            isDefault: true,
+                          });
+                        })
+                      }
+                    >
+                      {translate(language, "makeDefault")}
                     </Button>
                   ) : null}
                   <AlertDialog>
-                    <AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}>
-                      <Trash2 data-icon="inline-start" />{translate(language, 'delete')}
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+                          disabled={pending}
+                        />
+                      }
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      {translate(language, "delete")}
                     </AlertDialogTrigger>
                     <AlertDialogContent size="sm">
                       <AlertDialogHeader>
-                        <AlertDialogTitle>{translate(language, 'deleteModelTitle')}</AlertDialogTitle>
-                        <AlertDialogDescription>{translate(language, 'deleteModelDescription')}</AlertDialogDescription>
+                        <AlertDialogTitle>
+                          {translate(language, "deleteModelTitle")}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {translate(language, "deleteModelDescription")}
+                        </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel>
-                        <AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteModel(model.id); })}>
-                          {translate(language, 'delete')}
+                        <AlertDialogCancel disabled={pending}>
+                          {translate(language, "cancel")}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
+                          disabled={pending}
+                          onClick={() =>
+                            void run(async () => {
+                              await client.deleteModel(model.id);
+                            })
+                          }
+                        >
+                          {translate(language, "delete")}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -212,29 +580,62 @@ function ModelRow({ model, assignments, users, canWrite, canAssign, client, onCh
               ) : null}
               {canAssign ? (
                 <Button size="sm" onClick={onGrant}>
-                  <UserRound data-icon="inline-start" />{translate(language, 'grantModel')}
+                  <UserRound data-icon="inline-start" />
+                  {translate(language, "grantModel")}
                 </Button>
               ) : null}
             </div>
           ) : null}
           {canAssign && assignments.length > 0 ? (
             <div className="flex flex-col gap-2 border-t border-border pt-3">
-              {assignments.map(assignment => (
-                <div className="flex items-center justify-between gap-3 text-sm" key={assignment.id}>
-                  <SubjectCell subjectType={assignment.subject.type} subjectId={assignment.subject.id} user={userNames.get(assignment.subject.id)} />
+              {assignments.map((assignment) => (
+                <div
+                  className="flex items-center justify-between gap-3 text-sm"
+                  key={assignment.id}
+                >
+                  <SubjectCell
+                    subjectType={assignment.subject.type}
+                    subjectId={assignment.subject.id}
+                    user={userNames.get(assignment.subject.id)}
+                  />
                   <AlertDialog>
-                    <AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" aria-label={translate(language, 'revoke')} title={translate(language, 'revoke')} disabled={pending} />}>
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+                          aria-label={translate(language, "revoke")}
+                          title={translate(language, "revoke")}
+                          disabled={pending}
+                        />
+                      }
+                    >
                       <Trash2 />
                     </AlertDialogTrigger>
                     <AlertDialogContent size="sm">
                       <AlertDialogHeader>
-                        <AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle>
-                        <AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription>
+                        <AlertDialogTitle>
+                          {translate(language, "revokeConfirmTitle")}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {translate(language, "revokeConfirmDescription")}
+                        </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel>
-                        <AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteModelAssignment(assignment.id); })}>
-                          {translate(language, 'confirmRevoke')}
+                        <AlertDialogCancel disabled={pending}>
+                          {translate(language, "cancel")}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
+                          disabled={pending}
+                          onClick={() =>
+                            void run(async () => {
+                              await client.deleteModelAssignment(assignment.id);
+                            })
+                          }
+                        >
+                          {translate(language, "confirmRevoke")}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -245,14 +646,58 @@ function ModelRow({ model, assignments, users, canWrite, canAssign, client, onCh
           ) : null}
         </CardContent>
       </Card>
-      {canWrite && editing ? <ModelEditorDialog client={client} model={model} open={editing} onOpenChange={setEditing} onChanged={onChanged} onError={onError} /> : null}
+      {canWrite && editing ? (
+        <ModelEditorDialog
+          client={client}
+          model={model}
+          open={editing}
+          onOpenChange={setEditing}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
     </>
   );
 }
 
-function ModelCatalogSkeleton() { return <div className="flex flex-col gap-4">{Array.from({ length: 2 }, (_, index) => <Card key={index}><CardHeader><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Skeleton className="size-4" /><div className="min-w-0 flex flex-col gap-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-64" /></div></div><Skeleton className="h-6 w-14" /></div></CardHeader><CardContent className="flex flex-col gap-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><Skeleton className="h-9 w-full max-w-xs" /><Skeleton className="h-9 w-full max-w-32" /></div><Skeleton className="h-7 w-24" /></CardContent></Card>)}</div>; }
+function ModelCatalogSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      {Array.from({ length: 2 }, (_, index) => (
+        <Card key={index}>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <Skeleton className="size-4" />
+                <div className="min-w-0 flex flex-col gap-2">
+                  <Skeleton className="h-3.5 w-40" />
+                  <Skeleton className="h-3 w-64" />
+                </div>
+              </div>
+              <Skeleton className="h-6 w-14" />
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Skeleton className="h-9 w-full max-w-xs" />
+              <Skeleton className="h-9 w-full max-w-32" />
+            </div>
+            <Skeleton className="h-7 w-24" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
-function ModelEditorDialog({ client, model, open, onOpenChange, onChanged, onError }: {
+function ModelEditorDialog({
+  client,
+  model,
+  open,
+  onOpenChange,
+  onChanged,
+  onError,
+}: {
   readonly client: AdminConsoleClient;
   readonly model: AdminModel;
   readonly open: boolean;
@@ -261,40 +706,145 @@ function ModelEditorDialog({ client, model, open, onOpenChange, onChanged, onErr
   readonly onError: () => void;
 }) {
   const [displayName, setDisplayName] = useState(model.displayName);
-  const [endpoint, setEndpoint] = useState(model.endpoint ?? '');
-  const [upstreamModel, setUpstreamModel] = useState(model.upstreamModel ?? '');
+  const [endpoint, setEndpoint] = useState(model.endpoint ?? "");
+  const [upstreamModel, setUpstreamModel] = useState(model.upstreamModel ?? "");
   const [enabled, setEnabled] = useState(model.enabled);
   const [isDefault, setIsDefault] = useState(model.isDefault);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState<'fields' | 'save' | null>(null);
   useEffect(() => {
     setDisplayName(model.displayName);
-    setEndpoint(model.endpoint ?? '');
-    setUpstreamModel(model.upstreamModel ?? '');
+    setEndpoint(model.endpoint ?? "");
+    setUpstreamModel(model.upstreamModel ?? "");
     setEnabled(model.enabled);
     setIsDefault(model.isDefault);
-    setFailed(null);
   }, [model]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!displayName.trim() || !endpoint.trim() || !upstreamModel.trim()) { setFailed('fields'); return; }
     setPending(true);
-    setFailed(null);
     try {
-      await client.updateModel(model.id, { displayName: displayName.trim(), endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), enabled, isDefault });
+      await client.updateModel(model.id, {
+        displayName: displayName.trim(),
+        endpoint: endpoint.trim(),
+        upstreamModel: upstreamModel.trim(),
+        enabled,
+        isDefault,
+      });
       onOpenChange(false);
       await onChanged();
-    } catch {
-      setFailed('save');
+      notify(
+        AdminNotificationKind.Success,
+        translate(language, "changesSaved"),
+      );
+    } catch (error) {
+      notify(AdminNotificationKind.Error, modelSaveMessage(error));
       onError();
     } finally {
       setPending(false);
     }
   };
-  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) onOpenChange(nextOpen); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'editModel')}</DialogTitle><DialogDescription>{translate(language, 'addModelDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} className="flex flex-col gap-4">{failed === 'save' ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription>{translate(language, 'modelFormFailed')}</AlertDescription></Alert> : null}<FieldGroup className="gap-4"><Field><FieldLabel htmlFor="edit-model-name">{translate(language, 'modelName')}</FieldLabel><Input id="edit-model-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={pending} required /></Field><Field><FieldLabel htmlFor="edit-model-endpoint">{translate(language, 'modelEndpoint')}</FieldLabel><Input id="edit-model-endpoint" type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} disabled={pending} required /></Field><Field><FieldLabel htmlFor="edit-model-upstream">{translate(language, 'upstreamModel')}</FieldLabel><Input id="edit-model-upstream" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} disabled={pending} required /></Field><BooleanSwitch id="edit-model-enabled" label={`${translate(language, 'status')}: ${translate(language, enabled ? 'enabled' : 'disabled')}`} checked={enabled} onCheckedChange={setEnabled} disabled={pending} /><BooleanSwitch id="edit-model-default" label={`${translate(language, 'defaultModel')}: ${translate(language, isDefault ? 'enabled' : 'disabled')}`} checked={isDefault} onCheckedChange={setIsDefault} disabled={pending} /></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!pending) onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{translate(language, "editModel")}</DialogTitle>
+          <DialogDescription>
+            {translate(language, "addModelDescription")}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <FieldGroup className="gap-4">
+            <Field>
+              <FieldLabel htmlFor="edit-model-name">
+                {translate(language, "modelName")}
+              </FieldLabel>
+              <Input
+                id="edit-model-name"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-model-endpoint">
+                {translate(language, "modelEndpoint")}
+              </FieldLabel>
+              <Input
+                id="edit-model-endpoint"
+                type="url"
+                value={endpoint}
+                onChange={(event) => setEndpoint(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-model-upstream">
+                {translate(language, "upstreamModel")}
+              </FieldLabel>
+              <Input
+                id="edit-model-upstream"
+                value={upstreamModel}
+                onChange={(event) => setUpstreamModel(event.target.value)}
+                disabled={pending}
+                required
+              />
+            </Field>
+            <BooleanSwitch
+              id="edit-model-enabled"
+              label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              disabled={pending}
+            />
+            <BooleanSwitch
+              id="edit-model-default"
+              label={`${translate(language, "defaultModel")}: ${translate(language, isDefault ? "enabled" : "disabled")}`}
+              checked={isDefault}
+              onCheckedChange={setIsDefault}
+              disabled={pending}
+            />
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => onOpenChange(false)}
+            >
+              {translate(language, "cancel")}
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Check data-icon="inline-start" />
+              )}
+              {translate(language, pending ? "saving" : "save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-function ModelGrantDialog({ client, model, existingAssignments, users, roles, teams, onOpenChange, onChanged, onError }: {
+function ModelGrantDialog({
+  client,
+  model,
+  existingAssignments,
+  users,
+  roles,
+  teams,
+  onOpenChange,
+  onChanged,
+  onError,
+}: {
   readonly client: AdminConsoleClient;
   readonly model: AdminModel;
   readonly existingAssignments: readonly ModelAssignment[];
@@ -309,9 +859,15 @@ function ModelGrantDialog({ client, model, existingAssignments, users, roles, te
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
-  useEffect(() => { if (model) { setSelected(new Set()); setFailed(false); setFailedSubjects([]); } }, [model]);
+  useEffect(() => {
+    if (model) {
+      setSelected(new Set());
+      setFailed(false);
+      setFailedSubjects([]);
+    }
+  }, [model]);
   const toggleSubject = useCallback((subjectKey: string) => {
-    setSelected(current => {
+    setSelected((current) => {
       const next = new Set(current);
       if (next.has(subjectKey)) next.delete(subjectKey);
       else next.add(subjectKey);
@@ -324,13 +880,18 @@ function ModelGrantDialog({ client, model, existingAssignments, users, roles, te
     setFailed(false);
     setFailedSubjects([]);
     try {
-      const results = await runBatch([...selected], subjectKey => {
-        const separator = subjectKey.indexOf(':');
+      const results = await runBatch([...selected], (subjectKey) => {
+        const separator = subjectKey.indexOf(":");
         const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
         const id = subjectKey.slice(separator + 1);
-        return client.createModelAssignment({ modelId: model.id, subject: { type, id } });
+        return client.createModelAssignment({
+          modelId: model.id,
+          subject: { type, id },
+        });
       });
-      const failures = results.filter(result => !result.ok).map(result => result.item);
+      const failures = results
+        .filter((result) => !result.ok)
+        .map((result) => result.item);
       if (failures.length > 0) {
         setFailed(true);
         setFailedSubjects(failures);
@@ -347,17 +908,70 @@ function ModelGrantDialog({ client, model, existingAssignments, users, roles, te
     }
   };
   return (
-    <Dialog open onOpenChange={nextOpen => { if (!pending && !nextOpen) onOpenChange(null); }}>
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!pending && !nextOpen) onOpenChange(null);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{translate(language, 'grantModelTitle')}</DialogTitle>
-          <DialogDescription>{translate(language, 'grantModelDescription')} <span className="font-normal text-foreground">{model.displayName}</span></DialogDescription>
+          <DialogTitle>{translate(language, "grantModelTitle")}</DialogTitle>
+          <DialogDescription>
+            {translate(language, "grantModelDescription")}{" "}
+            <span className="font-normal text-foreground">
+              {model.displayName}
+            </span>
+          </DialogDescription>
         </DialogHeader>
-        {failed ? <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertDescription><p>{translate(language, 'grantFailed')}</p>{failedSubjects.length > 0 ? <p className="mt-1 text-xs">{translate(language, 'grantFailedSubjects')}: {failedSubjects.join(', ')}</p> : null}</AlertDescription></Alert> : null}
-        <Field><SubjectMultiPicker users={users} roles={roles} teams={teams} excluded={new Set(existingAssignments.map(item => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggleSubject} disabled={pending} /></Field>
+        {failed ? (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>
+              <p>{translate(language, "grantFailed")}</p>
+              {failedSubjects.length > 0 ? (
+                <p className="mt-1 text-xs">
+                  {translate(language, "grantFailedSubjects")}:{" "}
+                  {failedSubjects.join(", ")}
+                </p>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <Field>
+          <SubjectMultiPicker
+            users={users}
+            roles={roles}
+            teams={teams}
+            excluded={
+              new Set(
+                existingAssignments.map(
+                  (item) => `${item.subject.type}:${item.subject.id}`,
+                ),
+              )
+            }
+            selected={selected}
+            onToggle={toggleSubject}
+            disabled={pending}
+          />
+        </Field>
         <DialogFooter>
-          <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(null)}>{translate(language, 'cancel')}</Button>
-          <Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : null}{translate(language, pending ? 'granting' : 'grant')}</Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={() => onOpenChange(null)}
+          >
+            {translate(language, "cancel")}
+          </Button>
+          <Button
+            type="button"
+            disabled={pending || selected.size === 0}
+            onClick={() => void submit()}
+          >
+            {pending ? <Spinner data-icon="inline-start" /> : null}
+            {translate(language, pending ? "granting" : "grant")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,7 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
   "group/alert relative grid w-full gap-0.5 rounded-lg border px-2.5 py-2 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
@@ -9,21 +9,20 @@ const alertVariants = cva(
     variants: {
       variant: {
         default: "bg-card text-card-foreground",
-        info:
-          "border-info-border bg-info-soft text-info *:data-[slot=alert-description]:text-info *:[svg]:text-current",
+        info: "border-info-border bg-info-soft text-info *:data-[slot=alert-description]:text-info *:[svg]:text-current",
         success:
           "border-success-border bg-success-soft text-success *:data-[slot=alert-description]:text-success *:[svg]:text-current",
         warning:
           "border-warning-border bg-warning-soft text-warning *:data-[slot=alert-description]:text-warning *:[svg]:text-current",
         destructive:
-          "border-destructive bg-destructive-soft text-destructive *:data-[slot=alert-description]:text-destructive *:[svg]:text-current",
+          "fixed inset-x-0 top-4 z-[60] mx-auto w-fit max-w-[min(32rem,calc(100vw-2rem))] rounded-2xl border-0 bg-foreground px-4 py-3 text-background shadow-lg motion-safe:animate-in motion-safe:slide-in-from-top-3 motion-safe:fade-in duration-200 *:data-[slot=alert-description]:text-background *:[svg]:text-destructive",
       },
     },
     defaultVariants: {
       variant: "default",
     },
-  }
-)
+  },
+);
 
 function Alert({
   className,
@@ -37,7 +36,7 @@ function Alert({
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />
-  )
+  );
 }
 
 function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
@@ -46,11 +45,11 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="alert-title"
       className={cn(
         "font-medium group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function AlertDescription({
@@ -62,11 +61,11 @@ function AlertDescription({
       data-slot="alert-description"
       className={cn(
         "text-sm text-balance text-muted-foreground md:text-pretty [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
@@ -76,7 +75,7 @@ function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
       className={cn("absolute top-2 right-2", className)}
       {...props}
     />
-  )
+  );
 }
 
-export { Alert, AlertTitle, AlertDescription, AlertAction }
+export { Alert, AlertTitle, AlertDescription, AlertAction };

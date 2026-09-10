@@ -90,6 +90,7 @@ const translations = {
     userCreated: "用户已创建。",
     userUpdated: "用户已更新。",
     changesSaved: "更改已保存。",
+    modelIdExists: "模型 ID 已存在，请换一个唯一的 ID。",
     showPassword: "显示密码",
     hidePassword: "隐藏密码",
     requirePasswordChange: "首次登录时要求修改密码",
@@ -518,6 +519,7 @@ const translations = {
     userCreated: "User created.",
     userUpdated: "User updated.",
     changesSaved: "Changes saved.",
+    modelIdExists: "That model ID already exists. Use a unique ID.",
     showPassword: "Show password",
     hidePassword: "Hide password",
     requirePasswordChange: "Require password change on first sign-in",
@@ -652,7 +654,8 @@ const translations = {
     upstreamModel: "Upstream model",
     save: "Save",
     saving: "Saving",
-    modelFieldsRequired: "Enter the model ID, display name, gateway endpoint, and upstream model.",
+    modelFieldsRequired:
+      "Enter the model ID, display name, gateway endpoint, and upstream model.",
     modelFormFailed:
       "The model could not be saved. Check the fields and try again.",
     modelsLoadFailed: "The model catalog could not be loaded. Try again later.",
