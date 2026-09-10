@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ClipboardList,
+  Copy,
   Eye,
   Search,
   Send,
@@ -59,7 +60,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../ui/components/ui/empty.js";
-import { Field, FieldGroup, FieldLabel } from "../ui/components/ui/field.js";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "../ui/components/ui/field.js";
 import { Input } from "../ui/components/ui/input.js";
 import { Spinner } from "../ui/components/ui/spinner.js";
 import {
@@ -278,6 +284,10 @@ export function Events({
             filters={auditFilters}
             onFiltersChange={setAuditFilters}
             onSubmit={search}
+            onClear={() => {
+              setType("");
+              setAuditFilters({});
+            }}
             loading={status === "loading"}
           />
         </div>
@@ -347,6 +357,17 @@ function ControlEventPublishCard({
   const [expiresInMinutes, setExpiresInMinutes] = useState("5");
   const [supersedesKey, setSupersedesKey] = useState("");
   const [failed, setFailed] = useState(false);
+  const invalidScope =
+    failed && scopeType !== ControlEventScopeType.Global && !scopeId.trim();
+  const invalidResource =
+    failed &&
+    Boolean(resourceId.trim() || resourceRevision.trim()) &&
+    (!resourceId.trim() || !resourceRevision.trim());
+  const invalidExpiry =
+    failed &&
+    (!Number.isInteger(Number(expiresInMinutes)) ||
+      Number(expiresInMinutes) < 1 ||
+      Number(expiresInMinutes) > 1440);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -398,7 +419,7 @@ function ControlEventPublishCard({
         </div>
       </CardHeader>
       <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
+        <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
           <p className="text-sm text-muted-foreground">
             {translate(language, "publishEventDescription")}
           </p>
@@ -461,7 +482,7 @@ function ControlEventPublishCard({
               </ToggleGroup>
             </Field>
             {scopeType !== ControlEventScopeType.Global ? (
-              <Field data-invalid={failed && !scopeId.trim()}>
+              <Field data-invalid={invalidScope}>
                 <FieldLabel htmlFor="publish-scope-id">
                   {translate(language, "publishScopeId")}
                 </FieldLabel>
@@ -469,37 +490,40 @@ function ControlEventPublishCard({
                   id="publish-scope-id"
                   value={scopeId}
                   onChange={(event) => setScopeId(event.target.value)}
-                  aria-invalid={failed && !scopeId.trim()}
+                  aria-invalid={invalidScope}
+                  aria-describedby={
+                    invalidScope ? "publish-scope-id-error" : undefined
+                  }
                   disabled={pending}
                 />
+                {invalidScope ? (
+                  <FieldError id="publish-scope-id-error">
+                    {translate(language, "fieldRequired")}
+                  </FieldError>
+                ) : null}
               </Field>
             ) : null}
-            <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field>
-                <FieldLabel>
-                  {translate(language, "eventResourceType")}
-                </FieldLabel>
-                <ToggleGroup
-                  value={[resourceType]}
-                  onValueChange={(next) => {
-                    if (next[0])
-                      setResourceType(next[0] as ControlEventResourceType);
-                  }}
-                  variant="outline"
-                  className="flex-wrap"
-                  aria-label={translate(language, "publishResourceType")}
-                >
-                  {CONTROL_EVENT_RESOURCE_TYPES.map((value) => (
-                    <ToggleGroupItem key={value} value={value}>
-                      {translate(
-                        language,
-                        CONTROL_EVENT_RESOURCE_LABELS[value],
-                      )}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Field>
-              <Field>
+            <Field>
+              <FieldLabel>{translate(language, "eventResourceType")}</FieldLabel>
+              <ToggleGroup
+                value={[resourceType]}
+                onValueChange={(next) => {
+                  if (next[0])
+                    setResourceType(next[0] as ControlEventResourceType);
+                }}
+                variant="outline"
+                className="flex-wrap"
+                aria-label={translate(language, "publishResourceType")}
+              >
+                {CONTROL_EVENT_RESOURCE_TYPES.map((value) => (
+                  <ToggleGroupItem key={value} value={value}>
+                    {translate(language, CONTROL_EVENT_RESOURCE_LABELS[value])}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Field>
+            <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field data-invalid={invalidResource}>
                 <FieldLabel htmlFor="publish-resource-id">
                   {translate(language, "publishResourceId")}
                 </FieldLabel>
@@ -509,9 +533,18 @@ function ControlEventPublishCard({
                   onChange={(event) => setResourceId(event.target.value)}
                   placeholder={translate(language, "optional")}
                   disabled={pending}
+                  aria-invalid={invalidResource}
+                  aria-describedby={
+                    invalidResource ? "publish-resource-error" : undefined
+                  }
                 />
+                {invalidResource ? (
+                  <FieldError id="publish-resource-error">
+                    {translate(language, "resourceReferenceRequired")}
+                  </FieldError>
+                ) : null}
               </Field>
-              <Field>
+              <Field data-invalid={invalidResource}>
                 <FieldLabel htmlFor="publish-resource-revision">
                   {translate(language, "publishResourceRevision")}
                 </FieldLabel>
@@ -521,18 +554,15 @@ function ControlEventPublishCard({
                   onChange={(event) => setResourceRevision(event.target.value)}
                   placeholder={translate(language, "optional")}
                   disabled={pending}
+                  aria-invalid={invalidResource}
+                  aria-describedby={
+                    invalidResource ? "publish-resource-error" : undefined
+                  }
                 />
               </Field>
             </FieldGroup>
             <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field
-                data-invalid={
-                  failed &&
-                  (!Number.isInteger(Number(expiresInMinutes)) ||
-                    Number(expiresInMinutes) < 1 ||
-                    Number(expiresInMinutes) > 1440)
-                }
-              >
+              <Field data-invalid={invalidExpiry}>
                 <FieldLabel htmlFor="publish-expires-in">
                   {translate(language, "publishExpiresInMinutes")}
                 </FieldLabel>
@@ -544,14 +574,17 @@ function ControlEventPublishCard({
                   step={1}
                   value={expiresInMinutes}
                   onChange={(event) => setExpiresInMinutes(event.target.value)}
-                  aria-invalid={
-                    failed &&
-                    (!Number.isInteger(Number(expiresInMinutes)) ||
-                      Number(expiresInMinutes) < 1 ||
-                      Number(expiresInMinutes) > 1440)
+                  aria-invalid={invalidExpiry}
+                  aria-describedby={
+                    invalidExpiry ? "publish-expires-in-error" : undefined
                   }
                   disabled={pending}
                 />
+                {invalidExpiry ? (
+                  <FieldError id="publish-expires-in-error">
+                    {translate(language, "eventExpiryHint")}
+                  </FieldError>
+                ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="publish-supersedes-key">
@@ -576,9 +609,37 @@ function ControlEventPublishCard({
             {translate(language, "publish")}
           </Button>
           {published ? (
-            <p className="text-xs text-success">
-              {translate(language, "eventCreated")}: {published}
-            </p>
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs text-success"
+              role="status"
+            >
+              <span>{translate(language, "eventCreated")}</span>
+              <code className="max-w-full truncate text-tertiary-foreground">
+                {published}
+              </code>
+              {published !== "created" ? (
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-success hover:bg-success-soft hover:text-success"
+                  aria-label={translate(language, "copyEventId")}
+                  title={translate(language, "copyEventId")}
+                  onClick={() =>
+                    void navigator.clipboard
+                      ?.writeText(published)
+                      .then(() =>
+                        notify(
+                          AdminNotificationKind.Success,
+                          translate(language, "eventIdCopied"),
+                        ),
+                      )
+                  }
+                >
+                  <Copy />
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </form>
       </CardContent>
@@ -592,6 +653,7 @@ function AuditSearchCard({
   filters,
   onFiltersChange,
   onSubmit,
+  onClear,
   loading,
 }: {
   readonly type: string;
@@ -599,6 +661,7 @@ function AuditSearchCard({
   readonly filters: EventFilters;
   readonly onFiltersChange: (filters: EventFilters) => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly onClear: () => void;
   readonly loading: boolean;
 }) {
   const update = (key: string, value: string) =>
@@ -613,7 +676,7 @@ function AuditSearchCard({
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="event-type">
                 {translate(language, "eventType")}
@@ -643,6 +706,7 @@ function AuditSearchCard({
                 id="event-resource-type"
                 value={String(filters.resourceType ?? "")}
                 onChange={(event) => update("resourceType", event.target.value)}
+                placeholder={translate(language, "auditResourceTypePlaceholder")}
               />
             </Field>
             <Field>
@@ -663,54 +727,57 @@ function AuditSearchCard({
                 id="event-result"
                 value={String(filters.result ?? "")}
                 onChange={(event) => update("result", event.target.value)}
+                placeholder={translate(language, "auditResultPlaceholder")}
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="event-occurred-after">
-                {translate(language, "occurredAfter")}
-              </FieldLabel>
-              <Input
-                id="event-occurred-after"
-                type="datetime-local"
-                value={dateTimeInputValue(filters.occurredAfter)}
-                onChange={(event) =>
-                  update(
-                    "occurredAfter",
-                    event.target.value
-                      ? new Date(event.target.value).toISOString()
-                      : "",
-                  )
-                }
-              />
+            <Field className="sm:col-span-2">
+              <FieldLabel>{translate(language, "auditTimeRange")}</FieldLabel>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Input
+                  id="event-occurred-after"
+                  type="datetime-local"
+                  value={dateTimeInputValue(filters.occurredAfter)}
+                  onChange={(event) =>
+                    update(
+                      "occurredAfter",
+                      event.target.value
+                        ? new Date(event.target.value).toISOString()
+                        : "",
+                    )
+                  }
+                  aria-label={translate(language, "occurredAfter")}
+                />
+                <Input
+                  id="event-occurred-before"
+                  type="datetime-local"
+                  value={dateTimeInputValue(filters.occurredBefore)}
+                  onChange={(event) =>
+                    update(
+                      "occurredBefore",
+                      event.target.value
+                        ? new Date(event.target.value).toISOString()
+                        : "",
+                    )
+                  }
+                  aria-label={translate(language, "occurredBefore")}
+                />
+              </div>
             </Field>
-            <Field>
-              <FieldLabel htmlFor="event-occurred-before">
-                {translate(language, "occurredBefore")}
-              </FieldLabel>
-              <Input
-                id="event-occurred-before"
-                type="datetime-local"
-                value={dateTimeInputValue(filters.occurredBefore)}
-                onChange={(event) =>
-                  update(
-                    "occurredBefore",
-                    event.target.value
-                      ? new Date(event.target.value).toISOString()
-                      : "",
-                  )
-                }
-              />
-            </Field>
+          </FieldGroup>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" variant="outline" disabled={loading}>
+              <Search data-icon="inline-start" />
+              {translate(language, "search")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={loading}
+              onClick={onClear}
+            >
+              {translate(language, "clearFilters")}
+            </Button>
           </div>
-          <Button
-            className="self-start"
-            type="submit"
-            variant="outline"
-            disabled={loading}
-          >
-            <Search data-icon="inline-start" />
-            {translate(language, "search")}
-          </Button>
         </form>
       </CardContent>
     </Card>
