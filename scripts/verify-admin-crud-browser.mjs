@@ -80,11 +80,9 @@ try {
   await waitForText(page, 'E2E Team Updated');
   assert.equal(state.teams.find(item => item.id === 'e2e-team')?.name, 'E2E Team Updated');
   await page.getByRole('button', { name: '停用' }).click();
-  await waitForText(page, '停用');
-  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.enabled, false);
+  await waitForValue(() => state.teams.find(item => item.id === 'e2e-team')?.enabled, false);
   await page.getByRole('button', { name: '启用' }).click();
-  await waitForText(page, '启用');
-  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.enabled, true);
+  await waitForValue(() => state.teams.find(item => item.id === 'e2e-team')?.enabled, true);
 
   await page.getByRole('tab', { name: 'Role' }).click();
   await page.getByRole('button', { name: '新增 Role' }).click();
@@ -101,11 +99,9 @@ try {
   await waitForText(page, 'E2E Role Updated');
   assert.equal(state.roles.find(item => item.id === 'e2e-role')?.name, 'E2E Role Updated');
   await page.getByRole('button', { name: '停用' }).click();
-  await waitForText(page, '停用');
-  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.enabled, false);
+  await waitForValue(() => state.roles.find(item => item.id === 'e2e-role')?.enabled, false);
   await page.getByRole('button', { name: '启用' }).click();
-  await waitForText(page, '启用');
-  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.enabled, true);
+  await waitForValue(() => state.roles.find(item => item.id === 'e2e-role')?.enabled, true);
 
   await page.getByRole('tab', { name: '用户' }).click();
   await page.getByRole('button', { name: '新增用户' }).click();
@@ -149,11 +145,9 @@ try {
   await waitForText(page, 'E2E Skill Updated');
   assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.name, 'E2E Skill Updated');
   await page.getByRole('button', { name: '停用' }).click();
-  await waitForText(page, '停用');
-  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.enabled, false);
+  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.enabled, false);
   await page.getByRole('button', { name: '启用' }).click();
-  await waitForText(page, '启用');
-  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.enabled, true);
+  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.enabled, true);
 
   await page.getByRole('button', { name: '上传版本' }).click();
   dialog = page.getByRole('dialog');
@@ -220,7 +214,8 @@ try {
     await waitForValue(() => state.modelAssignments.length, expectedLength);
   }
   assert.equal(state.modelAssignments.length, 0);
-  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('button', { name: '操作' }).click();
+  await page.getByRole('menuitem', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
   await waitForNoText(page, 'E2E Model Updated');
   assert.equal(state.models.length, 0);
@@ -249,10 +244,10 @@ try {
   await waitForValue(() => state.credentials[0]?.maskedValue, 'e2e-rotated-***');
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === `/aep/v1/admin/credentials/${credentialId}/rotate`));
   await page.getByRole('button', { name: '停用' }).click();
-  await waitForText(page, '停用');
+  await waitForValue(() => state.credentials[0]?.enabled, false);
   assert.equal(state.credentials[0].enabled, false);
   await page.getByRole('button', { name: '启用' }).click();
-  await waitForText(page, '启用');
+  await waitForValue(() => state.credentials[0]?.enabled, true);
   assert.equal(state.credentials[0].enabled, true);
   await page.getByRole('button', { name: '授权凭证' }).click();
   dialog = page.getByRole('dialog');
@@ -348,7 +343,7 @@ try {
   await waitForText(page, 'E2E 用户 Updated');
   assert.equal(createdUser.displayName, 'E2E 用户 Updated');
   await page.getByRole('button', { name: '停用' }).last().click();
-  await waitForText(page, '停用');
+  await waitForValue(() => createdUser.status, 'disabled');
   assert.equal(createdUser.status, 'disabled');
 
   await page.reload({ waitUntil: 'networkidle' });

@@ -68,7 +68,7 @@
   --radius: var(--tea-border-radius-default);
   --sidebar: var(--menu-bg);
   --sidebar-foreground: var(--menu-text-default);
-  --menu-item-bg-active: #e5ecff;
+  --menu-item-bg-active: var(--tea-color-bg-brand-lighten-default);
   --menu-item-text-active: var(--menu-text-default);
   --menu-icon-color-active: var(--menu-text-default);
   --sidebar-primary: var(--menu-item-bg-active);
@@ -136,7 +136,7 @@
   --radius: var(--tea-border-radius-default);
   --sidebar: var(--menu-bg);
   --sidebar-foreground: var(--menu-text-default);
-  --menu-item-bg-active: #282e40;
+  --menu-item-bg-active: var(--tea-color-bg-secondary-hover);
   --menu-item-text-active: var(--tea-color-text-on-bg-brand-default);
   --menu-icon-color-active: var(--tea-color-text-on-bg-brand-default);
   --sidebar-primary: var(--menu-item-bg-active);

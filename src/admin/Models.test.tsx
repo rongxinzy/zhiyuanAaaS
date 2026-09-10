@@ -104,7 +104,8 @@ describe('admin models', () => {
     fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新名称' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(client.updateModel).toHaveBeenCalledWith('chat', expect.objectContaining({ displayName: '新名称', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat' })));
-    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByRole('button', { name: '操作' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }));
     const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
     fireEvent.click(deleteButtons.at(-1)!);
     await waitFor(() => expect(client.deleteModel).toHaveBeenCalledWith('chat'));
