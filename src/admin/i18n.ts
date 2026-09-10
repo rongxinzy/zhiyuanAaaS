@@ -215,6 +215,7 @@ const translations = {
     saving: "正在保存",
     modelFieldsRequired: "请填写模型 ID、显示名称、网关地址和上游模型。",
     modelFormFailed: "模型保存失败，请检查字段或稍后重试。",
+    fieldRequired: "请填写此字段。",
     modelsLoadFailed: "模型目录加载失败，请稍后重试。",
     modelsEmpty: "暂无企业模型",
     makeDefault: "设为默认",
@@ -658,6 +659,7 @@ const translations = {
       "Enter the model ID, display name, gateway endpoint, and upstream model.",
     modelFormFailed:
       "The model could not be saved. Check the fields and try again.",
+    fieldRequired: "This field is required.",
     modelsLoadFailed: "The model catalog could not be loaded. Try again later.",
     modelsEmpty: "No enterprise models",
     makeDefault: "Make default",

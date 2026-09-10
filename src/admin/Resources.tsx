@@ -115,6 +115,8 @@ function PasswordInput({
   minLength,
   maxLength,
   required,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   readonly id: string;
   readonly value: string;
@@ -124,6 +126,8 @@ function PasswordInput({
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly required?: boolean;
+  readonly "aria-invalid"?: boolean;
+  readonly "aria-describedby"?: string | undefined;
 }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -139,6 +143,8 @@ function PasswordInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         className="pr-10"
       />
       <Button
@@ -708,7 +714,7 @@ function UsersTable({
       <EmptyState label="usersEmpty" hint="usersEmptyHint" icon={UserRound} />
     );
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -828,7 +834,7 @@ function TeamsTable({
   if (teams.length === 0)
     return <EmptyState label="teamsEmpty" hint="teamsEmptyHint" icon={Users} />;
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -977,7 +983,7 @@ function RolesTable({
       <EmptyState label="rolesEmpty" hint="rolesEmptyHint" icon={ShieldCheck} />
     );
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -1148,7 +1154,7 @@ function SkillsTable({
       <EmptyState label="skillsEmpty" hint="skillsEmptyHint" icon={Boxes} />
     );
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -1413,7 +1419,7 @@ function AssignmentsTable({
   const skillNames = new Map(skills.map((skill) => [skill.id, skill.name]));
   const userNames = new Map(users.map((user) => [user.id, user]));
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -1687,9 +1693,9 @@ function SkillEditorDialog({
                 <Input
                   id="skill-id"
                   value={id}
-                  onChange={(event) => setId(event.target.value)}
                   disabled={pending}
                   required
+                  onChange={(event) => setId(event.target.value)}
                 />
               </Field>
             )}
@@ -2780,22 +2786,18 @@ function PasswordResetDialog({
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [requirePasswordChange, setRequirePasswordChange] = useState(true);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [failureMessage, setFailureMessage] = useState<AdminTranslationKey>(
-    "resetPasswordFailed",
-  );
+  const [passwordError, setPasswordError] = useState<AdminTranslationKey | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
       temporaryPassword.length < PASSWORD_MIN_LENGTH ||
       temporaryPassword.length > PASSWORD_MAX_LENGTH
     ) {
-      setFailureMessage("passwordPolicy");
-      setFailed(true);
+      setPasswordError("passwordPolicy");
       return;
     }
     setPending(true);
-    setFailed(false);
+    setPasswordError(null);
     try {
       await client.resetUserPassword(user.id, {
         temporaryPassword,
@@ -2833,23 +2835,18 @@ function PasswordResetDialog({
           autoComplete="off"
           className="flex flex-col gap-4"
         >
-          {failed ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden="true" />
-              <AlertDescription>
-                {translate(language, failureMessage)}
-              </AlertDescription>
-            </Alert>
-          ) : null}
           <FieldGroup>
-            <Field>
+            <Field data-invalid={Boolean(passwordError)}>
               <FieldLabel htmlFor="reset-temp-password">
                 {translate(language, "temporaryPassword")}
               </FieldLabel>
               <PasswordInput
                 id="reset-temp-password"
                 value={temporaryPassword}
-                onChange={setTemporaryPassword}
+                onChange={(value) => {
+                  setTemporaryPassword(value);
+                  if (passwordError) setPasswordError(null);
+                }}
                 minLength={PASSWORD_MIN_LENGTH}
                 maxLength={PASSWORD_MAX_LENGTH}
                 placeholder={translate(
@@ -2857,10 +2854,13 @@ function PasswordResetDialog({
                   "temporaryPasswordPlaceholder",
                 )}
                 disabled={pending}
+                aria-invalid={Boolean(passwordError)}
+                aria-describedby={passwordError ? "reset-temp-password-error" : undefined}
               />
               <FieldDescription>
                 {translate(language, "passwordPolicy")}
               </FieldDescription>
+              {passwordError ? <FieldError id="reset-temp-password-error">{translate(language, passwordError)}</FieldError> : null}
             </Field>
             <BooleanSwitch
               id="reset-require-password-change"

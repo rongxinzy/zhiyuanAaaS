@@ -2,6 +2,7 @@ import {
   Check,
   CircleAlert,
   Cpu,
+  Ellipsis,
   Pencil,
   Plus,
   RefreshCw,
@@ -65,13 +66,25 @@ import {
   DialogTrigger,
 } from "../ui/components/ui/dialog.js";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/components/ui/dropdown-menu.js";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "../ui/components/ui/empty.js";
-import { Field, FieldGroup, FieldLabel } from "../ui/components/ui/field.js";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "../ui/components/ui/field.js";
 import { Input } from "../ui/components/ui/input.js";
 import { Skeleton } from "../ui/components/ui/skeleton.js";
 import { Spinner } from "../ui/components/ui/spinner.js";
@@ -111,6 +124,9 @@ export function Models({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [granting, setGranting] = useState<ModelGrantTarget | null>(null);
+  const reportMutationError = useCallback(() => {
+    notify(AdminNotificationKind.Error, translate(language, "modelFormFailed"));
+  }, []);
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -147,16 +163,19 @@ export function Models({
               {translate(language, "modelsDescription")}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={translate(language, "refresh")}
-            title={translate(language, "refresh")}
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            {loading ? <Spinner /> : <RefreshCw />}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canWrite ? <ModelCreateForm client={client} onCreated={load} /> : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={translate(language, "refresh")}
+              title={translate(language, "refresh")}
+              disabled={loading}
+              onClick={() => void load()}
+            >
+              {loading ? <Spinner /> : <RefreshCw />}
+            </Button>
+          </div>
         </div>
         {error ? (
           <Alert variant="destructive">
@@ -164,7 +183,6 @@ export function Models({
             <AlertDescription>{translate(language, error)}</AlertDescription>
           </Alert>
         ) : null}
-        {canWrite ? <ModelCreateForm client={client} onCreated={load} /> : null}
         {loading && !state ? <ModelCatalogSkeleton /> : null}
         {state ? (
           <ModelList
@@ -177,7 +195,7 @@ export function Models({
             canAssign={canAssign}
             client={client}
             onChanged={load}
-            onError={() => setError("modelsLoadFailed")}
+            onError={reportMutationError}
             onGrant={(model, assignments) =>
               setGranting({ model, assignments })
             }
@@ -193,7 +211,7 @@ export function Models({
             teams={teams}
             onOpenChange={() => setGranting(null)}
             onChanged={load}
-            onError={() => setError("modelsLoadFailed")}
+            onError={reportMutationError}
           />
         ) : null}
       </div>
@@ -214,8 +232,25 @@ function ModelCreateForm({
   const [endpoint, setEndpoint] = useState("");
   const [upstreamModel, setUpstreamModel] = useState("");
   const [pending, setPending] = useState(false);
+  const [errorField, setErrorField] = useState<
+    "id" | "name" | "endpoint" | "upstream" | null
+  >(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const missing = !id.trim()
+      ? "id"
+      : !displayName.trim()
+        ? "name"
+        : !endpoint.trim()
+          ? "endpoint"
+          : !upstreamModel.trim()
+            ? "upstream"
+            : null;
+    if (missing) {
+      setErrorField(missing);
+      return;
+    }
+    setErrorField(null);
     setPending(true);
     try {
       await client.createModel({
@@ -246,15 +281,8 @@ function ModelCreateForm({
     }
   };
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-      }}
-    >
-      <DialogTrigger
-        render={<Button variant="outline" size="sm" className="self-start" />}
-      >
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button size="sm" />}>
         <Plus data-icon="inline-start" />
         {translate(language, "addModel")}
       </DialogTrigger>
@@ -265,33 +293,55 @@ function ModelCreateForm({
             {translate(language, "addModelDescription")}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
           <FieldGroup>
-            <Field>
+            <Field data-invalid={errorField === "id"}>
               <FieldLabel htmlFor="model-id">
                 {translate(language, "modelId")}
               </FieldLabel>
               <Input
                 id="model-id"
                 value={id}
-                onChange={(event) => setId(event.target.value)}
+                onChange={(event) => {
+                  setId(event.target.value);
+                  if (errorField === "id") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "id"}
+                aria-describedby={
+                  errorField === "id" ? "model-id-error" : undefined
+                }
               />
+              {errorField === "id" ? (
+                <FieldError id="model-id-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
-            <Field>
+            <Field data-invalid={errorField === "name"}>
               <FieldLabel htmlFor="model-name">
                 {translate(language, "modelName")}
               </FieldLabel>
               <Input
                 id="model-name"
                 value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
+                onChange={(event) => {
+                  setDisplayName(event.target.value);
+                  if (errorField === "name") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "name"}
+                aria-describedby={
+                  errorField === "name" ? "model-name-error" : undefined
+                }
               />
+              {errorField === "name" ? (
+                <FieldError id="model-name-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
-            <Field>
+            <Field data-invalid={errorField === "endpoint"}>
               <FieldLabel htmlFor="model-endpoint">
                 {translate(language, "modelEndpoint")}
               </FieldLabel>
@@ -299,23 +349,45 @@ function ModelCreateForm({
                 id="model-endpoint"
                 type="url"
                 value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
+                onChange={(event) => {
+                  setEndpoint(event.target.value);
+                  if (errorField === "endpoint") setErrorField(null);
+                }}
                 placeholder={translate(language, "modelEndpointPlaceholder")}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "endpoint"}
+                aria-describedby={
+                  errorField === "endpoint" ? "model-endpoint-error" : undefined
+                }
               />
+              {errorField === "endpoint" ? (
+                <FieldError id="model-endpoint-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
-            <Field>
+            <Field data-invalid={errorField === "upstream"}>
               <FieldLabel htmlFor="model-upstream">
                 {translate(language, "upstreamModel")}
               </FieldLabel>
               <Input
                 id="model-upstream"
                 value={upstreamModel}
-                onChange={(event) => setUpstreamModel(event.target.value)}
+                onChange={(event) => {
+                  setUpstreamModel(event.target.value);
+                  if (errorField === "upstream") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "upstream"}
+                aria-describedby={
+                  errorField === "upstream" ? "model-upstream-error" : undefined
+                }
               />
+              {errorField === "upstream" ? (
+                <FieldError id="model-upstream-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
           </FieldGroup>
           <DialogFooter>
@@ -431,6 +503,7 @@ function ModelRow({
 }) {
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const run = async (operation: () => Promise<void>) => {
     setPending(true);
     try {
@@ -505,77 +578,55 @@ function ModelRow({
                     <Pencil data-icon="inline-start" />
                     {translate(language, "editModel")}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() =>
-                      void run(async () => {
-                        await client.updateModel(model.id, {
-                          enabled: !model.enabled,
-                        });
-                      })
-                    }
-                  >
-                    {translate(language, model.enabled ? "disable" : "enable")}
-                  </Button>
-                  {!model.isDefault ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() =>
-                        void run(async () => {
-                          await client.updateModel(model.id, {
-                            isDefault: true,
-                          });
-                        })
-                      }
-                    >
-                      {translate(language, "makeDefault")}
-                    </Button>
-                  ) : null}
-                  <AlertDialog>
-                    <AlertDialogTrigger
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
                       render={
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
-                          className="text-destructive hover:bg-destructive-soft hover:text-destructive"
                           disabled={pending}
+                          aria-label={translate(language, "actions")}
+                          title={translate(language, "actions")}
                         />
                       }
                     >
-                      <Trash2 data-icon="inline-start" />
-                      {translate(language, "delete")}
-                    </AlertDialogTrigger>
-                    <AlertDialogContent size="sm">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          {translate(language, "deleteModelTitle")}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {translate(language, "deleteModelDescription")}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel disabled={pending}>
-                          {translate(language, "cancel")}
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                          disabled={pending}
+                      <Ellipsis aria-hidden="true" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {!model.isDefault ? (
+                        <DropdownMenuItem
                           onClick={() =>
                             void run(async () => {
-                              await client.deleteModel(model.id);
+                              await client.updateModel(model.id, {
+                                isDefault: true,
+                              });
                             })
                           }
                         >
-                          {translate(language, "delete")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                          {translate(language, "makeDefault")}
+                        </DropdownMenuItem>
+                      ) : null}
+                      <DropdownMenuItem
+                        onClick={() =>
+                          void run(async () => {
+                            await client.updateModel(model.id, {
+                              enabled: !model.enabled,
+                            });
+                          })
+                        }
+                      >
+                        {translate(language, model.enabled ? "disable" : "enable")}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleting(true)}
+                      >
+                        <Trash2 aria-hidden="true" />
+                        {translate(language, "delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </>
               ) : null}
               {canAssign ? (
@@ -646,6 +697,35 @@ function ModelRow({
           ) : null}
         </CardContent>
       </Card>
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {translate(language, "deleteModelTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {translate(language, "deleteModelDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>
+              {translate(language, "cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
+              disabled={pending}
+              onClick={() =>
+                void run(async () => {
+                  await client.deleteModel(model.id);
+                  setDeleting(false);
+                })
+              }
+            >
+              {translate(language, "delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {canWrite && editing ? (
         <ModelEditorDialog
           client={client}
@@ -711,6 +791,9 @@ function ModelEditorDialog({
   const [enabled, setEnabled] = useState(model.enabled);
   const [isDefault, setIsDefault] = useState(model.isDefault);
   const [pending, setPending] = useState(false);
+  const [errorField, setErrorField] = useState<
+    "name" | "endpoint" | "upstream" | null
+  >(null);
   useEffect(() => {
     setDisplayName(model.displayName);
     setEndpoint(model.endpoint ?? "");
@@ -720,6 +803,18 @@ function ModelEditorDialog({
   }, [model]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const missing = !displayName.trim()
+      ? "name"
+      : !endpoint.trim()
+        ? "endpoint"
+        : !upstreamModel.trim()
+          ? "upstream"
+          : null;
+    if (missing) {
+      setErrorField(missing);
+      return;
+    }
+    setErrorField(null);
     setPending(true);
     try {
       await client.updateModel(model.id, {
@@ -756,21 +851,32 @@ function ModelEditorDialog({
             {translate(language, "addModelDescription")}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
           <FieldGroup className="gap-4">
-            <Field>
+            <Field data-invalid={errorField === "name"}>
               <FieldLabel htmlFor="edit-model-name">
                 {translate(language, "modelName")}
               </FieldLabel>
               <Input
                 id="edit-model-name"
                 value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
+                onChange={(event) => {
+                  setDisplayName(event.target.value);
+                  if (errorField === "name") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "name"}
+                aria-describedby={
+                  errorField === "name" ? "edit-model-name-error" : undefined
+                }
               />
+              {errorField === "name" ? (
+                <FieldError id="edit-model-name-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
-            <Field>
+            <Field data-invalid={errorField === "endpoint"}>
               <FieldLabel htmlFor="edit-model-endpoint">
                 {translate(language, "modelEndpoint")}
               </FieldLabel>
@@ -778,22 +884,48 @@ function ModelEditorDialog({
                 id="edit-model-endpoint"
                 type="url"
                 value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
+                onChange={(event) => {
+                  setEndpoint(event.target.value);
+                  if (errorField === "endpoint") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "endpoint"}
+                aria-describedby={
+                  errorField === "endpoint"
+                    ? "edit-model-endpoint-error"
+                    : undefined
+                }
               />
+              {errorField === "endpoint" ? (
+                <FieldError id="edit-model-endpoint-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
-            <Field>
+            <Field data-invalid={errorField === "upstream"}>
               <FieldLabel htmlFor="edit-model-upstream">
                 {translate(language, "upstreamModel")}
               </FieldLabel>
               <Input
                 id="edit-model-upstream"
                 value={upstreamModel}
-                onChange={(event) => setUpstreamModel(event.target.value)}
+                onChange={(event) => {
+                  setUpstreamModel(event.target.value);
+                  if (errorField === "upstream") setErrorField(null);
+                }}
                 disabled={pending}
-                required
+                aria-invalid={errorField === "upstream"}
+                aria-describedby={
+                  errorField === "upstream"
+                    ? "edit-model-upstream-error"
+                    : undefined
+                }
               />
+              {errorField === "upstream" ? (
+                <FieldError id="edit-model-upstream-error">
+                  {translate(language, "fieldRequired")}
+                </FieldError>
+              ) : null}
             </Field>
             <BooleanSwitch
               id="edit-model-enabled"
