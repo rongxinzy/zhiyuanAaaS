@@ -70,6 +70,7 @@ describe('Zhiyuan protected file storage', () => {
 
     const protector = new SafeStorageProtector({
       isEncryptionAvailable: () => false,
+      getSelectedStorageBackend: () => 'unknown',
       encryptString: () => Buffer.alloc(0),
       decryptString: () => '',
     });
@@ -79,6 +80,7 @@ describe('Zhiyuan protected file storage', () => {
   test('adapts platform safe storage without retaining its mutable buffers', async () => {
     const protector = new SafeStorageProtector({
       isEncryptionAvailable: () => true,
+      getSelectedStorageBackend: () => 'dpapi',
       encryptString: value => Buffer.from(`protected:${value}`, 'utf8'),
       decryptString: value => value.toString('utf8').replace(/^protected:/, ''),
     });

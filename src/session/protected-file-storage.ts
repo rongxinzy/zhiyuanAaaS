@@ -13,6 +13,7 @@ export interface SecretProtector {
 
 export interface SafeStorageLike {
   isEncryptionAvailable(): boolean;
+  getSelectedStorageBackend(): string;
   encryptString(plainText: string): Buffer;
   decryptString(encryptedValue: Buffer): string;
 }

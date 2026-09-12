@@ -40,6 +40,7 @@ describe('Zhiyuan session runtime', () => {
     const session = await createZhiyuanSessionRuntime(context, {
       loadSafeStorage: vi.fn(async () => ({
         isEncryptionAvailable: () => true,
+        getSelectedStorageBackend: () => 'dpapi',
         encryptString: (value: string) => Buffer.from(value),
         decryptString: (value: Buffer) => value.toString('utf8'),
       })),
@@ -55,14 +56,46 @@ describe('Zhiyuan session runtime', () => {
       fs.readFileSync(path.join(context.paths.userData, 'zhiyuan-enterprise', 'agent-id'), 'utf8'),
     ).toMatch(/[0-9a-f-]{36}/);
   });
+
+  test('rejects the insecure Linux basic_text storage backend', async () => {
+    const root = createTemporaryDirectory();
+    const context = hostContext(root, 'linux');
+    const configDirectory = path.join(context.paths.resources, 'zhiyuan-enterprise');
+    fs.mkdirSync(configDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDirectory, 'config.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        aepBaseUrl: 'http://127.0.0.1:8080',
+        allowInsecureHttp: true,
+      }),
+    );
+    const createProtectedStorage = vi.fn();
+
+    await expect(
+      createZhiyuanSessionRuntime(context, {
+        loadSafeStorage: vi.fn(async () => ({
+          isEncryptionAvailable: () => true,
+          getSelectedStorageBackend: () => 'basic_text',
+          encryptString: (value: string) => Buffer.from(value),
+          decryptString: (value: Buffer) => value.toString('utf8'),
+        })),
+        createProtectedStorage,
+      }),
+    ).rejects.toThrow('basic_text backend is not permitted');
+    expect(createProtectedStorage).not.toHaveBeenCalled();
+  });
 });
 
-function hostContext(root: string): ZhiyuanEnterpriseHostContext {
+function hostContext(
+  root: string,
+  platform: NodeJS.Platform = 'win32',
+): ZhiyuanEnterpriseHostContext {
   return {
     apiVersion: 1,
     appVersion: '2026.8.0',
     isPackaged: true,
-    platform: 'win32',
+    platform,
     paths: {
       resources: path.join(root, 'resources'),
       userData: path.join(root, 'user-data'),
