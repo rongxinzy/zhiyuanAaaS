@@ -41,5 +41,7 @@ jobs:
         run: npm run verify:agent-control:e2e
       - name: Stop AEP control plane
         if: always()
-        working-directory: aep-protocol
-        run: npm run compose:down
+        run: |
+          if [ -f aep-protocol/package.json ]; then
+            npm --prefix aep-protocol run compose:down
+          fi

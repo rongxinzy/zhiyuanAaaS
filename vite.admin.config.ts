@@ -31,7 +31,7 @@ export default defineConfig({
   base: './',
   plugins: [tailwindcss(), react()],
   resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
-  build: { outDir: path.resolve(repositoryRoot, 'dist/admin'), emptyOutDir: true, sourcemap: true, target: 'chrome130' },
+  build: { outDir: path.resolve(repositoryRoot, 'dist/admin'), emptyOutDir: true, sourcemap: false, target: 'chrome130' },
   server: {
     headers: securityHeaders,
     proxy: {

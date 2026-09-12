@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 const bundleUrl = new URL('../dist/extension.cjs', import.meta.url);
 const rendererDirectory = new URL('../dist/ui/', import.meta.url);
 const rendererIndexUrl = new URL('index.html', rendererDirectory);
+const adminDirectory = new URL('../dist/admin/', import.meta.url);
 const bundleSource = await fs.readFile(bundleUrl, 'utf8');
 assert.doesNotMatch(
   bundleSource,
@@ -39,4 +40,19 @@ assert.ok(assetReferences.length >= 2, 'Renderer must reference bundled JavaScri
 for (const assetReference of assetReferences) {
   await fs.access(new URL(assetReference, rendererDirectory));
   assert.doesNotMatch(assetReference, /\.map$/, 'Renderer must not load source maps.');
+}
+
+for (const entry of await collectFiles(adminDirectory)) {
+  assert.doesNotMatch(entry, /\.map$/, 'Admin Console distribution must not contain source maps.');
+}
+
+async function collectFiles(directory, relative = '') {
+  const entries = await fs.readdir(new URL(relative, directory), { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const entryPath = `${relative}${entry.name}`;
+    if (entry.isDirectory()) files.push(...(await collectFiles(directory, `${entryPath}/`)));
+    else if (entry.isFile()) files.push(entryPath);
+  }
+  return files;
 }

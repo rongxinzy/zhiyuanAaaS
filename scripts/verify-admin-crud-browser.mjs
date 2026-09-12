@@ -346,13 +346,22 @@ try {
   await waitForValue(() => createdUser.status, 'disabled');
   assert.equal(createdUser.status, 'disabled');
 
+  const loginRequestsBeforeReload = state.requests.filter(item => item.method === 'POST' && item.path === '/aep/v1/auth/password/login').length;
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByLabel('密码', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByLabel('密码', { exact: true }).fill('change-this-admin-password');
+  await page.getByRole('button', { name: '登录' }).click();
   await waitForText(page, '概览');
+  assert.equal(
+    state.requests.filter(item => item.method === 'POST' && item.path === '/aep/v1/auth/password/login').length,
+    loginRequestsBeforeReload + 1,
+    'Reload must require a new password login instead of restoring a browser-stored refresh token.',
+  );
   await page.getByRole('button', { name: '资源管理' }).click();
   await page.getByRole('tab', { name: '用户' }).click();
   await waitForText(page, 'E2E 用户 Updated');
   assert.ok(state.requests.some(item => item.path === '/aep/v1/user/me'));
-  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke/version publish/withdraw', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'license import/revoke', 'control event publish/detail/cancel', 'data plane route create/update/delete/publish', 'reload session restore'], requests: state.requests.length }));
+  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke/version publish/withdraw', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'license import/revoke', 'control event publish/detail/cancel', 'data plane route create/update/delete/publish', 'reload requires reauthentication'], requests: state.requests.length }));
 } finally {
   await browser?.close().catch(() => undefined);
   if (staticServer) staticServer.kill();
