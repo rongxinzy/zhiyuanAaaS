@@ -6,8 +6,31 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/admin');
 const target = new URL(process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080');
 const port = Number(process.env.ZHIYUAN_ADMIN_PORT ?? 5173);
+const securityHeaders = Object.freeze({
+  'content-security-policy': [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "connect-src 'self'",
+    "font-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "img-src 'self' data:",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+  ].join('; '),
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), geolocation=(), microphone=()',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+});
 
 const server = http.createServer(async (request, response) => {
+  for (const [name, value] of Object.entries(securityHeaders)) {
+    response.setHeader(name, value);
+  }
   try {
     if (request.url?.startsWith('/aep/')) {
       await proxy(request, response);
@@ -36,7 +59,10 @@ async function proxy(request, response) {
   const headers = { ...request.headers, host: upstream.host };
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : request;
   const result = await fetch(upstream, { method: request.method, headers, body, duplex: body ? 'half' : undefined });
-  response.writeHead(result.status, Object.fromEntries(result.headers));
+  response.writeHead(result.status, {
+    ...Object.fromEntries(result.headers),
+    ...securityHeaders,
+  });
   response.end(Buffer.from(await result.arrayBuffer()));
 }
 

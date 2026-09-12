@@ -705,35 +705,18 @@ function ensureRequestIdCrypto(): void {
 }
 
 export class SessionTokenStore implements AepTokenStore {
-  static readonly STORAGE_KEY = 'zhiyuan.admin.session';
   readonly #memory = new MemoryTokenStore();
 
   async get() {
-    const current = await this.#memory.get();
-    if (current) return current;
-    const raw = globalThis.sessionStorage?.getItem(SessionTokenStore.STORAGE_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object' || typeof parsed.refreshToken !== 'string') {
-        return null;
-      }
-      await this.#memory.set(parsed);
-      return parsed;
-    } catch {
-      await this.clear();
-      return null;
-    }
+    return this.#memory.get();
   }
 
   async set(tokens: Parameters<AepTokenStore['set']>[0]): Promise<void> {
     await this.#memory.set(tokens);
-    globalThis.sessionStorage?.setItem(SessionTokenStore.STORAGE_KEY, JSON.stringify(tokens));
   }
 
   async clear(): Promise<void> {
     await this.#memory.clear();
-    globalThis.sessionStorage?.removeItem(SessionTokenStore.STORAGE_KEY);
   }
 }
 

@@ -15,6 +15,14 @@ try {
   await waitForServer(port);
   const response = await fetch(`http://127.0.0.1:${port}/`);
   assert.equal(response.status, 200);
+  const contentSecurityPolicy = response.headers.get('content-security-policy') ?? '';
+  assert.match(contentSecurityPolicy, /script-src 'self'/);
+  assert.doesNotMatch(contentSecurityPolicy, /script-src[^;]*'unsafe-inline'/);
+  assert.match(contentSecurityPolicy, /frame-ancestors 'none'/);
+  assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin');
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
   const html = await response.text();
   assert.match(html, /<div id="root"><\/div>/);
   const assets = [...html.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map(match => match[1]);
