@@ -42,18 +42,19 @@ export async function createZhiyuanSessionRuntimeComponents(
   context: ZhiyuanEnterpriseHostContext,
   dependencies: SessionRuntimeDependencies = {},
 ): Promise<ZhiyuanSessionRuntimeComponents> {
+  const platform = mapPlatform(context.platform);
   const [config, agentId, safeStorage] = await Promise.all([
     loadZhiyuanEnterpriseConfig(context.paths.resources),
     resolveZhiyuanAgentId(context.paths.userData),
     (dependencies.loadSafeStorage ?? loadElectronSafeStorage)(),
   ]);
+  assertSecureStorageBackend(safeStorage, platform);
   const protectedStorage = (
     dependencies.createProtectedStorage ?? createDefaultProtectedStorage
   )(
     path.join(context.paths.userData, 'zhiyuan-enterprise', 'secrets'),
     safeStorage,
   );
-  const platform = mapPlatform(context.platform);
   const client = (dependencies.createClient ?? createZhiyuanAepClient)({
     baseUrl: config.aepBaseUrl,
     agentId,
@@ -70,6 +71,17 @@ export async function createZhiyuanSessionRuntimeComponents(
     platform,
     licenseActivation,
   });
+}
+
+function assertSecureStorageBackend(
+  safeStorage: SafeStorageLike,
+  platform: 'windows' | 'macos' | 'linux',
+): void {
+  if (platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
+    throw new Error(
+      'Zhiyuan protected storage requires a Linux secret store; the basic_text backend is not permitted.',
+    );
+  }
 }
 
 function createDefaultProtectedStorage(

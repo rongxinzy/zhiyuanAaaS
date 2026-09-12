@@ -117,6 +117,7 @@ function writeConfig(root: string): void {
 function safeStorageFixture() {
   return {
     isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'dpapi',
     encryptString: (value: string) => Buffer.from(value),
     decryptString: (value: Buffer) => value.toString('utf8'),
   };
