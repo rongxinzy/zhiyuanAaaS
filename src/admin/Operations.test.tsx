@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cloneElement, type ReactElement } from 'react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { Operations } from './Operations.js';
+import { administratorIdentity } from './test-fixtures.js';
+
+function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
+  return rtlRender(cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity }));
+}
 
 describe('admin operations', () => {
   afterEach(() => cleanup());

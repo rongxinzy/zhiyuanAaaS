@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import type React from "react";
+import { cloneElement, type ReactElement } from "react";
 
 import {
   cleanup,
@@ -13,12 +13,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { Events } from "./Events.js";
 import { AdminNotificationViewport } from "./notifications.js";
+import { administratorIdentity } from "./test-fixtures.js";
 
-function render(ui: React.ReactElement) {
+function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
   return rtlRender(
     <>
       <AdminNotificationViewport />
-      {ui}
+      {cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity })}
     </>,
   );
 }

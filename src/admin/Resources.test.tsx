@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cloneElement, type ReactElement } from 'react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { AdminResourceTab, Resources } from './Resources.js';
+import { administratorIdentity } from './test-fixtures.js';
+
+function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
+  return rtlRender(cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity }));
+}
 
 describe('admin resources', () => {
   afterEach(() => cleanup());
@@ -336,8 +342,7 @@ describe('admin resources', () => {
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
     fireEvent.click(await screen.findByRole('button', { name: '删除' }));
-    const deleteButtons = await screen.findAllByRole('button', { name: '删除' });
-    fireEvent.click(deleteButtons.at(-1)!);
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(client.deleteTeam).toHaveBeenCalledWith('team-1'));
   });
 

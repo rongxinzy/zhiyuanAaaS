@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { hasAdminConsoleAccess, hasAnyAdminConsoleAccess, type AdminIdentity } from './client.js';
+import { AdminConsoleClient, AdminPermission, hasAdminConsoleAccess, hasAdminPermission, hasAnyAdminConsoleAccess, type AdminIdentity } from './client.js';
 
 const fullPermissions = [
   'users.read', 'users.write', 'roles.read', 'roles.write', 'teams.read', 'teams.write',
@@ -44,5 +44,22 @@ describe('admin console access', () => {
 
   test('rejects an identity without any management permission', () => {
     expect(hasAnyAdminConsoleAccess(identity({ roles: ['member'], permissions: [] }))).toBe(false);
+  });
+
+  test('fails closed when no validated identity is available', () => {
+    expect(hasAdminPermission(undefined, AdminPermission.UsersRead)).toBe(false);
+  });
+
+  test('does not replace the host Web Crypto object when randomUUID is unavailable', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    const cryptoWithoutRandomUUID = {getRandomValues: (value: Uint8Array) => value};
+    try {
+      Object.defineProperty(globalThis, 'crypto', {configurable: true, value: cryptoWithoutRandomUUID});
+      new AdminConsoleClient();
+      expect(globalThis.crypto).toBe(cryptoWithoutRandomUUID);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+      else Reflect.deleteProperty(globalThis, 'crypto');
+    }
   });
 });

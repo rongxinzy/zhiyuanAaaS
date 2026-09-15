@@ -125,7 +125,10 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
             getEntitlementToken: () => runtime.licenseActivation?.entitlement()?.entitlementToken ?? null,
             requireEntitlement: runtime.licenseActivation !== null && runtime.licenseActivation !== undefined,
             ...(runtime.licenseActivation
-              ? {onEntitlementChange: (listener: () => void) => runtime.licenseActivation!.onDidChange(listener)}
+              ? {
+                  onEntitlementChange: (listener: () => void) => runtime.licenseActivation!.onDidChange(listener),
+                  refreshEntitlement: () => runtime.licenseActivation!.refreshIfNeeded(),
+                }
               : {}),
           }),
         );

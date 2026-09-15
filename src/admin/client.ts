@@ -81,7 +81,7 @@ export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermiss
 const ADMIN_CONSOLE_PERMISSIONS: readonly AdminPermission[] = Object.values(AdminPermission);
 
 export function hasAdminPermission(identity: AdminIdentity | undefined, permission: AdminPermission): boolean {
-  if (!identity) return true;
+  if (!identity) return false;
   if (identity.roles.some(role => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()))) return true;
   return new Set(identity.permissions ?? []).has(permission);
 }
@@ -224,7 +224,6 @@ export class AdminConsoleClient {
   #deploymentId: string | null = null;
 
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
-    ensureRequestIdCrypto();
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#tokenStore = tokenStore ?? new SessionTokenStore();
   }
@@ -665,7 +664,13 @@ export class AdminConsoleClient {
   }
 
   async #identitySession(client: AepClient): Promise<AdminSession> {
-    const identity = await client.getCurrentIdentity() as AdminIdentity;
+    const identity = parseAdminIdentity(await client.getCurrentIdentity());
+    if (!identity) {
+      await this.#tokenStore.clear();
+      this.#client = null;
+      this.#deploymentId = null;
+      throw new Error('The AEP current identity response is invalid.');
+    }
     this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
     return hasAnyAdminConsoleAccess(identity)
       ? { status: AdminConsoleStatus.Authenticated, identity }
@@ -682,26 +687,57 @@ function runtimeFetch(): typeof globalThis.fetch {
   return candidate.bind(typeof window !== 'undefined' ? window : root);
 }
 
-function ensureRequestIdCrypto(): void {
-  const root = globalThis as typeof globalThis & {
-    crypto?: {randomUUID?: () => string};
-  };
-  if (typeof root.crypto?.randomUUID === 'function') return;
-  const fallback = {
-    randomUUID: () => {
-      const bytes = Array.from({length: 16}, () => Math.floor(Math.random() * 256));
-      bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-      bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-      const hex = bytes.map(value => value.toString(16).padStart(2, '0'));
-      return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+function parseAdminIdentity(value: unknown): AdminIdentity | null {
+  if (!isRecord(value) || !isRecord(value.user)) return null;
+  const userId = nonEmptyString(value.user.id);
+  const displayName = nonEmptyString(value.user.displayName);
+  if (!userId || !displayName || !stringArray(value.roles)) return null;
+  if (value.permissions !== undefined && !stringArray(value.permissions)) return null;
+  if (typeof value.sessionExpiresAt !== 'string' || !Number.isFinite(Date.parse(value.sessionExpiresAt))) return null;
+  if (typeof value.passwordChangeRequired !== 'boolean') return null;
+
+  const deployment = namedIdentity(value.deployment);
+  const enterprise = namedIdentity(value.enterprise);
+  const deploymentId = nonEmptyString(value.deploymentId) ?? deployment?.id ?? enterprise?.id;
+  const legacyEnterprise = enterprise ?? deployment;
+  if (!deploymentId || !legacyEnterprise) return null;
+  if (deployment && deployment.id !== deploymentId) return null;
+  if (enterprise && enterprise.id !== deploymentId) return null;
+  if (value.user.email !== undefined && value.user.email !== null && typeof value.user.email !== 'string') return null;
+
+  return {
+    user: {
+      id: userId,
+      displayName,
+      ...(value.user.email === undefined ? {} : {email: value.user.email}),
     },
+    ...(deployment ? {deployment} : {}),
+    deploymentId,
+    enterprise: legacyEnterprise,
+    roles: [...value.roles],
+    permissions: [...(value.permissions ?? [])],
+    sessionExpiresAt: value.sessionExpiresAt,
+    passwordChangeRequired: value.passwordChangeRequired,
   };
-  try {
-    Object.defineProperty(root, 'crypto', {configurable: true, value: fallback});
-  } catch {
-    // The host may expose a non-configurable global; the SDK will report its
-    // native error in that environment instead of preventing app startup.
-  }
+}
+
+function namedIdentity(value: unknown): {id: string; name: string} | null {
+  if (!isRecord(value)) return null;
+  const id = nonEmptyString(value.id);
+  const name = nonEmptyString(value.name);
+  return id && name ? {id, name} : null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function stringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string' && item.length > 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export class SessionTokenStore implements AepTokenStore {

@@ -1,13 +1,36 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cloneElement, type ReactElement } from 'react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { Models } from './Models.js';
+import { administratorIdentity } from './test-fixtures.js';
+
+function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
+  return rtlRender(cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity }));
+}
 
 describe('admin models', () => {
   afterEach(() => cleanup());
+
+  test('fails closed when no validated identity is available', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({
+        models: [{ id: 'chat', name: '企业对话', provider: 'openai', endpoint: '/v1/chat/completions', upstreamModel: 'deepseek-chat', enabled: true }],
+        assignments: [],
+      }),
+      resources: vi.fn().mockResolvedValue({ users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] }),
+    };
+
+    rtlRender(<Models client={client as never} />);
+
+    expect(await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent?.includes('deepseek-chat') === true)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加模型' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '授权模型' })).not.toBeInTheDocument();
+  });
 
   test('creates a gateway model from the configuration form', async () => {
     const client = {

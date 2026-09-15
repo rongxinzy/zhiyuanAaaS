@@ -84,6 +84,7 @@ describe('ZhiyuanModelProvider', () => {
     let models = [model()];
     let poll: (() => void) | null = null;
     const clearInterval = vi.fn();
+    const refreshEntitlement = vi.fn(async () => undefined);
     const client = mockClient({ listAgentModels: vi.fn(async () => ({ models })) });
     const session = new ZhiyuanPasswordSession(client);
     const provider = new ZhiyuanModelProvider(session, {
@@ -93,6 +94,7 @@ describe('ZhiyuanModelProvider', () => {
         return { unref: vi.fn() };
       },
       clearInterval,
+      refreshEntitlement,
     });
     const changed = vi.fn();
     const unsubscribe = provider.onDidChange(changed);
@@ -100,10 +102,12 @@ describe('ZhiyuanModelProvider', () => {
     await session.login({ enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
     expect(changed).toHaveBeenCalledOnce();
     await provider.snapshot();
+    expect(refreshEntitlement).toHaveBeenCalledTimes(1);
 
     models = [model(), model({ id: 'second', displayName: 'Second Model', isDefault: false })];
     poll!();
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+    expect(refreshEntitlement).toHaveBeenCalledTimes(2);
 
     unsubscribe();
     unsubscribe();
