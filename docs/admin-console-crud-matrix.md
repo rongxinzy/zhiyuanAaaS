@@ -39,13 +39,18 @@ For a running AEP Control Service, the same lifecycle can be exercised through
 the real browser and database-backed API:
 
 ```bash
-ZHIYUAN_AEP_BASE_URL=http://127.0.0.1:8080 npm run verify:admin:real-e2e
+ZHIYUAN_AEP_BASE_URL=http://127.0.0.1:8080 \
+ZHIYUAN_AEP_ADMIN_PASSWORD=change-this-admin-password \
+npm run verify:admin:real-e2e
 ```
 
 The real verifier creates uniquely prefixed test resources, exercises the
 successful UI paths, verifies the resulting API state, and removes all
-deletable resources. User rows remain disabled rather than deleted because
-the contract retains them for audit and ownership references. License import
+deletable resources. Test users receive the zero-permission `aaas-e2e-member`
+role; the verifier disables them and revokes their sessions in `finally`.
+User rows remain disabled rather than deleted because the contract retains
+them for audit and ownership references. CI deployments are removed with their
+volumes after the verifier. License import
 success still requires a deployment configured with the vendor trusted public
 key; the mock verifier covers that lifecycle without placing signing material
 in the Admin Console repository.

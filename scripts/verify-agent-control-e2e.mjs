@@ -7,13 +7,15 @@ import { createRequire } from 'node:module';
 import { AepClient, MemoryTokenStore } from '@aep/sdk-node';
 import yazl from 'yazl';
 
+import { requiredEnvironment } from './e2e-environment.mjs';
+
 const require = createRequire(import.meta.url);
 const { createZhiyuanAgentControlBackend } = require('../dist/extension.cjs');
 const baseUrl = process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080';
 const deploymentId = process.env.ZHIYUAN_AEP_DEPLOYMENT_ID ?? 'demo';
 const adminUsername = process.env.ZHIYUAN_AEP_ADMIN_USERNAME ?? 'admin';
-const adminPassword =
-  process.env.ZHIYUAN_AEP_ADMIN_PASSWORD ?? 'change-this-admin-password';
+const adminPassword = requiredEnvironment('ZHIYUAN_AEP_ADMIN_PASSWORD');
+const memberRoleId = process.env.ZHIYUAN_AEP_E2E_ROLE_ID ?? 'aaas-e2e-member';
 const runId = Date.now().toString(36);
 const username = `aaas-e2e-${runId}`;
 const password = `Zhiyuan-e2e-${runId}-password`;
@@ -32,13 +34,14 @@ try {
     username: adminUsername,
     password: adminPassword,
   });
+  await ensureMemberRole(admin);
   user = await admin.createUser({
     deploymentId,
     username,
     displayName: `Zhiyuan AaaS E2E ${runId}`,
     temporaryPassword: password,
     teamIds: ['all-users'],
-    roleIds: ['admin'],
+    roleIds: [memberRoleId],
     requirePasswordChange: false,
   });
 
@@ -118,8 +121,35 @@ try {
   if (admin) await admin.deleteSkill(skillId).catch(() => undefined);
   if (admin && user?.id) {
     await admin.updateUser(user.id, { status: 'disabled' }).catch(() => undefined);
+    await revokeUserSessions(admin, user.id).catch(() => undefined);
   }
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+}
+
+async function ensureMemberRole(adminClient) {
+  const page = await adminClient.listRoles({ limit: 200 });
+  const existing = page.roles.find(role => role.id === memberRoleId);
+  if (existing) {
+    assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
+    assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
+    return;
+  }
+  await adminClient.createRole({
+    id: memberRoleId,
+    name: 'AaaS E2E member',
+    description: 'Least-privileged role for disposable enterprise extension tests',
+    permissions: [],
+  });
+}
+
+async function revokeUserSessions(adminClient, userId) {
+  const page = await adminClient.listUserSessions({ userId, limit: 200 });
+  const sessions = Array.isArray(page.items) ? page.items : [];
+  for (const session of sessions) {
+    if (session && typeof session === 'object' && typeof session.sessionId === 'string' && !session.revokedAt) {
+      await adminClient.revokeUserSession(session.sessionId);
+    }
+  }
 }
 
 function client(clientAgentId) {

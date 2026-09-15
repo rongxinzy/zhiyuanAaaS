@@ -100,7 +100,7 @@ import {
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 1024;
-const RBAC_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+const RBAC_ID_PATTERN = /^[A-Za-z0-9._\-]{1,100}$/;
 
 function validRBACID(value: string): boolean {
   return RBAC_ID_PATTERN.test(value);

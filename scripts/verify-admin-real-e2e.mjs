@@ -6,12 +6,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
+import { requiredEnvironment } from './e2e-environment.mjs';
+
 // This verifier needs a running AEP control service. It starts an ephemeral
 // static Admin Console unless ZHIYUAN_ADMIN_ORIGIN points at one already running.
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serviceBase = process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://127.0.0.1:8080';
 const explicitOrigin = process.env.ZHIYUAN_ADMIN_ORIGIN;
-const adminPassword = process.env.ZHIYUAN_AEP_ADMIN_PASSWORD ?? 'change-this-admin-password';
+const deploymentId = process.env.ZHIYUAN_AEP_DEPLOYMENT_ID ?? 'demo';
+const adminUsername = process.env.ZHIYUAN_AEP_ADMIN_USERNAME ?? 'admin';
+const adminPassword = requiredEnvironment('ZHIYUAN_AEP_ADMIN_PASSWORD');
+const memberRoleId = process.env.ZHIYUAN_AEP_E2E_ROLE_ID ?? 'aaas-e2e-member';
+const memberRoleName = 'AaaS E2E member';
 const suffix = `real-${Date.now().toString(36)}`;
 const names = {
   user: `console-user-${suffix}`,
@@ -27,13 +33,32 @@ const names = {
 let staticServer;
 let adminOrigin = explicitOrigin;
 let accessToken;
+let verifierError;
 const browserPath = await findBrowser();
 const browser = await chromium.launch({ headless: true, executablePath: browserPath });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const requests = [];
+const authenticationDiagnostics = [];
+const browserDiagnostics = [];
 page.on('request', request => {
   if (request.url().includes('/aep/')) requests.push(`${request.method()} ${new URL(request.url()).pathname}`);
 });
+page.on('response', response => {
+  const pathname = new URL(response.url()).pathname;
+  if (pathname === '/aep/v1/auth/password/login' || pathname === '/aep/v1/user/me') {
+    authenticationDiagnostics.push(`${response.request().method()} ${pathname} ${response.status()}`);
+  }
+});
+page.on('requestfailed', request => {
+  const pathname = new URL(request.url()).pathname;
+  if (pathname === '/aep/v1/auth/password/login' || pathname === '/aep/v1/user/me') {
+    authenticationDiagnostics.push(`${request.method()} ${pathname} failed: ${request.failure()?.errorText ?? 'unknown error'}`);
+  }
+});
+page.on('console', message => {
+  if (message.type() === 'error') browserDiagnostics.push(message.text().slice(0, 500));
+});
+page.on('pageerror', error => browserDiagnostics.push(error.message.slice(0, 500)));
 
 const waitText = value => page.getByText(value, { exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
 const waitGone = value => page.getByText(value, { exact: true }).first().waitFor({ state: 'detached', timeout: 15000 });
@@ -53,10 +78,17 @@ try {
   }
   await waitForHttp(`${adminOrigin}/aep/v1/metadata`);
   accessToken = await loginApi();
+  await ensureMemberRole();
   await page.goto(adminOrigin, { waitUntil: 'networkidle' });
+  await page.getByLabel('部署 ID', { exact: true }).fill(deploymentId);
+  await page.getByLabel('用户名', { exact: true }).fill(adminUsername);
   await page.getByLabel('密码', { exact: true }).fill(adminPassword);
   await page.getByRole('button', { name: '登录' }).click();
-  await waitText('概览');
+  const loginOutcome = await Promise.race([
+    waitText('概览').then(() => 'authenticated'),
+    page.getByText('登录失败，请检查账号信息或稍后重试。', { exact: true }).waitFor({ state: 'visible', timeout: 15000 }).then(() => 'failed'),
+  ]);
+  assert.equal(loginOutcome, 'authenticated', 'Admin Console rejected a successful AEP authentication response');
 
   await page.getByRole('button', { name: '资源管理' }).click();
   await waitText('admin');
@@ -67,16 +99,16 @@ try {
   await exerciseCredential();
   await exerciseEvents();
   await exerciseDataPlane();
+  await assertApiState();
 
   await page.reload({ waitUntil: 'networkidle' });
-  await waitText('概览');
-  await assertApiState();
+  await page.getByRole('heading', { name: '登录企业控制台' }).waitFor({ state: 'visible', timeout: 15000 });
   console.log(JSON.stringify({
     status: 'passed',
     origin: adminOrigin,
     prefix: suffix,
     checks: [
-      'browser login and session restore',
+      'browser login and reload clears the in-memory session',
       'user create/update/password reset/RBAC/import/disable',
       'team and role create/update/enable/disable/delete',
       'Skill create/update/enable/disable/version publish/withdraw/assignment revoke/delete',
@@ -89,12 +121,27 @@ try {
     requests: requests.length,
   }));
 } catch (error) {
-  console.error(JSON.stringify({ verifier: 'admin-real-e2e', url: page.url(), body: (await page.locator('body').innerText().catch(() => '')).slice(0, 2000) }));
-  throw error;
+  console.error(JSON.stringify({
+    verifier: 'admin-real-e2e',
+    url: page.url(),
+    body: (await page.locator('body').innerText().catch(() => '')).slice(0, 2000),
+    authenticationDiagnostics,
+    browserDiagnostics,
+  }));
+  verifierError = error;
 } finally {
+  if (accessToken) {
+    try {
+      await disableAndRevokeTestUsers();
+    } catch (error) {
+      if (!verifierError) verifierError = error;
+      else console.error('Admin real E2E cleanup failed.');
+    }
+  }
   await browser.close();
   if (staticServer) staticServer.kill();
 }
+if (verifierError) throw verifierError;
 
 async function createUserAndMemberships() {
   await page.getByRole('tab', { name: 'Team' }).click();
@@ -119,8 +166,8 @@ async function createUserAndMemberships() {
   await current.getByLabel('用户名').fill(names.user);
   await current.getByLabel('显示名称').fill(names.display);
   await current.getByLabel('临时密码').fill(`Temporary-${suffix}-password`);
-  await current.getByRole('checkbox', { name: `Console Role ${suffix}` }).click();
-  await current.getByRole('checkbox', { name: `Console Team ${suffix}` }).click();
+  await current.getByRole('checkbox', { name: memberRoleName }).click();
+  await current.getByRole('checkbox', { name: 'All users' }).click();
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(names.display);
 
@@ -137,7 +184,7 @@ async function createUserAndMemberships() {
 
   await page.getByRole('button', { name: '导入用户' }).click();
   current = dialog();
-  const importPayload = JSON.stringify({ users: [{ externalRowId: `row-${suffix}`, username: names.imported, displayName: `Imported ${suffix}`, temporaryPassword: `Imported-${suffix}-password`, roleIds: ['admin'], teamIds: ['all-users'] }] });
+  const importPayload = JSON.stringify({ users: [{ externalRowId: `row-${suffix}`, username: names.imported, displayName: `Imported ${suffix}`, temporaryPassword: `Imported-${suffix}-password`, roleIds: [memberRoleId], teamIds: ['all-users'] }] });
   await current.getByLabel('用户 JSON 文件').setInputFiles({ name: 'users.json', mimeType: 'application/json', buffer: Buffer.from(importPayload) });
   await current.getByRole('button', { name: '导入用户' }).click();
   await waitText(`Imported ${suffix}`);
@@ -147,22 +194,11 @@ async function createUserAndMemberships() {
 }
 
 async function exerciseTeamAndRole() {
-  // Remove the temporary memberships before deleting their owner resources.
-  await page.getByRole('tab', { name: '用户' }).click();
-  await row(names.user).getByRole('button', { name: '编辑' }).click();
-  let current = dialog();
-  // Every user must retain a role and the built-in All users team.
-  await ensureChecked(current.getByRole('checkbox', { name: 'Administrator' }));
-  await ensureChecked(current.getByRole('checkbox', { name: 'All users' }));
-  await ensureUnchecked(current.getByRole('checkbox', { name: `Console Role ${suffix}` }));
-  await ensureUnchecked(current.getByRole('checkbox', { name: `Console Team ${suffix}` }));
-  await current.getByRole('button', { name: '保存' }).click();
-
   await page.getByRole('button', { name: '资源管理' }).click();
   await page.getByRole('tab', { name: 'Team' }).click();
   const teamText = `Console Team ${suffix}`;
   await row(names.team).getByRole('button', { name: '编辑' }).click();
-  current = dialog();
+  let current = dialog();
   await current.getByLabel('名称').fill(`${teamText} Updated`);
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`${teamText} Updated`);
@@ -284,9 +320,9 @@ async function exerciseCredential() {
   await current.getByLabel('凭证值').fill(`rotated-${suffix}`);
   await current.getByRole('button', { name: '轮换凭证' }).click();
   await row(names.credential).getByRole('button', { name: '停用' }).click();
-  await waitText('停用');
-  await row(names.credential).getByRole('button', { name: '启用' }).click();
   await waitText('启用');
+  await row(names.credential).getByRole('button', { name: '启用' }).click();
+  await waitText('停用');
   await row(names.credential).getByRole('button', { name: '授权凭证' }).click();
   current = dialog();
   await current.getByRole('checkbox', { name: new RegExp(names.display) }).click();
@@ -301,12 +337,18 @@ async function exerciseCredential() {
 
 async function exerciseEvents() {
   await page.getByRole('button', { name: '事件与审计' }).click();
-  const before = (await api('/aep/v1/admin/control-events')).items.length;
+  const before = new Set((await api('/aep/v1/admin/control-events')).items.map(item => item.eventId));
   await page.getByRole('button', { name: '发布' }).click();
-  await waitFor(async () => (await api('/aep/v1/admin/control-events')).items.length > before);
-  await page.getByRole('button', { name: '查看详情' }).last().click();
+  let publishedEvent;
+  await waitFor(async () => {
+    publishedEvent = (await api('/aep/v1/admin/control-events')).items.find(item => !before.has(item.eventId));
+    return Boolean(publishedEvent);
+  });
+  await waitText(`事件已创建: ${publishedEvent.eventId}`);
+  const publishedRow = page.getByRole('row').filter({ hasText: 'model.catalog.changed' }).first();
+  await publishedRow.getByRole('button', { name: '查看详情' }).click();
   await page.getByRole('button', { name: '关闭' }).click();
-  await page.getByRole('button', { name: '取消事件' }).last().click();
+  await publishedRow.getByRole('button', { name: '取消事件' }).click();
   await confirm('确认取消事件');
 }
 
@@ -352,19 +394,49 @@ async function assertApiState() {
   assert.ok(requests.some(value => value.includes('/aep/v1/admin/data-plane/desired-state')));
 }
 
-async function ensureChecked(locator) {
-  if (await locator.getAttribute('aria-checked') !== 'true') await locator.click();
+async function ensureMemberRole() {
+  const roles = await api('/aep/v1/admin/roles?limit=200');
+  const existing = roles.roles.find(role => role.id === memberRoleId);
+  if (existing) {
+    assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
+    assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
+    return;
+  }
+  await api('/aep/v1/admin/roles', {
+    method: 'POST',
+    body: {
+      id: memberRoleId,
+      name: memberRoleName,
+      description: 'Least-privileged role for disposable enterprise extension tests',
+      permissions: [],
+    },
+  });
 }
 
-async function ensureUnchecked(locator) {
-  if (await locator.getAttribute('aria-checked') === 'true') await locator.click();
+async function disableAndRevokeTestUsers() {
+  const users = await api('/aep/v1/admin/users?limit=200');
+  const testUsers = users.items.filter(item => [names.user, names.imported].includes(item.username));
+  for (const user of testUsers) {
+    if (user.status !== 'disabled') {
+      await api(`/aep/v1/admin/users/${encodeURIComponent(user.id)}`, {
+        method: 'PATCH',
+        body: { status: 'disabled' },
+      });
+    }
+    const sessions = await api(`/aep/v1/admin/sessions?userId=${encodeURIComponent(user.id)}&limit=200`);
+    for (const session of sessions.items) {
+      if (!session.revokedAt) {
+        await api(`/aep/v1/admin/sessions/${encodeURIComponent(session.sessionId)}/revoke`, { method: 'POST' });
+      }
+    }
+  }
 }
 
 async function loginApi() {
   const response = await fetch(`${adminOrigin}/aep/v1/auth/password/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'X-AEP-Protocol-Version': '1.0' },
-    body: JSON.stringify({ deploymentId: 'demo', username: 'admin', password: adminPassword }),
+    body: JSON.stringify({ deploymentId, username: adminUsername, password: adminPassword }),
   });
   const text = await response.text();
   assert.equal(response.status, 200, text);
