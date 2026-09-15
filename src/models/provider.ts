@@ -26,6 +26,7 @@ export interface ZhiyuanModelProviderDependencies {
   readonly getEntitlementToken?: () => string | null;
   readonly requireEntitlement?: boolean;
   readonly onEntitlementChange?: (listener: () => void) => () => void;
+  readonly refreshEntitlement?: () => Promise<unknown>;
 }
 
 export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
@@ -38,6 +39,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
   readonly #getEntitlementToken: (() => string | null) | null;
   readonly #requireEntitlement: boolean;
   readonly #onEntitlementChange: ((listener: () => void) => () => void) | null;
+  readonly #refreshEntitlement: (() => Promise<unknown>) | null;
   #entitlementUnsubscribe: (() => void) | null = null;
   readonly #listeners = new Set<() => void>();
   #sessionUnsubscribe: (() => void) | null = null;
@@ -57,9 +59,11 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
     this.#getEntitlementToken = dependencies.getEntitlementToken ?? null;
     this.#requireEntitlement = dependencies.requireEntitlement === true;
     this.#onEntitlementChange = dependencies.onEntitlementChange ?? null;
+    this.#refreshEntitlement = dependencies.refreshEntitlement ?? null;
   }
 
   async snapshot(): Promise<ProviderConfig> {
+    await this.#refreshEntitlement?.();
     const [models, connection] = await Promise.all([
       this.#readModels(),
       this.#session.getModelConnection(),
@@ -121,6 +125,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
     if (this.#pollInFlight) return;
     this.#pollInFlight = true;
     try {
+      await this.#refreshEntitlement?.();
       await this.#readModels();
     } catch {
       // The host refresh below will clear the stale provider snapshot.

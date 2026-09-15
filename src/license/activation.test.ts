@@ -30,4 +30,28 @@ describe('ZhiyuanLicenseActivation', () => {
     activation.stop();
     expect(activation.entitlement()).toBeNull();
   });
+
+  test('refreshes an entitlement only when it is close to expiry', async () => {
+    const session = {
+      snapshot: () => ({status: 'authenticated' as const}),
+      onDidChange: () => () => undefined,
+    };
+    const activateEnterpriseLicense = vi.fn(async () => ({
+      entitlementToken: 'entitlement', tokenType: 'Bearer' as const,
+      expiresAt: '2026-09-09T00:00:00.000Z', expiresIn: 3600,
+      licenseId: 'lic-1', licenseDigest: 'sha256:digest', deploymentId: 'deployment-1',
+      features: ['enterprise.models'], modelScopes: ['enterprise-chat'],
+    }));
+    const activation = ZhiyuanLicenseActivation.create({
+      session: session as never,
+      client: {activateEnterpriseLicense},
+    });
+
+    await activation.activate();
+    await activation.refreshIfNeeded(Date.parse('2026-09-08T22:00:00.000Z'));
+    expect(activateEnterpriseLicense).toHaveBeenCalledTimes(1);
+
+    await activation.refreshIfNeeded(Date.parse('2026-09-08T23:59:30.000Z'));
+    expect(activateEnterpriseLicense).toHaveBeenCalledTimes(2);
+  });
 });

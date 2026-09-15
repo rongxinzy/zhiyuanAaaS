@@ -12,6 +12,19 @@ interface RecordedRequest {
   readonly body: unknown;
 }
 
+function currentAdminIdentity() {
+  return {
+    user: {id: 'admin-1', displayName: '管理员'},
+    deployment: {id: 'demo', name: '演示部署'},
+    deploymentId: 'demo',
+    enterprise: {id: 'demo', name: '演示部署'},
+    roles: ['admin'],
+    permissions: [],
+    sessionExpiresAt: '2026-09-30T00:00:00Z',
+    passwordChangeRequired: false,
+  };
+}
+
 function startAepStub() {
   const requests: RecordedRequest[] = [];
   const server = http.createServer((request, response) => {
@@ -23,7 +36,7 @@ function startAepStub() {
       response.setHeader('Content-Type', 'application/json');
       if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
         response.writeHead(200);
-        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        response.end(JSON.stringify(currentAdminIdentity()));
         return;
       }
       if (request.method === 'POST' && request.url === '/aep/v1/admin/skill-assignments') {
@@ -69,6 +82,36 @@ describe('admin console assignment wire contract', () => {
     expect(post?.body).toEqual({ skillId: 's1', subject: { type: 'user', id: 'u1' } });
   });
 
+  test('rejects a malformed current identity and clears the local session', async () => {
+    const stub = http.createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
+        response.writeHead(200);
+        response.end(JSON.stringify({
+          user: {},
+          deployment: {id: 'demo', name: '演示部署'},
+          deploymentId: 'demo',
+          enterprise: {id: 'demo', name: '演示部署'},
+          roles: ['admin'],
+          sessionExpiresAt: '2026-09-30T00:00:00Z',
+          passwordChangeRequired: false,
+        }));
+        return;
+      }
+      response.writeHead(404);
+      response.end(JSON.stringify({title: 'not found'}));
+    });
+    await new Promise<void>(resolve => stub.listen(0, '127.0.0.1', resolve));
+    server = stub;
+    const port = (stub.address() as AddressInfo).port;
+    const tokenStore = new MemoryTokenStore();
+    await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
+    const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
+
+    await expect(client.restore()).rejects.toThrow('current identity response is invalid');
+    await expect(tokenStore.get()).resolves.toBeNull();
+  });
+
   test('createModelAssignment POSTs the SDK payload to the control plane', async () => {
     const stub = startAepStub();
     await new Promise<void>(resolve => stub.server.listen(0, '127.0.0.1', resolve));
@@ -93,7 +136,7 @@ describe('admin console assignment wire contract', () => {
       response.setHeader('Content-Type', 'application/json');
       if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
         response.writeHead(200);
-        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        response.end(JSON.stringify(currentAdminIdentity()));
         return;
       }
       if (request.method === 'GET' && request.url?.startsWith('/aep/v1/admin/users')) {
@@ -136,7 +179,7 @@ describe('admin console assignment wire contract', () => {
         response.setHeader('Content-Type', 'application/json');
         if (request.method === 'GET' && request.url === '/aep/v1/user/me') {
           response.writeHead(200);
-          response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+          response.end(JSON.stringify(currentAdminIdentity()));
           return;
         }
         if (request.method === 'POST' && request.url === '/aep/v1/admin/skills') {
@@ -183,7 +226,7 @@ describe('admin console assignment wire contract', () => {
       const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
       if (path === '/aep/v1/user/me') {
         response.writeHead(200);
-        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', username: 'admin', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        response.end(JSON.stringify(currentAdminIdentity()));
         return;
       }
       if (path === '/aep/v1/admin/users') {
@@ -221,8 +264,8 @@ describe('admin console assignment wire contract', () => {
     await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
     const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
 
-    await client.restore();
-    await expect(client.overview()).resolves.toMatchObject({ users: 0, teams: null, skills: 1, models: 0, pendingEvents: 0, failed: ['teams'] });
+    const session = await client.restore();
+    await expect(client.overview(session.identity)).resolves.toMatchObject({ users: 0, teams: null, skills: 1, models: 0, pendingEvents: 0, failed: ['teams'] });
   });
 
   test('aggregates cursor-paginated roles, teams, and Skills for resources', async () => {
@@ -233,7 +276,7 @@ describe('admin console assignment wire contract', () => {
       response.setHeader('Content-Type', 'application/json');
       if (url.pathname === '/aep/v1/user/me') {
         response.writeHead(200);
-        response.end(JSON.stringify({ user: { id: 'admin-1', displayName: '管理员', roles: ['admin'] }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', roles: ['admin'] }));
+        response.end(JSON.stringify(currentAdminIdentity()));
         return;
       }
       if (url.pathname === '/aep/v1/admin/users') {
@@ -279,8 +322,8 @@ describe('admin console assignment wire contract', () => {
     await tokenStore.set({ accessToken: 'test-access', refreshToken: 'test-refresh', modelAccessToken: 'test-model-access', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, passwordChangeRequired: false });
     const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
 
-    await client.restore();
-    await expect(client.resources()).resolves.toMatchObject({
+    const session = await client.restore();
+    await expect(client.resources(session.identity)).resolves.toMatchObject({
       roles: [{ id: 'role-1' }, { id: 'role-2' }],
       teams: [{ id: 'team-1' }, { id: 'team-2' }],
       skills: [{ id: 'skill-1' }, { id: 'skill-2' }],

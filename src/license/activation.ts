@@ -3,6 +3,8 @@ import type { AepClient, EntitlementTokenResponse } from '@aep/sdk-node';
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
 import { LicenseStatus, type LicenseSnapshot } from './types.js';
 
+export const ZHIYUAN_ENTITLEMENT_REFRESH_WINDOW_MS = 60_000;
+
 export interface ZhiyuanLicenseActivationOptions {
   readonly session: ZhiyuanPasswordSession;
   readonly client: Pick<AepClient, 'activateEnterpriseLicense'>;
@@ -58,14 +60,20 @@ export class ZhiyuanLicenseActivation {
     return this.#entitlement ? {...this.#entitlement, features: [...this.#entitlement.features]} : null;
   }
 
+  refreshIfNeeded(now = Date.now()): Promise<EntitlementTokenResponse | null> {
+    const expiresAt = Date.parse(this.#entitlement?.expiresAt ?? '');
+    if (Number.isFinite(expiresAt) && expiresAt > now + ZHIYUAN_ENTITLEMENT_REFRESH_WINDOW_MS) {
+      return Promise.resolve(this.entitlement());
+    }
+    return this.activate();
+  }
+
   async activate(): Promise<EntitlementTokenResponse | null> {
     if (this.#session.snapshot().status !== 'authenticated') return null;
     if (this.#activationPromise) return this.#activationPromise;
     this.#activationPromise = (async () => {
       try {
-        // Cast keeps the extension build compatible with the previous SDK
-        // package until the server-only activation contract is released.
-        const entitlement = await this.#client.activateEnterpriseLicense({} as never);
+        const entitlement = await this.#client.activateEnterpriseLicense({});
         this.#entitlement = entitlement;
         this.#snapshot = Object.freeze({
           status: LicenseStatus.Active,
