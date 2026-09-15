@@ -76,13 +76,16 @@ headless factory remains exported for deterministic verification and service-ind
 With a local AEP control service running on `http://localhost:8080`, run the real backend scenario:
 
 ```bash
-npm run verify:agent-control:e2e
+ZHIYUAN_AEP_ADMIN_PASSWORD=change-this-admin-password npm run verify:agent-control:e2e
 ```
 
 The command creates isolated test data, verifies install and revocation end to end, removes the Skill
-and assignment, and disables the temporary account. Override the endpoint and administrator login
-with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_ENTERPRISE_ID`, `ZHIYUAN_AEP_ADMIN_USERNAME`, and
-`ZHIYUAN_AEP_ADMIN_PASSWORD`.
+and assignment, and disables the temporary account while revoking all of its sessions. Disposable
+users receive the zero-permission `aaas-e2e-member` role rather than administrator access. Override
+the endpoint and administrator login with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_DEPLOYMENT_ID`,
+`ZHIYUAN_AEP_ADMIN_USERNAME`, and the required `ZHIYUAN_AEP_ADMIN_PASSWORD`. CI destroys its
+isolated Compose volumes after verification; persistent development deployments retain disabled
+user rows for audit and ownership references.
 
 Before invoking electron-builder, verify the closed-source package inputs with:
 

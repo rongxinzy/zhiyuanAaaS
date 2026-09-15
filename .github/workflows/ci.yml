@@ -12,8 +12,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -23,12 +23,18 @@ jobs:
       - run: npm run verify:electron-rc
       - run: npm run verify:sdk
 
-      - name: Checkout AEP control plane for Agent control E2E
-        uses: actions/checkout@v4
+      - name: Resolve immutable AEP input
+        id: manifest
+        shell: bash
+        run: |
+          node -e "const manifest = require('./build/build-manifest.json'); const commit = manifest.aepProtocol?.commit; if (!/^[0-9a-f]{40}$/.test(commit ?? '')) throw new Error('build-manifest.json must pin aepProtocol.commit to a full commit SHA'); process.stdout.write('aep_commit=' + commit + '\n')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout AEP control plane for real-service E2E
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: rongxinzy/Agent-Enterprise-Protocol
           path: aep-protocol
-          ref: main
+          ref: ${{ steps.manifest.outputs.aep_commit }}
       - name: Start AEP control plane
         working-directory: aep-protocol
         run: npm ci && npm run compose:up
@@ -38,7 +44,15 @@ jobs:
         env:
           ZHIYUAN_AEP_BASE_URL: http://127.0.0.1:8080
           ZHIYUAN_AEP_DEPLOYMENT_ID: demo
+          ZHIYUAN_AEP_ADMIN_PASSWORD: change-this-admin-password
         run: npm run verify:agent-control:e2e
+      - name: Verify Admin Console lifecycle
+        env:
+          ZHIYUAN_AEP_BASE_URL: http://127.0.0.1:8080
+          ZHIYUAN_AEP_DEPLOYMENT_ID: demo
+          ZHIYUAN_AEP_ADMIN_USERNAME: admin
+          ZHIYUAN_AEP_ADMIN_PASSWORD: change-this-admin-password
+        run: npm run verify:admin:real-e2e
       - name: Stop AEP control plane
         if: always()
         run: |
