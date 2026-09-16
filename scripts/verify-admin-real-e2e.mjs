@@ -287,9 +287,9 @@ async function exerciseModel() {
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`Console Model Updated ${suffix}`);
   await page.getByRole('button', { name: '分配模型' }).last().click();
-  current = dialog();
-  await current.getByRole('checkbox', { name: new RegExp(names.display) }).click();
-  await current.getByRole('button', { name: '授权' }).click();
+  await page.getByRole('heading', { name: '为成员分配模型' }).waitFor({ state: 'visible' });
+  await page.getByRole('checkbox', { name: new RegExp(names.display) }).click();
+  await page.getByRole('button', { name: '授权' }).click();
   await waitText(`${names.display} Updated`);
   await page.getByRole('button', { name: '撤销' }).first().click();
   await confirm('确认撤销');
