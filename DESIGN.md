@@ -117,7 +117,7 @@ main: min-h-full / bg-background
 ### 页面模板
 
 - 内容页使用 `section.flex-1.flex-col.overflow-y-auto.bg-background.p-4.sm:p-6`。
-- 内容内层使用 `mx-auto.w-full.max-w-4xl`；页面标题、说明和操作行使用 `gap-4`，页面区块使用 `gap-6`。
+- 内容内层使用 `w-full` 充分利用桌面主区域；页面标题、说明和操作行使用 `gap-4`，页面区块使用 `gap-6`。仅在需要控制阅读宽度的长文案区域单独设置上限。
 - 页面眉标使用 `text-xs text-tertiary-foreground`，页面标题使用 `text-lg font-semibold leading-snug`，说明使用 `mt-1.5 text-sm text-muted-foreground`。
 - 页面右上角的刷新是无文字图标按钮：`size="icon"`、`aria-label`、`title`，图标 `size-4`；不添加边框或阴影。
 - 内容卡片使用 `Card`，卡片之间用 `gap-4`；不要用卡片包裹卡片，也不要把整页背景做成浮动卡片。

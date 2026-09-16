@@ -77,20 +77,20 @@ describe('admin resources', () => {
 
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     expect(await screen.findByText('张三')).toBeInTheDocument();
-    expect(screen.getByText('2 Skill')).toBeInTheDocument();
+    expect(screen.getByText('2 技能')).toBeInTheDocument();
     expect(screen.getByText('1 企业模型')).toBeInTheDocument();
-    expect(screen.getByText('0 Skill')).toBeInTheDocument();
+    expect(screen.getByText('0 技能')).toBeInTheDocument();
 
     cleanup();
     render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
     expect(await screen.findByText('编辑者')).toBeInTheDocument();
-    expect(screen.getByText('1 Skill')).toBeInTheDocument();
+    expect(screen.getByText('1 技能')).toBeInTheDocument();
     expect(screen.getByText('1 企业模型')).toBeInTheDocument();
 
     cleanup();
     render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
     expect(await screen.findByText('平台组')).toBeInTheDocument();
-    expect(screen.getByText('1 Skill')).toBeInTheDocument();
+    expect(screen.getByText('1 技能')).toBeInTheDocument();
     expect(screen.getByText('0 企业模型')).toBeInTheDocument();
   });
 
@@ -124,8 +124,8 @@ describe('admin resources', () => {
       createSkillAssignment: vi.fn().mockResolvedValue(undefined),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
-    expect(await screen.findByText('暂无 Skill 授权')).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: '授权 Skill' })[0]!);
+    expect(await screen.findByText('暂无技能授权')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '授权技能' })[0]!);
     fireEvent.click(await screen.findByRole('button', { name: '写作' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /张三/ }));
     fireEvent.click(screen.getByRole('button', { name: '授权' }));
@@ -153,8 +153,8 @@ describe('admin resources', () => {
       createSkillAssignment: vi.fn().mockResolvedValue(undefined),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
-    expect(await screen.findByText('暂无 Skill 授权')).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: '授权 Skill' })[0]!);
+    expect(await screen.findByText('暂无技能授权')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '授权技能' })[0]!);
     fireEvent.click(await screen.findByRole('button', { name: '写作' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /张三/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /李四/ }));
@@ -246,8 +246,8 @@ describe('admin resources', () => {
       createRole: vi.fn().mockResolvedValue(undefined),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
-    fireEvent.click(await screen.findByRole('button', { name: '新增 Role' }));
-    fireEvent.change(screen.getByLabelText('Role ID'), { target: { value: 'model-reader' } });
+    fireEvent.click(await screen.findByRole('button', { name: '新增角色' }));
+    fireEvent.change(screen.getByLabelText('角色 ID'), { target: { value: 'model-reader' } });
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '模型读取者' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /models\.read/ }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -317,8 +317,8 @@ describe('admin resources', () => {
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    expect(await screen.findByText('请至少选择一个 Role。')).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: '选择 Role' })).toHaveAttribute('aria-invalid', 'true');
+    expect(await screen.findByText('请至少选择一个角色。')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '选择角色' })).toHaveAttribute('aria-invalid', 'true');
     expect(client.updateUser).not.toHaveBeenCalled();
     expect(client.replaceUserRBAC).not.toHaveBeenCalled();
   });
@@ -352,8 +352,8 @@ describe('admin resources', () => {
       createSkill: vi.fn().mockResolvedValue(undefined),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
-    fireEvent.click(await screen.findByRole('button', { name: '新增 Skill' }));
-    fireEvent.change(screen.getByLabelText('Skill ID'), { target: { value: 'writing' } });
+    fireEvent.click(await screen.findByRole('button', { name: '新增技能' }));
+    fireEvent.change(screen.getByLabelText('技能 ID'), { target: { value: 'writing' } });
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '写作助手' } });
     fireEvent.change(screen.getByLabelText('描述'), { target: { value: '生成文案' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -389,7 +389,7 @@ describe('admin resources', () => {
     fireEvent.click(await screen.findByRole('button', { name: '上传版本' }));
     fireEvent.change(screen.getByLabelText('版本号'), { target: { value: '1.0.0' } });
     const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' });
-    fireEvent.change(screen.getByLabelText('Skill ZIP 包'), { target: { files: [archive] } });
+    fireEvent.change(screen.getByLabelText('技能 ZIP 包'), { target: { files: [archive] } });
     fireEvent.click(screen.getByRole('button', { name: '上传版本' }));
     await waitFor(() => expect(client.uploadSkillVersion).toHaveBeenCalledWith('s1', '1.0.0', expect.any(Uint8Array)));
     fireEvent.click(await screen.findByRole('button', { name: '发布版本' }));
@@ -431,7 +431,7 @@ describe('admin resources', () => {
       createSkillAssignment: vi.fn().mockResolvedValue(undefined),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
-    fireEvent.click((await screen.findAllByRole('button', { name: '授权 Skill' }))[0]!);
+    fireEvent.click((await screen.findAllByRole('button', { name: '授权技能' }))[0]!);
     fireEvent.click(await screen.findByRole('button', { name: '写作' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /编辑者/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));

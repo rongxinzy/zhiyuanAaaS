@@ -29,15 +29,15 @@ describe('admin operations', () => {
     render(<Operations client={client as never} />);
 
     expect(await screen.findByText('license-1')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '撤销 License' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认撤销 License' }));
+    fireEvent.click(screen.getByRole('button', { name: '撤销许可证' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认撤销许可证' }));
     await waitFor(() => expect(client.revokeLicense).toHaveBeenCalledWith('license-1'));
 
-    fireEvent.click(screen.getByRole('button', { name: '导入 License' }));
+    fireEvent.click(screen.getByRole('button', { name: '导入许可证' }));
     const envelope = JSON.stringify({ format: 'zhiyuan-license-v1', keyId: 'license-prod-1', payload: { licenseId: 'license-2' }, signature: 'signed' });
     const file = new File([envelope], 'license.json', { type: 'application/json' });
-    fireEvent.change(screen.getByLabelText('License 文件'), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole('button', { name: '导入 License' }));
+    fireEvent.change(screen.getByLabelText('许可证文件'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: '导入许可证' }));
     await waitFor(() => expect(client.importLicense).toHaveBeenCalledWith({ license: expect.objectContaining({ keyId: 'license-prod-1', signature: 'signed' }) }));
   });
 
@@ -199,8 +199,8 @@ describe('admin operations', () => {
     render(<Operations client={client as never} identity={{ roles: [], permissions: ['licenses.read'] } as never} />);
 
     expect(await screen.findByText('license-1')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '导入 License' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '撤销 License' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '导入许可证' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '撤销许可证' })).not.toBeInTheDocument();
   });
 
   test('allows License import with write permission while keeping revoke separate', async () => {
@@ -211,8 +211,8 @@ describe('admin operations', () => {
     };
     render(<Operations client={client as never} identity={{ roles: [], permissions: ['licenses.read', 'licenses.write'] } as never} />);
 
-    expect(await screen.findByRole('button', { name: '导入 License' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '撤销 License' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '导入许可证' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '撤销许可证' })).not.toBeInTheDocument();
   });
 
   test('hides credential mutations and assignment controls for a read-only operator', async () => {

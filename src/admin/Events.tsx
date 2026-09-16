@@ -252,7 +252,7 @@ export function Events({
   };
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <div>
           <p className="text-xs text-tertiary-foreground">
             {translate(language, "workspaceLabel")}
@@ -1066,7 +1066,14 @@ function ControlEventRow({
 
 function scopeLabel(event: AdminControlEvent): string {
   const scopeId = "id" in event.scope ? event.scope.id : null;
-  return `${event.scope.type}${scopeId ? ` / ${scopeId}` : ""}`;
+  const scopeKey: AdminTranslationKey = event.scope.type === "GlobalScope"
+    ? "globalScope"
+    : event.scope.type === "TeamScope"
+      ? "teamScope"
+      : event.scope.type === "UserScope"
+        ? "userScope"
+        : "scopeType";
+  return `${translate(language, scopeKey)}${scopeId ? ` / ${scopeId}` : ""}`;
 }
 
 function eventStateLabel(

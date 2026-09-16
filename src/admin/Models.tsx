@@ -172,7 +172,7 @@ export function Models({
   }
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs text-tertiary-foreground">
