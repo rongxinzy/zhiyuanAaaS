@@ -156,4 +156,31 @@ describe('admin models', () => {
     expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'role', id: 'role-1' } });
     expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'team', id: 'team-1' } });
   });
+
+  test('opens model assignment as a subpage with target filters and search', async () => {
+    const client = {
+      models: vi.fn().mockResolvedValue({ models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }], assignments: [] }),
+      resources: vi.fn().mockResolvedValue({
+        users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+        roles: [{ id: 'role-1', name: '编辑者', description: '', builtIn: false, enabled: true, permissions: [] }],
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        permissions: [], skills: [], assignments: [],
+      }),
+    };
+    render(<Models client={client as never} />);
+    fireEvent.click(await screen.findByRole('button', { name: '分配模型' }));
+    expect(await screen.findByRole('heading', { name: '为成员分配模型' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /张三/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
+    expect(screen.queryByRole('checkbox', { name: /张三/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /编辑者/ })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /平台组/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索授权对象' }), { target: { value: '不存在' } });
+    expect(screen.getByText('无匹配主体')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '返回模型列表' }));
+    expect(await screen.findByRole('heading', { name: '企业模型' })).toBeInTheDocument();
+  });
 });
