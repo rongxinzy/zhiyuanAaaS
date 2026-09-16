@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Check,
   CircleAlert,
   Cpu,
@@ -6,6 +7,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   Trash2,
   UserRound,
@@ -88,6 +90,11 @@ import {
 import { Input } from "../ui/components/ui/input.js";
 import { Skeleton } from "../ui/components/ui/skeleton.js";
 import { Spinner } from "../ui/components/ui/spinner.js";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "../ui/components/ui/tabs.js";
 import { runBatch } from "./batch.js";
 import { AdminNotificationKind, notify } from "./notifications.js";
 
@@ -148,6 +155,21 @@ export function Models({
   useEffect(() => {
     void load();
   }, [load]);
+  if (canAssign && granting) {
+    return (
+      <ModelGrantPage
+        client={client}
+        model={granting.model}
+        existingAssignments={granting.assignments}
+        users={users}
+        roles={roles}
+        teams={teams}
+        onBack={() => setGranting(null)}
+        onChanged={load}
+        onError={reportMutationError}
+      />
+    );
+  }
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -199,19 +221,6 @@ export function Models({
             onGrant={(model, assignments) =>
               setGranting({ model, assignments })
             }
-          />
-        ) : null}
-        {canAssign && granting ? (
-          <ModelGrantDialog
-            client={client}
-            model={granting.model}
-            existingAssignments={granting.assignments}
-            users={users}
-            roles={roles}
-            teams={teams}
-            onOpenChange={() => setGranting(null)}
-            onChanged={load}
-            onError={reportMutationError}
           />
         ) : null}
       </div>
@@ -966,7 +975,7 @@ function ModelEditorDialog({
   );
 }
 
-function ModelGrantDialog({
+function LegacyModelGrantDialog({
   client,
   model,
   existingAssignments,
@@ -1107,5 +1116,127 @@ function ModelGrantDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type ModelGrantFilter = "all" | AdminModelSubjectType;
+
+function ModelGrantPage({
+  client,
+  model,
+  existingAssignments,
+  users,
+  roles,
+  teams,
+  onBack,
+  onChanged,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly model: AdminModel;
+  readonly existingAssignments: readonly ModelAssignment[];
+  readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
+  readonly onBack: () => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [pending, setPending] = useState(false);
+  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
+  const [filter, setFilter] = useState<ModelGrantFilter>("all");
+  const [query, setQuery] = useState("");
+  const toggleSubject = useCallback((subjectKey: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(subjectKey)) next.delete(subjectKey);
+      else next.add(subjectKey);
+      return next;
+    });
+  }, []);
+  const submit = async () => {
+    if (selected.size === 0) return;
+    setPending(true);
+    setFailedSubjects([]);
+    try {
+      const results = await runBatch([...selected], (subjectKey) => {
+        const separator = subjectKey.indexOf(":");
+        const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
+        const id = subjectKey.slice(separator + 1);
+        return client.createModelAssignment({ modelId: model.id, subject: { type, id } });
+      });
+      const failures = results.filter((result) => !result.ok).map((result) => result.item);
+      if (failures.length > 0) {
+        setFailedSubjects(failures);
+        setSelected(new Set(failures));
+        await onChanged();
+        return;
+      }
+      await onChanged();
+      onBack();
+    } catch {
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
+      <div className="flex w-full flex-col gap-6">
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="icon" aria-label={translate(language, "grantModelBack")} title={translate(language, "grantModelBack")} disabled={pending} onClick={onBack}>
+            <ArrowLeft />
+          </Button>
+          <div className="min-w-0">
+            <p className="text-xs text-tertiary-foreground">{translate(language, "models")}</p>
+            <h2 className="mt-1 text-xl font-semibold leading-snug">{translate(language, "grantModelTitle")}</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, "grantModelDescription")} <span className="font-medium text-foreground">{model.displayName}</span></p>
+          </div>
+        </div>
+        {failedSubjects.length > 0 ? (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>
+              <p>{translate(language, "grantFailed")}</p>
+              <p className="mt-1 text-xs">{translate(language, "grantFailedSubjects")}: {failedSubjects.join(", ")}</p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <Card>
+          <CardHeader>
+            <CardTitle>{translate(language, "grantModelSelectTitle")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{translate(language, "grantModelSelectDescription")}</p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">{translate(language, "grantModelFilter")}</span>
+              <Tabs value={filter} onValueChange={(value) => setFilter(value as ModelGrantFilter)}>
+                <TabsList variant="line" className="w-full justify-start overflow-x-auto">
+                  <TabsTrigger value="all">{translate(language, "grantModelAll")}</TabsTrigger>
+                  <TabsTrigger value={AdminModelSubjectType.User}>{translate(language, "grantModelUsers")}</TabsTrigger>
+                  <TabsTrigger value={AdminModelSubjectType.Role}>{translate(language, "grantModelRoles")}</TabsTrigger>
+                  <TabsTrigger value={AdminModelSubjectType.Team}>{translate(language, "grantModelTeams")}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate(language, "grantModelSearchPlaceholder")} aria-label={translate(language, "grantModelSearch")} className="pl-9" disabled={pending} />
+            </div>
+            <Field>
+              <SubjectMultiPicker users={users} roles={roles} teams={teams} subjectType={filter} searchQuery={query} excluded={new Set(existingAssignments.map((item) => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggleSubject} disabled={pending} />
+            </Field>
+          </CardContent>
+          <CardFooter className="justify-between gap-3 border-t border-border pt-4">
+            <p className="text-sm text-muted-foreground">{translate(language, "selectedSubjectsLabel")} {selected.size}</p>
+            <Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>
+              {pending ? <Spinner data-icon="inline-start" /> : null}
+              {translate(language, pending ? "granting" : "grant")}
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    </section>
   );
 }

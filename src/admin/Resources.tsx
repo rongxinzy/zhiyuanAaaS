@@ -3089,6 +3089,8 @@ export function SubjectMultiPicker({
   selected,
   onToggle,
   disabled,
+  subjectType = "all",
+  searchQuery = "",
 }: {
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
@@ -3097,28 +3099,41 @@ export function SubjectMultiPicker({
   readonly selected: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
   readonly disabled: boolean;
+  readonly subjectType?: "all" | "user" | "role" | "team";
+  readonly searchQuery?: string;
 }) {
   const listId = useId();
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
   const options = [
     ...users.map((user) => ({
       key: `${AdminSubjectType.User}:${user.id}`,
       label: user.displayName,
       description: user.username,
       type: translate(language, "user"),
+      subjectType: AdminSubjectType.User,
     })),
     ...roles.map((role) => ({
       key: `${AdminSubjectType.Role}:${role.id}`,
       label: role.name,
       description: role.id,
       type: translate(language, "role"),
+      subjectType: AdminSubjectType.Role,
     })),
     ...teams.map((team) => ({
       key: `${AdminSubjectType.Team}:${team.id}`,
       label: team.name,
       description: team.id,
       type: translate(language, "team"),
+      subjectType: AdminSubjectType.Team,
     })),
-  ].filter((option) => !excluded.has(option.key));
+  ].filter((option) => {
+    if (excluded.has(option.key)) return false;
+    if (subjectType !== "all" && option.subjectType !== subjectType) return false;
+    if (!normalizedQuery) return true;
+    return `${option.label} ${option.description} ${option.key}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+  });
   return (
     <>
       <FieldLabel>{translate(language, "selectSubjects")}</FieldLabel>
