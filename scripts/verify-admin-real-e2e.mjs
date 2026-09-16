@@ -144,18 +144,18 @@ try {
 if (verifierError) throw verifierError;
 
 async function createUserAndMemberships() {
-  await page.getByRole('tab', { name: 'Team' }).click();
-  await page.getByRole('button', { name: '新增 Team' }).click();
+  await page.getByRole('tab', { name: '团队' }).click();
+  await page.getByRole('button', { name: '新增团队' }).click();
   let current = dialog();
-  await current.getByLabel('Team ID').fill(names.team);
+  await current.getByLabel('团队 ID').fill(names.team);
   await current.getByLabel('名称').fill(`Console Team ${suffix}`);
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`Console Team ${suffix}`);
 
-  await page.getByRole('tab', { name: 'Role' }).click();
-  await page.getByRole('button', { name: '新增 Role' }).click();
+  await page.getByRole('tab', { name: '角色' }).click();
+  await page.getByRole('button', { name: '新增角色' }).click();
   current = dialog();
-  await current.getByLabel('Role ID').fill(names.role);
+  await current.getByLabel('角色 ID').fill(names.role);
   await current.getByLabel('名称').fill(`Console Role ${suffix}`);
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`Console Role ${suffix}`);
@@ -195,7 +195,7 @@ async function createUserAndMemberships() {
 
 async function exerciseTeamAndRole() {
   await page.getByRole('button', { name: '资源管理' }).click();
-  await page.getByRole('tab', { name: 'Team' }).click();
+  await page.getByRole('tab', { name: '团队' }).click();
   const teamText = `Console Team ${suffix}`;
   await row(names.team).getByRole('button', { name: '编辑' }).click();
   let current = dialog();
@@ -210,7 +210,7 @@ async function exerciseTeamAndRole() {
   await confirm('删除');
   await waitGone(`${teamText} Updated`);
 
-  await page.getByRole('tab', { name: 'Role' }).click();
+  await page.getByRole('tab', { name: '角色' }).click();
   const roleText = `Console Role ${suffix}`;
   await row(names.role).getByRole('button', { name: '编辑' }).click();
   current = dialog();
@@ -227,10 +227,10 @@ async function exerciseTeamAndRole() {
 }
 
 async function exerciseSkill() {
-  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
-  await page.getByRole('button', { name: '新增 Skill' }).click();
+  await page.getByRole('tab', { name: '技能', exact: true }).click();
+  await page.getByRole('button', { name: '新增技能' }).click();
   let current = dialog();
-  await current.getByLabel('Skill ID').fill(names.skill);
+  await current.getByLabel('技能 ID').fill(names.skill);
   await current.getByLabel('名称').fill(`Console Skill ${suffix}`);
   await current.getByRole('button', { name: '保存' }).click();
   await waitText(`Console Skill ${suffix}`);
@@ -247,7 +247,7 @@ async function exerciseSkill() {
   await row(names.skill).getByRole('button', { name: '上传版本' }).click();
   current = dialog();
   await current.getByLabel('版本号').fill('1.0.0');
-  await current.getByLabel('Skill ZIP 包').setInputFiles({ name: 'skill.zip', mimeType: 'application/zip', buffer: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64') });
+  await current.getByLabel('技能 ZIP 包').setInputFiles({ name: 'skill.zip', mimeType: 'application/zip', buffer: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64') });
   await current.getByRole('button', { name: '上传版本' }).click();
   await waitText('1.0.0');
   await current.getByRole('button', { name: '发布版本' }).click();
@@ -256,8 +256,8 @@ async function exerciseSkill() {
   await row(names.skill).getByRole('button', { name: '撤回版本' }).click();
   await confirm('确认撤回版本');
 
-  await page.getByRole('tab', { name: 'Skill 授权' }).click();
-  await page.getByRole('button', { name: '授权 Skill' }).first().click();
+  await page.getByRole('tab', { name: '技能授权' }).click();
+  await page.getByRole('button', { name: '授权技能' }).first().click();
   current = dialog();
   await current.getByRole('button', { name: `Console Skill Updated ${suffix}` }).click();
   await current.getByRole('checkbox', { name: new RegExp(names.display) }).click();
@@ -265,7 +265,7 @@ async function exerciseSkill() {
   await waitText(`${names.display} Updated`);
   await page.getByRole('button', { name: '撤销授权' }).first().click();
   await confirm('确认撤销');
-  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
+  await page.getByRole('tab', { name: '技能', exact: true }).click();
   await row(names.skill).getByRole('button', { name: '删除' }).click();
   await confirm('删除');
   await waitGone(`Console Skill Updated ${suffix}`);
