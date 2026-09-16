@@ -1,5 +1,7 @@
 import {
   AlertCircle,
+  Activity,
+  BarChart3,
   Boxes,
   CheckCircle2,
   CircleGauge,
@@ -779,14 +781,14 @@ function OverviewView({
   }, [load]);
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs text-tertiary-foreground">
               {translate(language, "overviewEyebrow")}
             </p>
-            <h2 className="mt-1 text-lg font-semibold leading-snug">
-              {translate(language, "overview")}
+            <h2 className="mt-1 text-xl font-semibold leading-snug">
+              {translate(language, "overviewTitle")}
             </h2>
             <p className="mt-1.5 text-sm text-muted-foreground">
               {translate(language, "overviewDescription")}
@@ -816,26 +818,106 @@ function OverviewView({
             />
           ))}
         </div>
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center gap-2">
-            <ShieldCheck
-              className="size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <CardTitle>{translate(language, "overviewStatusTitle")}</CardTitle>
-            <Badge variant="success">
-              <CheckCircle2 data-icon="inline-start" />
-              {translate(language, "connected")}
-            </Badge>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              {translate(language, "overviewStatusDescription")}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
+          <ResourceComposition overview={overview} loading={loading} identity={identity} />
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
+                <CardTitle>{translate(language, "overviewStatusTitle")}</CardTitle>
+              </div>
+              <Badge variant="success">
+                <CheckCircle2 data-icon="inline-start" />
+                {translate(language, "connected")}
+              </Badge>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                {translate(language, "overviewStatusDescription")}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <StatusMetric label={translate(language, "overviewResourcesTracked")} value={trackedResourceCount(overview)} loading={loading} />
+                <StatusMetric label={translate(language, "overviewPendingWork")} value={overview?.pendingEvents} loading={loading} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </section>
+  );
+}
+
+function trackedResourceCount(overview: AdminOverview | null): number | null | undefined {
+  if (!overview) return undefined;
+  const values = [overview.users, overview.teams, overview.skills, overview.models];
+  if (values.some((value) => value === null)) return null;
+  return values.reduce<number>((total, value) => total + (value ?? 0), 0);
+}
+
+function ResourceComposition({
+  overview,
+  loading,
+  identity,
+}: {
+  readonly overview: AdminOverview | null;
+  readonly loading: boolean;
+  readonly identity?: AdminSession["identity"] | undefined;
+}) {
+  const rows = OVERVIEW_CARDS.slice(0, 4).filter((card) =>
+    hasAdminPermission(identity, card.permission),
+  );
+  const values = rows.map(({ key }) => overview?.[key]);
+  const max = Math.max(...values.map((value) => value ?? 0), 1);
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center gap-2">
+        <BarChart3 className="size-4 text-muted-foreground" aria-hidden="true" />
+        <div>
+          <CardTitle>{translate(language, "overviewCompositionTitle")}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {translate(language, "overviewCompositionDescription")}
+          </p>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {rows.map(({ key }) => {
+          const value = overview?.[key];
+          const width = value == null ? 0 : Math.max((value / max) * 100, value > 0 ? 4 : 0);
+          return (
+            <div key={key} className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">{translate(language, key)}</span>
+                {loading && value === undefined ? (
+                  <Skeleton className="h-4 w-8" />
+                ) : (
+                  <span className="font-medium">{value == null ? translate(language, value === null ? "metricLoadFailed" : "notAvailable") : value}</span>
+                )}
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${width}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusMetric({
+  label,
+  value,
+  loading,
+}: {
+  readonly label: string;
+  readonly value: number | null | undefined;
+  readonly loading: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      {loading && value === undefined ? <Skeleton className="mt-1 h-6 w-10" /> : <div className="mt-1 text-lg font-semibold">{value == null ? "-" : value}</div>}
+    </div>
   );
 }
 
