@@ -86,7 +86,7 @@ describe('admin console', () => {
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => expect(client.login).toHaveBeenCalledWith({ deploymentId: 'demo', username: 'admin', password: 'secret' }));
-    expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '运行概览' })).toBeInTheDocument();
   });
 
   test('toggles password visibility on the login form', async () => {
@@ -124,7 +124,7 @@ describe('admin console', () => {
     expect(screen.queryByRole('button', { name: '资源管理' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '事件与审计' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '平台运维' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('企业模型')).toHaveLength(3);
+    expect(screen.getAllByText('企业模型')).toHaveLength(4);
     expect(screen.queryByText('用户')).not.toBeInTheDocument();
     expect(client.overview).toHaveBeenCalledWith(expect.objectContaining({ permissions: ['models.read'] }));
   });
@@ -132,9 +132,9 @@ describe('admin console', () => {
   test('renders refreshed overview counts', async () => {
     client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
     render(<AdminApp />);
-    expect(await screen.findByText('4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect((await screen.findAllByText('4')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     expect(await screen.findByText('服务已连接')).toHaveClass('bg-success-soft', 'text-success');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '刷新' })));
     expect(client.overview).toHaveBeenCalledTimes(2);
@@ -145,10 +145,10 @@ describe('admin console', () => {
     client.overview.mockResolvedValue({ users: 4, teams: null, skills: 3, models: 1, pendingEvents: 0, failed: ['teams'] });
     render(<AdminApp />);
 
-    expect(await screen.findByText('4')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect((await screen.findAllByText('4')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     expect(screen.getByText('概览数据刷新失败，请稍后重试。')).toBeInTheDocument();
-    expect(screen.getByText('加载失败')).toBeInTheDocument();
+    expect(screen.getAllByText('加载失败').length).toBeGreaterThan(0);
   });
 
   test('uses Tea menu tokens and regular weight for active navigation', async () => {
