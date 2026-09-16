@@ -183,8 +183,8 @@ describe('admin console', () => {
     expect(document.querySelector('[data-slot="tabs-indicator"]')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-active');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Team' }));
-    expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('data-active');
+    fireEvent.click(screen.getByRole('tab', { name: '团队' }));
+    expect(screen.getByRole('tab', { name: '团队' })).toHaveAttribute('data-active');
   });
 
   test('labels the Role resource tab correctly', async () => {
@@ -192,8 +192,8 @@ describe('admin console', () => {
     render(<AdminApp />);
 
     fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
-    fireEvent.click(screen.getByRole('tab', { name: 'Role' }));
+    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
 
-    expect(await screen.findByRole('heading', { name: 'Role' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '角色' })).toBeInTheDocument();
   });
 });

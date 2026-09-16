@@ -65,10 +65,10 @@ try {
   await waitForText(page, 'admin');
 
   let dialog = page.getByRole('dialog');
-  await page.getByRole('tab', { name: 'Team' }).click();
-  await page.getByRole('button', { name: '新增 Team' }).click();
+  await page.getByRole('tab', { name: '团队' }).click();
+  await page.getByRole('button', { name: '新增团队' }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Team ID').fill('e2e-team');
+  await dialog.getByLabel('团队 ID').fill('e2e-team');
   await dialog.getByLabel('名称').fill('E2E Team');
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Team');
@@ -84,10 +84,10 @@ try {
   await page.getByRole('button', { name: '启用' }).click();
   await waitForValue(() => state.teams.find(item => item.id === 'e2e-team')?.enabled, true);
 
-  await page.getByRole('tab', { name: 'Role' }).click();
-  await page.getByRole('button', { name: '新增 Role' }).click();
+  await page.getByRole('tab', { name: '角色' }).click();
+  await page.getByRole('button', { name: '新增角色' }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Role ID').fill('e2e-role');
+  await dialog.getByLabel('角色 ID').fill('e2e-role');
   await dialog.getByLabel('名称').fill('E2E Role');
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Role');
@@ -116,17 +116,17 @@ try {
   const createdUser = state.users.find(item => item.username === 'e2e-user');
   assert.ok(createdUser, 'user create request did not reach the mock service');
 
-  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
-  await page.getByRole('button', { name: '新增 Skill' }).click();
+  await page.getByRole('tab', { name: '技能', exact: true }).click();
+  await page.getByRole('button', { name: '新增技能' }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Skill ID').fill('e2e-skill');
+  await dialog.getByLabel('技能 ID').fill('e2e-skill');
   await dialog.getByLabel('名称').fill('E2E Skill');
   await dialog.getByRole('button', { name: '保存' }).click();
   await waitForText(page, 'E2E Skill');
   assert.ok(state.skills.some(item => item.id === 'e2e-skill'));
 
-  await page.getByRole('tab', { name: 'Skill 授权' }).click();
-  await page.getByRole('button', { name: '授权 Skill' }).first().click();
+  await page.getByRole('tab', { name: '技能授权' }).click();
+  await page.getByRole('button', { name: '授权技能' }).first().click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'E2E Skill' }).click();
   await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
@@ -137,7 +137,7 @@ try {
   assert.equal(state.skillAssignments.length, 3);
   assert.deepEqual(new Set(state.skillAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
 
-  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
+  await page.getByRole('tab', { name: '技能', exact: true }).click();
   await page.getByRole('button', { name: '编辑' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('名称').fill('E2E Skill Updated');
@@ -152,7 +152,7 @@ try {
   await page.getByRole('button', { name: '上传版本' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('版本号').fill('1.0.0');
-  await dialog.getByLabel('Skill ZIP 包').setInputFiles({ name: 'e2e-skill.zip', mimeType: 'application/zip', buffer: Buffer.from('zip') });
+  await dialog.getByLabel('技能 ZIP 包').setInputFiles({ name: 'e2e-skill.zip', mimeType: 'application/zip', buffer: Buffer.from('zip') });
   await dialog.getByRole('button', { name: '上传版本' }).click();
   await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 1);
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/skills/e2e-skill/versions'));
@@ -163,7 +163,7 @@ try {
   await page.getByRole('alertdialog').getByRole('button', { name: '确认撤回版本' }).click();
   await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 0);
 
-  await page.getByRole('tab', { name: 'Skill 授权' }).click();
+  await page.getByRole('tab', { name: '技能授权' }).click();
   while (state.skillAssignments.length > 0) {
     const expectedLength = state.skillAssignments.length - 1;
     await page.getByRole('button', { name: '撤销授权' }).first().click();
@@ -171,7 +171,7 @@ try {
     await waitForValue(() => state.skillAssignments.length, expectedLength);
   }
   assert.equal(state.skillAssignments.length, 0);
-  await page.getByRole('tab', { name: 'Skill', exact: true }).click();
+  await page.getByRole('tab', { name: '技能', exact: true }).click();
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
   await waitForNoText(page, 'E2E Skill Updated');
@@ -270,16 +270,16 @@ try {
   await waitForNoText(page, 'E2E Credential Updated');
   assert.equal(state.credentials.length, 0);
 
-  await page.getByRole('tab', { name: 'License' }).click();
-  await page.getByRole('button', { name: '导入 License' }).click();
+  await page.getByRole('tab', { name: '许可证' }).click();
+  await page.getByRole('button', { name: '导入许可证' }).click();
   dialog = page.getByRole('dialog');
   const licenseEnvelope = JSON.stringify({ format: 'zhiyuan-license-v1', keyId: 'e2e-key', payload: { licenseId: 'e2e-license' }, signature: 'e2e-signature' });
-  await dialog.getByLabel('License 文件').setInputFiles({ name: 'e2e-license.json', mimeType: 'application/json', buffer: Buffer.from(licenseEnvelope) });
-  await dialog.getByRole('button', { name: '导入 License' }).click();
+  await dialog.getByLabel('许可证文件').setInputFiles({ name: 'e2e-license.json', mimeType: 'application/json', buffer: Buffer.from(licenseEnvelope) });
+  await dialog.getByRole('button', { name: '导入许可证' }).click();
   await waitForText(page, 'e2e-license');
   assert.equal(state.licenses.length, 1);
-  await page.getByRole('button', { name: '撤销 License' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销 License' }).click();
+  await page.getByRole('button', { name: '撤销许可证' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销许可证' }).click();
   await waitForValue(() => state.licenses[0]?.status, 'revoked');
   assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/licenses/e2e-license/revoke'));
 
@@ -325,12 +325,12 @@ try {
   await waitForValue(() => state.dataPlane.desired.routes.length, 0);
 
   await page.getByRole('button', { name: '资源管理' }).click();
-  await page.getByRole('tab', { name: 'Team' }).click();
+  await page.getByRole('tab', { name: '团队' }).click();
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
   await waitForNoText(page, 'E2E Team Updated');
   assert.equal(state.teams.length, 0);
-  await page.getByRole('tab', { name: 'Role' }).click();
+  await page.getByRole('tab', { name: '角色' }).click();
   await page.getByRole('button', { name: '删除' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
   await waitForNoText(page, 'E2E Role Updated');

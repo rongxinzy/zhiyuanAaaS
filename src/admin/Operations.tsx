@@ -44,7 +44,7 @@ export function Operations({ client, identity }: { readonly client: AdminConsole
   const activeTab = operationTabs.includes(tab) ? tab : operationTabs[0] ?? OperationsTab.Licenses;
   return (
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+      <div className="flex w-full flex-col gap-5">
         <div>
           <p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'operations')}</h2>
@@ -243,8 +243,15 @@ function CredentialRow({ credential, assignments, users, canWrite, canAssign, cl
 function CredentialAssignmentRow({ assignment, user, canAssign, client, onChanged, onError }: { readonly assignment: CredentialAssignment; readonly user: PlatformUser | undefined; readonly canAssign: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
   const [pending, setPending] = useState(false);
   const revoke = async () => { setPending(true); try { await client.deleteCredentialAssignment(assignment.id); await onChanged(); } catch { onError(); } finally { setPending(false); } };
-  const label = assignment.subject.type === AdminSubjectType.User && user ? user.displayName : `${assignment.subject.type}: ${assignment.subject.id}`;
+  const label = assignment.subject.type === AdminSubjectType.User && user ? user.displayName : `${subjectTypeLabel(assignment.subject.type)}: ${assignment.subject.id}`;
   return <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1"><span className="truncate">{label}</span>{canAssign ? <AlertDialog><AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" aria-label={translate(language, 'revoke')} title={translate(language, 'revoke')} disabled={pending} />}><Trash2 /></AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void revoke()}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}</span>;
+}
+
+function subjectTypeLabel(type: string): string {
+  if (type === AdminSubjectType.User) return translate(language, 'userScope');
+  if (type === AdminSubjectType.Role) return translate(language, 'role');
+  if (type === AdminSubjectType.Team) return translate(language, 'teamScope');
+  return type;
 }
 
 function CredentialEditorDialog({ client, credential, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential?: CredentialMetadata; readonly open: boolean | undefined; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {

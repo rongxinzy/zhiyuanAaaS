@@ -107,8 +107,8 @@ describe("admin events", () => {
     };
     render(<Events client={client as never} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Skill 清单" }));
-    fireEvent.click(screen.getByRole("button", { name: "User" }));
+    fireEvent.click(await screen.findByRole("button", { name: "技能清单" }));
+    fireEvent.click(screen.getByRole("button", { name: "用户" }));
     fireEvent.change(screen.getByLabelText("事件作用域 ID"), {
       target: { value: "user-1" },
     });
@@ -148,7 +148,7 @@ describe("admin events", () => {
     };
     render(<Events client={client as never} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Team" }));
+    fireEvent.click(await screen.findByRole("button", { name: "团队" }));
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
 
     expect(
