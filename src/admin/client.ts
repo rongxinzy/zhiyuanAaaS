@@ -1,6 +1,8 @@
 import {
   AepClient,
+  AEP_PROTOCOL_VERSION,
   FetchTransport,
+  HttpMethod,
   MemoryTokenStore,
   type AepTokenStore,
   type AdminModel,
@@ -72,6 +74,7 @@ export const AdminPermission = {
   ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
   CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
   LicensesRead: 'licenses.read', LicensesWrite: 'licenses.write', LicensesRevoke: 'licenses.revoke',
+  IdentityRead: 'identity.read', IdentityWrite: 'identity.write',
   SessionsWrite: 'sessions.write',
   EventsRead: 'events.read', EventsWrite: 'events.write',
   DataPlaneWrite: 'data_plane.write',
@@ -175,6 +178,65 @@ export interface AdminDataPlane {
   readonly status: DataPlaneStatus;
 }
 
+export const AdminIdentitySourceKind = {
+  Directory: 'directory',
+  Ldap: 'ldap',
+  Oidc: 'oidc',
+} as const;
+export type AdminIdentitySourceKind =
+  (typeof AdminIdentitySourceKind)[keyof typeof AdminIdentitySourceKind];
+
+export const AdminIdentityMappingStatus = {
+  Active: 'active',
+  Disabled: 'disabled',
+} as const;
+export type AdminIdentityMappingStatus =
+  (typeof AdminIdentityMappingStatus)[keyof typeof AdminIdentityMappingStatus];
+
+export const AdminIdentitySubjectType = {
+  User: 'user',
+  Team: 'team',
+} as const;
+export type AdminIdentitySubjectType =
+  (typeof AdminIdentitySubjectType)[keyof typeof AdminIdentitySubjectType];
+
+export interface AdminIdentitySource {
+  readonly id: string;
+  readonly kind: AdminIdentitySourceKind | string;
+  readonly displayName: string;
+  readonly enabled: boolean;
+}
+
+export interface AdminIdentitySourcePage {
+  readonly items: readonly AdminIdentitySource[];
+  readonly nextCursor: string | null;
+}
+
+export interface AdminIdentityMapping {
+  readonly sourceId: string;
+  readonly externalSubjectType: AdminIdentitySubjectType | string;
+  readonly externalId: string;
+  readonly localSubjectId: string;
+  readonly status: AdminIdentityMappingStatus | string;
+}
+
+export interface AdminIdentityMappingPage {
+  readonly items: readonly AdminIdentityMapping[];
+  readonly nextCursor: string | null;
+}
+
+export interface AdminIdentitySourceCreate {
+  readonly id: string;
+  readonly kind: AdminIdentitySourceKind;
+  readonly displayName: string;
+}
+
+export interface AdminIdentityMappingWrite {
+  readonly externalSubjectType: AdminIdentitySubjectType;
+  readonly externalId: string;
+  readonly localSubjectId: string;
+}
+
 export interface AdminEventRecord {
   readonly eventId?: string;
   readonly type?: string;
@@ -220,12 +282,14 @@ export interface AdminControlEvents {
 export class AdminConsoleClient {
   readonly #baseUrl: string;
   readonly #tokenStore: AepTokenStore;
+  readonly #transport: AepTransportLike;
   #client: AepClient | null = null;
   #deploymentId: string | null = null;
 
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#tokenStore = tokenStore ?? new SessionTokenStore();
+    this.#transport = new FetchTransport({fetch: runtimeFetch()}) as unknown as AepTransportLike;
   }
 
   async restore(): Promise<AdminSession> {
@@ -520,6 +584,67 @@ export class AdminConsoleClient {
     return this.#requireClient().putDataPlaneDesiredState(input);
   }
 
+  async identitySources(): Promise<AdminIdentitySourcePage> {
+    const client = this.#requireClient();
+    const items: AdminIdentitySource[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.#request<JsonObject>(client, {
+        method: HttpMethod.Get,
+        path: `/aep/v1/admin/identity-sources?${identityQuery({ cursor, limit: 200 })}`,
+      });
+      items.push(...parseIdentitySources(page));
+      const nextCursor = valueString(page, 'nextCursor');
+      if (!nextCursor || nextCursor === cursor) return { items, nextCursor: null };
+      cursor = nextCursor;
+    }
+  }
+
+  async createIdentitySource(input: AdminIdentitySourceCreate): Promise<AdminIdentitySource> {
+    const source = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: '/aep/v1/admin/identity-sources',
+      body: { id: input.id, kind: input.kind, displayName: input.displayName, config: {} },
+    });
+    return parseIdentitySource(source);
+  }
+
+  async identityMappings(sourceId: string): Promise<AdminIdentityMappingPage> {
+    const client = this.#requireClient();
+    const items: AdminIdentityMapping[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.#request<JsonObject>(client, {
+        method: HttpMethod.Get,
+        path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings?${identityQuery({ subjectType: AdminIdentitySubjectType.User, cursor, limit: 200 })}`,
+      });
+      items.push(...parseIdentityMappings(page, sourceId));
+      const nextCursor = valueString(page, 'nextCursor');
+      if (!nextCursor || nextCursor === cursor) return { items, nextCursor: null };
+      cursor = nextCursor;
+    }
+  }
+
+  async upsertIdentityMapping(sourceId: string, input: AdminIdentityMappingWrite): Promise<void> {
+    await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings`,
+      body: {
+        externalSubjectType: input.externalSubjectType,
+        externalId: input.externalId,
+        localSubjectId: input.localSubjectId,
+      },
+    });
+  }
+
+  async deleteIdentityMapping(sourceId: string, externalId: string): Promise<void> {
+    await this.#request<null>(this.#requireClient(), {
+      method: HttpMethod.Delete,
+      responseType: 'empty',
+      path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings/${AdminIdentitySubjectType.User}/${segment(externalId)}`,
+    });
+  }
+
   async importUsers(input: JsonObject): Promise<Record<string, unknown>> {
     const deploymentId = this.#deploymentId;
     if (!deploymentId) throw new Error('The deployment identity is unavailable.');
@@ -580,7 +705,7 @@ export class AdminConsoleClient {
       this.#client = new AepClient({
         baseUrl: this.#baseUrl,
         tokenStore: this.#tokenStore,
-        transport: new FetchTransport({fetch: runtimeFetch()}),
+        transport: this.#transport as never,
       });
     }
     return this.#client;
@@ -589,6 +714,46 @@ export class AdminConsoleClient {
   #requireClient(): AepClient {
     if (!this.#client) throw new Error('Admin console is not authenticated.');
     return this.#client;
+  }
+
+  // The pinned SDK release predates the identity-sources admin endpoints, so
+  // these calls go through the SDK transport directly. This keeps the session
+  // headers, bearer auth, 401 refresh retry, and RFC 9457 problem parsing
+  // identical to every other request the console makes.
+  async #request<T>(client: AepClient, request: {
+    readonly method: (typeof HttpMethod)[keyof typeof HttpMethod];
+    readonly path: string;
+    readonly body?: JsonObject;
+    readonly responseType?: 'json' | 'empty';
+  }): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-AEP-Protocol-Version': AEP_PROTOCOL_VERSION,
+    };
+    const tokens = await this.#tokenStore.get();
+    if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
+    let response = await this.#transport.request<T>(this.#baseUrl, {
+      method: request.method,
+      path: request.path,
+      headers,
+      ...(request.body ? { body: request.body } : {}),
+      ...(request.responseType === 'empty' ? { responseType: 'empty' as const } : {}),
+    });
+    if (response.status === 401 && tokens) {
+      const refreshed = await client.refreshSession();
+      headers.Authorization = `Bearer ${refreshed.accessToken}`;
+      response = await this.#transport.request<T>(this.#baseUrl, {
+        method: request.method,
+        path: request.path,
+        headers,
+        ...(request.body ? { body: request.body } : {}),
+        ...(request.responseType === 'empty' ? { responseType: 'empty' as const } : {}),
+      });
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw problemFromResponse(response.status, response.data);
+    }
+    return response.data;
   }
 
   async #listAllRoles(client: AepClient): Promise<readonly Role[]> {
@@ -687,6 +852,84 @@ function runtimeFetch(): typeof globalThis.fetch {
   return candidate.bind(typeof window !== 'undefined' ? window : root);
 }
 
+function segment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+interface AepTransportLike {
+  request<T>(baseUrl: string, request: {
+    readonly method: string;
+    readonly path: string;
+    readonly headers?: Record<string, string>;
+    readonly body?: unknown;
+    readonly responseType?: 'json' | 'bytes' | 'empty';
+  }): Promise<{ status: number; headers: Headers; data: T }>;
+}
+
+function identityQuery(values: { readonly [key: string]: string | number | undefined }): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
+  }
+  return search.toString();
+}
+
+function parseIdentitySource(value: unknown): AdminIdentitySource {
+  const record = isRecord(value) ? value : {};
+  if (typeof record.id !== 'string' || typeof record.displayName !== 'string') {
+    throw new Error('The AEP identity source response is invalid.');
+  }
+  return {
+    id: record.id,
+    displayName: record.displayName,
+    kind: typeof record.kind === 'string' ? record.kind : AdminIdentitySourceKind.Directory,
+    enabled: record.enabled !== false,
+  };
+}
+
+function parseIdentitySources(value: unknown): AdminIdentitySource[] {
+  return arrayFrom(value, 'identitySources').flatMap(item =>
+    item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string'
+      ? [safeIdentitySource(item)]
+      : [],
+  );
+}
+
+function safeIdentitySource(item: unknown): AdminIdentitySource {
+  const record = item as Record<string, unknown>;
+  return {
+    id: record.id as string,
+    displayName: typeof record.displayName === 'string' ? record.displayName : record.id as string,
+    kind: typeof record.kind === 'string' ? record.kind : AdminIdentitySourceKind.Directory,
+    enabled: record.enabled !== false,
+  };
+}
+
+function parseIdentityMappings(value: unknown, sourceId: string): AdminIdentityMapping[] {
+  return arrayFrom(value, 'mappings').flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.externalId !== 'string' || typeof record.localSubjectId !== 'string') return [];
+    return [{
+      sourceId: typeof record.sourceId === 'string' ? record.sourceId : sourceId,
+      externalSubjectType: typeof record.externalSubjectType === 'string' ? record.externalSubjectType : AdminIdentitySubjectType.User,
+      externalId: record.externalId,
+      localSubjectId: record.localSubjectId,
+      status: typeof record.status === 'string' ? record.status : AdminIdentityMappingStatus.Active,
+    }];
+  });
+}
+
+function problemFromResponse(status: number, data: unknown): Error {
+  if (isRecord(data) && typeof data.code === 'string') {
+    const problem = data as Record<string, unknown>;
+    return new Error(
+      `AEP ${status} ${problem.code}${typeof problem.detail === 'string' ? `: ${problem.detail}` : ''}`,
+    );
+  }
+  return new Error(`AEP request failed with status ${status}.`);
+}
+
 function parseAdminIdentity(value: unknown): AdminIdentity | null {
   if (!isRecord(value) || !isRecord(value.user)) return null;
   const userId = nonEmptyString(value.user.id);
@@ -740,8 +983,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export class SessionTokenStore implements AepTokenStore {
-  readonly #memory = new MemoryTokenStore();
+export class SessionTokenStore implements AepTokenStore {  readonly #memory = new MemoryTokenStore();
 
   async get() {
     return this.#memory.get();

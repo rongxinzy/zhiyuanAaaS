@@ -9,6 +9,7 @@ import {
   Cpu,
   Eye,
   EyeOff,
+  Fingerprint,
   LayoutDashboard,
   LogIn,
   LogOut,
@@ -90,6 +91,7 @@ import { AdminResourceTab, Resources } from "./Resources.js";
 import { Models } from "./Models.js";
 import { Events } from "./Events.js";
 import { Operations } from "./Operations.js";
+import { Identity } from "./Identity.js";
 import {
   AdminNotificationKind,
   AdminNotificationViewport,
@@ -100,6 +102,7 @@ const language: AdminLanguage = "zh";
 const AdminPage = {
   Overview: "overview",
   Resources: "resources",
+  Identity: "identity",
   Models: "models",
   Events: "events",
   Operations: "operations",
@@ -123,6 +126,12 @@ const navigation = [
       AdminPermission.RolesRead,
       AdminPermission.SkillsRead,
     ],
+  },
+  {
+    page: AdminPage.Identity,
+    label: "identity",
+    icon: Fingerprint,
+    permissions: [AdminPermission.IdentityRead],
   },
   {
     page: AdminPage.Models,
@@ -420,6 +429,8 @@ function ConsoleLayout({
         <PageTransition pageKey={page}>
           {activePage === AdminPage.Overview ? (
             <OverviewView client={client} identity={identity} />
+          ) : activePage === AdminPage.Identity ? (
+            <Identity client={client} identity={identity} />
           ) : activePage === AdminPage.Models ? (
             <Models client={client} identity={identity} />
           ) : activePage === AdminPage.Events ? (
