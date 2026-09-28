@@ -112,11 +112,12 @@ Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` when the output is not the sibling
 against the AaaS build output and fails on missing, extra, or mismatched Renderer assets.
 
 For a reproducible Windows installer, run the `Build Windows enterprise package` GitHub Actions
-workflow from `main`. The workflow checks out the exact Zhiyuan core commit pinned in
+workflow from `main` and provide the required version input in the form `vX.Y.Z` (for example,
+`v1.0.0`). The workflow checks out the exact Zhiyuan core commit pinned in
 `build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and Skill Python runtimes,
-builds the overlay installer, verifies every injected enterprise asset and bundled runtime, and
-performs the install/upgrade/uninstall smoke test. Its artifact contains the installer and
-`SHA256SUMS.txt` and is retained for 14 days.
+builds the `知远企业版` overlay installer, verifies the packaged version and every injected
+enterprise asset and bundled runtime, and performs the install/upgrade/uninstall smoke test. Its
+artifact contains a versioned enterprise installer and `SHA256SUMS.txt` and is retained for 14 days.
 
 Local packaging uses the same `build/electron-builder.overlay.yml`, but the public core's packaging
 hooks require reachable upstream release downloads or pre-populated offline inputs. In restricted

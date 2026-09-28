@@ -2,6 +2,11 @@ name: Build Windows enterprise package
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Enterprise version (must be vX.Y.Z, for example v1.0.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,6 +39,20 @@ jobs:
           npm ci
           npm run check
           npm run verify:package-inputs
+
+      - name: Validate enterprise version
+        id: version
+        shell: pwsh
+        env:
+          RAW_ENTERPRISE_VERSION: ${{ inputs.version }}
+        run: |
+          $raw = $env:RAW_ENTERPRISE_VERSION.Trim()
+          if ($raw -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw "Invalid enterprise version '$raw'. Expected vX.Y.Z, for example v1.0.0."
+          }
+          $normalized = $raw.Substring(1)
+          "version=$normalized" >> $env:GITHUB_OUTPUT
+          "display_version=$raw" >> $env:GITHUB_OUTPUT
 
       - name: Resolve immutable core input
         id: manifest
@@ -98,6 +117,7 @@ jobs:
           ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ..\dist\admin
           ZHIYUAN_ENTERPRISE_NOTICE_FILE: ..\THIRD_PARTY_NOTICES.md
           ZHIYUAN_ENTERPRISE_CONFIG_FILE: ..\build\enterprise-config.example.json
+          APP_BUILD_VERSION: ${{ steps.version.outputs.version }}
           ZHIYUAN_UPDATE_VARIANT: lite
         run: |
           $enterpriseInputs = @(
@@ -112,12 +132,18 @@ jobs:
               throw "Enterprise package input does not exist relative to the host root: $inputPath"
             }
           }
-          bun run prepare:update-release
           node scripts/ensure-build-version.js
+          bun run prepare:update-release
           bun run build
           bun run build:skills
           bun run prepare:modelscope-tokens
           bunx electron-builder --win nsis --x64 --config "$env:GITHUB_WORKSPACE\build\electron-builder.overlay.yml" --publish never
+
+      - name: Verify packaged enterprise version
+        working-directory: zhiyuan-core
+        env:
+          EXPECTED_ENTERPRISE_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/ci/verify-packaged-app-version.mjs $env:EXPECTED_ENTERPRISE_VERSION
 
       - name: Verify injected enterprise package
         env:
@@ -167,7 +193,7 @@ jobs:
       - name: Upload enterprise installer
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: zhiyuan-enterprise-windows-${{ github.run_number }}
+          name: zhiyuan-enterprise-windows-${{ steps.version.outputs.version }}-${{ github.run_number }}
           path: |
             zhiyuan-core/release/*.exe
             zhiyuan-core/release/SHA256SUMS.txt
@@ -179,7 +205,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: zhiyuan-enterprise-windows-diagnostics-${{ github.run_number }}
+          name: zhiyuan-enterprise-windows-diagnostics-${{ steps.version.outputs.version }}-${{ github.run_number }}
           path: |
             zhiyuan-core/release/*.exe
             ${{ runner.temp }}/zhiyuan-build-logs

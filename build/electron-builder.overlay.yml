@@ -1,5 +1,10 @@
 extends: electron-builder.json
 
+# Enterprise packages must be distinguishable from the public Zhiyuan build in
+# Windows Explorer, the Start menu, the taskbar, and the installer filename.
+productName: 知远企业版
+executableName: 知远企业版
+
 extraResources:
   - from: ${env.ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE}
     to: zhiyuan-enterprise/extension.cjs
