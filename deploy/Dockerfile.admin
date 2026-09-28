@@ -1,0 +1,11 @@
+# Zhiyuan Admin Console — static bundle + zero-dependency same-origin proxy
+# (scripts/serve-admin.mjs proxies /aep to the AEP control service and /api to
+# the de-portal, so the browser never needs CORS and the CSP stays 'self').
+FROM node:22-alpine
+WORKDIR /app
+COPY scripts/serve-admin.mjs scripts/serve-admin.mjs
+COPY dist/admin dist/admin
+ENV ZHIYUUAN-placeholder=1
+ENV ZHIYUAN_ADMIN_PORT=5173 ZHIYUAN_ADMIN_HOST=0.0.0.0
+EXPOSE 5173
+CMD ["node", "scripts/serve-admin.mjs"]

@@ -55,8 +55,11 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Zhiyuan Admin Console: http://127.0.0.1:${port}`);
+// Default loopback matches the local dev flow; containers set
+// ZHIYUAN_ADMIN_HOST=0.0.0.0 so the NodePort service can reach the server.
+const host = process.env.ZHIYUAN_ADMIN_HOST ?? '127.0.0.1';
+server.listen(port, host, () => {
+  console.log(`Zhiyuan Admin Console: http://${host}:${port}`);
 });
 
 async function proxy(request, response, target) {
