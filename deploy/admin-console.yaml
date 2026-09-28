@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: admin-console
-          image: 172.18.5.251:8081/zhiyuan/de-admin-console:0.2.1
+          image: 172.18.5.251:8081/zhiyuan/de-admin-console:0.3.0
           env:
             - {name: ZHIYUAN_AEP_BASE_URL, value: "http://aep-control-service.aep-system.svc.cluster.local:8080"}
             - {name: ZHIYUAN_PORTAL_BASE_URL, value: "http://de-portal.digital-employees.svc.cluster.local:8090"}
