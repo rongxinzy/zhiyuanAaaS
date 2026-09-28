@@ -162,11 +162,17 @@ function portalError(status: number, data: unknown): PortalError {
 }
 
 // The chat entry lives on the portal origin (not proxied): the browser must
-// land there so the portal can set its own cookies. Default is the platform
-// host (k3s NodePort); override with VITE_PORTAL_URL per deployment. The
-// hostname must match how users reach the chat UI — cookies ignore ports,
-// not hosts.
+// land there so the portal can set its own cookies. The portal runs on the
+// SAME host as the console (k3s NodePort 30190), so the default derives from
+// the console's own location — whatever hostname the user typed keeps
+// portal and chat UI on one hostname (cookies ignore ports, not hosts), and
+// nothing environment-specific is baked into the build. VITE_PORTAL_URL
+// overrides for split deployments.
 export function portalChatBaseURL(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  return env?.VITE_PORTAL_URL ?? 'http://172.19.159.225:30190';
+  if (env?.VITE_PORTAL_URL) return env.VITE_PORTAL_URL;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:30190`;
+  }
+  return 'http://localhost:30190';
 }

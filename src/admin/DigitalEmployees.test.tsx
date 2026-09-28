@@ -48,7 +48,10 @@ describe('admin digital employees', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开对话' }));
     await waitFor(() => expect(open).toHaveBeenCalledOnce());
     const [href] = open.mock.calls[0]!;
-    expect(href).toContain('http://172.19.159.225:30190/chat?employee=sales-helper#token=aep-token');
+    // Derived from the test page's own origin (jsdom serves from
+    // localhost), never hardcoded: whichever host serves the console
+    // yields the same host on the portal port.
+    expect(href).toContain('http://localhost:30190/chat?employee=sales-helper#token=aep-token');
     open.mockRestore();
   });
 
