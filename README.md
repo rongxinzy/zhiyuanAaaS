@@ -127,11 +127,38 @@ workflow from `main` and provide the required version input in the form `vX.Y.Z`
 `v1.0.0`). The optional `aep_base_url` input is baked into
 `resources/zhiyuan-enterprise/config.json` through `scripts/render-enterprise-config.mjs`; it
 defaults to the internal test server `http://172.18.5.188:30196`, and clearing it packages the
-placeholder example config instead. The workflow checks out the exact Zhiyuan core commit pinned in
-`build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and Skill Python runtimes,
-builds the `知远企业版` overlay installer, verifies the packaged version and every injected
-enterprise asset and bundled runtime, and performs the install/upgrade/uninstall smoke test. Its
-artifact contains a versioned enterprise installer and `SHA256SUMS.txt` and is retained for 14 days.
+placeholder example config instead. The optional `cert_thumbprint` input enables Certum
+Authenticode signing and signature verification when the machine running the job has SimplySign
+Desktop signed in; see Windows code signing below. The workflow checks out the exact Zhiyuan core
+commit pinned in `build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and
+Skill Python runtimes, builds the `知远企业版` overlay installer, verifies the packaged version and
+every injected enterprise asset and bundled runtime, and performs the install/upgrade/uninstall
+smoke test. Its artifact contains a versioned enterprise installer and `SHA256SUMS.txt` and is
+retained for 14 days.
+
+### Windows Code Signing
+
+Signed enterprise builds use a Certum SimplySign cloud certificate. The private key stays in the
+Certum cloud HSM, so the repository, CI variables, and GitHub secrets hold no certificate material
+at all; the Certum account and TOTP remain with the operator performing the build.
+
+To sign a local package:
+
+1. Install Certum SimplySign Desktop on the build machine and sign in with the operator account
+   and TOTP. The certificate then appears under `Cert:\CurrentUser\My`.
+2. Copy its SHA-1 thumbprint with `Get-ChildItem Cert:\CurrentUser\My`.
+3. Set `CERTUM_CERT_THUMBPRINT` to that thumbprint and run electron-builder with
+   `build/electron-builder.overlay-signed.cjs` instead of `build/electron-builder.overlay.yml`.
+   The signed overlay is parsed from the YAML overlay and only adds `win.signtoolOptions`, so
+   electron-builder signs the packaged executables and the NSIS installer in a single pass;
+   re-signing the installer afterwards would leave the inner executables unsigned.
+4. Verify the result with
+   `scripts/verify-windows-authenticode.ps1 -ReleaseDir <release-dir> -ExpectedThumbprint <thumbprint>`.
+   It requires every installer at the release root, the packaged `知远企业版.exe`, and the bundled
+   uninstaller to carry a valid, RFC3161-timestamped signature from the configured certificate.
+
+Centrally signed runtime binaries such as `engram.exe` keep their existing signatures; the host
+`win.signExts` configuration already excludes them from re-signing.
 
 Local packaging uses the same `build/electron-builder.overlay.yml`, but the public core's packaging
 hooks require reachable upstream release downloads or pre-populated offline inputs. In restricted

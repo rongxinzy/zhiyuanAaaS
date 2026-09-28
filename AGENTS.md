@@ -193,6 +193,38 @@ Actions workflow after the exact core commit and AaaS inputs are pinned. A
 package made by disabling host packaging hooks is renderer-smoke-only and must
 not be published.
 
+### Windows Code Signing
+
+Signed enterprise builds use a Certum SimplySign cloud certificate. The private
+key stays in the Certum cloud HSM, so no certificate file, password, or GitHub
+secret is stored anywhere; the Certum account and TOTP remain with the operator
+and never enter the repository or CI variables.
+
+To sign a local package:
+
+1. Install Certum SimplySign Desktop on the build machine and sign in with the
+   operator account and TOTP. The certificate then appears under
+   `Cert:\CurrentUser\My`.
+2. Copy its SHA-1 thumbprint with `Get-ChildItem Cert:\CurrentUser\My`.
+3. Set `CERTUM_CERT_THUMBPRINT` to that thumbprint and package with
+   `build/electron-builder.overlay-signed.cjs` instead of
+   `build/electron-builder.overlay.yml`. The signed overlay is parsed from the
+   YAML overlay and only adds `win.signtoolOptions`, so electron-builder signs
+   the packaged executables and the NSIS installer in one pass; re-signing the
+   installer afterwards would leave the inner executables unsigned.
+4. Verify the result with
+   `scripts/verify-windows-authenticode.ps1 -ReleaseDir <release-dir> -ExpectedThumbprint <thumbprint>`,
+   which requires a valid RFC3161-timestamped signature from the configured
+   certificate on every installer, the packaged `知远企业版.exe`, and the
+   bundled uninstaller.
+
+Centrally signed runtime binaries such as engram.exe keep their existing
+signatures through the host `win.signExts` exclusion. The
+`Build Windows enterprise package` workflow's optional `cert_thumbprint` input
+enables the same signing and verification on a signing-capable machine
+(self-hosted runner or local build); leave it empty on GitHub-hosted runners,
+which do not have SimplySign Desktop.
+
 ## Tests and Acceptance
 
 Use the narrowest relevant test first, then the full gate for release changes:
