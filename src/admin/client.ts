@@ -991,18 +991,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export class SessionTokenStore implements AepTokenStore {  readonly #memory = new MemoryTokenStore();
+export class SessionTokenStore implements AepTokenStore {
+  // localStorage-backed so a page refresh restores the session instead of
+  // bouncing the admin to the login form (App boots via client.restore(),
+  // and the SDK's 401 path renews the access token through the stored
+  // refresh token). Memory stays the fast path; storage failures (full,
+  // blocked, private mode) degrade to the previous memory-only behaviour.
+  readonly #memory = new MemoryTokenStore();
+  readonly #storageKey = 'zhiyuan.admin.tokens';
 
   async get() {
-    return this.#memory.get();
+    const memory = await this.#memory.get();
+    if (memory) return memory;
+    try {
+      const raw = window.localStorage.getItem(this.#storageKey);
+      if (!raw) return null;
+      await this.#memory.set(JSON.parse(raw) as Parameters<AepTokenStore['set']>[0]);
+      return this.#memory.get();
+    } catch {
+      return null;
+    }
   }
 
   async set(tokens: Parameters<AepTokenStore['set']>[0]): Promise<void> {
     await this.#memory.set(tokens);
+    try {
+      window.localStorage.setItem(this.#storageKey, JSON.stringify(tokens));
+    } catch {
+      // storage unavailable — memory-only session
+    }
   }
 
   async clear(): Promise<void> {
     await this.#memory.clear();
+    try {
+      window.localStorage.removeItem(this.#storageKey);
+    } catch {
+      // storage unavailable
+    }
   }
 }
 

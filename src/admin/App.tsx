@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bot,
   Boxes,
+  Brain,
   CheckCircle2,
   CircleGauge,
   ClipboardList,
@@ -12,6 +13,7 @@ import {
   EyeOff,
   Fingerprint,
   LayoutDashboard,
+  LibraryBig,
   LogIn,
   LogOut,
   Monitor,
@@ -93,6 +95,7 @@ import { Models } from "./Models.js";
 import { Events } from "./Events.js";
 import { Operations } from "./Operations.js";
 import { DigitalEmployees } from "./DigitalEmployees.js";
+import { KnowledgeView, MemoryView } from "./ServiceStatus.js";
 import { Identity } from "./Identity.js";
 import {
   AdminNotificationKind,
@@ -106,6 +109,8 @@ const AdminPage = {
   Resources: "resources",
   Identity: "identity",
   DigitalEmployees: "digital-employees",
+  Memory: "memory",
+  Knowledge: "knowledge",
   Models: "models",
   Events: "events",
   Operations: "operations",
@@ -142,6 +147,20 @@ const navigation = [
     page: AdminPage.DigitalEmployees,
     label: "digitalEmployees",
     icon: Bot,
+    permissions: [],
+  },
+  {
+    // Portal-authorised service status (OpenViking memory stack).
+    page: AdminPage.Memory,
+    label: "memory",
+    icon: Brain,
+    permissions: [],
+  },
+  {
+    // Portal-authorised service status (WeKnora knowledge stack).
+    page: AdminPage.Knowledge,
+    label: "knowledge",
+    icon: LibraryBig,
     permissions: [],
   },
   {
@@ -444,6 +463,10 @@ function ConsoleLayout({
             <Identity client={client} identity={identity} />
           ) : activePage === AdminPage.DigitalEmployees ? (
             <DigitalEmployees client={client} />
+          ) : activePage === AdminPage.Memory ? (
+            <MemoryView client={client} />
+          ) : activePage === AdminPage.Knowledge ? (
+            <KnowledgeView client={client} />
           ) : activePage === AdminPage.Models ? (
             <Models client={client} identity={identity} />
           ) : activePage === AdminPage.Events ? (

@@ -235,7 +235,14 @@ function EmployeeList({
               {employees.map((employee) => (
                 <TableRow key={employee.name} className="cursor-pointer" onClick={() => onSelected(employee)}>
                   <TableCell className="font-medium">{employee.name}</TableCell>
-                  <TableCell>{employee.displayName || employee.name}</TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center gap-1.5">
+                      {employee.displayName || employee.name}
+                      {employee.channels?.wecom ? (
+                        <Badge variant="outline">{translate(language, 'wecomBadge')}</Badge>
+                      ) : null}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={phaseBadgeVariant(employee.phase)}>{employee.phase || '—'}</Badge>
                   </TableCell>
@@ -477,7 +484,12 @@ function EmployeeDetail({
           <ArrowLeft data-icon="inline-start" />
           {translate(language, 'digitalEmployeesBack')}
         </Button>
-        <div className="text-sm font-semibold">{employee.displayName || employee.name}</div>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          {employee.displayName || employee.name}
+          {employee.channels?.wecom ? (
+            <Badge variant="outline">{translate(language, 'wecomBadge')}</Badge>
+          ) : null}
+        </div>
         <Badge variant={phaseBadgeVariant(employee.phase)}>{employee.phase || '—'}</Badge>
       </div>
       <div className="overflow-hidden rounded-lg border border-border bg-card">

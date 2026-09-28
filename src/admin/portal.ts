@@ -14,6 +14,24 @@ export type PortalEmployee = {
   readonly ownerId: string;
   readonly memoryUser: string;
   readonly createdAt: string;
+  readonly channels?: { readonly wecom: boolean; readonly wecomName?: string };
+};
+
+export type PortalMemoryStatus = {
+  readonly server: string;
+  readonly account: string;
+  readonly healthy: boolean;
+  readonly accounts: readonly {
+    readonly accountID: string;
+    readonly adminUser: string;
+    readonly createdAt: string;
+  }[];
+};
+
+export type PortalKnowledgeStatus = {
+  readonly url: string;
+  readonly configured: boolean;
+  readonly healthy: boolean;
 };
 
 export type PortalRequest = {
@@ -75,6 +93,7 @@ export class PortalClient {
     const items = (data as { employees?: unknown[] } | null)?.employees ?? [];
     return items.map((raw) => {
       const employee = raw as Record<string, unknown>;
+      const channels = employee['channels'] as PortalEmployee['channels'];
       return {
         name: String(employee['name'] ?? ''),
         displayName: String(employee['displayName'] ?? ''),
@@ -85,8 +104,23 @@ export class PortalClient {
         ownerId: String(employee['ownerId'] ?? ''),
         memoryUser: String(employee['memoryUser'] ?? ''),
         createdAt: String(employee['createdAt'] ?? ''),
+        ...(channels ? { channels } : {}),
       };
     });
+  }
+
+  // Sidebar service-status probes (the portal holds the OpenViking root key
+  // server-side; the console only ever sees summaries).
+  async memoryStatus(): Promise<PortalMemoryStatus> {
+    const { status, data } = await this.#request('GET', '/api/v1/memory/status');
+    if (status !== 200) throw portalError(status, data);
+    return data as PortalMemoryStatus;
+  }
+
+  async knowledgeStatus(): Promise<PortalKnowledgeStatus> {
+    const { status, data } = await this.#request('GET', '/api/v1/knowledge/status');
+    if (status !== 200) throw portalError(status, data);
+    return data as PortalKnowledgeStatus;
   }
 
   async apply(
