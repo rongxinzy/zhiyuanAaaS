@@ -23,8 +23,22 @@ export type PortalMemoryStatus = {
   readonly healthy: boolean;
   readonly accounts: readonly {
     readonly accountID: string;
-    readonly adminUser: string;
     readonly createdAt: string;
+    readonly userCount: number;
+  }[];
+  readonly employees: readonly {
+    readonly name: string;
+    readonly memoryUser: string;
+    readonly sessions?: number;
+    readonly lastActive?: string;
+  }[];
+};
+
+export type PortalMemorySearchResult = {
+  readonly memories: readonly {
+    readonly uri: string;
+    readonly score: number;
+    readonly abstract: string;
   }[];
 };
 
@@ -115,6 +129,14 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/memory/status');
     if (status !== 200) throw portalError(status, data);
     return data as PortalMemoryStatus;
+  }
+
+  async memorySearch(employee: string, query: string): Promise<PortalMemorySearchResult> {
+    const { status, data } = await this.#request('POST', '/api/v1/memory/search', {
+      body: { employee, query },
+    });
+    if (status !== 200) throw portalError(status, data);
+    return data as PortalMemorySearchResult;
   }
 
   async knowledgeStatus(): Promise<PortalKnowledgeStatus> {

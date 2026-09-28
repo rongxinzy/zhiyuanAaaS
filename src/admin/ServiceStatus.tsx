@@ -16,6 +16,7 @@ import { translate } from "./i18n.js";
 import {
   PortalClient,
   type PortalKnowledgeStatus,
+  type PortalMemorySearchResult,
   type PortalMemoryStatus,
 } from "./portal.js";
 
@@ -121,7 +122,7 @@ export function MemoryView({
               <TableHeader>
                 <TableRow>
                   <TableHead>{translate(language, "memoryAccountID")}</TableHead>
-                  <TableHead>{translate(language, "memoryAdminUser")}</TableHead>
+                  <TableHead>{translate(language, "memoryUsers")}</TableHead>
                   <TableHead>{translate(language, "memoryCreatedAt")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -138,7 +139,9 @@ export function MemoryView({
                       <TableCell className="font-medium">
                         {account.accountID}
                       </TableCell>
-                      <TableCell>{account.adminUser || "—"}</TableCell>
+                      <TableCell>
+                        {account.userCount} {translate(language, "memoryUsers")}
+                      </TableCell>
                       <TableCell>{account.createdAt || "—"}</TableCell>
                     </TableRow>
                   ))
@@ -146,12 +149,128 @@ export function MemoryView({
               </TableBody>
             </Table>
           </div>
+          <div className="rounded-lg border border-border">
+            <div className="border-b border-border px-4 py-3 text-sm font-medium">
+              {translate(language, "memoryEmployees")}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{translate(language, "memoryColumnEmployee")}</TableHead>
+                  <TableHead>{translate(language, "memoryColumnUser")}</TableHead>
+                  <TableHead>{translate(language, "memoryColumnSessions")}</TableHead>
+                  <TableHead>{translate(language, "memoryColumnLastActive")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {status.employees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-muted-foreground">
+                      {translate(language, "memoryNoAccounts")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  status.employees.map((employee) => (
+                    <TableRow key={employee.name}>
+                      <TableCell className="font-medium">{employee.name}</TableCell>
+                      <TableCell>{employee.memoryUser}</TableCell>
+                      <TableCell>{employee.sessions ?? "—"}</TableCell>
+                      <TableCell>{employee.lastActive || "—"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <MemorySearchBox portal={resolvedPortal} employees={status.employees.map((e) => e.name)} />
           <p className="text-xs text-muted-foreground">
             {translate(language, "memoryHint")}
           </p>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function MemorySearchBox({
+  portal,
+  employees,
+}: {
+  readonly portal: PortalClient;
+  readonly employees: readonly string[];
+}) {
+  const [employee, setEmployee] = useState(employees[0] ?? "");
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<PortalMemorySearchResult["memories"] | null>(null);
+
+  const run = async () => {
+    if (!employee || !query.trim()) return;
+    setPending(true);
+    setError(null);
+    try {
+      const out = await portal.memorySearch(employee, query.trim());
+      setResults(out.memories);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setResults(null);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <div className="text-sm font-medium">
+        {translate(language, "memorySearchTitle")}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          value={employee}
+          onChange={(event) => setEmployee(event.target.value)}
+        >
+          {employees.length === 0 ? (
+            <option value="">{translate(language, "memorySearchSelectEmployee")}</option>
+          ) : (
+            employees.map((name) => <option key={name} value={name}>{name}</option>)
+          )}
+        </select>
+        <input
+          className="min-w-56 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          placeholder={translate(language, "memorySearchPlaceholder")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void run();
+          }}
+        />
+        <Button onClick={() => void run()} disabled={pending || !employee || !query.trim()}>
+          {translate(language, "memorySearchButton")}
+        </Button>
+      </div>
+      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      {results ? (
+        results.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {translate(language, "memorySearchNoResults")}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {results.map((memory) => (
+              <li key={memory.uri} className="rounded-md border border-border p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-muted-foreground">{memory.uri}</span>
+                  <span className="text-xs">{memory.score.toFixed(2)}</span>
+                </div>
+                <p className="mt-1 line-clamp-3 whitespace-pre-wrap">{memory.abstract}</p>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+    </div>
   );
 }
 
