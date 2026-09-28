@@ -162,8 +162,11 @@ function portalError(status: number, data: unknown): PortalError {
 }
 
 // The chat entry lives on the portal origin (not proxied): the browser must
-// land there so the portal can set its own cookies.
-export function portalChatBaseURL(): string | null {
+// land there so the portal can set its own cookies. Default is the platform
+// host (k3s NodePort); override with VITE_PORTAL_URL per deployment. The
+// hostname must match how users reach the chat UI — cookies ignore ports,
+// not hosts.
+export function portalChatBaseURL(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  return env?.VITE_PORTAL_URL ?? 'http://localhost:30190';
+  return env?.VITE_PORTAL_URL ?? 'http://172.19.159.225:30190';
 }
