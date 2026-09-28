@@ -46,6 +46,13 @@ export type PortalKnowledgeStatus = {
   readonly url: string;
   readonly configured: boolean;
   readonly healthy: boolean;
+  readonly knowledgeBases: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+    readonly documentCount?: number;
+    readonly createdAt?: string;
+  }[];
 };
 
 export type PortalRequest = {

@@ -319,7 +319,7 @@ export function KnowledgeView({
           {translate(language, "statusLoading")}
         </p>
       ) : status ? (
-        <div className="flex flex-col gap-3 text-sm">
+        <div className="flex flex-col gap-4 text-sm">
           <div className="flex flex-wrap items-center gap-3">
             <HealthBadge healthy={status.healthy} />
             <span className="text-muted-foreground">
@@ -327,6 +327,42 @@ export function KnowledgeView({
                 ? status.url
                 : translate(language, "knowledgeNotConfigured")}
             </span>
+          </div>
+          <div className="rounded-lg border border-border">
+            <div className="border-b border-border px-4 py-3 text-sm font-medium">
+              {translate(language, "knowledgeBases")}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{translate(language, "knowledgeColumnName")}</TableHead>
+                  <TableHead>{translate(language, "knowledgeColumnDocs")}</TableHead>
+                  <TableHead>{translate(language, "memoryCreatedAt")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {status.knowledgeBases.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-muted-foreground">
+                      {translate(language, "knowledgeNoBases")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  status.knowledgeBases.map((kb) => (
+                    <TableRow key={kb.id}>
+                      <TableCell>
+                        <div className="font-medium">{kb.name}</div>
+                        {kb.description ? (
+                          <div className="text-xs text-muted-foreground">{kb.description}</div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>{kb.documentCount ?? "—"}</TableCell>
+                      <TableCell>{kb.createdAt || "—"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
           <p className="text-xs text-muted-foreground">
             {translate(language, "knowledgeHint")}
