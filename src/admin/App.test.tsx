@@ -130,7 +130,11 @@ describe('admin console', () => {
     expect(screen.queryByRole('button', { name: '平台运维' })).not.toBeInTheDocument();
     expect(screen.getAllByText('企业模型')).toHaveLength(4);
     expect(screen.queryByText('用户')).not.toBeInTheDocument();
-    expect(client.overview).toHaveBeenCalledWith(expect.objectContaining({ permissions: ['models.read'] }));
+    await waitFor(() =>
+      expect(client.overview).toHaveBeenCalledWith(
+        expect.objectContaining({ permissions: ['models.read'] }),
+      ),
+    );
   });
 
   test('renders refreshed overview counts', async () => {
