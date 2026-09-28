@@ -4,7 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/admin');
-const target = new URL(process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080');
+const proxyTargets = Object.freeze([
+  Object.freeze({ prefix: '/aep/', target: new URL(process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080') }),
+  // Digital-employee portal APIs, same-origin like /aep (no CORS, CSP stays 'self').
+  Object.freeze({ prefix: '/api/', target: new URL(process.env.ZHIYUAN_PORTAL_BASE_URL ?? 'http://localhost:30190') }),
+]);
 const port = Number(process.env.ZHIYUAN_ADMIN_PORT ?? 5173);
 const securityHeaders = Object.freeze({
   'content-security-policy': [
@@ -32,8 +36,9 @@ const server = http.createServer(async (request, response) => {
     response.setHeader(name, value);
   }
   try {
-    if (request.url?.startsWith('/aep/')) {
-      await proxy(request, response);
+    const route = proxyTargets.find((candidate) => request.url?.startsWith(candidate.prefix));
+    if (route) {
+      await proxy(request, response, route.target);
       return;
     }
     const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
@@ -54,7 +59,7 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`Zhiyuan Admin Console: http://127.0.0.1:${port}`);
 });
 
-async function proxy(request, response) {
+async function proxy(request, response, target) {
   const upstream = new URL(request.url, target);
   const headers = { ...request.headers, host: upstream.host };
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : request;

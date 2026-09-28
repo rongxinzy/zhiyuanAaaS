@@ -316,6 +316,14 @@ export class AdminConsoleClient {
     this.#client = null;
   }
 
+  // Digital-employee portal calls carry the same bearer, and the portal
+  // /chat entry link hands the raw token over in a URL fragment. The store
+  // is memory-only, so this returns null once signed out.
+  async getAccessToken(): Promise<string | null> {
+    const tokens = await this.#tokenStore.get();
+    return tokens?.accessToken ?? null;
+  }
+
   async overview(identity?: AdminIdentity): Promise<AdminOverview> {
     const client = this.#requireClient();
     const results = await Promise.all([

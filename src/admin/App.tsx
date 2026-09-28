@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Activity,
   BarChart3,
+  Bot,
   Boxes,
   CheckCircle2,
   CircleGauge,
@@ -91,6 +92,7 @@ import { AdminResourceTab, Resources } from "./Resources.js";
 import { Models } from "./Models.js";
 import { Events } from "./Events.js";
 import { Operations } from "./Operations.js";
+import { DigitalEmployees } from "./DigitalEmployees.js";
 import { Identity } from "./Identity.js";
 import {
   AdminNotificationKind,
@@ -103,6 +105,7 @@ const AdminPage = {
   Overview: "overview",
   Resources: "resources",
   Identity: "identity",
+  DigitalEmployees: "digital-employees",
   Models: "models",
   Events: "events",
   Operations: "operations",
@@ -132,6 +135,14 @@ const navigation = [
     label: "identity",
     icon: Fingerprint,
     permissions: [AdminPermission.IdentityRead],
+  },
+  {
+    // The portal authorizes every call (owner or admin); no AEP permission
+    // gates this module.
+    page: AdminPage.DigitalEmployees,
+    label: "digitalEmployees",
+    icon: Bot,
+    permissions: [],
   },
   {
     page: AdminPage.Models,
@@ -431,6 +442,8 @@ function ConsoleLayout({
             <OverviewView client={client} identity={identity} />
           ) : activePage === AdminPage.Identity ? (
             <Identity client={client} identity={identity} />
+          ) : activePage === AdminPage.DigitalEmployees ? (
+            <DigitalEmployees client={client} />
           ) : activePage === AdminPage.Models ? (
             <Models client={client} identity={identity} />
           ) : activePage === AdminPage.Events ? (

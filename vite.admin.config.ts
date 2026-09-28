@@ -39,6 +39,13 @@ export default defineConfig({
         target: process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080',
         changeOrigin: true,
       },
+      // Digital-employee portal APIs (/api/v1/employees, /api/v1/requests,
+      // /api/v1/session): same-origin proxy keeps CSP connect-src 'self'
+      // intact and avoids CORS on the portal.
+      '/api': {
+        target: process.env.ZHIYUAN_PORTAL_BASE_URL ?? 'http://localhost:30190',
+        changeOrigin: true,
+      },
     },
   },
   preview: { headers: securityHeaders },
