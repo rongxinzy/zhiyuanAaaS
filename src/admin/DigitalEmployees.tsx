@@ -210,7 +210,7 @@ function EmbeddedChat({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-1 gap-4">
+    <div className="flex h-[calc(100vh-11.5rem)] min-h-[28rem] flex-1 gap-4">
       <div className="flex w-64 shrink-0 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
         <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
           {translate(language, 'digitalEmployeesList')}
