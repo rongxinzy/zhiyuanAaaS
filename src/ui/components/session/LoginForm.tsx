@@ -15,6 +15,7 @@ interface LoginFormProps {
   readonly pending: boolean;
   readonly error: TranslationKey | null;
   readonly onSubmit: (input: {
+    aepBaseUrl: string;
     enterpriseId: string;
     username: string;
     password: string;
@@ -22,6 +23,7 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ language, recoverable, pending, error, onSubmit }: LoginFormProps) {
+  const [aepBaseUrl, setAepBaseUrl] = useState('');
   const [enterpriseId, setEnterpriseId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -29,12 +31,21 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!enterpriseId.trim() || !username.trim() || !password) {
+    if (!aepBaseUrl.trim() || !enterpriseId.trim() || !username.trim() || !password) {
       setValidationError('requiredFields');
       return;
     }
+    if (!isValidAepBaseUrl(aepBaseUrl)) {
+      setValidationError('invalidAepServerUrl');
+      return;
+    }
     setValidationError(null);
-    void onSubmit({ enterpriseId: enterpriseId.trim(), username: username.trim(), password });
+    void onSubmit({
+      aepBaseUrl: aepBaseUrl.trim(),
+      enterpriseId: enterpriseId.trim(),
+      username: username.trim(),
+      password,
+    });
   };
 
   const displayedError = validationError ?? error;
@@ -54,6 +65,25 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
         </Alert>
       ) : null}
       <FieldGroup>
+        <Field data-invalid={validationError === 'invalidAepServerUrl' ? true : undefined}>
+          <FieldLabel htmlFor="aep-server-url">{translate(language, 'aepServerUrl')}</FieldLabel>
+          <Input
+            id="aep-server-url"
+            name="aepBaseUrl"
+            value={aepBaseUrl}
+            onChange={event => setAepBaseUrl(event.target.value)}
+            placeholder={translate(language, 'aepServerUrlPlaceholder')}
+            autoComplete="url"
+            inputMode="url"
+            maxLength={2048}
+            disabled={pending}
+            aria-invalid={validationError === 'invalidAepServerUrl' ? true : undefined}
+            autoFocus
+          />
+          {validationError === 'invalidAepServerUrl' ? (
+            <FieldError>{translate(language, 'invalidAepServerUrl')}</FieldError>
+          ) : null}
+        </Field>
         <Field data-invalid={displayedError ? true : undefined}>
           <FieldLabel htmlFor="enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel>
           <Input
@@ -66,7 +96,6 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
             maxLength={256}
             disabled={pending}
             aria-invalid={displayedError ? true : undefined}
-            autoFocus
           />
         </Field>
         <Field data-invalid={displayedError ? true : undefined}>
@@ -106,4 +135,19 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
       </Button>
     </form>
   );
+}
+
+function isValidAepBaseUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
 }

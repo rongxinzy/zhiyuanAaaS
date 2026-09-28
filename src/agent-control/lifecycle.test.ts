@@ -19,6 +19,7 @@ describe('Zhiyuan Agent control lifecycle', () => {
     const lifecycle = new ZhiyuanAgentControlLifecycle(session, backend);
 
     await session.login({
+      aepBaseUrl: 'https://aep.example.test',
       enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',

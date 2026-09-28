@@ -63,6 +63,7 @@ export function App() {
   };
 
   const handleLogin = async (input: {
+    aepBaseUrl: string;
     enterpriseId: string;
     username: string;
     password: string;

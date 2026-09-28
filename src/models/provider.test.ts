@@ -99,7 +99,7 @@ describe('ZhiyuanModelProvider', () => {
     const changed = vi.fn();
     const unsubscribe = provider.onDidChange(changed);
 
-    await session.login({ enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
+    await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
     expect(changed).toHaveBeenCalledOnce();
     await provider.snapshot();
     expect(refreshEntitlement).toHaveBeenCalledTimes(1);
@@ -185,7 +185,7 @@ describe('ZhiyuanModelProvider', () => {
 
 async function authenticatedSession(client: PasswordSessionClient): Promise<ZhiyuanPasswordSession> {
   const session = new ZhiyuanPasswordSession(client);
-  await session.login({ enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
+  await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
   return session;
 }
 

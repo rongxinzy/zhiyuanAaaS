@@ -31,14 +31,18 @@ export type ZhiyuanSessionSnapshot =
   | { readonly status: 'authenticated'; readonly identity: CurrentIdentity };
 
 export interface PasswordLoginInput {
+  readonly aepBaseUrl: string;
   readonly enterpriseId: string;
   readonly username: string;
   readonly password: string;
 }
 
+export type PasswordSessionClientFactory = (baseUrl: string) => PasswordSessionClient;
+
 export class ZhiyuanPasswordSession {
   static readonly MODEL_TOKEN_REFRESH_WINDOW_MS = 30_000;
-  readonly #client: PasswordSessionClient;
+  #client: PasswordSessionClient;
+  readonly #clientFactory: PasswordSessionClientFactory | null;
   #snapshot: ZhiyuanSessionSnapshot = Object.freeze({ status: 'signed-out' });
   #initialized = false;
   #initialization: Promise<ZhiyuanSessionSnapshot> | null = null;
@@ -46,8 +50,9 @@ export class ZhiyuanPasswordSession {
   readonly #listeners = new Set<() => void | Promise<void>>();
   #modelAccessExpiresAt = 0;
 
-  constructor(client: PasswordSessionClient) {
+  constructor(client: PasswordSessionClient, clientFactory?: PasswordSessionClientFactory) {
     this.#client = client;
+    this.#clientFactory = clientFactory ?? null;
   }
 
   snapshot(): ZhiyuanSessionSnapshot {
@@ -94,13 +99,19 @@ export class ZhiyuanPasswordSession {
   }
 
   login(input: PasswordLoginInput): Promise<ZhiyuanSessionSnapshot> {
+    let aepBaseUrl: string;
     try {
-      validateLogin(input);
+      aepBaseUrl = validateLogin(input);
     } catch (error) {
       return Promise.reject(error);
     }
     return this.#enqueue(async () => {
-      const tokens = await this.#client.loginWithPassword({ ...input });
+      if (this.#clientFactory) this.#client = this.#clientFactory(aepBaseUrl);
+      const tokens = await this.#client.loginWithPassword({
+        enterpriseId: input.enterpriseId,
+        username: input.username,
+        password: input.password,
+      });
       this.#recordTokens(tokens);
       this.#initialized = true;
       try {
@@ -207,10 +218,23 @@ export class ZhiyuanPasswordSession {
   }
 }
 
-function validateLogin(input: PasswordLoginInput): void {
-  if (!input.enterpriseId || !input.username || !input.password) {
-    throw new Error('Enterprise ID, username, and password are required.');
+function validateLogin(input: PasswordLoginInput): string {
+  if (!input.aepBaseUrl || !input.enterpriseId || !input.username || !input.password) {
+    throw new Error('AEP server URL, enterprise ID, username, and password are required.');
   }
+  let url: URL;
+  try {
+    url = new URL(input.aepBaseUrl);
+  } catch (error) {
+    throw new Error('AEP server URL is invalid.', { cause: error });
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('AEP server URL must use HTTP or HTTPS.');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('AEP server URL must not contain credentials, query, or fragment.');
+  }
+  return url.toString().replace(/\/+$/, '');
 }
 
 function cloneSnapshot(snapshot: ZhiyuanSessionSnapshot): ZhiyuanSessionSnapshot {

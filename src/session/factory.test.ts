@@ -29,6 +29,7 @@ describe('Zhiyuan password session factory', () => {
 
     await expect(
       session.login({
+        aepBaseUrl: 'https://aep.example.test',
         enterpriseId: 'enterprise-1',
         username: 'admin',
         password: 'secret',

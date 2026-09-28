@@ -80,6 +80,7 @@ describe('Zhiyuan password session', () => {
     const session = new ZhiyuanPasswordSession(client);
 
     const login = session.login({
+      aepBaseUrl: 'https://aep.example.test',
       enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'never-persist-this',
@@ -94,12 +95,32 @@ describe('Zhiyuan password session', () => {
     expect(JSON.stringify(session.snapshot())).not.toContain('never-persist-this');
   });
 
+  test('creates the AEP client for the address supplied at login', async () => {
+    const initialClient = mockClient();
+    const loginClient = mockClient();
+    const session = new ZhiyuanPasswordSession(initialClient, baseUrl => {
+      expect(baseUrl).toBe('https://aep.customer.example');
+      return loginClient;
+    });
+
+    await expect(
+      session.login({
+        aepBaseUrl: 'https://aep.customer.example/',
+        enterpriseId: 'enterprise-1',
+        username: 'admin',
+        password: 'secret',
+      }),
+    ).resolves.toMatchObject({ status: 'authenticated' });
+    expect(initialClient.loginWithPassword).not.toHaveBeenCalled();
+    expect(loginClient.loginWithPassword).toHaveBeenCalledOnce();
+  });
+
   test('validates password operations before calling the SDK', async () => {
     const client = mockClient();
     const session = new ZhiyuanPasswordSession(client);
 
     await expect(
-      session.login({ enterpriseId: '', username: 'admin', password: 'secret' }),
+      session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: '', username: 'admin', password: 'secret' }),
     ).rejects.toThrow('required');
     await expect(session.changePassword('', 'new-secret')).rejects.toThrow('required');
     expect(client.loginWithPassword).not.toHaveBeenCalled();
@@ -117,6 +138,7 @@ describe('Zhiyuan password session', () => {
     expect(client.listAgentModels).not.toHaveBeenCalled();
 
     await session.login({
+      aepBaseUrl: 'https://aep.example.test',
       enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',
@@ -140,6 +162,7 @@ describe('Zhiyuan password session', () => {
     const session = new ZhiyuanPasswordSession(client);
 
     await session.login({
+      aepBaseUrl: 'https://aep.example.test',
       enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',
@@ -161,7 +184,7 @@ describe('Zhiyuan password session', () => {
 
     let completed = false;
     const login = session
-      .login({ enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' })
+      .login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' })
       .then(() => {
         completed = true;
       });

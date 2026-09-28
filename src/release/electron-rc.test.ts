@@ -83,7 +83,7 @@ describe('Electron release candidate contract', () => {
     expect(managed).toBeDefined();
     expect(await provider!.snapshot()).toEqual({ status: 'signed-out' });
 
-    await provider!.login({ enterpriseId: 'demo', username: 'agent-user', password: 'password' });
+    await provider!.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'demo', username: 'agent-user', password: 'password' });
     const snapshot = await managed!.snapshot();
 
     expect(snapshot).toMatchObject({
@@ -116,7 +116,7 @@ describe('Electron release candidate contract', () => {
         })),
       }),
     );
-    await session.login({ enterpriseId: 'demo', username: 'agent-user', password: 'password' });
+    await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'demo', username: 'agent-user', password: 'password' });
     const extension = new ZhiyuanAaaSExtension({
       createSession: vi.fn(async () => session),
       warn: vi.fn(),
