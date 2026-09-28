@@ -18,6 +18,9 @@ const securityHeaders = Object.freeze({
     "font-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
+    // Embedded conversation pane: the chat UI is a different origin (same
+    // host, NodePort 30195). default-src 'self' would block the frame.
+    "frame-src 'self' http://*:30195 https://*:30195",
     "img-src 'self' data:",
     "object-src 'none'",
     "script-src 'self'",
