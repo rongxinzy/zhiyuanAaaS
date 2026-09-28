@@ -166,16 +166,22 @@ Electron IPC, Node modules, or `process`.
 ## Packaging and Release
 
 The overlay must add files under `resources/zhiyuan-enterprise` without
-overwriting public application files. Build and validate the extension inputs:
+overwriting public application files. Render the packaged AEP configuration and
+validate the extension inputs:
 
 ```bash
 cd /d/rxzy/ZhiyuanAaaS
+node scripts/render-enterprise-config.mjs --base-url <aep-url> --output build/.enterprise-config.generated.json
 npm run build
-npm run verify:package-inputs
+ZHIYUAN_ENTERPRISE_CONFIG_FILE=build/.enterprise-config.generated.json npm run verify:package-inputs
 ```
 
-For a local directory package, configure the relative overlay inputs expected by
-`build/electron-builder.overlay.yml`, then run `electron-builder --dir` from the
+The render script reads the base URL from `--base-url` or `ZHIYUAN_AEP_BASE_URL`, accepts only
+http/https URLs without credentials, query, or fragment, and sets `allowInsecureHttp`
+automatically for http endpoints. The generated file is git-ignored. For a local directory
+package, configure the relative overlay inputs expected by
+`build/electron-builder.overlay.yml` (including `ZHIYUAN_ENTERPRISE_CONFIG_FILE`, relative to
+the public application root), then run `electron-builder --dir` from the
 public Zhiyuan repository. Validate the result with:
 
 ```bash

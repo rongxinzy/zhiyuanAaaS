@@ -87,12 +87,23 @@ the endpoint and administrator login with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_D
 isolated Compose volumes after verification; persistent development deployments retain disabled
 user rows for audit and ownership references.
 
-Before invoking electron-builder, verify the closed-source package inputs with:
+Before invoking electron-builder, render the enterprise configuration for the target AEP
+deployment and verify the closed-source package inputs with:
 
 ```bash
+node scripts/render-enterprise-config.mjs --base-url http://172.18.5.188:30196 --output build/.enterprise-config.generated.json
 npm run build
 npm run verify:package-inputs
 ```
+
+The base URL may also come from `ZHIYUAN_AEP_BASE_URL`. The renderer accepts only http/https
+URLs without embedded credentials, query, or fragment, strips trailing slashes exactly like the
+runtime loader, and writes `"allowInsecureHttp": true` for http URLs and `false` for https. The
+generated file is git-ignored. Point `ZHIYUAN_ENTERPRISE_CONFIG_FILE` at it for
+`npm run verify:package-inputs`, and pass the same file to electron-builder as a path relative
+to the public application root (for example `..\build\.enterprise-config.generated.json`).
+Without this step, packaging falls back to the placeholder
+`build/enterprise-config.example.json`, which cannot reach a real AEP server.
 
 The check validates the extension bundle, Renderer entrypoint, legal notice, and enterprise
 configuration that the public application's `build/electron-builder.overlay.yml` injects under
@@ -113,7 +124,10 @@ against the AaaS build output and fails on missing, extra, or mismatched Rendere
 
 For a reproducible Windows installer, run the `Build Windows enterprise package` GitHub Actions
 workflow from `main` and provide the required version input in the form `vX.Y.Z` (for example,
-`v1.0.0`). The workflow checks out the exact Zhiyuan core commit pinned in
+`v1.0.0`). The optional `aep_base_url` input is baked into
+`resources/zhiyuan-enterprise/config.json` through `scripts/render-enterprise-config.mjs`; it
+defaults to the internal test server `http://172.18.5.188:30196`, and clearing it packages the
+placeholder example config instead. The workflow checks out the exact Zhiyuan core commit pinned in
 `build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and Skill Python runtimes,
 builds the `知远企业版` overlay installer, verifies the packaged version and every injected
 enterprise asset and bundled runtime, and performs the install/upgrade/uninstall smoke test. Its
@@ -173,7 +187,9 @@ reopening personal providers; the exclusive policy remains active independently.
 ## Runtime Configuration
 
 Enterprise packaging must provide `resources/zhiyuan-enterprise/config.json`; use
-`build/enterprise-config.example.json` as the schema reference. It contains the AEP base URL and
+`build/enterprise-config.example.json` as the schema reference and generate real deployments with
+`node scripts/render-enterprise-config.mjs --base-url <url> --output <file>` (or set
+`ZHIYUAN_AEP_BASE_URL`). The config contains the AEP base URL and
 the explicit insecure-HTTP development switch. License files and vendor public keys belong only
 to the Control Service deployment; the client requests activation from the authenticated server
 and never receives License material. Each installation creates a stable UUID under the application

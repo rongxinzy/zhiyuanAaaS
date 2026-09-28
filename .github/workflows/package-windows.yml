@@ -7,6 +7,14 @@ on:
         description: Enterprise version (must be vX.Y.Z, for example v1.0.0)
         required: true
         type: string
+      aep_base_url:
+        description: >-
+          AEP base URL baked into resources/zhiyuan-enterprise/config.json. The default is the
+          internal test server http://172.18.5.188:30196; clear the value to package the
+          placeholder example config instead.
+        required: false
+        type: string
+        default: 'http://172.18.5.188:30196'
 
 permissions:
   contents: read
@@ -29,6 +37,26 @@ jobs:
         with:
           node-version: '24.x'
           cache: npm
+
+      - name: Render enterprise AEP config
+        id: enterprise-config
+        shell: pwsh
+        env:
+          INPUT_AEP_BASE_URL: ${{ inputs.aep_base_url }}
+        run: |
+          $baseUrl = "$env:INPUT_AEP_BASE_URL".Trim()
+          if ($baseUrl.Length -eq 0) {
+            $configFile = 'build/enterprise-config.example.json'
+            Write-Host 'aep_base_url is empty; packaging the placeholder example config.'
+          } else {
+            $configFile = 'build/.enterprise-config.generated.json'
+            node scripts/render-enterprise-config.mjs --base-url $baseUrl --output $configFile
+            if ($LASTEXITCODE -ne 0) {
+              throw "render-enterprise-config.mjs failed with exit code $LASTEXITCODE."
+            }
+          }
+          "ZHIYUAN_ENTERPRISE_CONFIG_FILE=$configFile" >> $env:GITHUB_ENV
+          "host_config_file=..\$($configFile -replace '/', '\')" >> $env:GITHUB_OUTPUT
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -116,7 +144,7 @@ jobs:
           ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY: ..\dist\ui
           ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ..\dist\admin
           ZHIYUAN_ENTERPRISE_NOTICE_FILE: ..\THIRD_PARTY_NOTICES.md
-          ZHIYUAN_ENTERPRISE_CONFIG_FILE: ..\build\enterprise-config.example.json
+          ZHIYUAN_ENTERPRISE_CONFIG_FILE: ${{ steps.enterprise-config.outputs.host_config_file || '..\build\enterprise-config.example.json' }}
           APP_BUILD_VERSION: ${{ steps.version.outputs.version }}
           ZHIYUAN_UPDATE_VARIANT: lite
         run: |
