@@ -13,6 +13,7 @@ import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
   PortalClient,
+  chatUIBaseURL,
   portalChatBaseURL,
   type PortalEmployee,
   type PortalRequest,
@@ -174,13 +175,19 @@ function EmployeeList({
   }, [portal]);
 
   const openChat = async (employee: PortalEmployee) => {
+    // Silent handoff first: mint the portal session and select the employee
+    // in the background (cookies land on the shared host), then open the
+    // chat UI directly — no portal entry page flashing in between. Falls
+    // back to the fragment-token handoff when the background mint fails.
+    if (await portal.mintChatSession(employee.name)) {
+      window.open(`${chatUIBaseURL()}/workspace`, '_blank', 'noopener');
+      return;
+    }
     const token = await client.getAccessToken();
     if (!token) {
       notify(AdminNotificationKind.Error, translate(language, 'digitalEmployeesChatNoSession'));
       return;
     }
-    // The token travels in the URL fragment (never sent to servers, never
-    // in Referer); the portal page exchanges and wipes it immediately.
     const href = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}#token=${encodeURIComponent(token)}`;
     window.open(href, '_blank', 'noopener');
   };

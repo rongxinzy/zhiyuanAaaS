@@ -33,17 +33,33 @@ describe('admin digital employees', () => {
       deleteEmployee: vi.fn().mockResolvedValue(undefined),
       listRequests: vi.fn().mockResolvedValue([]),
       decideRequest: vi.fn().mockResolvedValue(undefined),
+      mintChatSession: vi.fn().mockResolvedValue(true),
       ...overrides,
     }) as unknown as PortalClient;
 
-  test('renders the employee list and opens chat via the portal fragment link', async () => {
+  test('opens chat directly after the silent session handoff', async () => {
     const portal = makePortal();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<DigitalEmployees client={client as never} portal={portal} />);
 
     expect(await screen.findByText('sales-helper')).toBeInTheDocument();
-    expect(screen.getByText('销售助理')).toBeInTheDocument();
-    expect(screen.getByText('bench-glm')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开对话' }));
+    await waitFor(() => expect(open).toHaveBeenCalledOnce());
+    // Silent handoff: the session and employee cookies are minted in the
+    // background, so the chat UI opens directly — no portal entry page.
+    expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper');
+    const [href] = open.mock.calls[0]!;
+    expect(href).toContain('http://localhost:30195/workspace');
+    open.mockRestore();
+  });
+
+  test('falls back to the portal fragment link when the silent handoff fails', async () => {
+    const portal = makePortal({ mintChatSession: vi.fn().mockResolvedValue(false) });
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<DigitalEmployees client={client as never} portal={portal} />);
+
+    expect(await screen.findByText('sales-helper')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '打开对话' }));
     await waitFor(() => expect(open).toHaveBeenCalledOnce());

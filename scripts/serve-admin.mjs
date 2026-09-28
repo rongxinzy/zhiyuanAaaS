@@ -67,10 +67,17 @@ async function proxy(request, response, target) {
   const headers = { ...request.headers, host: upstream.host };
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : request;
   const result = await fetch(upstream, { method: request.method, headers, body, duplex: body ? 'half' : undefined });
-  response.writeHead(result.status, {
-    ...Object.fromEntries(result.headers),
-    ...securityHeaders,
-  });
+  // Multiple Set-Cookie headers (portal session + csrf) collapse into one
+  // comma-joined entry through Object.fromEntries — the browser would drop
+  // every cookie after the first. Undici exposes them properly via
+  // getSetCookie(); re-emit them as a real header array.
+  const forwarded = { ...Object.fromEntries(result.headers), ...securityHeaders };
+  delete forwarded['set-cookie'];
+  const setCookies = result.headers.getSetCookie?.() ?? [];
+  if (setCookies.length > 0) {
+    response.setHeader('set-cookie', setCookies);
+  }
+  response.writeHead(result.status, forwarded);
   response.end(Buffer.from(await result.arrayBuffer()));
 }
 
