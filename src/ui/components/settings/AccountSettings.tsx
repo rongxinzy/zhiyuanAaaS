@@ -50,7 +50,7 @@ export function AccountSettings({
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-4" aria-labelledby="account-details-heading">
-        <h2 id="account-details-heading" className="text-base font-semibold">
+        <h2 id="account-details-heading" className="text-sm font-semibold">
           {translate(language, 'accountDetails')}
         </h2>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
@@ -67,7 +67,7 @@ export function AccountSettings({
 
       <section className="flex flex-col gap-4" aria-labelledby="password-security-heading">
         <div className="flex flex-col gap-1">
-          <h2 id="password-security-heading" className="text-base font-semibold">
+          <h2 id="password-security-heading" className="text-sm font-semibold">
             {translate(language, 'passwordSecurity')}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -98,7 +98,7 @@ export function AccountSettingsUnavailable({
 }) {
   return (
     <main className="flex min-h-full items-center justify-center bg-background p-4 sm:p-6">
-      <Alert variant="warning" className="max-w-md">
+      <Alert variant="warning" className="w-full max-w-md rounded-xl border bg-surface p-5 shadow-lg">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{translate(language, 'accountUnavailableTitle')}</AlertTitle>
         <AlertDescription>{translate(language, 'accountUnavailableDescription')}</AlertDescription>

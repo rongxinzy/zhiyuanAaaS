@@ -9,6 +9,7 @@ import {
   EnterpriseRendererLanguage,
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
+  EnterpriseRendererSessionOperation,
   EnterpriseRendererSurface,
   type EnterpriseRendererSurface as EnterpriseRendererSurfaceValue,
   EnterpriseRendererTheme,
@@ -33,10 +34,39 @@ describe('enterprise session UI', () => {
     act(() => initialize({ ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } }));
 
     expect(await screen.findByRole('heading', { name: '登录知远' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Zhiyuan' })).toBeInTheDocument();
+    expect(screen.getByLabelText('AEP 服务端地址')).toBeInTheDocument();
     expect(screen.getByLabelText('企业 ID')).toBeInTheDocument();
     expect(screen.getByLabelText('用户名')).toBeInTheDocument();
     expect(screen.getByLabelText('密码')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+  });
+
+  test('requires and sends the real AEP server address with login credentials', async () => {
+    render(<App />);
+    act(() => initialize({ ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } }));
+
+    fireEvent.change(await screen.findByLabelText('AEP 服务端地址'), {
+      target: { value: 'https://aep.customer.example' },
+    });
+    fireEvent.change(screen.getByLabelText('企业 ID'), { target: { value: 'enterprise-1' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+
+    await waitFor(() =>
+      expect(
+        postMessage.mock.calls.some((call: readonly [unknown, ...unknown[]]) => {
+          const message = call[0] as Record<string, unknown>;
+          return (
+            message.type === EnterpriseRendererMessageType.SessionRequest &&
+            message.operation === EnterpriseRendererSessionOperation.Login &&
+            (message.input as Record<string, unknown>)?.aepBaseUrl ===
+              'https://aep.customer.example'
+          );
+        }),
+      ).toBe(true),
+    );
   });
 
   test('renders the English recovery state without exposing host errors', async () => {

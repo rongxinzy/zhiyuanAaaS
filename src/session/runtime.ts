@@ -55,14 +55,24 @@ export async function createZhiyuanSessionRuntimeComponents(
     path.join(context.paths.userData, 'zhiyuan-enterprise', 'secrets'),
     safeStorage,
   );
-  const client = (dependencies.createClient ?? createZhiyuanAepClient)({
+  let activeClient = (dependencies.createClient ?? createZhiyuanAepClient)({
     baseUrl: config.aepBaseUrl,
     agentId,
     agentVersion: context.appVersion,
     platform,
     protectedStorage,
   });
-  const session = new ZhiyuanPasswordSession(client);
+  const client = dependencies.createClient ? activeClient : routeClient(() => activeClient);
+  const session = new ZhiyuanPasswordSession(client, baseUrl => {
+    activeClient = (dependencies.createClient ?? createZhiyuanAepClient)({
+      baseUrl,
+      agentId,
+      agentVersion: context.appVersion,
+      platform,
+      protectedStorage,
+    });
+    return activeClient;
+  });
   const licenseActivation = ZhiyuanLicenseActivation.create({session, client});
   return Object.freeze({
     session,
@@ -70,6 +80,15 @@ export async function createZhiyuanSessionRuntimeComponents(
     agentId,
     platform,
     licenseActivation,
+  });
+}
+
+function routeClient<T extends object>(getClient: () => T): T {
+  return new Proxy(getClient(), {
+    get(_target, property) {
+      const value = Reflect.get(getClient(), property, getClient());
+      return typeof value === 'function' ? value.bind(getClient()) : value;
+    },
   });
 }
 

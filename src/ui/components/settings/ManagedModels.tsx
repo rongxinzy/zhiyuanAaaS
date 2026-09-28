@@ -1,4 +1,4 @@
-import { CloudAlert, CloudOff, Cpu, RefreshCw, Waypoints } from 'lucide-react';
+import { CloudAlert, CloudOff, Cpu, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -74,22 +74,17 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
 
   return (
     <main className="h-full overflow-y-auto bg-background p-4 sm:p-6">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <header className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card">
-            <Waypoints aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <h1 id="managed-models-heading" className="text-lg font-semibold leading-snug">
-              {translate(language, 'managedModelsTitle')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {translate(language, 'managedModelsDescription')}
-            </p>
-          </div>
+      <div className="mx-auto flex w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+        <header className="flex flex-col gap-1 border-b border-border px-5 py-4 sm:px-6">
+          <h1 id="managed-models-heading" className="text-lg font-semibold leading-snug">
+            {translate(language, 'managedModelsTitle')}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {translate(language, 'managedModelsDescription')}
+          </p>
         </header>
 
-        <section className="flex flex-col gap-4" aria-labelledby="managed-models-heading">
+        <section className="flex flex-col gap-4 px-5 py-5 sm:px-6 sm:py-6" aria-labelledby="managed-models-heading">
           <div className="flex justify-end">
             <Button
               type="button"
@@ -122,7 +117,7 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
               onAction={() => void refresh()}
             />
           ) : (
-            <div className="overflow-hidden rounded-md border" role="list">
+            <div className="overflow-hidden rounded-lg border border-border" role="list">
               {state.models.map(model => (
                 <ModelRow
                   key={`${model.providerKey}/${model.id}`}
@@ -147,11 +142,11 @@ function ModelRow({
 }) {
   const capabilities = supportedCapabilities(model.capabilities);
   return (
-    <article className="flex flex-col gap-3 border-b p-4 last:border-b-0" role="listitem">
+    <article className="flex flex-col gap-3 border-b border-border-subtle p-4 last:border-b-0" role="listitem">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-            <Cpu aria-hidden="true" />
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Cpu className="size-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -209,9 +204,9 @@ function ModelCatalogMessage({
   readonly onAction: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-md border px-4 py-6 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-border-subtle bg-muted/30 px-4 py-8 text-center">
       <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon aria-hidden="true" />
+        <Icon className="size-4" aria-hidden="true" />
       </div>
       <div>
         <h3 className="text-sm font-semibold">{title}</h3>
@@ -228,12 +223,12 @@ function ModelCatalogMessage({
 function ModelListSkeleton({ language }: { readonly language: EnterpriseRendererLanguage }) {
   return (
     <div
-      className="overflow-hidden rounded-md border"
+      className="overflow-hidden rounded-lg border border-border"
       role="status"
       aria-label={translate(language, 'loadingModels')}
     >
       {[0, 1, 2].map(item => (
-        <div key={item} className="flex gap-3 border-b p-4 last:border-b-0">
+        <div key={item} className="flex gap-3 border-b border-border-subtle p-4 last:border-b-0">
           <Skeleton className="size-8 shrink-0" />
           <div className="flex flex-1 flex-col gap-2">
             <Skeleton className="h-4 w-2/5" />

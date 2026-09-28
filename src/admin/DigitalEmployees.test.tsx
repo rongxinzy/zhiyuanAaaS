@@ -134,7 +134,8 @@ describe('admin digital employees', () => {
     fireEvent.click(await screen.findByRole('tab', { name: '申请与审批' }));
     fireEvent.click(await screen.findByRole('button', { name: '驳回' }));
     fireEvent.change(screen.getByLabelText('理由'), { target: { value: '名称不合规' } });
-    fireEvent.click(screen.getByRole('button', { name: '驳回', exact: true }));
+    const rejectButtons = screen.getAllByRole('button', { name: '驳回' });
+    fireEvent.click(rejectButtons[rejectButtons.length - 1]!);
 
     await waitFor(() => expect(portal.decideRequest).toHaveBeenCalledWith('req-2', 'reject', '名称不合规'));
   });
