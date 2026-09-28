@@ -159,6 +159,8 @@ jobs:
 
       - name: Verify packaged runtimes
         shell: powershell
+        env:
+          ZHIYUAN_ELECTRON_EXECUTABLE_NAME: 知远企业版
         run: >-
           powershell -NoProfile -ExecutionPolicy Bypass
           -File zhiyuan-core/scripts/ci/windows-runtime-smoke.ps1
