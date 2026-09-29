@@ -15,17 +15,6 @@ on:
         required: false
         type: string
         default: 'http://172.18.5.188:30196'
-      cert_thumbprint:
-        description: >-
-          Optional SHA-1 thumbprint of the Certum SimplySign code-signing certificate. When set,
-          the installer and the packaged executables are Authenticode-signed and verified. Signing
-          requires SimplySign Desktop installed and signed in on the machine running the build
-          (self-hosted runner or local machine); GitHub-hosted runners do not have it, so leave
-          this empty there. The Certum account and TOTP stay with the operator; no GitHub secret
-          is involved.
-        required: false
-        type: string
-        default: ''
 
 permissions:
   contents: read
@@ -151,7 +140,6 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          CERTUM_CERT_THUMBPRINT: ${{ inputs.cert_thumbprint }}
           ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE: ..\dist\extension.cjs
           ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY: ..\dist\ui
           ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY: ..\dist\admin
@@ -177,22 +165,7 @@ jobs:
           bun run build
           bun run build:skills
           bun run prepare:modelscope-tokens
-          $overlayConfig = "$env:GITHUB_WORKSPACE\build\electron-builder.overlay.yml"
-          if (-not [string]::IsNullOrWhiteSpace($env:CERTUM_CERT_THUMBPRINT)) {
-            $overlayConfig = "$env:GITHUB_WORKSPACE\build\electron-builder.overlay-signed.cjs"
-            Write-Host 'cert_thumbprint is set; packaging with Certum Authenticode signing.'
-          }
-          bunx electron-builder --win nsis --x64 --config $overlayConfig --publish never
-
-      - name: Verify Windows Authenticode signatures
-        if: ${{ inputs.cert_thumbprint != '' }}
-        shell: pwsh
-        env:
-          INPUT_CERT_THUMBPRINT: ${{ inputs.cert_thumbprint }}
-        run: >-
-          scripts/verify-windows-authenticode.ps1
-          -ReleaseDir "$env:GITHUB_WORKSPACE\zhiyuan-core\release"
-          -ExpectedThumbprint "$env:INPUT_CERT_THUMBPRINT"
+          bunx electron-builder --win nsis --x64 --config "$env:GITHUB_WORKSPACE\build\electron-builder.overlay.yml" --publish never
 
       - name: Verify packaged enterprise version
         working-directory: zhiyuan-core

@@ -127,9 +127,7 @@ workflow from `main` and provide the required version input in the form `vX.Y.Z`
 `v1.0.0`). The optional `aep_base_url` input is baked into
 `resources/zhiyuan-enterprise/config.json` through `scripts/render-enterprise-config.mjs`; it
 defaults to the internal test server `http://172.18.5.188:30196`, and clearing it packages the
-placeholder example config instead. The optional `cert_thumbprint` input enables Certum
-Authenticode signing and signature verification when the machine running the job has SimplySign
-Desktop signed in; see Windows code signing below. The workflow checks out the exact Zhiyuan core
+placeholder example config instead. The workflow checks out the exact Zhiyuan core
 commit pinned in `build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and
 Skill Python runtimes, builds the `知远企业版` overlay installer, verifies the packaged version and
 every injected enterprise asset and bundled runtime, and performs the install/upgrade/uninstall
@@ -138,27 +136,29 @@ retained for 14 days.
 
 ### Windows Code Signing
 
-Signed enterprise builds use a Certum SimplySign cloud certificate. The private key stays in the
-Certum cloud HSM, so the repository, CI variables, and GitHub secrets hold no certificate material
-at all; the Certum account and TOTP remain with the operator performing the build.
+Signing is centralized in the rongxinzy/RongxinAI repository, following the same model as
+pi-connect, engram-cjk, and xiaoruan-ai-agent. This repository holds no signing credentials and
+requires no GitHub secret: the Certum credentials (`CERTUM_USER_ID`, `CERTUM_OTP_URI`,
+`CERTUM_CERT_THUMBPRINT`) exist only in the RongxinAI `release` environment, and the certificate
+private key never leaves the Certum cloud HSM.
 
-To sign a local package:
+- Unsigned installers are produced by this repository's `Build Windows enterprise package`
+  workflow and published as its run artifact.
+- Signed installers are produced by the `Sign Zhiyuan Enterprise Windows package` workflow in
+  rongxinzy/RongxinAI. Dispatch it with the run ID of one successful unsigned build from this
+  repository; it checks out this repository at the corresponding commit, connects Certum
+  SimplySign through the shared `setup-certum-signing` action, and repackages with
+  `build/electron-builder.overlay-signed.cjs` while injecting `CERTUM_CERT_THUMBPRINT`. The
+  signed overlay is parsed from the YAML overlay and only adds `win.signtoolOptions`, so
+  electron-builder signs the packaged executables and the NSIS installer in a single pass;
+  re-signing the installer afterwards would leave the inner executables unsigned. The workflow
+  then verifies every installer, the packaged `知远企业版.exe`, and the bundled uninstaller with
+  RongxinAI's own `scripts/ci/verify-windows-authenticode.ps1`.
 
-1. Install Certum SimplySign Desktop on the build machine and sign in with the operator account
-   and TOTP. The certificate then appears under `Cert:\CurrentUser\My`.
-2. Copy its SHA-1 thumbprint with `Get-ChildItem Cert:\CurrentUser\My`.
-3. Set `CERTUM_CERT_THUMBPRINT` to that thumbprint and run electron-builder with
-   `build/electron-builder.overlay-signed.cjs` instead of `build/electron-builder.overlay.yml`.
-   The signed overlay is parsed from the YAML overlay and only adds `win.signtoolOptions`, so
-   electron-builder signs the packaged executables and the NSIS installer in a single pass;
-   re-signing the installer afterwards would leave the inner executables unsigned.
-4. Verify the result with
-   `scripts/verify-windows-authenticode.ps1 -ReleaseDir <release-dir> -ExpectedThumbprint <thumbprint>`.
-   It requires every installer at the release root, the packaged `知远企业版.exe`, and the bundled
-   uninstaller to carry a valid, RFC3161-timestamped signature from the configured certificate.
-
-Centrally signed runtime binaries such as `engram.exe` keep their existing signatures; the host
-`win.signExts` configuration already excludes them from re-signing.
+To obtain a signed build — including from a local development machine — dispatch the central
+workflow; do not install SimplySign Desktop locally for this repository. Centrally signed
+runtime binaries such as `engram.exe` keep their existing signatures; the host `win.signExts`
+configuration already excludes them from re-signing.
 
 Local packaging uses the same `build/electron-builder.overlay.yml`, but the public core's packaging
 hooks require reachable upstream release downloads or pre-populated offline inputs. In restricted

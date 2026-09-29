@@ -1,11 +1,13 @@
 // Signed variant of electron-builder.overlay.yml for Certum SimplySign cloud
-// certificates. The overlay is parsed from the YAML file so the two configs
-// cannot drift apart; only win.signtoolOptions is added on top. electron-builder
-// then signs the packaged executables and the NSIS installer in a single pass
-// (re-signing the installer afterwards would leave the inner executables
-// unsigned). The certificate private key stays in the Certum cloud HSM; the
-// build machine only needs SimplySign Desktop installed and signed in, so no
-// certificate material or GitHub secret is involved.
+// certificates, consumed by the central signing workflow in rongxinzy/RongxinAI
+// (Sign Zhiyuan Enterprise Windows package). The overlay is parsed from the YAML
+// file so the two configs cannot drift apart; only win.signtoolOptions is added
+// on top. electron-builder then signs the packaged executables and the NSIS
+// installer in a single pass (re-signing the installer afterwards would leave
+// the inner executables unsigned). The certificate private key stays in the
+// Certum cloud HSM; the central workflow connects SimplySign through the shared
+// setup-certum-signing action and injects CERTUM_CERT_THUMBPRINT, so this
+// repository holds no certificate material or GitHub secret.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,8 +24,8 @@ const certificateThumbprint = (process.env.CERTUM_CERT_THUMBPRINT || '')
 if (!/^[0-9A-F]{40}$/.test(certificateThumbprint)) {
   throw new Error(
     'CERTUM_CERT_THUMBPRINT must contain the 40-character SHA-1 thumbprint of the Certum ' +
-      'code-signing certificate. Install and sign in to SimplySign Desktop on this machine, ' +
-      'then copy the thumbprint from Get-ChildItem Cert:\\CurrentUser\\My.',
+      'code-signing certificate. It is injected by the central RongxinAI signing workflow ' +
+      'after the setup-certum-signing action connects SimplySign.',
   );
 }
 
