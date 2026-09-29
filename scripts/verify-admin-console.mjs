@@ -31,9 +31,9 @@ try {
   const cssAssets = assets.filter(asset => asset.endsWith('.css'));
   assert.ok(cssAssets.length > 0, 'Admin entrypoint must include a CSS asset.');
   const css = await fs.readFile(path.join(root, cssAssets[0]), 'utf8');
-  assert.match(css, /\.h-10(?:\{|,)/, 'Admin CSS must include the shadcn button height utility.');
-  assert.match(css, /\.bg-primary(?:\{|,)/, 'Admin CSS must include the shadcn primary button utility.');
-  assert.match(css, /\.inline-flex(?:\{|,)/, 'Admin CSS must include the shadcn inline flex utility.');
+  assert.match(css, /\.admin-shell/, 'Admin CSS must include the application layout.');
+  assert.match(css, /\.admin-sidebar/, 'Admin CSS must include desktop navigation.');
+  assert.match(css, /\.admin-login/, 'Admin CSS must include the login surface.');
   console.log(JSON.stringify({ status: 'passed', origin: `http://127.0.0.1:${port}`, assets }));
 } finally {
   child.kill();

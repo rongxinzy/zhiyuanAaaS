@@ -1,207 +1,208 @@
 // @vitest-environment jsdom
-import '@testing-library/jest-dom/vitest';
+import "@testing-library/jest-dom/vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AdminConsoleClient } from "./client.js";
+import { administratorIdentity } from "./test-fixtures.js";
+import { AdminApp } from "./App.js";
+import { PortalClient } from "./portal.js";
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-
-const { client, AdminPermission, hasAdminPermission } = vi.hoisted(() => {
-  const permissions = {
-    UsersRead: 'users.read', UsersWrite: 'users.write',
-    RolesRead: 'roles.read', RolesWrite: 'roles.write',
-    TeamsRead: 'teams.read', TeamsWrite: 'teams.write',
-    SkillsRead: 'skills.read', SkillsWrite: 'skills.write', SkillsAssign: 'skills.assign',
-    ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
-    CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
-    LicensesRead: 'licenses.read', LicensesWrite: 'licenses.write', LicensesRevoke: 'licenses.revoke',
-    IdentityRead: 'identity.read', IdentityWrite: 'identity.write',
-    SessionsWrite: 'sessions.write',
-    EventsRead: 'events.read', EventsWrite: 'events.write',
-    DataPlaneWrite: 'data_plane.write',
-  } as const;
-  return {
-    client: {
-      restore: vi.fn(),
-      login: vi.fn(),
-      logout: vi.fn(),
-      overview: vi.fn(),
-      resources: vi.fn(),
-      models: vi.fn(),
-    },
-    AdminPermission: permissions,
-    hasAdminPermission: (identity: { readonly roles?: readonly string[]; readonly permissions?: readonly string[] } | undefined, permission: string) => {
-      if (!identity) return true;
-      if (identity.roles?.some(role => role.toLowerCase() === 'admin')) return true;
-      return identity.permissions?.includes(permission) ?? false;
-    },
-  };
-});
-
-vi.mock('./client.js', () => ({
-  AdminConsoleClient: class {
-    restore = client.restore;
-    login = client.login;
-    logout = client.logout;
-    overview = client.overview;
-    resources = client.resources;
-    models = client.models;
-  },
-  AdminPermission,
-  hasAdminPermission,
-  AdminIdentitySourceKind: { Directory: 'directory', Ldap: 'ldap', Oidc: 'oidc' },
-  AdminIdentityMappingStatus: { Active: 'active', Disabled: 'disabled' },
-  AdminIdentitySubjectType: { User: 'user', Team: 'team' },
-  AdminConsoleStatus: {
-    SignedOut: 'signed-out',
-    Authenticated: 'authenticated',
-    Forbidden: 'forbidden',
-  },
+vi.mock("./Resources.js", () => ({
+  Resources: ({ tab }: { tab: string }) => (
+    <div data-testid="resource">{tab}</div>
+  ),
+}));
+vi.mock("./Models.js", () => ({ Models: () => <div>model-content</div> }));
+vi.mock("./ServiceStatus.js", () => ({
+  KnowledgeView: () => <div>knowledge-content</div>,
+  ServicesView: () => <div>services-content</div>,
+}));
+vi.mock("./DigitalEmployees.js", () => ({
+  DigitalEmployees: () => <div>employee-content</div>,
+}));
+vi.mock("./Operations.js", () => ({
+  Operations: () => <div>license-content</div>,
+  SessionsView: () => <div>session-content</div>,
+  CredentialsView: () => <div>credentials-content</div>,
+  ConfigurationStatusView: () => <div>configuration-content</div>,
+}));
+vi.mock("./Identity.js", () => ({
+  Identity: () => <div>mapping-content</div>,
 }));
 
-import { AdminApp } from './App.js';
-
-describe('admin console', () => {
+describe("Ant Design admin shell", () => {
   beforeEach(() => {
-    client.restore.mockResolvedValue({ status: 'signed-out' });
-    client.login.mockResolvedValue({
-      status: 'authenticated',
-      identity: {
-        user: { id: 'u1', displayName: '管理员' },
-        deployment: { id: 'demo', name: '知远' },
-        deploymentId: 'demo',
-        roles: ['admin'],
-        sessionExpiresAt: '2026-08-27T12:00:00Z',
-        passwordChangeRequired: false,
-      },
+    window.location.hash = "";
+    vi.spyOn(PortalClient.prototype, "listEmployees").mockResolvedValue([]);
+    vi.spyOn(PortalClient.prototype, "listRequests").mockResolvedValue([]);
+    localStorage.clear();
+    vi.spyOn(AdminConsoleClient.prototype, "restore").mockResolvedValue({
+      status: "signed-out",
     });
-    client.overview.mockResolvedValue({ users: 4, teams: 2, skills: 3, models: 1, pendingEvents: 0 });
-    client.resources.mockResolvedValue({ users: [], teams: [], roles: [], permissions: [], skills: [], assignments: [] });
-    client.models.mockResolvedValue({ models: [], assignments: [] });
-    client.logout.mockResolvedValue(undefined);
+    vi.spyOn(AdminConsoleClient.prototype, "login").mockResolvedValue({
+      status: "authenticated",
+      identity: administratorIdentity,
+    });
+    vi.spyOn(AdminConsoleClient.prototype, "logout").mockResolvedValue();
+    vi.spyOn(AdminConsoleClient.prototype, "overview").mockResolvedValue({
+      users: 4,
+      teams: 2,
+      skills: 3,
+      models: 1,
+      pendingEvents: 0,
+    });
+    vi.spyOn(AdminConsoleClient.prototype, "searchAudit").mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
   });
-
   afterEach(() => {
     cleanup();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
-
-  test('shows login and submits credentials', async () => {
+  function authenticated() {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: "authenticated",
+      identity: administratorIdentity,
+    });
+  }
+  test("requires explicit enterprise credentials and submits them", async () => {
     render(<AdminApp />);
-    expect(await screen.findByRole('heading', { name: '登录企业控制台' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
-    fireEvent.click(screen.getByRole('button', { name: '登录' }));
-    await waitFor(() => expect(client.login).toHaveBeenCalledWith({ deploymentId: 'demo', username: 'admin', password: 'secret' }));
-    expect(await screen.findByRole('heading', { name: '运行概览' })).toBeInTheDocument();
+    const deployment = await screen.findByLabelText("部署 ID");
+    expect(deployment).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await screen.findAllByText("请填写企业 ID、用户名和密码。");
+    expect(AdminConsoleClient.prototype.login).not.toHaveBeenCalled();
+    fireEvent.change(deployment, { target: { value: " enterprise-a " } });
+    fireEvent.change(screen.getByLabelText("用户名"), {
+      target: { value: " alice " },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "test-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() =>
+      expect(AdminConsoleClient.prototype.login).toHaveBeenCalledWith({
+        deploymentId: "enterprise-a",
+        username: "alice",
+        password: "test-password",
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "概览" }),
+    ).toBeInTheDocument();
   });
-
-  test('toggles password visibility on the login form', async () => {
+  test("shows a recoverable login error", async () => {
+    vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(
+      new Error("denied"),
+    );
     render(<AdminApp />);
-    const password = await screen.findByLabelText('密码');
-    expect(password).toHaveAttribute('type', 'password');
-    fireEvent.click(screen.getByRole('button', { name: '显示密码' }));
-    expect(password).toHaveAttribute('type', 'text');
-    fireEvent.click(screen.getByRole('button', { name: '隐藏密码' }));
-    expect(password).toHaveAttribute('type', 'password');
+    fireEvent.change(await screen.findByLabelText("部署 ID"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("用户名"), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "wrong" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).not.toBeDisabled();
   });
-
-  test('blocks non-admin accounts', async () => {
-    client.restore.mockResolvedValue({ status: 'forbidden', identity: { user: { displayName: '普通用户' } } });
+  test("renders seven business entries without legacy navigation", async () => {
+    authenticated();
     render(<AdminApp />);
-    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
-    expect(screen.getByText(/普通用户/)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "概览" });
+    expect(screen.getAllByRole("menuitem")).toHaveLength(7);
+    for (const name of [
+      "概览",
+      "数字员工",
+      "知识库",
+      "技能管理",
+      "用户管理",
+      "日志审计",
+      "系统管理",
+    ])
+      expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
+    for (const name of ["资源管理", "身份对齐", "平台运维", "数据平面"])
+      expect(screen.queryByRole("menuitem", { name })).not.toBeInTheDocument();
   });
-
-  test('allows a partial administrator and only shows readable destinations', async () => {
-    client.restore.mockResolvedValue({
-      status: 'authenticated',
+  test("hides unauthorized entries and rejects direct navigation", async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: "authenticated",
       identity: {
-        user: { id: 'u2', displayName: '模型审阅员' },
-        deployment: { id: 'demo', name: '知远' },
-        deploymentId: 'demo',
-        roles: ['model-reader'],
-        permissions: ['models.read'],
+        ...administratorIdentity,
+        roles: [],
+        permissions: ["models.read"],
       },
     });
     render(<AdminApp />);
-
-    expect((await screen.findAllByRole('button', { name: '概览' }))).toHaveLength(2);
-    expect(screen.getAllByRole('button', { name: '企业模型' })).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: '资源管理' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '事件与审计' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '平台运维' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('企业模型')).toHaveLength(4);
-    expect(screen.queryByText('用户')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("menuitem", { name: "系统管理" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "用户管理" }),
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      window.location.hash = "users";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(await screen.findByText("没有管理权限")).toBeInTheDocument();
+    expect(screen.queryByTestId("resource")).not.toBeInTheDocument();
+  });
+  test("preserves legacy links and supports browser route changes", async () => {
+    authenticated();
+    window.location.hash = "identity";
+    render(<AdminApp />);
+    expect(await screen.findByText("mapping-content")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "登录会话" }));
+    expect(await screen.findByText("session-content")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#users/sessions");
+  });
+  test("keeps unknown counts distinct from zero and refreshes failures", async () => {
+    authenticated();
+    vi.mocked(AdminConsoleClient.prototype.overview).mockResolvedValueOnce({
+      users: 4,
+      teams: null,
+      skills: 3,
+      models: 1,
+      pendingEvents: 0,
+      failed: ["teams"],
+    });
+    render(<AdminApp />);
+    expect(await screen.findByText("暂无法获取")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("部分概览数据");
     await waitFor(() =>
-      expect(client.overview).toHaveBeenCalledWith(
-        expect.objectContaining({ permissions: ['models.read'] }),
+      expect(screen.getByRole("button", { name: /刷新/ })).not.toHaveClass(
+        "ant-btn-loading",
       ),
     );
+    fireEvent.click(screen.getByRole("button", { name: /刷新/ }));
+    await waitFor(() =>
+      expect(AdminConsoleClient.prototype.overview).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("暂无法获取")).not.toBeInTheDocument(),
+    );
   });
-
-  test('renders refreshed overview counts', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
+  test("allows forbidden users to clear session and switch account", async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: "forbidden",
+      identity: administratorIdentity,
+    });
     render(<AdminApp />);
-    expect((await screen.findAllByText('4')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
-    expect(await screen.findByText('服务已连接')).toHaveClass('bg-success-soft', 'text-success');
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '刷新' })));
-    expect(client.overview).toHaveBeenCalledTimes(2);
-  });
-
-  test('keeps available overview counts when one metric fails', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
-    client.overview.mockResolvedValue({ users: 4, teams: null, skills: 3, models: 1, pendingEvents: 0, failed: ['teams'] });
-    render(<AdminApp />);
-
-    expect((await screen.findAllByText('4')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
-    expect(screen.getByText('概览数据刷新失败，请稍后重试。')).toBeInTheDocument();
-    expect(screen.getAllByText('加载失败').length).toBeGreaterThan(0);
-  });
-
-  test('uses Tea menu tokens and regular weight for active navigation', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
-    render(<AdminApp />);
-
-    const activeItems = await screen.findAllByRole('button', { name: '概览' });
-    expect(activeItems).toHaveLength(2);
-    for (const item of activeItems) {
-      expect(item).toHaveAttribute('aria-current', 'page');
-      expect(item).toHaveClass('bg-sidebar-primary', 'text-sidebar-primary-foreground', 'font-normal');
-      expect(item).not.toHaveClass('border-border', 'font-medium', 'font-semibold');
-    }
-  });
-
-  test('keeps the compact header sign-out hover target around its icon', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
-    render(<AdminApp />);
-
-    const signOutButtons = await screen.findAllByRole('button', { name: '退出登录' });
-    const headerSignOut = signOutButtons.at(-1)!;
-    expect(headerSignOut).toHaveClass('size-8', 'rounded-lg', 'p-0', 'md:hidden');
-    expect(headerSignOut.querySelector('svg')).toHaveClass('size-4');
-  });
-
-  test('uses Zhiyuan line tabs and a sliding indicator for resources', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
-    render(<AdminApp />);
-
-    fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
-    expect(await screen.findByRole('tablist')).toHaveAttribute('data-variant', 'line');
-    expect(document.querySelector('[data-slot="tabs-indicator"]')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-active');
-
-    fireEvent.click(screen.getByRole('tab', { name: '团队' }));
-    expect(screen.getByRole('tab', { name: '团队' })).toHaveAttribute('data-active');
-  });
-
-  test('labels the Role resource tab correctly', async () => {
-    client.restore.mockResolvedValue({ status: 'authenticated', identity: { user: { displayName: '管理员' }, roles: ['admin'] } });
-    render(<AdminApp />);
-
-    fireEvent.click((await screen.findAllByRole('button', { name: '资源管理' }))[0]!);
-    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
-
-    expect(await screen.findByRole('heading', { name: '角色' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "切换账号" }));
+    expect(
+      await screen.findByRole("heading", { name: "登录企业管理后台" }),
+    ).toBeInTheDocument();
+    expect(AdminConsoleClient.prototype.logout).toHaveBeenCalledOnce();
   });
 });

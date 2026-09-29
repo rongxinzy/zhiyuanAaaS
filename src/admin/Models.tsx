@@ -1,18 +1,34 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
-  Check,
-  CircleAlert,
-  Cpu,
-  Ellipsis,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Trash2,
-  UserRound,
-} from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+  Alert,
+  Button,
+  Checkbox,
+  Descriptions,
+  Drawer,
+  Dropdown,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Segmented,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Timeline,
+  Typography,
+} from 'antd';
+import {
+  ArrowLeftOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   AepProblem,
   type AdminModel,
@@ -20,87 +36,28 @@ import {
   type PlatformUser,
   type Role,
   type Team,
-} from "@aep/sdk-node";
+} from '@aep/sdk-node';
+
 import {
   AdminConsoleClient,
   AdminModelSubjectType,
   AdminPermission,
   hasAdminPermission,
+  type AdminDataPlane,
   type AdminIdentity,
   type AdminModels,
-} from "./client.js";
-import {
-  translate,
-  type AdminLanguage,
-  type AdminTranslationKey,
-} from "./i18n.js";
-import { SubjectCell, SubjectMultiPicker } from "./Resources.js";
-import { Alert, AlertDescription } from "../ui/components/ui/alert.js";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "../ui/components/ui/alert-dialog.js";
-import { Badge } from "../ui/components/ui/badge.js";
-import { Button } from "../ui/components/ui/button.js";
-import { BooleanSwitch } from "./BooleanSwitch.js";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "../ui/components/ui/card.js";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "../ui/components/ui/dialog.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../ui/components/ui/dropdown-menu.js";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../ui/components/ui/empty.js";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "../ui/components/ui/field.js";
-import { Input } from "../ui/components/ui/input.js";
-import { Skeleton } from "../ui/components/ui/skeleton.js";
-import { Spinner } from "../ui/components/ui/spinner.js";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "../ui/components/ui/tabs.js";
-import { runBatch } from "./batch.js";
-import { AdminNotificationKind, notify } from "./notifications.js";
+} from './client.js';
+import { translate, type AdminLanguage } from './i18n.js';
+import { ModelConnectionSelect } from './ModelConnectionSelect.js';
+import { runBatch } from './batch.js';
+import { AdminNotificationKind, notify } from './notifications.js';
+import { modelsT } from './models-copy.js';
 
-const ModelSourceType = { Gateway: "gateway" } as const;
-const ModelProtocol = { OpenAiCompatible: "openai-compatible" } as const;
-const language: AdminLanguage = "zh";
+const ModelSourceType = { Gateway: 'gateway' } as const;
+const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
+const language: AdminLanguage = 'zh';
+const t = (key: Parameters<typeof modelsT>[0]): string => modelsT(key, language);
+
 type ModelGrantTarget = {
   readonly model: AdminModel;
   readonly assignments: readonly ModelAssignment[];
@@ -109,10 +66,53 @@ type ModelGrantTarget = {
 function modelSaveMessage(error: unknown): string {
   if (
     error instanceof AepProblem &&
-    (error.code === "MODEL_EXISTS" || error.status === 409)
+    (error.code === 'MODEL_EXISTS' || error.status === 409)
   )
-    return translate(language, "modelIdExists");
-  return translate(language, "operationUnavailable");
+    return translate(language, 'modelIdExists');
+  return translate(language, 'operationUnavailable');
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// The gateway reports one global sync state (revision → observedRevision).
+// "Applied" is only claimed when the gateway confirmed this exact desired
+// revision; anything else degrades to pending/failed/unknown, never a
+// blanket green.
+function gatewayStateLabel(
+  dataPlane: AdminDataPlane,
+): { label: string; color: string; confirmed: boolean } {
+  const { desired, status } = dataPlane;
+  if (status.observedRevision === null || status.observedRevision === undefined) {
+    return { label: t('configUnknown'), color: 'default', confirmed: false };
+  }
+  if (status.observedRevision === desired.revision && status.state === 'ready') {
+    return { label: t('configApplied'), color: 'success', confirmed: true };
+  }
+  if (status.observedRevision !== desired.revision) {
+    return { label: t('configPending'), color: 'processing', confirmed: false };
+  }
+  switch (status.state) {
+    case 'pending':
+      return { label: t('configPending'), color: 'default', confirmed: false };
+    case 'applying':
+      return { label: t('configApplying'), color: 'processing', confirmed: false };
+    case 'degraded':
+      return { label: t('configDegraded'), color: 'warning', confirmed: false };
+    case 'error':
+      return { label: t('configError'), color: 'error', confirmed: false };
+    default:
+      return { label: t('configUnknown'), color: 'default', confirmed: false };
+  }
+}
+
+function routeIncluded(dataPlane: AdminDataPlane, modelId: string): boolean {
+  return dataPlane.desired.routes.some((route) => route.modelId === modelId);
 }
 
 export function Models({
@@ -124,16 +124,31 @@ export function Models({
 }) {
   const canWrite = hasAdminPermission(identity, AdminPermission.ModelsWrite);
   const canAssign = hasAdminPermission(identity, AdminPermission.ModelsAssign);
+  // Gateway sync state is ops data: without data_plane.write the console
+  // neither requests it nor renders a technical verdict it cannot back.
+  const canDataPlane = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
   const [state, setState] = useState<AdminModels | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [roles, setRoles] = useState<readonly Role[]>([]);
   const [teams, setTeams] = useState<readonly Team[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [granting, setGranting] = useState<ModelGrantTarget | null>(null);
+  const [detail, setDetail] = useState<AdminModel | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<AdminModel | null>(null);
+  const [deleting, setDeleting] = useState<AdminModel | null>(null);
+  // Gateway sync state loads independently: a data-plane failure must not
+  // block the catalog, and must not be shown as "applied".
+  const [dataPlane, setDataPlane] = useState<AdminDataPlane | null>(null);
+  const [dataPlaneError, setDataPlaneError] = useState<string | null>(null);
+  const [dataPlaneLoading, setDataPlaneLoading] = useState(canDataPlane);
+
   const reportMutationError = useCallback(() => {
-    notify(AdminNotificationKind.Error, translate(language, "modelFormFailed"));
+    notify(AdminNotificationKind.Error, translate(language, 'modelFormFailed'));
   }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -146,16 +161,33 @@ export function Models({
       setUsers(resources.users);
       setRoles(resources.roles);
       setTeams(resources.teams);
-    } catch {
-      setError("modelsLoadFailed");
+    } catch (err) {
+      setState(null);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   }, [client, identity]);
+
+  const loadDataPlane = useCallback(async () => {
+    setDataPlaneLoading(true);
+    setDataPlaneError(null);
+    try {
+      setDataPlane(await client.dataPlane());
+    } catch (err) {
+      setDataPlane(null);
+      setDataPlaneError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDataPlaneLoading(false);
+    }
+  }, [client]);
+
   useEffect(() => {
     void load();
-  }, [load]);
-  if (canAssign && granting) {
+    if (canDataPlane) void loadDataPlane();
+  }, [load, loadDataPlane, canDataPlane]);
+
+  if (granting) {
     return (
       <ModelGrantPage
         client={client}
@@ -170,349 +202,311 @@ export function Models({
       />
     );
   }
-  return (
-    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="flex w-full flex-col gap-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs text-tertiary-foreground">
-              {translate(language, "workspaceLabel")}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold leading-snug">
-              {translate(language, "models")}
-            </h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              {translate(language, "modelsDescription")}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {canWrite ? <ModelCreateForm client={client} onCreated={load} /> : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={translate(language, "refresh")}
-              title={translate(language, "refresh")}
-              disabled={loading}
-              onClick={() => void load()}
-            >
-              {loading ? <Spinner /> : <RefreshCw />}
-            </Button>
-          </div>
-        </div>
-        {error ? (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>{translate(language, error)}</AlertDescription>
-          </Alert>
-        ) : null}
-        {loading && !state ? <ModelCatalogSkeleton /> : null}
-        {state ? (
-          <ModelList
-            models={state.models}
-            assignments={state.assignments}
-            users={users}
-            roles={roles}
-            teams={teams}
-            canWrite={canWrite}
-            canAssign={canAssign}
-            client={client}
-            onChanged={load}
-            onError={reportMutationError}
-            onGrant={(model, assignments) =>
-              setGranting({ model, assignments })
-            }
-          />
-        ) : null}
-      </div>
-    </section>
-  );
-}
 
-function ModelCreateForm({
-  client,
-  onCreated,
-}: {
-  readonly client: AdminConsoleClient;
-  readonly onCreated: () => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [id, setId] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [endpoint, setEndpoint] = useState("");
-  const [upstreamModel, setUpstreamModel] = useState("");
-  const [pending, setPending] = useState(false);
-  const [errorField, setErrorField] = useState<
-    "id" | "name" | "endpoint" | "upstream" | null
-  >(null);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const missing = !id.trim()
-      ? "id"
-      : !displayName.trim()
-        ? "name"
-        : !endpoint.trim()
-          ? "endpoint"
-          : !upstreamModel.trim()
-            ? "upstream"
-            : null;
-    if (missing) {
-      setErrorField(missing);
-      return;
-    }
-    setErrorField(null);
-    setPending(true);
-    try {
-      await client.createModel({
-        id: id.trim(),
-        displayName: displayName.trim(),
-        sourceType: ModelSourceType.Gateway,
-        protocol: ModelProtocol.OpenAiCompatible,
-        endpoint: endpoint.trim(),
-        upstreamModel: upstreamModel.trim(),
-        capabilities: [],
-        isDefault: false,
-        enabled: true,
-      });
-      setId("");
-      setDisplayName("");
-      setEndpoint("");
-      setUpstreamModel("");
-      setOpen(false);
-      await onCreated();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "changesSaved"),
-      );
-    } catch (error) {
-      notify(AdminNotificationKind.Error, modelSaveMessage(error));
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        <Plus data-icon="inline-start" />
-        {translate(language, "addModel")}
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "addModel")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "addModelDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <FieldGroup>
-            <Field data-invalid={errorField === "id"}>
-              <FieldLabel htmlFor="model-id">
-                {translate(language, "modelId")}
-              </FieldLabel>
-              <Input
-                id="model-id"
-                value={id}
-                onChange={(event) => {
-                  setId(event.target.value);
-                  if (errorField === "id") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "id"}
-                aria-describedby={
-                  errorField === "id" ? "model-id-error" : undefined
-                }
-              />
-              {errorField === "id" ? (
-                <FieldError id="model-id-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field data-invalid={errorField === "name"}>
-              <FieldLabel htmlFor="model-name">
-                {translate(language, "modelName")}
-              </FieldLabel>
-              <Input
-                id="model-name"
-                value={displayName}
-                onChange={(event) => {
-                  setDisplayName(event.target.value);
-                  if (errorField === "name") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "name"}
-                aria-describedby={
-                  errorField === "name" ? "model-name-error" : undefined
-                }
-              />
-              {errorField === "name" ? (
-                <FieldError id="model-name-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field data-invalid={errorField === "endpoint"}>
-              <FieldLabel htmlFor="model-endpoint">
-                {translate(language, "modelEndpoint")}
-              </FieldLabel>
-              <Input
-                id="model-endpoint"
-                type="url"
-                value={endpoint}
-                onChange={(event) => {
-                  setEndpoint(event.target.value);
-                  if (errorField === "endpoint") setErrorField(null);
-                }}
-                placeholder={translate(language, "modelEndpointPlaceholder")}
-                disabled={pending}
-                aria-invalid={errorField === "endpoint"}
-                aria-describedby={
-                  errorField === "endpoint" ? "model-endpoint-error" : undefined
-                }
-              />
-              {errorField === "endpoint" ? (
-                <FieldError id="model-endpoint-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field data-invalid={errorField === "upstream"}>
-              <FieldLabel htmlFor="model-upstream">
-                {translate(language, "upstreamModel")}
-              </FieldLabel>
-              <Input
-                id="model-upstream"
-                value={upstreamModel}
-                onChange={(event) => {
-                  setUpstreamModel(event.target.value);
-                  if (errorField === "upstream") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "upstream"}
-                aria-describedby={
-                  errorField === "upstream" ? "model-upstream-error" : undefined
-                }
-              />
-              {errorField === "upstream" ? (
-                <FieldError id="model-upstream-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <DialogClose
-              render={
-                <Button type="button" variant="ghost" disabled={pending} />
+  const filtered = (state?.models ?? []).filter((model) => {
+    if (!query.trim()) return true;
+    const needle = query.trim().toLowerCase();
+    return [model.id, model.displayName].some((value) => value.toLowerCase().includes(needle));
+  });
+
+  const columns = [
+    {
+      title: t('colModel'),
+      key: 'model',
+      render: (_: unknown, model: AdminModel) => (
+        <Space orientation="vertical" size={0}>
+          <Space size={6}>
+            <Typography.Text strong>{model.displayName}</Typography.Text>
+            {model.isDefault ? <Tag color="blue">{translate(language, 'defaultModel')}</Tag> : null}
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {model.id}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: t('colUpstream'),
+      key: 'upstream',
+      render: (_: unknown, model: AdminModel) =>
+        model.upstreamModel || model.localModelRef || t('notProvided'),
+    },
+    {
+      title: t('colManageState'),
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 100,
+      render: (enabled: boolean) =>
+        enabled ? (
+          <Tag color="success">{t('stateEnabled')}</Tag>
+        ) : (
+          <Tag>{t('stateDisabled')}</Tag>
+        ),
+    },
+    {
+      title: t('colConfigState'),
+      key: 'config',
+      width: 190,
+      render: (_: unknown, model: AdminModel) => (
+        <ConfigStateCell
+          dataPlane={dataPlane}
+          error={dataPlaneError}
+          allowed={canDataPlane}
+          modelId={model.id}
+        />
+      ),
+    },
+    {
+      title: t('colTestState'),
+      key: 'test',
+      width: 100,
+      render: () => (
+        <Tooltip title={t('testGapHint')}>
+          <Tag>{t('testNotRun')}</Tag>
+        </Tooltip>
+      ),
+    },
+    {
+      title: translate(language, 'actions'),
+      key: 'actions',
+      align: 'right' as const,
+      render: (_: unknown, model: AdminModel) => (
+        <span onClick={(event) => event.stopPropagation()}>
+        <Space size={0}>
+          <Button type="link" size="small" onClick={() => setDetail(model)}>
+            {translate(language, 'viewDetails')}
+          </Button>
+          {canWrite ? (
+            <Button type="link" size="small" onClick={() => setEditing(model)}>
+              {translate(language, 'editModel')}
+            </Button>
+          ) : null}
+          {canAssign ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<UserOutlined />}
+              onClick={() =>
+                setGranting({
+                  model,
+                  assignments: (state?.assignments ?? []).filter(
+                    (item) => item.resourceId === model.id,
+                  ),
+                })
               }
             >
-              {translate(language, "cancel")}
-            </DialogClose>
-            <Button type="submit" disabled={pending}>
-              {pending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Check data-icon="inline-start" />
-              )}
-              {translate(language, pending ? "saving" : "save")}
+              {translate(language, 'grantModel')}
             </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+          ) : null}
+          {canWrite ? (
+            <ModelRowMenu
+              client={client}
+              model={model}
+              assignmentCount={(state?.assignments ?? []).filter(
+                (item) => item.resourceId === model.id,
+              ).length}
+              onChanged={load}
+              onError={reportMutationError}
+              onDelete={() => setDeleting(model)}
+            />
+          ) : null}
+        </Space>
+        </span>
+      ),
+    },
+  ];
 
-function ModelList({
-  models,
-  assignments,
-  users,
-  roles,
-  teams,
-  canWrite,
-  canAssign,
-  client,
-  onChanged,
-  onError,
-  onGrant,
-}: {
-  readonly models: readonly AdminModel[];
-  readonly assignments: readonly ModelAssignment[];
-  readonly users: readonly PlatformUser[];
-  readonly roles: readonly Role[];
-  readonly teams: readonly Team[];
-  readonly canWrite: boolean;
-  readonly canAssign: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onGrant: (
-    model: AdminModel,
-    assignments: readonly ModelAssignment[],
-  ) => void;
-}) {
-  if (models.length === 0)
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia>
-            <ShieldCheck aria-hidden="true" />
-          </EmptyMedia>
-          <EmptyTitle>{translate(language, "modelsEmpty")}</EmptyTitle>
-          <EmptyDescription>
-            {translate(language, "modelsEmptyHint")}
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
   return (
-    <div className="flex flex-col gap-4">
-      {models.map((model) => {
-        const modelAssignments = assignments.filter(
-          (item) => item.resourceId === model.id,
-        );
-        return (
-          <ModelRow
-            key={model.id}
-            model={model}
-            assignments={modelAssignments}
-            users={users}
-            canWrite={canWrite}
-            canAssign={canAssign}
-            client={client}
-            onChanged={onChanged}
-            onError={onError}
-            onGrant={() => onGrant(model, modelAssignments)}
-          />
-        );
-      })}
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Typography.Title level={4} style={{ marginBottom: 4 }}>
+            {t('modelsListTitle')}
+          </Typography.Title>
+          <Typography.Text type="secondary">{t('modelsListDescription')}</Typography.Text>
+        </div>
+        <Space>
+          {canWrite ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+              {translate(language, 'addModel')}
+            </Button>
+          ) : null}
+          <Button
+            icon={<ReloadOutlined />}
+            disabled={loading}
+            onClick={() => {
+              void load();
+              if (canDataPlane) void loadDataPlane();
+            }}
+          >
+            {translate(language, 'refresh')}
+          </Button>
+        </Space>
+      </div>
+
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          title={`${translate(language, 'modelsLoadFailed')}：${error}`}
+        />
+      ) : null}
+      {state && canDataPlane && dataPlaneError && !error ? (
+        <Alert type="warning" showIcon title={`${t('configLoadFailed')}：${dataPlaneError}`} />
+      ) : null}
+
+      <Input
+        allowClear
+        prefix={<SearchOutlined />}
+        placeholder={t('searchPlaceholder')}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        style={{ maxWidth: 320 }}
+      />
+
+      <Table
+        rowKey="id"
+        size="middle"
+        loading={loading && state === null}
+        dataSource={error ? [] : filtered}
+        columns={columns}
+        pagination={{ hideOnSinglePage: true }}
+        onRow={(model) => ({ onClick: () => setDetail(model) })}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={translate(language, 'modelsEmpty')}
+            >
+              <Typography.Text type="secondary">
+                {translate(language, 'modelsEmptyHint')}
+              </Typography.Text>
+            </Empty>
+          ),
+        }}
+      />
+
+      <ModelCreateModal
+        client={client}
+        identity={identity}
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={load}
+      />
+      <ModelEditorModal
+        client={client}
+        identity={identity}
+        model={editing}
+        onClose={() => setEditing(null)}
+        onChanged={load}
+      />
+      <ModelDeleteModal
+        client={client}
+        model={deleting}
+        assignmentCount={
+          deleting
+            ? (state?.assignments ?? []).filter((item) => item.resourceId === deleting.id).length
+            : 0
+        }
+        onClose={() => setDeleting(null)}
+        onChanged={load}
+        onError={reportMutationError}
+      />
+      <ModelDetailDrawer
+        client={client}
+        model={detail}
+        users={users}
+        assignments={
+          detail ? (state?.assignments ?? []).filter((item) => item.resourceId === detail.id) : []
+        }
+        canWrite={canWrite}
+        canAssign={canAssign}
+        dataPlane={dataPlane}
+        dataPlaneError={dataPlaneError}
+        dataPlaneLoading={dataPlaneLoading}
+        dataPlaneAllowed={canDataPlane}
+        onDataPlaneRefresh={loadDataPlane}
+        onClose={() => setDetail(null)}
+        onChanged={load}
+        onError={reportMutationError}
+        onEdit={(model) => setEditing(model)}
+        onGrant={(model) =>
+          setGranting({
+            model,
+            assignments: (state?.assignments ?? []).filter((item) => item.resourceId === model.id),
+          })
+        }
+        onDelete={(model) => setDeleting(model)}
+      />
     </div>
   );
 }
 
-function ModelRow({
-  model,
-  assignments,
-  users,
-  canWrite,
-  canAssign,
+function ConfigStateCell({
+  dataPlane,
+  error,
+  allowed,
+  modelId,
+}: {
+  readonly dataPlane: AdminDataPlane | null;
+  readonly error: string | null;
+  readonly allowed: boolean;
+  readonly modelId: string;
+}) {
+  if (!allowed) {
+    return (
+      <Tooltip title={t('configNoPermissionHint')}>
+        <Tag>{t('configNoPermission')}</Tag>
+      </Tooltip>
+    );
+  }
+  if (error) {
+    return (
+      <Tooltip title={`${t('configLoadFailedHint')}（${error}）`}>
+        <Tag>{t('configUnknown')}</Tag>
+      </Tooltip>
+    );
+  }
+  if (!dataPlane) {
+    return <Tag>{t('configUnknown')}</Tag>;
+  }
+  const state = gatewayStateLabel(dataPlane);
+  const included = routeIncluded(dataPlane, modelId);
+  const tooltip = [
+    `${t('configTargetRevision')}：${dataPlane.desired.revision}`,
+    `${t('configAppliedRevision')}：${dataPlane.status.observedRevision ?? '—'}`,
+    included ? t('configRouteIncluded') : t('configRouteMissingHint'),
+  ].join('\n');
+  return (
+    <Tooltip title={<div style={{ whiteSpace: 'pre-line' }}>{tooltip}</div>}>
+      <Space orientation="vertical" size={0}>
+        <Tag color={state.color}>{state.label}</Tag>
+        {included ? null : (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t('configRouteMissing')}
+          </Typography.Text>
+        )}
+      </Space>
+    </Tooltip>
+  );
+}
+
+function ModelRowMenu({
   client,
+  model,
+  assignmentCount,
   onChanged,
   onError,
-  onGrant,
+  onDelete,
 }: {
-  readonly model: AdminModel;
-  readonly assignments: readonly ModelAssignment[];
-  readonly users: readonly PlatformUser[];
-  readonly canWrite: boolean;
-  readonly canAssign: boolean;
   readonly client: AdminConsoleClient;
+  readonly model: AdminModel;
+  readonly assignmentCount: number;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
-  readonly onGrant: () => void;
+  readonly onDelete: () => void;
 }) {
   const [pending, setPending] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const run = async (operation: () => Promise<void>) => {
     setPending(true);
     try {
@@ -524,602 +518,729 @@ function ModelRow({
       setPending(false);
     }
   };
-  const userNames = new Map(users.map((user) => [user.id, user]));
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <Cpu
-                className="mt-1 size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <div className="min-w-0">
-                <CardTitle className="truncate">{model.displayName}</CardTitle>
-                <p className="break-all text-xs text-tertiary-foreground">
-                  {model.id} /{" "}
-                  {model.upstreamModel ||
-                    model.localModelRef ||
-                    translate(language, "notProvided")}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={model.enabled ? "success" : "outline"}>
-                {translate(language, model.enabled ? "enabled" : "disabled")}
-              </Badge>
-              {model.isDefault ? (
-                <Badge variant="info">
-                  {translate(language, "defaultModel")}
-                </Badge>
-              ) : null}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-tertiary-foreground">
-                {translate(language, "modelEndpoint")}
-              </dt>
-              <dd className="break-all font-normal">
-                {model.endpoint || translate(language, "notProvided")}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-tertiary-foreground">
-                {translate(language, "assignments")}
-              </dt>
-              <dd className="font-normal">{assignments.length}</dd>
-            </div>
-          </dl>
-          {canWrite || canAssign ? (
-            <div className="flex flex-wrap gap-2">
-              {canWrite ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending}
-                    onClick={() => setEditing(true)}
-                  >
-                    <Pencil data-icon="inline-start" />
-                    {translate(language, "editModel")}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={pending}
-                          aria-label={translate(language, "actions")}
-                          title={translate(language, "actions")}
-                        />
-                      }
-                    >
-                      <Ellipsis aria-hidden="true" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {!model.isDefault ? (
-                        <DropdownMenuItem
-                          onClick={() =>
-                            void run(async () => {
-                              await client.updateModel(model.id, {
-                                isDefault: true,
-                              });
-                            })
-                          }
-                        >
-                          {translate(language, "makeDefault")}
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem
-                        onClick={() =>
-                          void run(async () => {
-                            await client.updateModel(model.id, {
-                              enabled: !model.enabled,
-                            });
-                          })
-                        }
-                      >
-                        {translate(language, model.enabled ? "disable" : "enable")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setDeleting(true)}
-                      >
-                        <Trash2 aria-hidden="true" />
-                        {translate(language, "delete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              ) : null}
-              {canAssign ? (
-                <Button size="sm" onClick={onGrant}>
-                  <UserRound data-icon="inline-start" />
-                  {translate(language, "grantModel")}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-          {canAssign && assignments.length > 0 ? (
-            <div className="flex flex-col gap-2 border-t border-border pt-3">
-              {assignments.map((assignment) => (
-                <div
-                  className="flex items-center justify-between gap-3 text-sm"
-                  key={assignment.id}
-                >
-                  <SubjectCell
-                    subjectType={assignment.subject.type}
-                    subjectId={assignment.subject.id}
-                    user={userNames.get(assignment.subject.id)}
-                  />
-                  <AlertDialog>
-                    <AlertDialogTrigger
-                      render={
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                          aria-label={translate(language, "revoke")}
-                          title={translate(language, "revoke")}
-                          disabled={pending}
-                        />
-                      }
-                    >
-                      <Trash2 />
-                    </AlertDialogTrigger>
-                    <AlertDialogContent size="sm">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          {translate(language, "revokeConfirmTitle")}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {translate(language, "revokeConfirmDescription")}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel disabled={pending}>
-                          {translate(language, "cancel")}
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                          disabled={pending}
-                          onClick={() =>
-                            void run(async () => {
-                              await client.deleteModelAssignment(assignment.id);
-                            })
-                          }
-                        >
-                          {translate(language, "confirmRevoke")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-      <AlertDialog open={deleting} onOpenChange={setDeleting}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {translate(language, "deleteModelTitle")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {translate(language, "deleteModelDescription")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>
-              {translate(language, "cancel")}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-              disabled={pending}
-              onClick={() =>
-                void run(async () => {
-                  await client.deleteModel(model.id);
-                  setDeleting(false);
-                })
-              }
-            >
-              {translate(language, "delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {canWrite && editing ? (
-        <ModelEditorDialog
-          client={client}
-          model={model}
-          open={editing}
-          onOpenChange={setEditing}
-          onChanged={onChanged}
-          onError={onError}
-        />
-      ) : null}
-    </>
+    <Dropdown
+      trigger={['click']}
+      menu={{
+        items: [
+          ...(model.isDefault
+            ? []
+            : [
+                {
+                  key: 'default',
+                  label: translate(language, 'makeDefault'),
+                  onClick: () =>
+                    void run(async () => {
+                      await client.updateModel(model.id, { isDefault: true });
+                    }),
+                },
+              ]),
+          {
+            key: 'toggle',
+            label: translate(language, model.enabled ? 'disable' : 'enable'),
+            onClick: () =>
+              void run(async () => {
+                await client.updateModel(model.id, { enabled: !model.enabled });
+              }),
+          },
+          { type: 'divider' as const },
+          { key: 'delete', label: translate(language, 'delete'), danger: true, onClick: onDelete },
+        ],
+      }}
+    >
+      <Button
+        type="text"
+        size="small"
+        icon={<MoreOutlined />}
+        aria-label={translate(language, 'actions')}
+        disabled={pending}
+        onClick={(event) => event.stopPropagation()}
+      />
+    </Dropdown>
   );
 }
 
-function ModelCatalogSkeleton() {
+function ModelCreateModal({
+  client,
+  identity,
+  open,
+  onClose,
+  onCreated,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onCreated: () => Promise<void>;
+}) {
+  const [form] = Form.useForm<{
+    id: string;
+    displayName: string;
+    endpoint: string;
+    upstreamModel: string;
+    credentialId?: string | null;
+  }>();
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    if (open) form.resetFields();
+  }, [open, form]);
+  const submit = async (values: {
+    readonly id: string;
+    readonly displayName: string;
+    readonly endpoint: string;
+    readonly upstreamModel: string;
+    readonly credentialId?: string | null;
+  }) => {
+    setPending(true);
+    try {
+      await client.createModel({
+        id: values.id.trim(),
+        displayName: values.displayName.trim(),
+        sourceType: ModelSourceType.Gateway,
+        protocol: ModelProtocol.OpenAiCompatible,
+        endpoint: values.endpoint.trim(),
+        upstreamModel: values.upstreamModel.trim(),
+        capabilities: [],
+        isDefault: false,
+        enabled: true,
+        // Reuse a server-only credential by reference; the secret itself
+        // is never read or entered on this page.
+        credentialId: values.credentialId ?? null,
+      });
+      onClose();
+      await onCreated();
+      notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
+    } catch (error) {
+      notify(AdminNotificationKind.Error, modelSaveMessage(error));
+    } finally {
+      setPending(false);
+    }
+  };
   return (
-    <div className="flex flex-col gap-4">
-      {Array.from({ length: 2 }, (_, index) => (
-        <Card key={index}>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <Skeleton className="size-4" />
-                <div className="min-w-0 flex flex-col gap-2">
-                  <Skeleton className="h-3.5 w-40" />
-                  <Skeleton className="h-3 w-64" />
-                </div>
-              </div>
-              <Skeleton className="h-6 w-14" />
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Skeleton className="h-9 w-full max-w-xs" />
-              <Skeleton className="h-9 w-full max-w-32" />
-            </div>
-            <Skeleton className="h-7 w-24" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <Modal
+      open={open}
+      title={translate(language, 'addModel')}
+      okText={translate(language, 'save')}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={onClose}
+      onOk={() => void form.submit()}
+      destroyOnHidden
+    >
+      <Typography.Paragraph type="secondary">
+        {translate(language, 'addModelDescription')}
+      </Typography.Paragraph>
+      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+        <Form.Item
+          name="id"
+          label={translate(language, 'modelId')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="displayName"
+          label={translate(language, 'modelName')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="endpoint"
+          label={translate(language, 'modelEndpoint')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="upstreamModel"
+          label={translate(language, 'upstreamModel')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="credentialId" label={t('labelCredential')} initialValue={null}>
+          <ModelConnectionSelect client={client} identity={identity} disabled={pending} />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
-function ModelEditorDialog({
+function ModelEditorModal({
+  client,
+  identity,
+  model,
+  onClose,
+  onChanged,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly model: AdminModel | null;
+  readonly onClose: () => void;
+  readonly onChanged: () => Promise<void>;
+}) {
+  // Without credentials.read the select renders the current reference as
+  // read-only text and the patch below omits the key entirely, so the
+  // server keeps the existing value instead of overwriting it with null.
+  const canReadCredentials = hasAdminPermission(identity, AdminPermission.CredentialsRead);
+  const [form] = Form.useForm<{
+    displayName: string;
+    endpoint: string;
+    upstreamModel: string;
+    enabled: boolean;
+    isDefault: boolean;
+    credentialId?: string | null;
+  }>();
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    if (model) {
+      form.resetFields();
+      form.setFieldsValue({
+        displayName: model.displayName,
+        endpoint: model.endpoint ?? '',
+        upstreamModel: model.upstreamModel ?? '',
+        enabled: model.enabled,
+        isDefault: model.isDefault,
+        credentialId: model.credentialId ?? null,
+      });
+    }
+  }, [model, form]);
+  const submit = async (values: {
+    readonly displayName: string;
+    readonly endpoint: string;
+    readonly upstreamModel: string;
+    readonly enabled: boolean;
+    readonly isDefault: boolean;
+    readonly credentialId?: string | null;
+  }) => {
+    if (!model) return;
+    setPending(true);
+    try {
+      await client.updateModel(model.id, {
+        displayName: values.displayName.trim(),
+        endpoint: values.endpoint.trim(),
+        upstreamModel: values.upstreamModel.trim(),
+        enabled: values.enabled,
+        isDefault: values.isDefault,
+        ...(canReadCredentials ? { credentialId: values.credentialId ?? null } : {}),
+      });
+      onClose();
+      await onChanged();
+      notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
+    } catch (error) {
+      notify(AdminNotificationKind.Error, modelSaveMessage(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={model !== null}
+      title={translate(language, 'editModel')}
+      okText={translate(language, 'save')}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={onClose}
+      onOk={() => void form.submit()}
+      destroyOnHidden
+    >
+      <Typography.Paragraph type="secondary">
+        {translate(language, 'addModelDescription')}
+      </Typography.Paragraph>
+      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+        <Form.Item
+          name="displayName"
+          label={translate(language, 'modelName')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="endpoint"
+          label={translate(language, 'modelEndpoint')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input placeholder={translate(language, 'modelEndpointPlaceholder')} disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="upstreamModel"
+          label={translate(language, 'upstreamModel')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
+          <Switch
+            checkedChildren={t('stateEnabled')}
+            unCheckedChildren={t('stateDisabled')}
+            disabled={pending}
+          />
+        </Form.Item>
+        <Form.Item
+          name="isDefault"
+          label={translate(language, 'defaultModel')}
+          valuePropName="checked"
+        >
+          <Switch disabled={pending} />
+        </Form.Item>
+        <Form.Item name="credentialId" label={t('labelCredential')}>
+          <ModelConnectionSelect client={client} identity={identity} disabled={pending} />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+function ModelDeleteModal({
   client,
   model,
-  open,
-  onOpenChange,
+  assignmentCount,
+  onClose,
   onChanged,
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly model: AdminModel;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
+  readonly model: AdminModel | null;
+  readonly assignmentCount: number;
+  readonly onClose: () => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const [displayName, setDisplayName] = useState(model.displayName);
-  const [endpoint, setEndpoint] = useState(model.endpoint ?? "");
-  const [upstreamModel, setUpstreamModel] = useState(model.upstreamModel ?? "");
-  const [enabled, setEnabled] = useState(model.enabled);
-  const [isDefault, setIsDefault] = useState(model.isDefault);
   const [pending, setPending] = useState(false);
-  const [errorField, setErrorField] = useState<
-    "name" | "endpoint" | "upstream" | null
-  >(null);
-  useEffect(() => {
-    setDisplayName(model.displayName);
-    setEndpoint(model.endpoint ?? "");
-    setUpstreamModel(model.upstreamModel ?? "");
-    setEnabled(model.enabled);
-    setIsDefault(model.isDefault);
-  }, [model]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const missing = !displayName.trim()
-      ? "name"
-      : !endpoint.trim()
-        ? "endpoint"
-        : !upstreamModel.trim()
-          ? "upstream"
-          : null;
-    if (missing) {
-      setErrorField(missing);
-      return;
-    }
-    setErrorField(null);
+  const remove = async () => {
+    if (!model) return;
     setPending(true);
     try {
-      await client.updateModel(model.id, {
-        displayName: displayName.trim(),
-        endpoint: endpoint.trim(),
-        upstreamModel: upstreamModel.trim(),
-        enabled,
-        isDefault,
-      });
-      onOpenChange(false);
+      await client.deleteModel(model.id);
+      onClose();
       await onChanged();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "changesSaved"),
-      );
-    } catch (error) {
-      notify(AdminNotificationKind.Error, modelSaveMessage(error));
+    } catch {
       onError();
     } finally {
       setPending(false);
     }
   };
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
-      }}
+    <Modal
+      open={model !== null}
+      title={translate(language, 'deleteModelTitle')}
+      okText={translate(language, 'delete')}
+      okButtonProps={{ danger: true }}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={onClose}
+      onOk={() => void remove()}
+      destroyOnHidden
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "editModel")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "addModelDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <FieldGroup className="gap-4">
-            <Field data-invalid={errorField === "name"}>
-              <FieldLabel htmlFor="edit-model-name">
-                {translate(language, "modelName")}
-              </FieldLabel>
-              <Input
-                id="edit-model-name"
-                value={displayName}
-                onChange={(event) => {
-                  setDisplayName(event.target.value);
-                  if (errorField === "name") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "name"}
-                aria-describedby={
-                  errorField === "name" ? "edit-model-name-error" : undefined
-                }
-              />
-              {errorField === "name" ? (
-                <FieldError id="edit-model-name-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field data-invalid={errorField === "endpoint"}>
-              <FieldLabel htmlFor="edit-model-endpoint">
-                {translate(language, "modelEndpoint")}
-              </FieldLabel>
-              <Input
-                id="edit-model-endpoint"
-                type="url"
-                value={endpoint}
-                onChange={(event) => {
-                  setEndpoint(event.target.value);
-                  if (errorField === "endpoint") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "endpoint"}
-                aria-describedby={
-                  errorField === "endpoint"
-                    ? "edit-model-endpoint-error"
-                    : undefined
-                }
-              />
-              {errorField === "endpoint" ? (
-                <FieldError id="edit-model-endpoint-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field data-invalid={errorField === "upstream"}>
-              <FieldLabel htmlFor="edit-model-upstream">
-                {translate(language, "upstreamModel")}
-              </FieldLabel>
-              <Input
-                id="edit-model-upstream"
-                value={upstreamModel}
-                onChange={(event) => {
-                  setUpstreamModel(event.target.value);
-                  if (errorField === "upstream") setErrorField(null);
-                }}
-                disabled={pending}
-                aria-invalid={errorField === "upstream"}
-                aria-describedby={
-                  errorField === "upstream"
-                    ? "edit-model-upstream-error"
-                    : undefined
-                }
-              />
-              {errorField === "upstream" ? (
-                <FieldError id="edit-model-upstream-error">
-                  {translate(language, "fieldRequired")}
-                </FieldError>
-              ) : null}
-            </Field>
-            <BooleanSwitch
-              id="edit-model-enabled"
-              label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={pending}
-            />
-            <BooleanSwitch
-              id="edit-model-default"
-              label={`${translate(language, "defaultModel")}: ${translate(language, isDefault ? "enabled" : "disabled")}`}
-              checked={isDefault}
-              onCheckedChange={setIsDefault}
-              disabled={pending}
-            />
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Check data-icon="inline-start" />
-              )}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Alert
+        type="warning"
+        showIcon
+        title={translate(language, 'deleteModelDescription')}
+        description={`${t('deleteImpactAssignments')}：${assignmentCount}`}
+        style={{ marginBottom: 12 }}
+      />
+      <Typography.Text type="secondary">{t('disableImpact')}</Typography.Text>
+    </Modal>
   );
 }
 
-function LegacyModelGrantDialog({
+function subjectTypeLabel(type: string): string {
+  if (type === AdminModelSubjectType.User) return t('subjectTypeUser');
+  if (type === AdminModelSubjectType.Role) return t('subjectTypeRole');
+  if (type === AdminModelSubjectType.Team) return t('subjectTypeTeam');
+  return type;
+}
+
+function ModelDetailDrawer({
   client,
   model,
-  existingAssignments,
   users,
-  roles,
-  teams,
-  onOpenChange,
+  assignments,
+  canWrite,
+  canAssign,
+  dataPlane,
+  dataPlaneError,
+  dataPlaneLoading,
+  dataPlaneAllowed,
+  onDataPlaneRefresh,
+  onClose,
   onChanged,
   onError,
+  onEdit,
+  onGrant,
+  onDelete,
 }: {
   readonly client: AdminConsoleClient;
-  readonly model: AdminModel;
-  readonly existingAssignments: readonly ModelAssignment[];
+  readonly model: AdminModel | null;
   readonly users: readonly PlatformUser[];
-  readonly roles: readonly Role[];
-  readonly teams: readonly Team[];
-  readonly onOpenChange: (model: AdminModel | null) => void;
+  readonly assignments: readonly ModelAssignment[];
+  readonly canWrite: boolean;
+  readonly canAssign: boolean;
+  readonly dataPlane: AdminDataPlane | null;
+  readonly dataPlaneError: string | null;
+  readonly dataPlaneLoading: boolean;
+  readonly dataPlaneAllowed: boolean;
+  readonly onDataPlaneRefresh: () => Promise<void>;
+  readonly onClose: () => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
+  readonly onEdit: (model: AdminModel) => void;
+  readonly onGrant: (model: AdminModel) => void;
+  readonly onDelete: (model: AdminModel) => void;
 }) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
-  useEffect(() => {
-    if (model) {
-      setSelected(new Set());
-      setFailed(false);
-      setFailedSubjects([]);
-    }
-  }, [model]);
-  const toggleSubject = useCallback((subjectKey: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(subjectKey)) next.delete(subjectKey);
-      else next.add(subjectKey);
-      return next;
-    });
-  }, []);
-  const submit = async () => {
-    if (selected.size === 0) return;
-    setPending(true);
-    setFailed(false);
-    setFailedSubjects([]);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const userNames = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const revoke = async (assignmentId: string) => {
+    setRevokingId(assignmentId);
     try {
-      const results = await runBatch([...selected], (subjectKey) => {
-        const separator = subjectKey.indexOf(":");
-        const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
-        const id = subjectKey.slice(separator + 1);
-        return client.createModelAssignment({
-          modelId: model.id,
-          subject: { type, id },
-        });
-      });
-      const failures = results
-        .filter((result) => !result.ok)
-        .map((result) => result.item);
-      if (failures.length > 0) {
-        setFailed(true);
-        setFailedSubjects(failures);
-        setSelected(new Set(failures));
-        await onChanged();
-        return;
-      }
-      onOpenChange(null);
+      await client.deleteModelAssignment(assignmentId);
       await onChanged();
     } catch {
-      setFailed(true);
+      onError();
     } finally {
-      setPending(false);
+      setRevokingId(null);
     }
   };
+  if (!model) return <Drawer open={false} onClose={onClose} />;
+
+  const accessColumns = [
+    {
+      title: t('accessColSubject'),
+      key: 'subject',
+      render: (_: unknown, assignment: ModelAssignment) => {
+        const user = userNames.get(assignment.subject.id);
+        return user ? `${user.displayName}（${user.username}）` : assignment.subject.id;
+      },
+    },
+    {
+      title: t('accessColType'),
+      key: 'type',
+      width: 90,
+      render: (_: unknown, assignment: ModelAssignment) => (
+        <Tag>{subjectTypeLabel(assignment.subject.type)}</Tag>
+      ),
+    },
+    {
+      title: t('accessColTime'),
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (value: string) => formatDateTime(value),
+    },
+    ...(canAssign
+      ? [
+          {
+            title: translate(language, 'actions'),
+            key: 'actions',
+            align: 'right' as const,
+            render: (_: unknown, assignment: ModelAssignment) => (
+              <Popconfirm
+                title={translate(language, 'revokeConfirmTitle')}
+                description={translate(language, 'revokeConfirmDescription')}
+                okText={translate(language, 'confirmRevoke')}
+                cancelText={translate(language, 'cancel')}
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void revoke(assignment.id)}
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  disabled={revokingId === assignment.id}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {translate(language, 'revoke')}
+                </Button>
+              </Popconfirm>
+            ),
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <Dialog
-      open
-      onOpenChange={(nextOpen) => {
-        if (!pending && !nextOpen) onOpenChange(null);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "grantModelTitle")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "grantModelDescription")}{" "}
-            <span className="font-normal text-foreground">
-              {model.displayName}
-            </span>
-          </DialogDescription>
-        </DialogHeader>
-        {failed ? (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>
-              <p>{translate(language, "grantFailed")}</p>
-              {failedSubjects.length > 0 ? (
-                <p className="mt-1 text-xs">
-                  {translate(language, "grantFailedSubjects")}:{" "}
-                  {failedSubjects.join(", ")}
-                </p>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <Field>
-          <SubjectMultiPicker
-            users={users}
-            roles={roles}
-            teams={teams}
-            excluded={
-              new Set(
-                existingAssignments.map(
-                  (item) => `${item.subject.type}:${item.subject.id}`,
-                ),
-              )
-            }
-            selected={selected}
-            onToggle={toggleSubject}
-            disabled={pending}
-          />
-        </Field>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={pending}
-            onClick={() => onOpenChange(null)}
-          >
-            {translate(language, "cancel")}
-          </Button>
-          <Button
-            type="button"
-            disabled={pending || selected.size === 0}
-            onClick={() => void submit()}
-          >
-            {pending ? <Spinner data-icon="inline-start" /> : null}
-            {translate(language, pending ? "granting" : "grant")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Drawer open size={720} onClose={onClose} title={
+      <Space size={8}>
+        <span>{model.displayName}</span>
+        {model.enabled ? (
+          <Tag color="success">{t('stateEnabled')}</Tag>
+        ) : (
+          <Tag>{t('stateDisabled')}</Tag>
+        )}
+        {model.isDefault ? <Tag color="blue">{translate(language, 'defaultModel')}</Tag> : null}
+      </Space>
+    }>
+      <Tabs
+        defaultActiveKey="basic"
+        items={[
+          {
+            key: 'basic',
+            label: t('detailTabBasic'),
+            children: (
+              <div className="flex flex-col gap-4">
+                <Space wrap>
+                  {canWrite ? (
+                    <>
+                      <Button type="primary" onClick={() => onEdit(model)}>
+                        {translate(language, 'editModel')}
+                      </Button>
+                      <Button danger onClick={() => onDelete(model)}>
+                        {translate(language, 'delete')}
+                      </Button>
+                    </>
+                  ) : null}
+                  {canAssign ? (
+                    <Button icon={<UserOutlined />} onClick={() => onGrant(model)}>
+                      {translate(language, 'grantModel')}
+                    </Button>
+                  ) : null}
+                </Space>
+                <Descriptions
+                  bordered
+                  size="small"
+                  column={1}
+                  items={[
+                    { key: 'id', label: t('labelModelId'), children: model.id },
+                    {
+                      key: 'displayName',
+                      label: translate(language, 'modelName'),
+                      children: model.displayName,
+                    },
+                    {
+                      key: 'upstream',
+                      label: t('labelUpstream'),
+                      children: model.upstreamModel || model.localModelRef || t('notProvided'),
+                    },
+                    {
+                      key: 'endpoint',
+                      label: translate(language, 'modelEndpoint'),
+                      children: (
+                        <Typography.Text copyable style={{ fontFamily: 'monospace' }}>
+                          {model.endpoint || t('notProvided')}
+                        </Typography.Text>
+                      ),
+                    },
+                    { key: 'protocol', label: t('labelProtocol'), children: model.protocol },
+                    { key: 'source', label: t('labelSource'), children: model.sourceType },
+                    {
+                      key: 'credential',
+                      label: t('labelCredential'),
+                      children: model.credentialId ?? t('labelCredentialMissing'),
+                    },
+                    {
+                      key: 'capabilities',
+                      label: t('labelCapabilities'),
+                      children:
+                        model.capabilities && model.capabilities.length > 0
+                          ? model.capabilities.join('、')
+                          : t('notProvided'),
+                    },
+                  ]}
+                />
+                <Alert type="info" showIcon title={t('credentialNote')} />
+              </div>
+            ),
+          },
+          {
+            key: 'access',
+            label: t('detailTabAccess'),
+            children: (
+              <div className="flex flex-col gap-4">
+                <Space wrap>
+                  {canAssign ? (
+                    <Button type="primary" onClick={() => onGrant(model)}>
+                      {t('accessAction')}
+                    </Button>
+                  ) : null}
+                </Space>
+                <Alert type="info" showIcon title={t('accessHint')} />
+                <Table
+                  rowKey="id"
+                  size="small"
+                  dataSource={assignments}
+                  columns={accessColumns}
+                  pagination={{ hideOnSinglePage: true }}
+                  locale={{
+                    emptyText: (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('accessEmpty')} />
+                    ),
+                  }}
+                />
+              </div>
+            ),
+          },
+          {
+            key: 'employees',
+            label: t('detailTabEmployees'),
+            children: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t('associatedGapTitle')}
+              >
+                <Typography.Paragraph type="secondary" style={{ maxWidth: 480, margin: '0 auto' }}>
+                  {t('associatedGapDescription')}
+                </Typography.Paragraph>
+              </Empty>
+            ),
+          },
+          {
+            key: 'status',
+            label: t('detailTabStatus'),
+            children: (
+              <ConfigStatusPanel
+                model={model}
+                dataPlane={dataPlane}
+                error={dataPlaneError}
+                loading={dataPlaneLoading}
+                allowed={dataPlaneAllowed}
+                onRefresh={onDataPlaneRefresh}
+              />
+            ),
+          },
+        ]}
+      />
+    </Drawer>
   );
 }
 
-type ModelGrantFilter = "all" | AdminModelSubjectType;
+function ConfigStatusPanel({
+  model,
+  dataPlane,
+  error,
+  loading,
+  allowed,
+  onRefresh,
+}: {
+  readonly model: AdminModel;
+  readonly dataPlane: AdminDataPlane | null;
+  readonly error: string | null;
+  readonly loading: boolean;
+  readonly allowed: boolean;
+  readonly onRefresh: () => Promise<void>;
+}) {
+  if (!allowed) {
+    return (
+      <Alert
+        type="info"
+        showIcon
+        title={t('configNoPermissionTitle')}
+        description={t('configNoPermissionHint')}
+      />
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Alert
+          type="error"
+          showIcon
+          title={`${t('configLoadFailed')}：${error}`}
+          description={t('configLoadFailedHint')}
+        />
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void onRefresh()}>
+          {t('configRefresh')}
+        </Button>
+      </div>
+    );
+  }
+  if (!dataPlane) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Alert type="info" showIcon title={t('configUnknown')} description={t('configNotConfirmed')} />
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void onRefresh()}>
+          {t('configRefresh')}
+        </Button>
+      </div>
+    );
+  }
+  const state = gatewayStateLabel(dataPlane);
+  const included = routeIncluded(dataPlane, model.id);
+  const observed = dataPlane.status.observedRevision;
+  return (
+    <div className="flex flex-col gap-4">
+      <Alert
+        type="info"
+        showIcon
+        title={t('statusAlertTitle')}
+        description={t('statusAlertDescription')}
+      />
+      <Descriptions
+        bordered
+        size="small"
+        column={1}
+        items={[
+          {
+            key: 'manage',
+            label: t('colManageState'),
+            children: model.enabled ? t('stateEnabled') : t('stateDisabled'),
+          },
+          {
+            key: 'state',
+            label: t('configGatewayState'),
+            children: <Tag color={state.color}>{state.label}</Tag>,
+          },
+          {
+            key: 'target',
+            label: t('configTargetRevision'),
+            children: dataPlane.desired.revision,
+          },
+          {
+            key: 'applied',
+            label: t('configAppliedRevision'),
+            children: observed ?? t('configUnknown'),
+          },
+          {
+            key: 'sync',
+            label: t('configLastSync'),
+            children: formatDateTime(dataPlane.status.lastAppliedAt),
+          },
+          {
+            key: 'route',
+            label: t('colConfigState'),
+            children: included ? (
+              t('configRouteIncluded')
+            ) : (
+              <Tooltip title={t('configRouteMissingHint')}>
+                <span>{t('configRouteMissing')}</span>
+              </Tooltip>
+            ),
+          },
+          {
+            key: 'executor',
+            label: t('labelExecutionService'),
+            children: t('executionServiceGateway'),
+          },
+        ]}
+      />
+      {observed === null || observed === undefined ? (
+        <Typography.Text type="secondary">{t('configNotConfirmed')}</Typography.Text>
+      ) : null}
+      <Timeline
+        items={[
+          {
+            children: `${t('statusTimelineSaved')} · ${formatDateTime(dataPlane.desired.publishedAt)}`,
+          },
+          state.confirmed
+            ? {
+                color: 'green',
+                children: `${t('statusTimelineApplied')} · ${formatDateTime(dataPlane.status.lastAppliedAt)}`,
+              }
+            : {
+                color: 'gray',
+                children: t('statusTimelineNotApplied'),
+              },
+        ]}
+      />
+      <div>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void onRefresh()}>
+          {t('configRefresh')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type ModelGrantFilter = 'all' | AdminModelSubjectType;
 
 function ModelGrantPage({
   client,
@@ -1145,8 +1266,16 @@ function ModelGrantPage({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
-  const [filter, setFilter] = useState<ModelGrantFilter>("all");
-  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ModelGrantFilter>('all');
+  const [query, setQuery] = useState('');
+  const excluded = useMemo(
+    () =>
+      new Set(
+        existingAssignments.map((item) => `${item.subject.type}:${item.subject.id}`),
+      ),
+    [existingAssignments],
+  );
+
   const toggleSubject = useCallback((subjectKey: string) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -1155,13 +1284,14 @@ function ModelGrantPage({
       return next;
     });
   }, []);
+
   const submit = async () => {
     if (selected.size === 0) return;
     setPending(true);
     setFailedSubjects([]);
     try {
       const results = await runBatch([...selected], (subjectKey) => {
-        const separator = subjectKey.indexOf(":");
+        const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminModelSubjectType;
         const id = subjectKey.slice(separator + 1);
         return client.createModelAssignment({ modelId: model.id, subject: { type, id } });
@@ -1181,62 +1311,165 @@ function ModelGrantPage({
       setPending(false);
     }
   };
+
   return (
-    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="flex w-full flex-col gap-6">
-        <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" aria-label={translate(language, "grantModelBack")} title={translate(language, "grantModelBack")} disabled={pending} onClick={onBack}>
-            <ArrowLeft />
-          </Button>
-          <div className="min-w-0">
-            <p className="text-xs text-tertiary-foreground">{translate(language, "models")}</p>
-            <h2 className="mt-1 text-xl font-semibold leading-snug">{translate(language, "grantModelTitle")}</h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, "grantModelDescription")} <span className="font-medium text-foreground">{model.displayName}</span></p>
-          </div>
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <Button icon={<ArrowLeftOutlined />} onClick={onBack}>
+          {translate(language, 'grantModelBack')}
+        </Button>
+        <div>
+          <Typography.Title level={4} style={{ marginBottom: 4 }}>
+            {translate(language, 'grantModelTitle')}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {translate(language, 'grantModelDescription')}{' '}
+            <Typography.Text strong>{model.displayName}</Typography.Text>
+          </Typography.Text>
         </div>
-        {failedSubjects.length > 0 ? (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>
-              <p>{translate(language, "grantFailed")}</p>
-              <p className="mt-1 text-xs">{translate(language, "grantFailedSubjects")}: {failedSubjects.join(", ")}</p>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <Card>
-          <CardHeader>
-            <CardTitle>{translate(language, "grantModelSelectTitle")}</CardTitle>
-            <p className="text-sm text-muted-foreground">{translate(language, "grantModelSelectDescription")}</p>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium">{translate(language, "grantModelFilter")}</span>
-              <Tabs value={filter} onValueChange={(value) => setFilter(value as ModelGrantFilter)}>
-                <TabsList variant="line" className="w-full justify-start overflow-x-auto">
-                  <TabsTrigger value="all">{translate(language, "grantModelAll")}</TabsTrigger>
-                  <TabsTrigger value={AdminModelSubjectType.User}>{translate(language, "grantModelUsers")}</TabsTrigger>
-                  <TabsTrigger value={AdminModelSubjectType.Role}>{translate(language, "grantModelRoles")}</TabsTrigger>
-                  <TabsTrigger value={AdminModelSubjectType.Team}>{translate(language, "grantModelTeams")}</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate(language, "grantModelSearchPlaceholder")} aria-label={translate(language, "grantModelSearch")} className="pl-9" disabled={pending} />
-            </div>
-            <Field>
-              <SubjectMultiPicker users={users} roles={roles} teams={teams} subjectType={filter} searchQuery={query} excluded={new Set(existingAssignments.map((item) => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggleSubject} disabled={pending} />
-            </Field>
-          </CardContent>
-          <CardFooter className="justify-between gap-3 border-t border-border pt-4">
-            <p className="text-sm text-muted-foreground">{translate(language, "selectedSubjectsLabel")} {selected.size}</p>
-            <Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "granting" : "grant")}
-            </Button>
-          </CardFooter>
-        </Card>
       </div>
-    </section>
+
+      {failedSubjects.length > 0 ? (
+        <Alert
+          type="error"
+          showIcon
+          title={translate(language, 'grantFailed')}
+          description={`${translate(language, 'grantFailedSubjects')}：${failedSubjects.join(', ')}`}
+        />
+      ) : null}
+
+      <div className="flex flex-col gap-4">
+        <Segmented
+          value={filter}
+          onChange={(value) => setFilter(value as ModelGrantFilter)}
+          options={[
+            { label: translate(language, 'grantModelAll'), value: 'all' },
+            { label: translate(language, 'grantModelUsers'), value: AdminModelSubjectType.User },
+            { label: translate(language, 'grantModelRoles'), value: AdminModelSubjectType.Role },
+            { label: translate(language, 'grantModelTeams'), value: AdminModelSubjectType.Team },
+          ]}
+        />
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          aria-label={translate(language, 'grantModelSearch')}
+          placeholder={translate(language, 'grantModelSearchPlaceholder')}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          disabled={pending}
+          style={{ maxWidth: 360 }}
+        />
+        <SubjectPicker
+          users={users}
+          roles={roles}
+          teams={teams}
+          filter={filter}
+          query={query}
+          excluded={excluded}
+          selected={selected}
+          onToggle={toggleSubject}
+          disabled={pending}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <Typography.Text type="secondary">
+            {translate(language, 'selectedSubjectsLabel')}：{selected.size}
+          </Typography.Text>
+          <Button
+            type="primary"
+            disabled={pending || selected.size === 0}
+            loading={pending}
+            onClick={() => void submit()}
+          >
+            {translate(language, pending ? 'granting' : 'grant')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface SubjectOption {
+  readonly key: string;
+  readonly type: AdminModelSubjectType;
+  readonly label: string;
+}
+
+function SubjectPicker({
+  users,
+  roles,
+  teams,
+  filter,
+  query,
+  excluded,
+  selected,
+  onToggle,
+  disabled,
+}: {
+  readonly users: readonly PlatformUser[];
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
+  readonly filter: ModelGrantFilter;
+  readonly query: string;
+  readonly excluded: ReadonlySet<string>;
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (subjectKey: string) => void;
+  readonly disabled: boolean;
+}) {
+  const options = useMemo<readonly SubjectOption[]>(() => {
+    const items: SubjectOption[] = [];
+    if (filter === 'all' || filter === AdminModelSubjectType.User) {
+      for (const user of users) {
+        items.push({
+          key: `${AdminModelSubjectType.User}:${user.id}`,
+          type: AdminModelSubjectType.User,
+          label: `${user.displayName}（${user.username}）`,
+        });
+      }
+    }
+    if (filter === 'all' || filter === AdminModelSubjectType.Role) {
+      for (const role of roles) {
+        items.push({
+          key: `${AdminModelSubjectType.Role}:${role.id}`,
+          type: AdminModelSubjectType.Role,
+          label: role.name,
+        });
+      }
+    }
+    if (filter === 'all' || filter === AdminModelSubjectType.Team) {
+      for (const team of teams) {
+        items.push({
+          key: `${AdminModelSubjectType.Team}:${team.id}`,
+          type: AdminModelSubjectType.Team,
+          label: team.name,
+        });
+      }
+    }
+    const needle = query.trim().toLowerCase();
+    return items.filter(
+      (item) => !excluded.has(item.key) && (!needle || item.label.toLowerCase().includes(needle) || item.key.toLowerCase().includes(needle)),
+    );
+  }, [users, roles, teams, filter, query, excluded]);
+
+  if (options.length === 0) {
+    return (
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noMatchingSubjects')} />
+    );
+  }
+  return (
+    <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+      {options.map((option) => (
+        <Checkbox
+          key={option.key}
+          checked={selected.has(option.key)}
+          disabled={disabled}
+          onChange={() => onToggle(option.key)}
+        >
+          <Space size={6}>
+            <Tag style={{ marginRight: 0 }}>{subjectTypeLabel(option.type)}</Tag>
+            <span>{option.label}</span>
+          </Space>
+        </Checkbox>
+      ))}
+    </div>
   );
 }

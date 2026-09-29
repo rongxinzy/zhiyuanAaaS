@@ -1,131 +1,335 @@
-import { AlertCircle, Check, FileKey2, KeyRound, Pencil, Plus, RefreshCw, RotateCcw, ServerCog, ShieldAlert, Trash2, Upload, UsersRound } from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { CredentialAssignment, CredentialMetadata, DataPlaneDesiredState, DataPlaneRoute, DataPlaneStatus, License, LicenseImportRequest, PlatformUser, Role, Team } from '@aep/sdk-node';
-
-import { AdminConsoleClient, AdminPermission, AdminSubjectType, hasAdminPermission, type AdminCredentials, type AdminDataPlane, type AdminIdentity, type AdminUserSession } from './client.js';
-import { formatTimestamp } from './format.js';
-import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
-import { SubjectMultiPicker } from './Resources.js';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '../ui/components/ui/alert-dialog.js';
-import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
-import { Badge } from '../ui/components/ui/badge.js';
-import { Button } from '../ui/components/ui/button.js';
-import { BooleanSwitch } from './BooleanSwitch.js';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/components/ui/card.js';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../ui/components/ui/dialog.js';
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/components/ui/empty.js';
-import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
-import { Input } from '../ui/components/ui/input.js';
-import { Skeleton } from '../ui/components/ui/skeleton.js';
-import { Spinner } from '../ui/components/ui/spinner.js';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/components/ui/table.js';
-import { Tabs, TabsIndicator, TabsList, TabsTrigger } from '../ui/components/ui/tabs.js';
-import { ToggleGroup, ToggleGroupItem } from '../ui/components/ui/toggle-group.js';
+  DeleteOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  StopOutlined,
+  TeamOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Radio,
+  Result,
+  Select,
+  Skeleton,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
+import type {
+  AdminModel,
+  CredentialAssignment,
+  CredentialMetadata,
+  DataPlaneRoute,
+  DataPlaneStatus,
+  License,
+  LicenseImportRequest,
+  PlatformUser,
+  Role,
+  Team,
+} from '@aep/sdk-node';
+
+import {
+  AdminConsoleClient,
+  AdminPermission,
+  AdminSubjectType,
+  hasAdminPermission,
+  type AdminCredentials,
+  type AdminDataPlane,
+  type AdminIdentity,
+  type AdminUserSession,
+} from './client.js';
 import { runBatch } from './batch.js';
+import { formatTimestamp } from './format.js';
+import { operationsCopy as copy } from './operations-copy.js';
+import { translate, type AdminLanguage } from './i18n.js';
+import { AdminNotificationKind, notify } from './notifications.js';
 
 const language: AdminLanguage = 'zh';
-const OperationsTab = { Licenses: 'licenses', Sessions: 'sessions', Credentials: 'credentials', DataPlane: 'data-plane' } as const;
-type OperationsTab = (typeof OperationsTab)[keyof typeof OperationsTab];
+
+const NO_USERS: readonly PlatformUser[] = [];
+const NO_ROLES: readonly Role[] = [];
+const NO_TEAMS: readonly Team[] = [];
+
 type CredentialGrantTarget = { readonly credential: CredentialMetadata; readonly assignments: readonly CredentialAssignment[] };
 
-export function Operations({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
-  const [tab, setTab] = useState<OperationsTab>(OperationsTab.Licenses);
-  const operationTabs = ([OperationsTab.Licenses, OperationsTab.Sessions, OperationsTab.Credentials, OperationsTab.DataPlane] as const).filter(candidate => candidate === OperationsTab.Licenses ? hasAdminPermission(identity, AdminPermission.LicensesRead) : candidate === OperationsTab.Sessions ? hasAdminPermission(identity, AdminPermission.UsersRead) : candidate === OperationsTab.Credentials ? hasAdminPermission(identity, AdminPermission.CredentialsRead) : hasAdminPermission(identity, AdminPermission.DataPlaneWrite));
-  const activeTab = operationTabs.includes(tab) ? tab : operationTabs[0] ?? OperationsTab.Licenses;
-  return (
-    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="flex w-full flex-col gap-5">
-        <div>
-          <p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p>
-          <h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'operations')}</h2>
-          <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'operationsDescription')}</p>
-        </div>
-        <div className="border-b border-border">
-          <Tabs value={activeTab} onValueChange={value => setTab(value as OperationsTab)}>
-            <TabsList variant="line" className="w-max">
-              {operationTabs.map(candidate => <TabsTrigger key={candidate} value={candidate} className="px-3">{translate(language, candidate === OperationsTab.Licenses ? 'licenses' : candidate === OperationsTab.Sessions ? 'sessions' : candidate === OperationsTab.Credentials ? 'credentials' : 'dataPlane')}</TabsTrigger>)}
-              <TabsIndicator />
-            </TabsList>
-          </Tabs>
-        </div>
-        {activeTab === OperationsTab.Licenses ? <LicensePanel client={client} identity={identity} /> : activeTab === OperationsTab.Sessions ? <SessionPanel client={client} identity={identity} /> : activeTab === OperationsTab.Credentials ? <CredentialPanel client={client} identity={identity} /> : <DataPlanePanel client={client} />}
-      </div>
-    </section>
-  );
+/**
+ * Product licensing section. `section` selects which system-management page to
+ * render when this module is embedded; the default is product licensing.
+ */
+export function Operations({ client, identity, section = 'licenses' as 'licenses' | 'credentials' | 'status' }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly section?: 'licenses' | 'credentials' | 'status';
+}) {
+  if (section === 'credentials') return <CredentialPanel client={client} identity={identity} />;
+  if (section === 'status') return <ConfigurationStatusPanel client={client} identity={identity} />;
+  return <LicensePanel client={client} identity={identity} />;
 }
 
-function LicensePanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
-  const canImport = hasAdminPermission(identity, AdminPermission.LicensesWrite);
-  const canRevoke = hasAdminPermission(identity, AdminPermission.LicensesRevoke);
-  const [licenses, setLicenses] = useState<readonly License[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setLicenses(await client.licenses());
-    } catch {
-      setError('licensesLoadFailed');
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
-  useEffect(() => { void load(); }, [load]);
+/** Login sessions (登录会话). A valid credential does not mean the user is online right now. */
+export function SessionsView({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  return <SessionPanel client={client} identity={identity} />;
+}
+
+/** Connection configuration (接入配置): shared service endpoints and credentials. */
+export function CredentialsView({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  return <CredentialPanel client={client} identity={identity} />;
+}
+
+/** Configuration status (配置生效详情): desired vs applied revisions, read-only. */
+export function ConfigurationStatusView({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  return <ConfigurationStatusPanel client={client} identity={identity} />;
+}
+
+function ModuleHeading({ title, description, children }: {
+  readonly title: string;
+  readonly description: string;
+  readonly children?: ReactNode;
+}) {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-semibold"><FileKey2 className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'licenses')}</div>
-        <div className="flex items-center gap-1.5">
-          {canImport ? <Button size="sm" onClick={() => setImportOpen(true)}><Upload data-icon="inline-start" />{translate(language, 'importLicense')}</Button> : null}
-          <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button>
-        </div>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <Typography.Title level={4} style={{ marginBottom: 4 }}>{title}</Typography.Title>
+        <Typography.Text type="secondary">{description}</Typography.Text>
       </div>
-      {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
-      {loading && !licenses ? <LicenseSkeleton /> : licenses ? <LicenseTable licenses={licenses} canRevoke={canRevoke} client={client} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
-      {canImport ? <LicenseImportDialog client={client} open={importOpen} onOpenChange={setImportOpen} onChanged={load} onError={() => setError('licensesLoadFailed')} /> : null}
+      {children ? <Space wrap>{children}</Space> : null}
     </div>
   );
 }
 
-function LicenseTable({ licenses, canRevoke, client, onChanged, onError }: { readonly licenses: readonly License[]; readonly canRevoke: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  if (licenses.length === 0) return <Empty><EmptyHeader><EmptyMedia><FileKey2 aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noLicenses')}</EmptyTitle><EmptyDescription>{translate(language, 'noLicensesHint')}</EmptyDescription></EmptyHeader></Empty>;
-  const revoke = async (licenseId: string) => {
-    setPendingId(licenseId);
-    try { await client.revokeLicense(licenseId); await onChanged(); } catch { onError(); } finally { setPendingId(null); }
-  };
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'license')}</TableHead><TableHead>{translate(language, 'licenseStatus')}</TableHead><TableHead>{translate(language, 'expiresAt')}</TableHead><TableHead>{translate(language, 'activeUsers')}</TableHead>{canRevoke ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{licenses.map(license => <TableRow key={license.licenseId}><TableCell><div className="min-w-0"><div className="truncate font-normal">{license.licenseId}</div><div className="truncate text-xs text-tertiary-foreground">{license.customerId} · {license.keyId}</div></div></TableCell><TableCell><Badge variant={license.status === 'active' ? 'success' : 'outline'}>{translate(language, license.status === 'active' ? 'enabled' : 'revoked')}</Badge></TableCell><TableCell className="text-xs text-tertiary-foreground">{formatTimestamp(license.expiresAt)}</TableCell><TableCell className="text-xs text-tertiary-foreground">{license.activeUsers}</TableCell>{canRevoke ? <TableCell className="text-right">{license.status === 'active' ? <AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pendingId !== null} />}><ShieldAlert data-icon="inline-start" />{translate(language, 'revokeLicense')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeLicenseTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeLicenseDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void revoke(license.licenseId)}>{translate(language, 'confirmRevokeLicense')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : <span className="text-xs text-tertiary-foreground">{translate(language, 'revoked')}</span>}</TableCell> : null}</TableRow>)}</TableBody></Table></div>;
+/* --------------------------------- licenses -------------------------------- */
+
+function LicensePanel({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  const canImport = hasAdminPermission(identity, AdminPermission.LicensesWrite);
+  const canRevoke = hasAdminPermission(identity, AdminPermission.LicensesRevoke);
+  const [licenses, setLicenses] = useState<readonly License[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [revoking, setRevoking] = useState<License | null>(null);
+  const [detail, setDetail] = useState<License | null>(null);
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    void client.licenses()
+      .then(items => { if (live) setLicenses(items); })
+      .catch(() => { if (live) { setFailed(true); setLicenses(null); } })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client, revision]);
+
+  const columns = useMemo(() => [
+    {
+      title: copy.licenseColumn,
+      key: 'license',
+      render: (_: unknown, license: License) => (
+        <Space orientation="vertical" size={0}>
+          <Typography.Text code>{license.licenseId}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{license.customerId} · {license.keyId}</Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: translate(language, 'licenseStatus'),
+      key: 'status',
+      render: (_: unknown, license: License) => license.status === 'active'
+        ? <Tag color="success">{copy.licenseValid}</Tag>
+        : <Tag color="default">{copy.licenseRevoked}</Tag>,
+    },
+    {
+      title: copy.validUntil,
+      key: 'expiresAt',
+      render: (_: unknown, license: License) => license.expiresAt
+        ? formatTimestamp(license.expiresAt)
+        : <Typography.Text type="secondary">{copy.perpetual}</Typography.Text>,
+    },
+    {
+      title: copy.userScope,
+      key: 'users',
+      render: (_: unknown, license: License) => license.activeUsers,
+    },
+    {
+      title: translate(language, 'actions'),
+      key: 'actions',
+      render: (_: unknown, license: License) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(license)}>{copy.view}</Button>
+          {canRevoke && license.status === 'active' ? (
+            <Button type="link" size="small" danger onClick={() => setRevoking(license)}>
+              {translate(language, 'revokeLicense')}
+            </Button>
+          ) : null}
+        </Space>
+      ),
+    },
+  ], [canRevoke]);
+
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <ModuleHeading title={copy.licensesTitle} description={copy.licensesDescription}>
+        {canImport ? (
+          <Button type="primary" icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+            {copy.importLicenseAction}
+          </Button>
+        ) : null}
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+          {translate(language, 'refresh')}
+        </Button>
+      </ModuleHeading>
+
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={translate(language, 'licensesLoadFailed')}
+          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+        />
+      ) : null}
+
+      {failed && licenses === null ? null : (
+        <Table
+          rowKey="licenseId"
+          columns={columns}
+          dataSource={licenses ? [...licenses] : []}
+          loading={loading && licenses === null}
+          scroll={{ x: 760 }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noLicenses')} /> }}
+          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+        />
+      )}
+
+      <Drawer
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        title={copy.licenseDetail}
+        size="large"
+        destroyOnHidden
+      >
+        {detail ? (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label={copy.licenseColumn}><Typography.Text code>{detail.licenseId}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="customerId">{detail.customerId}</Descriptions.Item>
+            <Descriptions.Item label="deploymentId">{detail.deploymentId}</Descriptions.Item>
+            <Descriptions.Item label="keyId">{detail.keyId}</Descriptions.Item>
+            <Descriptions.Item label={translate(language, 'licenseStatus')}>
+              {detail.status === 'active' ? <Tag color="success">{copy.licenseValid}</Tag> : <Tag>{copy.licenseRevoked}</Tag>}
+            </Descriptions.Item>
+            <Descriptions.Item label={copy.issuedAtLabel}>{formatTimestamp(detail.issuedAt)}</Descriptions.Item>
+            <Descriptions.Item label={copy.validUntil}>{detail.expiresAt ? formatTimestamp(detail.expiresAt) : copy.perpetual}</Descriptions.Item>
+            <Descriptions.Item label={copy.graceUntil}>{formatTimestamp(detail.graceEndsAt)}</Descriptions.Item>
+            <Descriptions.Item label={copy.userScope}>{detail.activeUsers}</Descriptions.Item>
+            <Descriptions.Item label={copy.moduleScope}>
+              <Space wrap>{detail.features.map(feature => <Tag key={feature}>{feature}</Tag>)}</Space>
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Drawer>
+
+      {canImport ? (
+        <LicenseImportModal
+          client={client}
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
+      {canRevoke && revoking ? (
+        <RevokeLicenseModal
+          client={client}
+          license={revoking}
+          onClose={() => setRevoking(null)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
+    </div>
+  );
 }
 
-function LicenseImportDialog({ client, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
+function LicenseImportModal({ client, open, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  useEffect(() => {
+    if (open) { setFile(null); setFailed(false); }
+  }, [open]);
+  const submit = async () => {
     if (!file) { setFailed(true); return; }
-    setPending(true); setFailed(false);
+    setPending(true);
+    setFailed(false);
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
       const envelope = extractLicenseEnvelope(parsed);
       if (!envelope) throw new Error('Invalid license envelope');
       await client.importLicense({ license: envelope });
-      setFile(null); onOpenChange(false); await onChanged();
-    } catch { setFailed(true); onError(); } finally { setPending(false); }
+      notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
   };
-  return <Dialog open={open} onOpenChange={nextOpen => { if (!pending) { onOpenChange(nextOpen); if (!nextOpen) { setFile(null); setFailed(false); } } }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'importLicense')}</DialogTitle><DialogDescription>{translate(language, 'licenseImportDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'licenseImportFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="license-file">{translate(language, 'licenseFile')}</FieldLabel><Input id="license-file" type="file" accept=".json,application/json" disabled={pending} onChange={event => setFile(event.target.files?.[0] ?? null)} /></Field></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'importLicense')}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return (
+    <Modal
+      open={open}
+      title={copy.importLicenseAction}
+      okText={copy.importLicenseAction}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      destroyOnHidden
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        {failed ? <Alert type="error" showIcon title={translate(language, 'licenseImportFailed')} /> : null}
+        <div>
+          <Typography.Text strong>{translate(language, 'licenseFile')}</Typography.Text>
+          <input
+            type="file"
+            accept=".json,application/json"
+            aria-label={translate(language, 'licenseFile')}
+            disabled={pending}
+            style={{ display: 'block', marginTop: 8 }}
+            onChange={event => setFile(event.target.files?.[0] ?? null)}
+          />
+        </div>
+        <Alert type="info" showIcon title={copy.licenseImportNote} />
+      </Space>
+    </Modal>
+  );
 }
 
 function extractLicenseEnvelope(value: unknown): LicenseImportRequest['license'] | null {
@@ -137,114 +341,1011 @@ function extractLicenseEnvelope(value: unknown): LicenseImportRequest['license']
   return candidate as LicenseImportRequest['license'];
 }
 
-function SessionPanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
-  const canRevoke = hasAdminPermission(identity, AdminPermission.SessionsWrite);
-  const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
-  const [userId, setUserId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const load = useCallback(async (filter?: string) => {
-    setLoading(true); setError(false);
-    try { setSessions(await client.sessions(filter || undefined)); } catch { setError(true); } finally { setLoading(false); }
-  }, [client]);
-  useEffect(() => { void load(''); }, [load]);
-  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void load(userId.trim()); };
-  return <div className="flex flex-col gap-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><UsersRound className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'sessions')}</div><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'sessionsDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div><form className="flex items-end gap-2" onSubmit={submit}><Field className="min-w-0 flex-1"><FieldLabel htmlFor="session-user-id">{translate(language, 'filterUserId')}</FieldLabel><Input id="session-user-id" value={userId} onChange={event => setUserId(event.target.value)} placeholder="user-id" disabled={loading} /></Field><Button type="submit" variant="outline" disabled={loading}>{translate(language, 'search')}</Button></form>{error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'sessionsLoadFailed')}</AlertDescription></Alert> : null}{loading && !sessions ? <SessionSkeleton /> : sessions ? <SessionTable sessions={sessions} canRevoke={canRevoke} client={client} onChanged={() => load(userId.trim())} onError={() => setError(true)} /> : null}</div>;
+function RevokeLicenseModal({ client, license, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly license: License;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const submit = async () => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.revokeLicense(license.licenseId);
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      title={translate(language, 'revokeLicenseTitle')}
+      okText={translate(language, 'confirmRevokeLicense')}
+      okButtonProps={{ danger: true }}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        {failed ? <Alert type="error" showIcon title={copy.revokeFailed} /> : null}
+        <Space orientation="vertical" size={2}>
+          <span>{copy.licenseColumn}：<Typography.Text code>{license.licenseId}</Typography.Text></span>
+        </Space>
+        <Alert type="warning" showIcon title={copy.revokeLicenseImpact} />
+        <Typography.Text type="secondary">{translate(language, 'revokeLicenseDescription')}</Typography.Text>
+      </Space>
+    </Modal>
+  );
 }
 
-function CredentialPanel({ client, identity }: { readonly client: AdminConsoleClient; readonly identity?: AdminIdentity | undefined }) {
+/* --------------------------------- sessions -------------------------------- */
+
+function SessionPanel({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  const canRevoke = hasAdminPermission(identity, AdminPermission.SessionsWrite);
+  const canReadUsers = hasAdminPermission(identity, AdminPermission.UsersRead);
+  const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
+  const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [appliedFilter, setAppliedFilter] = useState('');
+  const [filterInput, setFilterInput] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [detail, setDetail] = useState<AdminUserSession | null>(null);
+  const [revoking, setRevoking] = useState<AdminUserSession | null>(null);
+  const [revision, refresh] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    const loadUsers = canReadUsers
+      ? client.users().catch(() => null)
+      : Promise.resolve(null);
+    void Promise.all([client.sessions(appliedFilter || undefined), loadUsers])
+      .then(([items, knownUsers]) => {
+        if (!live) return;
+        setSessions(items);
+        setUsers(knownUsers);
+      })
+      .catch(() => {
+        if (live) { setFailed(true); setSessions(null); }
+      })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client, canReadUsers, appliedFilter, revision]);
+
+  const usersById = useMemo(() => new Map((users ?? NO_USERS).map(user => [user.id, user])), [users]);
+
+  const userCell = useCallback((userId: string) => {
+    const user = usersById.get(userId);
+    if (user) {
+      return (
+        <Space orientation="vertical" size={0}>
+          <span>{user.displayName}</span>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{userId}</Typography.Text>
+        </Space>
+      );
+    }
+    return <span>{userId}</span>;
+  }, [usersById]);
+
+  const rows = useMemo(() => {
+    if (!sessions) return [];
+    if (!statusFilter) return [...sessions];
+    return [...sessions].filter(session => (statusFilter === 'revoked' ? Boolean(session.revokedAt) : !session.revokedAt));
+  }, [sessions, statusFilter]);
+
+  const columns = useMemo(() => [
+    { title: copy.userColumn, key: 'user', render: (_: unknown, session: AdminUserSession) => userCell(session.userId) },
+    {
+      title: copy.clientColumn,
+      key: 'client',
+      render: () => <Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text>,
+    },
+    {
+      title: copy.lastActive,
+      key: 'lastActive',
+      render: (_: unknown, session: AdminUserSession) => formatTimestamp(session.lastSeenAt),
+    },
+    {
+      title: translate(language, 'status'),
+      key: 'status',
+      render: (_: unknown, session: AdminUserSession) => session.revokedAt
+        ? <Tag>{copy.sessionStateRevoked}</Tag>
+        : <Tag color="success">{copy.sessionStateActive}</Tag>,
+    },
+    {
+      title: translate(language, 'actions'),
+      key: 'actions',
+      render: (_: unknown, session: AdminUserSession) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(session)}>{copy.view}</Button>
+          {canRevoke && !session.revokedAt ? (
+            <Button type="link" size="small" danger onClick={() => setRevoking(session)}>{copy.revokeLogin}</Button>
+          ) : null}
+        </Space>
+      ),
+    },
+  ], [canRevoke, userCell]);
+
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <ModuleHeading title={copy.sessionsTitle} description={copy.sessionsDescription}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+          {translate(language, 'refresh')}
+        </Button>
+      </ModuleHeading>
+
+      <Space wrap>
+        <Input.Search
+          allowClear
+          placeholder={translate(language, 'filterUserId')}
+          value={filterInput}
+          onChange={event => setFilterInput(event.target.value)}
+          onSearch={value => setAppliedFilter(value.trim())}
+          enterButton={translate(language, 'search')}
+          style={{ width: 280 }}
+        />
+        <Select
+          allowClear
+          placeholder={translate(language, 'status')}
+          value={statusFilter}
+          onChange={value => setStatusFilter(value)}
+          style={{ minWidth: 140 }}
+          options={[
+            { value: 'active', label: copy.sessionStateActive },
+            { value: 'revoked', label: copy.sessionStateRevoked },
+          ]}
+        />
+      </Space>
+
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={copy.sessionsLoadFailed}
+          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+        />
+      ) : null}
+
+      {failed && sessions === null ? null : (
+        <Table
+          rowKey="sessionId"
+          columns={columns}
+          dataSource={rows}
+          loading={loading && sessions === null}
+          scroll={{ x: 760 }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.sessionsEmpty} /> }}
+          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+        />
+      )}
+
+      <Drawer
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        title={copy.sessionDetail}
+        size="large"
+        destroyOnHidden
+      >
+        {detail ? (
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label={copy.userColumn}>{userCell(detail.userId)}</Descriptions.Item>
+              <Descriptions.Item label={copy.clientColumn}>
+                <Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text>
+              </Descriptions.Item>
+              <Descriptions.Item label={translate(language, 'status')}>
+                {detail.revokedAt ? <Tag>{copy.sessionStateRevoked}</Tag> : <Tag color="success">{copy.sessionStateActive}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label={copy.lastActive}>{formatTimestamp(detail.lastSeenAt)}</Descriptions.Item>
+              <Descriptions.Item label={copy.sessionCreatedAt}>{formatTimestamp(detail.createdAt)}</Descriptions.Item>
+              <Descriptions.Item label={copy.sessionRevokedAt}>{formatTimestamp(detail.revokedAt)}</Descriptions.Item>
+              <Descriptions.Item label={copy.sessionSubject}>{detail.topic}</Descriptions.Item>
+              <Descriptions.Item label="sessionId"><Typography.Text code copyable={{ text: detail.sessionId }}>{detail.sessionId}</Typography.Text></Descriptions.Item>
+            </Descriptions>
+            <Alert type="info" showIcon title={copy.sessionsDescription} />
+            {canRevoke && !detail.revokedAt ? (
+              <Button danger type="primary" onClick={() => { setRevoking(detail); setDetail(null); }}>
+                {copy.revokeLogin}
+              </Button>
+            ) : null}
+          </Space>
+        ) : null}
+      </Drawer>
+
+      {canRevoke && revoking ? (
+        <RevokeSessionModal
+          client={client}
+          session={revoking}
+          userLabel={usersById.get(revoking.userId)?.displayName ?? revoking.userId}
+          onClose={() => setRevoking(null)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function RevokeSessionModal({ client, session, userLabel, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly session: AdminUserSession;
+  readonly userLabel: string;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const submit = async () => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.revokeUserSession(session.sessionId);
+      notify(AdminNotificationKind.Success, copy.revokeLogin);
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      title={copy.revokeLoginTitle}
+      okText={copy.confirmRevokeLogin}
+      okButtonProps={{ danger: true }}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        {failed ? <Alert type="error" showIcon title={copy.revokeFailed} /> : null}
+        <Space orientation="vertical" size={2}>
+          <span>{copy.userColumn}：<strong>{userLabel}</strong></span>
+          <span>{copy.clientColumn}：<Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text></span>
+        </Space>
+        <Alert type="warning" showIcon title={copy.revokeLoginImpact} />
+      </Space>
+    </Modal>
+  );
+}
+
+/* -------------------------------- credentials ------------------------------- */
+
+function CredentialPanel({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
   const canWrite = hasAdminPermission(identity, AdminPermission.CredentialsWrite);
   const canAssign = hasAdminPermission(identity, AdminPermission.CredentialsAssign);
+  const canReadModels = hasAdminPermission(identity, AdminPermission.ModelsRead);
   const [state, setState] = useState<AdminCredentials | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
-  const [roles, setRoles] = useState<readonly Role[]>([]);
-  const [teams, setTeams] = useState<readonly Team[]>([]);
+  // null = references unknown (no models.read permission or the model list
+  // failed); an empty map = known to have no references.
+  const [references, setReferences] = useState<{ readonly known: boolean; readonly byCredential: ReadonlyMap<string, readonly AdminModel[]> } | null>(null);
+  const [users, setUsers] = useState<readonly PlatformUser[]>(NO_USERS);
+  const [roles, setRoles] = useState<readonly Role[]>(NO_ROLES);
+  const [teams, setTeams] = useState<readonly Team[]>(NO_TEAMS);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<CredentialMetadata | null>(null);
+  const [rotating, setRotating] = useState<CredentialMetadata | null>(null);
+  const [deleting, setDeleting] = useState<CredentialMetadata | null>(null);
+  const [detail, setDetail] = useState<CredentialMetadata | null>(null);
   const [granting, setGranting] = useState<CredentialGrantTarget | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+  const [revision, refresh] = useState(0);
+
+  const toggleEnabled = async (credential: CredentialMetadata) => {
+    setPendingToggleId(credential.id);
     try {
-      const [credentials, resources] = await Promise.all([client.credentials(identity), client.resources(identity)]);
-      setState(credentials);
-      setUsers(resources.users);
-      setRoles(resources.roles);
-      setTeams(resources.teams);
+      await client.updateCredential(credential.id, { enabled: !credential.enabled });
+      refresh(value => value + 1);
     } catch {
-      setError(true);
+      notify(AdminNotificationKind.Error, copy.connectionsSaveFailed);
     } finally {
-      setLoading(false);
+      setPendingToggleId(null);
     }
-  }, [client, identity]);
-  useEffect(() => { void load(); }, [load]);
-  return <div className="flex flex-col gap-4">
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'credentials')}</div>
-        <p className="mt-1 text-sm text-muted-foreground">{translate(language, 'credentialsDescription')}</p>
-      </div>
-      <Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button>
+  };
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    // Subject names only enrich the grant picker; a resources failure must
+    // not fake an empty connection list as success.
+    const loadResources = client.resources(identity).catch(() => null);
+    // Model references are read through the model list (model.credentialId).
+    // Without models.read or on failure the references stay "unknown", never 0.
+    const loadModels = canReadModels
+      ? client.models(identity).catch(() => null)
+      : Promise.resolve(null);
+    void Promise.all([client.credentials(identity), loadResources, loadModels])
+      .then(([credentials, resources, models]) => {
+        if (!live) return;
+        setState(credentials);
+        if (resources) {
+          setUsers(resources.users);
+          setRoles(resources.roles);
+          setTeams(resources.teams);
+        }
+        if (models) {
+          const map = new Map<string, AdminModel[]>();
+          for (const model of models.models) {
+            if (!model.credentialId) continue;
+            const list = map.get(model.credentialId) ?? [];
+            map.set(model.credentialId, [...list, model]);
+          }
+          setReferences({ known: true, byCredential: map });
+        } else {
+          setReferences({ known: false, byCredential: new Map() });
+        }
+      })
+      .catch(() => {
+        if (live) { setFailed(true); setState(null); }
+      })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client, identity, canReadModels, revision]);
+
+  const usersById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
+  const assignmentsByCredential = useMemo(() => {
+    const map = new Map<string, readonly CredentialAssignment[]>();
+    for (const assignment of state?.assignments ?? []) {
+      const list = map.get(assignment.resourceId) ?? [];
+      map.set(assignment.resourceId, [...list, assignment]);
+    }
+    return map;
+  }, [state]);
+
+  const subjectLabel = useCallback((assignment: CredentialAssignment): string => {
+    if (assignment.subject.type === AdminSubjectType.User) {
+      const user = usersById.get(assignment.subject.id);
+      return user ? `${user.displayName}（${user.username || user.id}）` : `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
+    }
+    return `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
+  }, [usersById]);
+
+  /** Models referencing a credential; null means the references are unknown. */
+  const referencesOf = useCallback((credential: CredentialMetadata): readonly AdminModel[] | null => {
+    if (!references?.known) return null;
+    return references.byCredential.get(credential.id) ?? [];
+  }, [references]);
+
+  const columns = useMemo(() => [
+    {
+      title: translate(language, 'credentialName'),
+      key: 'name',
+      render: (_: unknown, credential: CredentialMetadata) => (
+        <Space orientation="vertical" size={0}>
+          <span>{credential.name}</span>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{credential.id} · {credential.maskedValue}</Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: copy.serviceColumn,
+      key: 'service',
+      render: (_: unknown, credential: CredentialMetadata) => credential.service,
+    },
+    {
+      title: copy.authColumn,
+      key: 'auth',
+      render: (_: unknown, credential: CredentialMetadata) => credential.maskedValue
+        ? <Tag>{copy.authSet}</Tag>
+        : <Tag>{copy.valueUnknown}</Tag>,
+    },
+    {
+      title: copy.referencedModels,
+      key: 'models',
+      render: (_: unknown, credential: CredentialMetadata) => <ReferenceTags references={referencesOf(credential)} />,
+    },
+    {
+      title: translate(language, 'status'),
+      key: 'status',
+      render: (_: unknown, credential: CredentialMetadata) => credential.enabled
+        ? <Tag color="success">{translate(language, 'enabled')}</Tag>
+        : <Tag>{translate(language, 'disabled')}</Tag>,
+    },
+    {
+      title: translate(language, 'actions'),
+      key: 'actions',
+      render: (_: unknown, credential: CredentialMetadata) => (
+        <Space size={0} wrap>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(credential)}>{copy.view}</Button>
+          {canWrite ? (
+            <>
+              <Button type="link" size="small" onClick={() => setEditing(credential)}>{translate(language, 'edit')}</Button>
+              <Button type="link" size="small" onClick={() => setRotating(credential)}>{copy.updateKey}</Button>
+              {credential.enabled ? (
+                <Popconfirm
+                  title={translate(language, 'disable')}
+                  description={copy.disableConnectionNote}
+                  okText={translate(language, 'disable')}
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => void toggleEnabled(credential)}
+                >
+                  <Button type="link" size="small" disabled={pendingToggleId !== null}>
+                    {translate(language, 'disable')}
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={pendingToggleId !== null}
+                  onClick={() => void toggleEnabled(credential)}
+                >
+                  {translate(language, 'enable')}
+                </Button>
+              )}
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(credential)}>
+                {translate(language, 'delete')}
+              </Button>
+            </>
+          ) : null}
+          {canAssign ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<TeamOutlined />}
+              onClick={() => setGranting({ credential, assignments: assignmentsByCredential.get(credential.id) ?? [] })}
+            >
+              {copy.grantAccess}
+            </Button>
+          ) : null}
+        </Space>
+      ),
+    },
+  ], [canWrite, canAssign, assignmentsByCredential, referencesOf, client]);
+
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <ModuleHeading title={copy.credentialsTitle} description={copy.credentialsDescription}>
+        {canWrite ? (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>{copy.addConnection}</Button>
+        ) : null}
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+          {translate(language, 'refresh')}
+        </Button>
+      </ModuleHeading>
+
+      {savedNotice ? (
+        <Alert
+          type="success"
+          showIcon
+          closable={{ onClose: () => setSavedNotice(false) }}
+          title={copy.configSaved}
+          description={copy.savedNotApplied}
+        />
+      ) : null}
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={copy.connectionsLoadFailed}
+          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+        />
+      ) : null}
+
+      {failed && state === null ? null : (
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={state ? [...state.credentials] : []}
+        loading={loading && state === null}
+        scroll={{ x: 900 }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.connectionsEmpty} /> }}
+        pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+        expandable={{
+          expandedRowRender: (credential: CredentialMetadata) => {
+            const assignments = assignmentsByCredential.get(credential.id) ?? [];
+            return assignments.length === 0 ? (
+              <Typography.Text type="secondary">{copy.usageSubjects}：{copy.notCollected}</Typography.Text>
+            ) : (
+              <Space wrap size={8}>
+                {assignments.map(assignment => (
+                  <CredentialAssignmentChip
+                    key={assignment.id}
+                    assignment={assignment}
+                    label={subjectLabel(assignment)}
+                    canAssign={canAssign}
+                    client={client}
+                    onChanged={() => refresh(value => value + 1)}
+                  />
+                ))}
+              </Space>
+            );
+          },
+        }}
+      />
+      )}
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {translate(language, 'credentialSecretHint')}
+      </Typography.Text>
+
+      <Drawer
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        title={copy.connectionDetail}
+        size="large"
+        destroyOnHidden
+      >
+        {detail ? (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label={translate(language, 'credentialName')}>{detail.name}</Descriptions.Item>
+            <Descriptions.Item label="id"><Typography.Text code copyable={{ text: detail.id }}>{detail.id}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label={copy.serviceColumn}>{detail.service}</Descriptions.Item>
+            <Descriptions.Item label={copy.authColumn}>
+              {detail.maskedValue ? `${copy.authSet}（${detail.maskedValue}）` : copy.valueUnknown}
+            </Descriptions.Item>
+            <Descriptions.Item label={copy.deliveryModeLabel}>
+              {translate(language, detail.deliveryMode === 'client' ? 'clientDelivery' : 'serverOnlyDelivery')}
+            </Descriptions.Item>
+            <Descriptions.Item label={translate(language, 'status')}>
+              {detail.enabled ? <Tag color="success">{translate(language, 'enabled')}</Tag> : <Tag>{translate(language, 'disabled')}</Tag>}
+            </Descriptions.Item>
+            <Descriptions.Item label={copy.referencedModels}>
+              <ReferenceTags references={referencesOf(detail)} />
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Drawer>
+
+      {canWrite && creating ? (
+        <ConnectionEditorModal
+          client={client}
+          open
+          onClose={() => setCreating(false)}
+          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+        />
+      ) : null}
+      {canWrite && editing ? (
+        <ConnectionEditorModal
+          client={client}
+          credential={editing}
+          open
+          onClose={() => setEditing(null)}
+          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+        />
+      ) : null}
+      {canWrite && rotating ? (
+        <RotateKeyModal
+          client={client}
+          credential={rotating}
+          affected={referencesOf(rotating)}
+          open
+          onClose={() => setRotating(null)}
+          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+        />
+      ) : null}
+      {canWrite && deleting ? (
+        <DeleteConnectionModal
+          client={client}
+          credential={deleting}
+          references={referencesOf(deleting)}
+          open
+          onClose={() => setDeleting(null)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
+      {canAssign && granting ? (
+        <GrantAccessModal
+          client={client}
+          target={granting}
+          users={users}
+          roles={roles}
+          teams={teams}
+          open
+          onClose={() => setGranting(null)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
     </div>
-    {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialsLoadFailed')}</AlertDescription></Alert> : null}
-    {canWrite ? <CredentialEditorDialog client={client} open={undefined} onOpenChange={() => undefined} onChanged={load} onError={() => setError(true)} /> : null}
-    {loading && !state ? <CredentialSkeleton /> : state ? <CredentialList credentials={state.credentials} assignments={state.assignments} users={users} roles={roles} teams={teams} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={load} onError={() => setError(true)} onGrant={(credential, assignments) => setGranting({ credential, assignments })} /> : null}
-    {canAssign && granting ? <CredentialGrantDialog client={client} credential={granting.credential} existingAssignments={granting.assignments} users={users} roles={roles} teams={teams} open onOpenChange={nextOpen => { if (!nextOpen) setGranting(null); }} onChanged={load} onError={() => setError(true)} /> : null}
-  </div>;
+  );
 }
 
-function CredentialList({ credentials, assignments, users, roles, teams, canWrite, canAssign, client, onChanged, onError, onGrant }: {
-  readonly credentials: readonly CredentialMetadata[];
-  readonly assignments: readonly CredentialAssignment[];
+/** Model references for a connection; null keeps them explicitly unknown. */
+function ReferenceTags({ references }: { readonly references: readonly AdminModel[] | null }) {
+  if (references === null) {
+    return (
+      <span title={copy.referencesUnknownNote}>
+        <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>
+      </span>
+    );
+  }
+  if (references.length === 0) {
+    return <Typography.Text type="secondary">{copy.noReferences}</Typography.Text>;
+  }
+  return (
+    <Space wrap size={[4, 4]}>
+      {references.map(model => <Tag key={model.id}>{model.displayName}</Tag>)}
+    </Space>
+  );
+}
+
+function CredentialAssignmentChip({ assignment, label, canAssign, client, onChanged }: {
+  readonly assignment: CredentialAssignment;
+  readonly label: string;
+  readonly canAssign: boolean;
+  readonly client: AdminConsoleClient;
+  readonly onChanged: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const revoke = async () => {
+    setPending(true);
+    try {
+      await client.deleteCredentialAssignment(assignment.id);
+      onChanged();
+    } catch {
+      notify(AdminNotificationKind.Error, translate(language, 'credentialAssignmentFailed'));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Space size={4}>
+      <Tag>{label}</Tag>
+      {canAssign ? (
+        <Popconfirm
+          title={translate(language, 'revokeConfirmTitle')}
+          description={translate(language, 'revokeConfirmDescription')}
+          okText={translate(language, 'confirmRevoke')}
+          okButtonProps={{ danger: true }}
+          onConfirm={() => void revoke()}
+        >
+          <Button type="text" size="small" icon={<StopOutlined />} loading={pending} aria-label={translate(language, 'revoke')} />
+        </Popconfirm>
+      ) : null}
+    </Space>
+  );
+}
+
+function ConnectionEditorModal({ client, credential, open, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly credential?: CredentialMetadata | undefined;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const editing = Boolean(credential);
+  const [form] = Form.useForm<{ name: string; service: string; deliveryMode: 'server_only' | 'client'; enabled: boolean; value?: string }>();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (open) {
+      form.resetFields();
+      form.setFieldsValue({
+        name: credential?.name ?? '',
+        service: credential?.service ?? '',
+        deliveryMode: credential?.deliveryMode ?? 'server_only',
+        enabled: credential?.enabled !== false,
+        value: '',
+      });
+      setFailed(false);
+    }
+  }, [open, credential, form]);
+  const submit = async (values: { name: string; service: string; deliveryMode: 'server_only' | 'client'; enabled: boolean; value?: string }) => {
+    setPending(true);
+    setFailed(false);
+    try {
+      if (credential) {
+        await client.updateCredential(credential.id, {
+          name: values.name.trim(),
+          service: values.service.trim(),
+          deliveryMode: values.deliveryMode,
+          enabled: values.enabled,
+        });
+      } else {
+        await client.createCredential({
+          name: values.name.trim(),
+          service: values.service.trim(),
+          type: 'api_key',
+          deliveryMode: values.deliveryMode,
+          value: values.value ?? '',
+          enabled: true,
+        });
+      }
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={open}
+      title={editing ? translate(language, 'editCredential') : copy.addConnection}
+      okText={translate(language, 'save')}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      destroyOnHidden
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void form.submit()}
+    >
+      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
+        {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.connectionsSaveFailed} /> : null}
+        <Form.Item name="name" label={translate(language, 'credentialName')} rules={[{ required: true, message: copy.nameRequired }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="service" label={copy.serviceColumn} rules={[{ required: true, message: copy.serviceRequired }]}>
+          <Input />
+        </Form.Item>
+        {!editing ? (
+          <Form.Item name="value" label={copy.newKey} rules={[{ required: true, message: copy.keyRequired }]}>
+            <Input.Password autoComplete="new-password" placeholder={copy.newKeyPlaceholder} />
+          </Form.Item>
+        ) : (
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} title={copy.keyManagedViaRotate} />
+        )}
+        <Form.Item name="deliveryMode" label={copy.deliveryModeLabel} rules={[{ required: true }]}>
+          <Radio.Group>
+            <Radio.Button value="server_only">{translate(language, 'serverOnlyDelivery')}</Radio.Button>
+            <Radio.Button value="client">{translate(language, 'clientDelivery')}</Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+        {editing ? (
+          <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
+            <Switch checkedChildren={translate(language, 'enabled')} unCheckedChildren={translate(language, 'disabled')} />
+          </Form.Item>
+        ) : null}
+      </Form>
+    </Modal>
+  );
+}
+
+function RotateKeyModal({ client, credential, affected, open, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly credential: CredentialMetadata;
+  readonly affected: readonly AdminModel[] | null;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [form] = Form.useForm<{ value: string }>();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (open) {
+      // Keep the typed value on failure so the operator can fix and retry.
+      form.resetFields();
+      setFailed(false);
+    }
+  }, [open, form]);
+  const submit = async (values: { value: string }) => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.rotateCredential(credential.id, { value: values.value });
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={open}
+      title={copy.updateKeyTitle}
+      okText={copy.updateKey}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      destroyOnHidden={false}
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void form.submit()}
+    >
+      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
+        {failed ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={translate(language, 'credentialRotateFailed')}
+            description={copy.rotateRetryNote}
+          />
+        ) : null}
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={copy.affectedModels}
+          description={affected === null
+            ? `${copy.valueUnknown}（${copy.referencesUnknownNote}）`
+            : affected.length > 0
+              ? affected.map(model => model.displayName).join('、')
+              : copy.noReferences}
+        />
+        <Form.Item
+          name="value"
+          label={copy.newKey}
+          rules={[{ required: true, message: copy.keyRequired }]}
+          extra={copy.updateKeyNote}
+        >
+          <Input.Password autoComplete="new-password" />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+function DeleteConnectionModal({ client, credential, references, open, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly credential: CredentialMetadata;
+  readonly references: readonly AdminModel[] | null;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // A connection with known references must not be deleted; replace or remove
+  // the reference on each model first. Unknown references never count as zero.
+  const blocked = references !== null && references.length > 0;
+  const submit = async () => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.deleteCredential(credential.id);
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={open}
+      title={copy.deleteConnectionTitle}
+      okText={copy.confirmDeleteConnection}
+      okButtonProps={{ danger: true, disabled: blocked }}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        {failed ? <Alert type="error" showIcon title={copy.connectionsDeleteFailed} /> : null}
+        <span>{translate(language, 'credentialName')}：<strong>{credential.name}</strong>（{credential.service}）</span>
+        {blocked ? (
+          <Alert type="error" showIcon title={copy.deleteBlockedMessage} description={<ReferenceTags references={references} />} />
+        ) : (
+          <Alert type="warning" showIcon title={copy.deleteConnectionDescription} />
+        )}
+        {references === null ? (
+          <Alert type="info" showIcon title={copy.deleteReferencesUnverified} />
+        ) : null}
+      </Space>
+    </Modal>
+  );
+}
+
+function GrantAccessModal({ client, target, users, roles, teams, open, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly target: CredentialGrantTarget;
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
-  readonly canWrite: boolean;
-  readonly canAssign: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onGrant: (credential: CredentialMetadata, assignments: readonly CredentialAssignment[]) => void;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
 }) {
-  if (credentials.length === 0) return <Empty><EmptyHeader><EmptyMedia><KeyRound aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noCredentials')}</EmptyTitle><EmptyDescription>{translate(language, 'noCredentialsHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="flex flex-col gap-4"><div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'credential')}</TableHead><TableHead>{translate(language, 'credentialService')}</TableHead><TableHead>{translate(language, 'deliveryMode')}</TableHead><TableHead>{translate(language, 'credentialStatus')}</TableHead>{canWrite || canAssign ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{credentials.map(credential => { const credentialAssignments = assignments.filter(item => item.resourceId === credential.id); return <CredentialRow key={credential.id} credential={credential} assignments={credentialAssignments} users={users} canWrite={canWrite} canAssign={canAssign} client={client} onChanged={onChanged} onError={onError} onGrant={() => onGrant(credential, credentialAssignments)} />; })}</TableBody></Table></div><div className="flex items-center gap-2 text-xs text-tertiary-foreground"><KeyRound className="size-3.5" aria-hidden="true" />{translate(language, 'credentialSecretHint')}</div></div>;
-}
-
-function CredentialRow({ credential, assignments, users, canWrite, canAssign, client, onChanged, onError, onGrant }: {
-  readonly credential: CredentialMetadata;
-  readonly assignments: readonly CredentialAssignment[];
-  readonly users: readonly PlatformUser[];
-  readonly canWrite: boolean;
-  readonly canAssign: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onGrant: () => void;
-}) {
+  const [selected, setSelected] = useState<readonly string[]>([]);
   const [pending, setPending] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [rotating, setRotating] = useState(false);
-  const run = async (operation: () => Promise<void>) => { setPending(true); try { await operation(); await onChanged(); } catch { onError(); } finally { setPending(false); } };
-  const userNames = new Map(users.map(user => [user.id, user]));
-  return <>
-    <TableRow>
-      <TableCell><div className="min-w-0"><div className="truncate font-normal">{credential.name}</div><div className="truncate text-xs text-tertiary-foreground">{credential.id} · {credential.maskedValue}</div></div></TableCell>
-      <TableCell className="max-w-40 truncate text-xs text-tertiary-foreground">{credential.service}</TableCell>
-      <TableCell><Badge variant="info">{translate(language, credential.deliveryMode === 'client' ? 'clientDelivery' : 'serverOnlyDelivery')}</Badge></TableCell>
-      <TableCell><Badge variant={credential.enabled ? 'success' : 'outline'}>{translate(language, credential.enabled ? 'enabled' : 'disabled')}</Badge></TableCell>
-      {canWrite || canAssign ? <TableCell><div className="flex flex-wrap justify-end gap-1.5">{canWrite ? <><Button size="sm" variant="ghost" disabled={pending} onClick={() => setEditing(true)}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => setRotating(true)}><RotateCcw data-icon="inline-start" />{translate(language, 'rotateCredential')}</Button><Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => { await client.updateCredential(credential.id, { enabled: !credential.enabled }); })}>{translate(language, credential.enabled ? 'disable' : 'enable')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={pending} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteCredentialTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteCredentialDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void run(async () => { await client.deleteCredential(credential.id); })}>{translate(language, 'confirmDeleteCredential')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></> : null}{canAssign ? <Button size="sm" onClick={onGrant}><UsersRound data-icon="inline-start" />{translate(language, 'grantCredential')}</Button> : null}</div></TableCell> : null}
-    </TableRow>
-    {assignments.length > 0 ? <TableRow><TableCell colSpan={canWrite || canAssign ? 5 : 4}><div className="flex flex-wrap gap-2 text-xs text-tertiary-foreground">{assignments.map(assignment => <CredentialAssignmentRow key={assignment.id} assignment={assignment} user={userNames.get(assignment.subject.id)} canAssign={canAssign} client={client} onChanged={onChanged} onError={onError} />)}</div></TableCell></TableRow> : null}
-    {canWrite && editing ? <CredentialEditorDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setEditing(false); }} onChanged={onChanged} onError={onError} /> : null}
-    {canWrite && rotating ? <CredentialRotateDialog client={client} credential={credential} open onOpenChange={open => { if (!open) setRotating(false); }} onChanged={onChanged} onError={onError} /> : null}
-  </>;
-}
-
-function CredentialAssignmentRow({ assignment, user, canAssign, client, onChanged, onError }: { readonly assignment: CredentialAssignment; readonly user: PlatformUser | undefined; readonly canAssign: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const [pending, setPending] = useState(false);
-  const revoke = async () => { setPending(true); try { await client.deleteCredentialAssignment(assignment.id); await onChanged(); } catch { onError(); } finally { setPending(false); } };
-  const label = assignment.subject.type === AdminSubjectType.User && user ? user.displayName : `${subjectTypeLabel(assignment.subject.type)}: ${assignment.subject.id}`;
-  return <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1"><span className="truncate">{label}</span>{canAssign ? <AlertDialog><AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" aria-label={translate(language, 'revoke')} title={translate(language, 'revoke')} disabled={pending} />}><Trash2 /></AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeConfirmDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pending}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pending} onClick={() => void revoke()}>{translate(language, 'confirmRevoke')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}</span>;
+  const [failedSubjects, setFailedSubjects] = useState<readonly string[] | null>(null);
+  const excluded = useMemo(
+    () => new Set(target.assignments.map(item => `${item.subject.type}:${item.subject.id}`)),
+    [target],
+  );
+  const options = useMemo(() => [
+    {
+      label: translate(language, 'userScope'),
+      options: users
+        .filter(user => !excluded.has(`user:${user.id}`))
+        .map(user => ({ value: `user:${user.id}`, label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}` })),
+    },
+    {
+      label: translate(language, 'role'),
+      options: roles
+        .filter(role => !excluded.has(`role:${role.id}`))
+        .map(role => ({ value: `role:${role.id}`, label: role.name ?? role.id })),
+    },
+    {
+      label: translate(language, 'teamScope'),
+      options: teams
+        .filter(team => !excluded.has(`team:${team.id}`))
+        .map(team => ({ value: `team:${team.id}`, label: team.name ?? team.id })),
+    },
+  ], [users, roles, teams, excluded]);
+  useEffect(() => {
+    if (open) { setSelected([]); setFailedSubjects(null); }
+  }, [open, target.credential.id]);
+  const optionLabel = useCallback((key: string): string => {
+    for (const group of options) {
+      const found = group.options.find(option => option.value === key);
+      if (found) return found.label;
+    }
+    return key;
+  }, [options]);
+  const submit = async () => {
+    if (selected.length === 0) return;
+    setPending(true);
+    setFailedSubjects(null);
+    const results = await runBatch([...selected], async key => {
+      const separator = key.indexOf(':');
+      const type = key.slice(0, separator) as 'user' | 'role' | 'team';
+      const id = key.slice(separator + 1);
+      await client.createCredentialAssignment({ credentialId: target.credential.id, subject: { type, id } });
+    });
+    const failures = results.filter(result => !result.ok).map(result => result.item);
+    setPending(false);
+    if (failures.length > 0) {
+      // Keep only the failed subjects selected so the operator can retry them.
+      setSelected(failures);
+      setFailedSubjects(failures.map(key => optionLabel(key)));
+      onChanged();
+      return;
+    }
+    onClose();
+    onChanged();
+  };
+  return (
+    <Modal
+      open={open}
+      title={`${copy.grantAccess} · ${target.credential.name}`}
+      okText={translate(language, pending ? 'granting' : 'grant')}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      okButtonProps={{ disabled: selected.length === 0 }}
+      destroyOnHidden
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        {failedSubjects ? (
+          <Alert
+            type="error"
+            showIcon
+            title={translate(language, 'credentialAssignmentFailed')}
+            description={
+              <div>
+                <div>{translate(language, 'grantFailedSubjects')}：{failedSubjects.join('、')}</div>
+                <div>{copy.grantFailedRetryHint}</div>
+              </div>
+            }
+          />
+        ) : null}
+        <Select
+          mode="multiple"
+          style={{ width: '100%' }}
+          placeholder={translate(language, 'grantCredentialDescription')}
+          value={[...selected]}
+          onChange={values => setSelected(values)}
+          options={options}
+          showSearch={{ optionFilterProp: 'label' }}
+        />
+      </Space>
+    </Modal>
+  );
 }
 
 function subjectTypeLabel(type: string): string {
@@ -254,150 +1355,164 @@ function subjectTypeLabel(type: string): string {
   return type;
 }
 
-function CredentialEditorDialog({ client, credential, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential?: CredentialMetadata; readonly open: boolean | undefined; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const editing = Boolean(credential);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [name, setName] = useState(credential?.name ?? '');
-  const [service, setService] = useState(credential?.service ?? '');
-  const [deliveryMode, setDeliveryMode] = useState<'server_only' | 'client'>(credential?.deliveryMode ?? 'server_only');
-  const [value, setValue] = useState('');
-  const [enabled, setEnabled] = useState(credential?.enabled !== false);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const actualOpen = open === undefined ? dialogOpen : open;
-  const setOpen = (next: boolean) => { if (!pending) { if (open === undefined) setDialogOpen(next); onOpenChange(next); } };
-  useEffect(() => { if (actualOpen) { setName(credential?.name ?? ''); setService(credential?.service ?? ''); setDeliveryMode(credential?.deliveryMode ?? 'server_only'); setValue(''); setEnabled(credential?.enabled !== false); setFailed(false); } }, [actualOpen, credential]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!name.trim() || !service.trim() || (!editing && !value)) { setFailed(true); return; }
-    setPending(true); setFailed(false);
-    try {
-      if (credential) await client.updateCredential(credential.id, { name: name.trim(), service: service.trim(), deliveryMode, enabled });
-      else await client.createCredential({ name: name.trim(), service: service.trim(), type: 'api_key', deliveryMode, value, enabled: true });
-      setOpen(false); await onChanged();
-    } catch { setFailed(true); onError(); } finally { setPending(false); }
-  };
-  return <Dialog open={actualOpen} onOpenChange={setOpen}>{open === undefined ? <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" />}><Plus data-icon="inline-start" />{translate(language, 'addCredential')}</DialogTrigger> : null}<DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, editing ? 'editCredential' : 'addCredential')}</DialogTitle><DialogDescription>{translate(language, editing ? 'editCredentialDescription' : 'addCredentialDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialFormFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor={editing ? 'edit-credential-name' : 'credential-name'}>{translate(language, 'credentialName')}</FieldLabel><Input id={editing ? 'edit-credential-name' : 'credential-name'} value={name} onChange={event => setName(event.target.value)} disabled={pending} /></Field><Field><FieldLabel htmlFor={editing ? 'edit-credential-service' : 'credential-service'}>{translate(language, 'credentialService')}</FieldLabel><Input id={editing ? 'edit-credential-service' : 'credential-service'} value={service} onChange={event => setService(event.target.value)} disabled={pending} /></Field>{!editing ? <Field><FieldLabel htmlFor="credential-value">{translate(language, 'credentialValue')}</FieldLabel><Input id="credential-value" type="password" value={value} onChange={event => setValue(event.target.value)} autoComplete="new-password" disabled={pending} /></Field> : null}<Field><FieldLabel>{translate(language, 'deliveryMode')}</FieldLabel><ToggleGroup value={[deliveryMode]} onValueChange={next => { if (next[0]) setDeliveryMode(next[0] as 'server_only' | 'client'); }} variant="outline" aria-label={translate(language, 'deliveryMode')}><ToggleGroupItem value="server_only">{translate(language, 'serverOnlyDelivery')}</ToggleGroupItem><ToggleGroupItem value="client">{translate(language, 'clientDelivery')}</ToggleGroupItem></ToggleGroup></Field>{editing ? <BooleanSwitch id="edit-credential-enabled" label={`${translate(language, 'credentialEnabled')}: ${translate(language, enabled ? 'enabled' : 'disabled')}`} checked={enabled} onCheckedChange={setEnabled} disabled={pending} /> : null}</FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => setOpen(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+/* --------------------------- configuration status --------------------------- */
+
+const DataPlaneStateLabels: readonly (readonly [DataPlaneStatus['state'], keyof typeof copy])[] = [
+  ['ready', 'stateApplied'],
+  ['applying', 'stateApplying'],
+  ['pending', 'statePending'],
+  ['degraded', 'stateDegraded'],
+  ['error', 'stateApplyFailed'],
+];
+
+function dataPlaneStateLabel(state: DataPlaneStatus['state']): string {
+  const found = DataPlaneStateLabels.find(([candidate]) => candidate === state);
+  return found ? copy[found[1]] : copy.stateUnknown;
 }
 
-function CredentialRotateDialog({ client, credential, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential: CredentialMetadata; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const [value, setValue] = useState('');
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!value) { setFailed(true); return; } setPending(true); setFailed(false); try { await client.rotateCredential(credential.id, { value }); setValue(''); onOpenChange(false); await onChanged(); } catch { setFailed(true); onError(); } finally { setPending(false); } };
-  return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{translate(language, 'rotateCredential')}</DialogTitle><DialogDescription>{translate(language, 'rotateCredentialDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'credentialRotateFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="rotate-credential-value">{translate(language, 'credentialValue')}</FieldLabel><Input id="rotate-credential-value" type="password" value={value} onChange={event => setValue(event.target.value)} autoComplete="new-password" disabled={pending} /></Field></FieldGroup><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit" disabled={pending}>{pending ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'rotateCredential')}</Button></DialogFooter></form></DialogContent></Dialog>;
+function dataPlaneStateTag(state: DataPlaneStatus['state']) {
+  if (state === 'ready') return <Tag color="success">{copy.stateApplied}</Tag>;
+  if (state === 'error') return <Tag color="error">{copy.stateApplyFailed}</Tag>;
+  if (state === 'degraded') return <Tag color="warning">{copy.stateDegraded}</Tag>;
+  if (state === 'applying' || state === 'pending') return <Tag color="processing">{dataPlaneStateLabel(state)}</Tag>;
+  return <Tag>{copy.stateUnknown}</Tag>;
 }
 
-function CredentialGrantDialog({ client, credential, existingAssignments, users, roles, teams, open, onOpenChange, onChanged, onError }: { readonly client: AdminConsoleClient; readonly credential: CredentialMetadata; readonly existingAssignments: readonly CredentialAssignment[]; readonly users: readonly PlatformUser[]; readonly roles: readonly Role[]; readonly teams: readonly Team[]; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
-  useEffect(() => { if (open) { setSelected(new Set()); setFailed(false); setFailedSubjects([]); } }, [open, credential.id]);
-  const toggle = useCallback((key: string) => setSelected(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }), []);
-  const submit = async () => { if (selected.size === 0) return; setPending(true); setFailed(false); setFailedSubjects([]); try { const results = await runBatch([...selected], async key => { const separator = key.indexOf(':'); const type = key.slice(0, separator) as 'user' | 'role' | 'team'; const id = key.slice(separator + 1); await client.createCredentialAssignment({ credentialId: credential.id, subject: { type, id } }); }); const failures = results.filter(result => !result.ok).map(result => result.item); if (failures.length > 0) { setFailed(true); setFailedSubjects(failures); setSelected(new Set(failures)); await onChanged(); return; } onOpenChange(false); await onChanged(); } catch { setFailed(true); onError(); } finally { setPending(false); } };
-  return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, 'grantCredential')}</DialogTitle><DialogDescription>{translate(language, 'grantCredentialDescription')}</DialogDescription></DialogHeader><div className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription><p>{translate(language, 'credentialAssignmentFailed')}</p>{failedSubjects.length > 0 ? <p className="mt-1 text-xs">{translate(language, 'grantFailedSubjects')}: {failedSubjects.join(', ')}</p> : null}</AlertDescription></Alert> : null}<FieldGroup><Field><SubjectMultiPicker users={users} roles={roles} teams={teams} excluded={new Set(existingAssignments.map(item => `${item.subject.type}:${item.subject.id}`))} selected={selected} onToggle={toggle} disabled={pending} /></Field></FieldGroup></div><DialogFooter><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="button" disabled={pending || selected.size === 0} onClick={() => void submit()}>{pending ? <Spinner data-icon="inline-start" /> : <UsersRound data-icon="inline-start" />}{translate(language, pending ? 'granting' : 'grant')}</Button></DialogFooter></DialogContent></Dialog>;
-}
-
-function CredentialSkeleton() { return <div className="overflow-hidden rounded-lg border border-border bg-card">{Array.from({ length: 3 }, (_, index) => <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}><Skeleton className="size-8 shrink-0 rounded-lg" /><div className="min-w-0 flex-1 flex flex-col gap-2"><Skeleton className="h-3.5 w-1/3" /><Skeleton className="h-3 w-1/2" /></div><Skeleton className="h-7 w-24" /></div>)}</div>; }
-
-const DataPlaneProvider = { OpenAi: 'openai', DeepSeek: 'deepseek' } as const;
-type DataPlaneProvider = (typeof DataPlaneProvider)[keyof typeof DataPlaneProvider];
-
-function DataPlanePanel({ client }: { readonly client: AdminConsoleClient }) {
+function ConfigurationStatusPanel({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  const allowed = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
   const [state, setState] = useState<AdminDataPlane | null>(null);
-  const [revision, setRevision] = useState('');
-  const [routes, setRoutes] = useState<readonly DataPlaneRoute[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const [routeOpen, setRouteOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await client.dataPlane();
-      setState(next);
-      setRevision(next.desired.revision);
-      setRoutes(next.desired.routes);
-    } catch {
-      setError('dataPlaneLoadFailed');
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
-  useEffect(() => { void load(); }, [load]);
-  const save = async () => {
-    if (!revision.trim()) { setError('dataPlaneRevisionRequired'); return; }
-    setPending(true);
-    setError(null);
-    try {
-      await client.putDataPlane({ revision: revision.trim(), routes: [...routes] });
-      await load();
-    } catch {
-      setError('dataPlaneSaveFailed');
-    } finally {
-      setPending(false);
-    }
-  };
-  const editRoute = (index: number | null) => { setEditingIndex(index); setRouteOpen(true); };
-  const route = editingIndex === null ? undefined : routes[editingIndex];
-  return <div className="flex flex-col gap-4">
-    <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><ServerCog className="size-4 text-muted-foreground" aria-hidden="true" />{translate(language, 'dataPlane')}</div><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'dataPlaneDescription')}</p></div><Button variant="ghost" size="icon" aria-label={translate(language, 'refresh')} title={translate(language, 'refresh')} disabled={loading || pending} onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw />}</Button></div>
-    {error ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, error)}</AlertDescription></Alert> : null}
-    {loading && !state ? <DataPlaneSkeleton /> : <>
-      {state ? <DataPlaneStatusCard status={state.status} desired={state.desired} /> : null}
-      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>{translate(language, 'desiredState')}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{translate(language, 'desiredStateDescription')}</p></div><Button size="sm" variant="outline" disabled={pending} onClick={() => editRoute(null)}><Plus data-icon="inline-start" />{translate(language, 'addRoute')}</Button></div></CardHeader><CardContent className="flex flex-col gap-4"><Field><FieldLabel htmlFor="data-plane-revision">{translate(language, 'revision')}</FieldLabel><Input id="data-plane-revision" value={revision} onChange={event => setRevision(event.target.value)} placeholder={translate(language, 'revisionPlaceholder')} disabled={pending} /></Field><DataPlaneRouteTable routes={routes} onEdit={editRoute} onDelete={index => setRoutes(current => current.filter((_, candidate) => candidate !== index))} disabled={pending} /><div className="flex justify-end"><Button disabled={pending} onClick={() => void save()}>{pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}{translate(language, pending ? 'saving' : 'publishDesiredState')}</Button></div></CardContent></Card>
-    </>}
-    <DataPlaneRouteDialog route={route} open={routeOpen} onOpenChange={open => { setRouteOpen(open); if (!open) setEditingIndex(null); }} onSave={nextRoute => { setRoutes(current => editingIndex === null ? [...current, nextRoute] : current.map((item, index) => index === editingIndex ? nextRoute : item)); setRouteOpen(false); setEditingIndex(null); }} />
-  </div>;
-}
-
-function DataPlaneStatusCard({ status, desired }: { readonly status: DataPlaneStatus; readonly desired: DataPlaneDesiredState }) {
-  const variant = status.state === 'ready' ? 'success' : status.state === 'error' ? 'destructive' : 'warning';
-  return <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>{translate(language, 'dataPlaneStatus')}</CardTitle><Badge variant={variant}>{translate(language, dataPlaneStatusLabel(status.state))}</Badge></div></CardHeader><CardContent><dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'observedRevision')}</dt><dd className="truncate">{status.observedRevision || translate(language, 'notProvided')}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'resourceCount')}</dt><dd>{status.resourceCount ?? desired.routes.length}</dd></div><div><dt className="text-xs text-tertiary-foreground">{translate(language, 'lastAppliedAt')}</dt><dd className="text-xs text-tertiary-foreground">{formatTimestamp(status.lastAppliedAt ?? null)}</dd></div></dl>{status.message ? <p className="mt-3 break-words text-sm text-muted-foreground">{status.message}</p> : null}</CardContent></Card>;
-}
-
-function DataPlaneRouteTable({ routes, onEdit, onDelete, disabled }: { readonly routes: readonly DataPlaneRoute[]; readonly onEdit: (index: number) => void; readonly onDelete: (index: number) => void; readonly disabled: boolean }) {
-  if (routes.length === 0) return <Empty><EmptyHeader><EmptyMedia><ServerCog aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noRoutes')}</EmptyTitle><EmptyDescription>{translate(language, 'noRoutesHint')}</EmptyDescription></EmptyHeader></Empty>;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'routeModel')}</TableHead><TableHead>{translate(language, 'routeEndpoint')}</TableHead><TableHead>{translate(language, 'routeProvider')}</TableHead><TableHead>{translate(language, 'status')}</TableHead><TableHead className="text-right">{translate(language, 'actions')}</TableHead></TableRow></TableHeader><TableBody>{routes.map((route, index) => <TableRow key={`${route.modelId}-${index}`}><TableCell><div className="min-w-0"><div className="truncate font-normal">{route.modelId}</div><div className="truncate text-xs text-tertiary-foreground">{route.upstreamModel}</div></div></TableCell><TableCell className="max-w-48 truncate text-xs text-tertiary-foreground">{route.endpoint}</TableCell><TableCell><Badge variant="info">{translate(language, route.providerType === DataPlaneProvider.DeepSeek ? 'deepSeekProvider' : 'openAiProvider')}</Badge></TableCell><TableCell><Badge variant={route.enabled ? 'success' : 'outline'}>{translate(language, route.enabled ? 'enabled' : 'disabled')}</Badge></TableCell><TableCell><div className="flex justify-end gap-1.5"><Button size="sm" variant="ghost" disabled={disabled} onClick={() => onEdit(index)}><Pencil data-icon="inline-start" />{translate(language, 'edit')}</Button><AlertDialog><AlertDialogTrigger render={<Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" disabled={disabled} />}><Trash2 data-icon="inline-start" />{translate(language, 'delete')}</AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'deleteRouteTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'deleteRouteDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={disabled}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={disabled} onClick={() => onDelete(index)}>{translate(language, 'confirmDeleteRoute')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></TableCell></TableRow>)}</TableBody></Table></div>;
-}
-
-function DataPlaneRouteDialog({ route, open, onOpenChange, onSave }: { readonly route: DataPlaneRoute | undefined; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onSave: (route: DataPlaneRoute) => void }) {
-  const [modelId, setModelId] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [upstreamModel, setUpstreamModel] = useState('');
-  const [providerType, setProviderType] = useState<DataPlaneProvider>(DataPlaneProvider.OpenAi);
-  const [enabled, setEnabled] = useState(true);
-  const [credentialName, setCredentialName] = useState('');
-  const [credentialKey, setCredentialKey] = useState('');
-  const [credentialNamespace, setCredentialNamespace] = useState('');
   const [failed, setFailed] = useState(false);
-  useEffect(() => { if (open) { setModelId(route?.modelId ?? ''); setEndpoint(route?.endpoint ?? ''); setUpstreamModel(route?.upstreamModel ?? ''); setProviderType(route?.providerType ?? DataPlaneProvider.OpenAi); setEnabled(route?.enabled !== false); setCredentialName(route?.credentialRef?.name ?? ''); setCredentialKey(route?.credentialRef?.key ?? ''); setCredentialNamespace(route?.credentialRef?.namespace ?? ''); setFailed(false); } }, [open, route]);
-  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!modelId.trim() || !endpoint.trim() || !upstreamModel.trim() || Boolean(credentialName.trim()) !== Boolean(credentialKey.trim())) { setFailed(true); return; } onSave({ modelId: modelId.trim(), enabled, endpoint: endpoint.trim(), upstreamModel: upstreamModel.trim(), protocol: 'openai-compatible', providerType, ...(credentialName.trim() && credentialKey.trim() ? { credentialRef: { name: credentialName.trim(), key: credentialKey.trim(), namespace: credentialNamespace.trim() || null } } : {}) }); };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{translate(language, route ? 'editRoute' : 'addRoute')}</DialogTitle><DialogDescription>{translate(language, 'routeEditorDescription')}</DialogDescription></DialogHeader><form onSubmit={submit} noValidate className="flex flex-col gap-4">{failed ? <Alert variant="destructive"><AlertCircle aria-hidden="true" /><AlertDescription>{translate(language, 'routeFormFailed')}</AlertDescription></Alert> : null}<FieldGroup><Field><FieldLabel htmlFor="route-model-id">{translate(language, 'routeModel')}</FieldLabel><Input id="route-model-id" value={modelId} onChange={event => setModelId(event.target.value)} /></Field><Field><FieldLabel htmlFor="route-endpoint">{translate(language, 'routeEndpoint')}</FieldLabel><Input id="route-endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder={translate(language, 'routeEndpointPlaceholder')} /></Field><Field><FieldLabel htmlFor="route-upstream-model">{translate(language, 'upstreamModel')}</FieldLabel><Input id="route-upstream-model" value={upstreamModel} onChange={event => setUpstreamModel(event.target.value)} /></Field><Field><FieldLabel>{translate(language, 'routeProvider')}</FieldLabel><ToggleGroup value={[providerType]} onValueChange={next => { if (next[0]) setProviderType(next[0] as DataPlaneProvider); }} variant="outline" aria-label={translate(language, 'routeProvider')}><ToggleGroupItem value={DataPlaneProvider.OpenAi}>{translate(language, 'openAiProvider')}</ToggleGroupItem><ToggleGroupItem value={DataPlaneProvider.DeepSeek}>{translate(language, 'deepSeekProvider')}</ToggleGroupItem></ToggleGroup></Field><Field><FieldLabel htmlFor="route-credential-name">{translate(language, 'credentialRefName')}</FieldLabel><Input id="route-credential-name" value={credentialName} onChange={event => setCredentialName(event.target.value)} placeholder={translate(language, 'credentialRefPlaceholder')} /></Field><Field><FieldLabel htmlFor="route-credential-key">{translate(language, 'credentialRefKey')}</FieldLabel><Input id="route-credential-key" value={credentialKey} onChange={event => setCredentialKey(event.target.value)} /></Field><Field><FieldLabel htmlFor="route-credential-namespace">{translate(language, 'credentialRefNamespace')}</FieldLabel><Input id="route-credential-namespace" value={credentialNamespace} onChange={event => setCredentialNamespace(event.target.value)} /></Field><BooleanSwitch id="route-enabled" label={`${translate(language, 'routeEnabled')}: ${translate(language, enabled ? 'enabled' : 'disabled')}`} checked={enabled} onCheckedChange={setEnabled} /></FieldGroup><DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{translate(language, 'cancel')}</Button><Button type="submit"><Check data-icon="inline-start" />{translate(language, 'save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    if (!allowed) return;
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    void client.dataPlane()
+      .then(next => { if (live) setState(next); })
+      .catch(() => { if (live) { setFailed(true); setState(null); } })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client, allowed, revision]);
+
+  if (!allowed) {
+    return (
+      <Result
+        status="403"
+        title={copy.statusNoPermission}
+      />
+    );
+  }
+
+  const desired = state?.desired;
+  const status = state?.status;
+  const observed = status?.observedRevision ?? '';
+  const inSync = observed
+    ? (desired?.revision === observed ? <Tag color="success">{copy.consistencyMatch}</Tag> : <Tag color="warning">{copy.consistencyMismatch}</Tag>)
+    : <Tag>{copy.valueUnknown}</Tag>;
+
+  const routeColumns = [
+    {
+      title: copy.routeModelColumn,
+      key: 'modelId',
+      render: (_: unknown, route: DataPlaneRoute) => (
+        <Space orientation="vertical" size={0}>
+          <span>{route.modelId}</span>
+          {route.upstreamModel ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{route.upstreamModel}</Typography.Text> : null}
+        </Space>
+      ),
+    },
+    { title: copy.routeEndpointColumn, dataIndex: 'endpoint', key: 'endpoint' },
+    {
+      title: copy.routeProviderColumn,
+      key: 'providerType',
+      render: (_: unknown, route: DataPlaneRoute) => route.providerType === 'deepseek'
+        ? translate(language, 'deepSeekProvider')
+        : translate(language, 'openAiProvider'),
+    },
+    {
+      title: translate(language, 'status'),
+      key: 'enabled',
+      render: (_: unknown, route: DataPlaneRoute) => route.enabled
+        ? <Tag color="success">{translate(language, 'enabled')}</Tag>
+        : <Tag>{translate(language, 'disabled')}</Tag>,
+    },
+  ];
+
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <ModuleHeading title={copy.statusTitle} description={copy.statusDescription}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+          {translate(language, 'refresh')}
+        </Button>
+      </ModuleHeading>
+
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={translate(language, 'dataPlaneLoadFailed')}
+          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+        />
+      ) : null}
+
+      <Alert type="info" showIcon title={copy.modelCheckGap} />
+
+      {loading && state === null ? (
+        <Skeleton active paragraph={{ rows: 4 }} />
+      ) : state ? (
+        <Descriptions bordered column={{ xs: 1, sm: 2, md: 3 }} size="small">
+          <Descriptions.Item label={copy.desiredRevision}>
+            <Typography.Text code>{desired?.revision ?? copy.valueUnknown}</Typography.Text>
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.appliedRevision}>
+            {observed ? <Typography.Text code>{observed}</Typography.Text> : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.consistency}>{inSync}</Descriptions.Item>
+          <Descriptions.Item label={copy.configState}>
+            {status ? dataPlaneStateTag(status.state) : <Tag>{copy.stateUnknown}</Tag>}
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.lastSync}>
+            {status?.lastAppliedAt ? formatTimestamp(status.lastAppliedAt) : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.publishedAt}>
+            {desired?.publishedAt ? formatTimestamp(desired.publishedAt) : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.resourceCount}>
+            {status?.resourceCount ?? <Typography.Text type="secondary">{copy.notCollected}</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label={copy.executor}>
+            <Typography.Text type="secondary">{copy.executorUnknown}</Typography.Text>
+          </Descriptions.Item>
+        </Descriptions>
+      ) : null}
+
+      {status?.message ? (
+        <Alert
+          type={status.state === 'error' ? 'error' : 'warning'}
+          showIcon
+          title={copy.errorMessage}
+          description={status.message}
+        />
+      ) : null}
+
+      <div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{copy.routesReadonlyNote}</Typography.Text>
+        <Table
+          style={{ marginTop: 8 }}
+          rowKey={route => `${route.modelId}-${route.endpoint}`}
+          columns={routeColumns}
+          dataSource={desired ? [...desired.routes] : []}
+          loading={loading && state === null}
+          scroll={{ x: 640 }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.routesEmpty} /> }}
+          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+        />
+      </div>
+    </div>
+  );
 }
-
-function dataPlaneStatusLabel(state: DataPlaneStatus['state']): AdminTranslationKey {
-  if (state === 'ready') return 'ready';
-  if (state === 'applying') return 'applying';
-  if (state === 'degraded') return 'degraded';
-  if (state === 'error') return 'error';
-  return 'pending';
-}
-
-function DataPlaneSkeleton() { return <div className="flex flex-col gap-4"><Card><CardHeader><Skeleton className="h-5 w-32" /></CardHeader><CardContent className="flex flex-col gap-3"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-1/2" /></CardContent></Card><Card><CardHeader><Skeleton className="h-5 w-40" /></CardHeader><CardContent><Skeleton className="h-32 w-full" /></CardContent></Card></div>; }
-
-function SessionTable({ sessions, canRevoke, client, onChanged, onError }: { readonly sessions: readonly AdminUserSession[]; readonly canRevoke: boolean; readonly client: AdminConsoleClient; readonly onChanged: () => Promise<void>; readonly onError: () => void }) {
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  if (sessions.length === 0) return <Empty><EmptyHeader><EmptyMedia><UsersRound aria-hidden="true" /></EmptyMedia><EmptyTitle>{translate(language, 'noSessions')}</EmptyTitle><EmptyDescription>{translate(language, 'noSessionsHint')}</EmptyDescription></EmptyHeader></Empty>;
-  const revoke = async (sessionId: string) => {
-    setPendingId(sessionId);
-    try { await client.revokeUserSession(sessionId); await onChanged(); } catch { onError(); } finally { setPendingId(null); }
-  };
-  return <div className="overflow-hidden rounded-lg border border-border bg-card"><Table><TableHeader><TableRow><TableHead>{translate(language, 'sessionId')}</TableHead><TableHead>{translate(language, 'user')}</TableHead><TableHead>{translate(language, 'topic')}</TableHead><TableHead>{translate(language, 'lastSeenAt')}</TableHead><TableHead>{translate(language, 'status')}</TableHead>{canRevoke ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}</TableRow></TableHeader><TableBody>{sessions.map(session => <TableRow key={session.sessionId}><TableCell className="max-w-48 truncate text-xs text-tertiary-foreground">{session.sessionId}</TableCell><TableCell className="max-w-48 truncate text-xs">{session.userId}</TableCell><TableCell className="max-w-56 truncate text-xs text-tertiary-foreground">{session.topic}</TableCell><TableCell className="text-xs text-tertiary-foreground">{formatTimestamp(session.lastSeenAt)}</TableCell><TableCell><Badge variant={session.revokedAt ? 'outline' : 'success'}>{translate(language, session.revokedAt ? 'revoked' : 'enabled')}</Badge></TableCell>{canRevoke ? <TableCell className="text-right">{session.revokedAt ? null : <AlertDialog><AlertDialogTrigger render={<Button size="icon-xs" variant="ghost" className="text-destructive hover:bg-destructive-soft hover:text-destructive" aria-label={translate(language, 'revokeSession')} title={translate(language, 'revokeSession')} disabled={pendingId !== null} />}><ShieldAlert /></AlertDialogTrigger><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>{translate(language, 'revokeSessionTitle')}</AlertDialogTitle><AlertDialogDescription>{translate(language, 'revokeSessionDescription')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={pendingId !== null}>{translate(language, 'cancel')}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-primary-foreground hover:bg-destructive-hover" disabled={pendingId !== null} onClick={() => void revoke(session.sessionId)}>{translate(language, 'confirmRevokeSession')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</TableCell> : null}</TableRow>)}</TableBody></Table></div>;
-}
-
-function LicenseSkeleton() { return <div className="overflow-hidden rounded-lg border border-border bg-card">{Array.from({ length: 3 }, (_, index) => <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}><Skeleton className="size-8 shrink-0 rounded-lg" /><div className="min-w-0 flex-1 flex flex-col gap-2"><Skeleton className="h-3.5 w-1/3" /><Skeleton className="h-3 w-1/2" /></div><Skeleton className="h-7 w-16" /></div>)}</div>; }
-function SessionSkeleton() { return <div className="overflow-hidden rounded-lg border border-border bg-card">{Array.from({ length: 4 }, (_, index) => <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}><Skeleton className="h-3.5 w-1/4" /><Skeleton className="h-3.5 w-1/4" /><Skeleton className="h-3.5 w-1/4" /><Skeleton className="h-7 w-16" /></div>)}</div>; }
