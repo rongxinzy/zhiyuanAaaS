@@ -4,7 +4,6 @@ import type { EnterpriseSessionIdentity } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
 import { translate, type TranslationKey } from '../../i18n.js';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert.js';
-import { Button } from '../ui/button.js';
 import { Separator } from '../ui/separator.js';
 import { PasswordChangeForm } from '../session/PasswordChangeForm.js';
 
@@ -83,6 +82,7 @@ export function AccountSettings({
           submitLabel="changePassword"
           signOutLabel="accountSignOut"
           autoFocus={false}
+          compact
           onSubmit={onPasswordChange}
           onSignOut={onSignOut}
         />
@@ -97,8 +97,8 @@ export function AccountSettingsUnavailable({
   readonly language: EnterpriseRendererLanguage;
 }) {
   return (
-    <main className="flex min-h-full items-center justify-center bg-background p-4 sm:p-6">
-      <Alert variant="warning" className="w-full max-w-md rounded-xl border bg-surface p-5 shadow-lg">
+    <main className="h-full overflow-y-auto bg-background px-4 py-4 sm:px-6">
+      <Alert variant="warning">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{translate(language, 'accountUnavailableTitle')}</AlertTitle>
         <AlertDescription>{translate(language, 'accountUnavailableDescription')}</AlertDescription>
