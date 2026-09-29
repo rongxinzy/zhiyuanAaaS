@@ -25,7 +25,10 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
 }
 
 describe('admin digital employees', () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   const employee: PortalEmployee = {
     name: 'sales-helper',
@@ -83,7 +86,7 @@ describe('admin digital employees', () => {
 
     expect(await screen.findByText('sales-helper')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /测试对话/ }));
+    fireEvent.click(within(screen.getByText('sales-helper').closest('tr')!).getByRole('button', { name: /测试对话/, hidden: true }));
     await waitFor(() => expect(open).toHaveBeenCalledOnce());
     expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper');
     const [href] = open.mock.calls[0]!;
@@ -101,7 +104,7 @@ describe('admin digital employees', () => {
 
     expect(await screen.findByText('sales-helper')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /测试对话/ }));
+    fireEvent.click(within(screen.getByText('sales-helper').closest('tr')!).getByRole('button', { name: /测试对话/, hidden: true }));
     await waitFor(() => expect(open).toHaveBeenCalledOnce());
     const [href] = open.mock.calls[0]!;
     // Derived from the test page's own origin (jsdom serves from
@@ -119,7 +122,8 @@ describe('admin digital employees', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<DigitalEmployees client={client as never} portal={portal} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /测试对话/ }));
+    const employeeRow = (await screen.findByText('sales-helper')).closest('tr')!;
+    fireEvent.click(within(employeeRow).getByRole('button', { name: /测试对话/, hidden: true }));
 
     expect(await screen.findByText(/浏览器拦截了新窗口/)).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /进入对话/ }) as HTMLAnchorElement;
@@ -134,7 +138,8 @@ describe('admin digital employees', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<DigitalEmployees client={client as never} portal={portal} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /测试对话/ }));
+    const employeeRow = (await screen.findByText('sales-helper')).closest('tr')!;
+    fireEvent.click(within(employeeRow).getByRole('button', { name: /测试对话/, hidden: true }));
 
     expect(await screen.findByText(/弹出式窗口/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重试打开' })).toBeInTheDocument();
@@ -220,7 +225,8 @@ describe('admin digital employees', () => {
     const portal = makePortal();
     render(<DigitalEmployees client={client as never} portal={portal} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /删除/ }));
+    const employeeRow = (await screen.findByText('sales-helper')).closest('tr')!;
+    fireEvent.click(within(employeeRow).getByRole('button', { name: /删除/, hidden: true }));
 
     expect(await screen.findByText(/处置策略尚待后端明确/)).toBeInTheDocument();
     // Blocked per design: the only action is going back — no confirm-and-delete.
