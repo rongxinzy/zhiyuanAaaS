@@ -5,6 +5,7 @@ import type {
   AepTokens,
   AepTransport,
   CurrentIdentity,
+  ServiceMetadata,
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -30,7 +31,6 @@ describe('Zhiyuan password session factory', () => {
     await expect(
       session.login({
         aepBaseUrl: 'https://aep.example.test',
-        enterpriseId: 'enterprise-1',
         username: 'admin',
         password: 'secret',
       }),
@@ -44,9 +44,23 @@ describe('Zhiyuan password session factory', () => {
 function fixtureTransport(): AepTransport {
   return {
     async request<T>(_baseUrl: string, request: AepRequest): Promise<AepResponse<T>> {
-      const data = request.path.endsWith('/auth/password/login') ? tokens() : identity();
+      const data = request.path.endsWith('/auth/password/login')
+        ? tokens()
+        : request.path.endsWith('/metadata')
+          ? metadata()
+          : identity();
       return { status: 200, headers: new Headers(), data: data as T };
     },
+  };
+}
+
+function metadata(): ServiceMetadata {
+  return {
+    service: 'aep-control-service',
+    supportedProtocolVersions: ['1'],
+    capabilities: [],
+    jwksUri: 'https://aep.example.test/.well-known/jwks.json',
+    deploymentId: 'enterprise-1',
   };
 }
 

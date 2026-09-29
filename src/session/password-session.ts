@@ -6,14 +6,16 @@ import type {
   EntitlementTokenResponse,
   LicenseActivationRequest,
   ModelConnection,
+  ServiceMetadata,
 } from '@aep/sdk-node';
 
 export interface PasswordSessionClient {
   getSessionState(): Promise<AepSessionState>;
   restoreSession(): Promise<AepTokens | null>;
   refreshSession(): Promise<AepTokens>;
+  getMetadata(): Promise<ServiceMetadata>;
   loginWithPassword(input: {
-    enterpriseId: string;
+    deploymentId: string;
     username: string;
     password: string;
   }): Promise<AepTokens>;
@@ -32,9 +34,15 @@ export type ZhiyuanSessionSnapshot =
 
 export interface PasswordLoginInput {
   readonly aepBaseUrl: string;
-  readonly enterpriseId: string;
   readonly username: string;
   readonly password: string;
+}
+
+export class AepMetadataError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AepMetadataError';
+  }
 }
 
 export type PasswordSessionClientFactory = (baseUrl: string) => PasswordSessionClient;
@@ -107,8 +115,9 @@ export class ZhiyuanPasswordSession {
     }
     return this.#enqueue(async () => {
       if (this.#clientFactory) this.#client = this.#clientFactory(aepBaseUrl);
+      const deploymentId = await this.#resolveDeploymentId();
       const tokens = await this.#client.loginWithPassword({
-        enterpriseId: input.enterpriseId,
+        deploymentId,
         username: input.username,
         password: input.password,
       });
@@ -175,6 +184,20 @@ export class ZhiyuanPasswordSession {
     });
   }
 
+  async #resolveDeploymentId(): Promise<string> {
+    let metadata: ServiceMetadata;
+    try {
+      metadata = await this.#client.getMetadata();
+    } catch (error) {
+      throw new AepMetadataError('AEP server metadata could not be retrieved.', { cause: error });
+    }
+    const deploymentId = metadata.deploymentId ?? metadata.deployment?.id;
+    if (!deploymentId) {
+      throw new AepMetadataError('AEP server metadata did not include a deployment ID.');
+    }
+    return deploymentId;
+  }
+
   async #loadIdentityOrMarkRecoverable(): Promise<void> {
     try {
       await this.#loadIdentity();
@@ -219,8 +242,8 @@ export class ZhiyuanPasswordSession {
 }
 
 function validateLogin(input: PasswordLoginInput): string {
-  if (!input.aepBaseUrl || !input.enterpriseId || !input.username || !input.password) {
-    throw new Error('AEP server URL, enterprise ID, username, and password are required.');
+  if (!input.aepBaseUrl || !input.username || !input.password) {
+    throw new Error('AEP server URL, username, and password are required.');
   }
   let url: URL;
   try {

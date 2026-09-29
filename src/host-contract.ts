@@ -136,6 +136,8 @@ export type EnterpriseSessionResult =
 
 export interface EnterprisePasswordLoginInput {
   readonly aepBaseUrl: string;
+  /** Required non-empty by the host v1 session bridge; the extension derives
+      the deployment from server metadata and ignores this value. */
   readonly enterpriseId: string;
   readonly username: string;
   readonly password: string;

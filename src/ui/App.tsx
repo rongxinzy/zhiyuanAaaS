@@ -61,7 +61,6 @@ export function App() {
 
   const handleLogin = async (input: {
     aepBaseUrl: string;
-    enterpriseId: string;
     username: string;
     password: string;
   }) => {
@@ -70,8 +69,13 @@ export function App() {
     setSuccess(null);
     try {
       const result = await client.login(input);
-      if (result.ok) updateSession(result);
-      else setError('loginFailed');
+      if (result.ok) {
+        if (result.snapshot.status === EnterpriseSessionStatus.Authenticated) {
+          updateSession(result);
+        } else {
+          setError('metadataUnavailable');
+        }
+      } else setError('loginFailed');
     } catch {
       setError('operationFailed');
     } finally {
