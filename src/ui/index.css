@@ -2,7 +2,6 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import './tea-theme.css';
-@import './zhiyuan-theme.css';
 
 /* Admin Vite uses src/admin as its root, while the shared shadcn primitives
    live beside it under src/ui. Keep both trees in Tailwind's source graph. */
@@ -10,62 +9,6 @@
 @source "../admin";
 
 @custom-variant dark (&:is(.dark *));
-
-/* Enterprise renderer pages inherit Zhiyuan core tokens. The admin console
-   keeps its Tea mapping because it is a separate browser surface. */
-#root.zhiyuan-enterprise-ui {
-  --background: var(--zy-background);
-  --foreground: var(--zy-foreground);
-  --card: var(--zy-surface);
-  --card-foreground: var(--zy-surface-foreground);
-  --popover: var(--zy-surface-overlay);
-  --popover-foreground: var(--zy-surface-foreground);
-  --surface: var(--zy-surface);
-  --surface-raised: var(--zy-surface-raised);
-  --surface-inset: var(--zy-background);
-  --border-subtle: var(--zy-border-subtle);
-  --primary: var(--zy-primary);
-  --primary-hover: var(--zy-primary-hover);
-  --primary-active: var(--zy-primary-hover);
-  --primary-focus: var(--zy-ring);
-  --primary-soft: var(--zy-primary-muted);
-  --primary-border-soft: var(--zy-border);
-  --primary-foreground: var(--zy-primary-foreground);
-  --secondary: var(--zy-surface-raised);
-  --secondary-hover: var(--zy-surface-tertiary);
-  --secondary-foreground: var(--zy-surface-foreground);
-  --muted: var(--zy-surface-raised);
-  --muted-foreground: var(--zy-text-secondary);
-  --tertiary-foreground: var(--zy-text-muted);
-  --accent: var(--zy-accent);
-  --accent-foreground: var(--zy-accent-foreground);
-  --success: var(--zy-success);
-  --success-foreground: var(--zy-surface-foreground);
-  --success-soft: var(--zy-surface-raised);
-  --success-hover: var(--zy-success);
-  --success-border: var(--zy-border);
-  --warning: var(--zy-warning);
-  --warning-foreground: var(--zy-surface-foreground);
-  --warning-soft: var(--zy-surface-raised);
-  --warning-hover: var(--zy-warning);
-  --warning-border: var(--zy-border);
-  --info: var(--zy-primary);
-  --info-foreground: var(--zy-primary-foreground);
-  --info-soft: var(--zy-primary-muted);
-  --info-hover: var(--zy-primary-hover);
-  --info-border: var(--zy-border);
-  --destructive: var(--zy-destructive);
-  --destructive-soft: var(--zy-surface-raised);
-  --destructive-hover: var(--zy-destructive);
-  --destructive-focus: var(--zy-ring);
-  --destructive-border-focus: var(--zy-border);
-  --destructive-ring: var(--zy-ring);
-  --overlay: var(--zy-surface-overlay);
-  --border: var(--zy-border);
-  --input: var(--zy-input-border);
-  --ring: var(--zy-ring);
-  --radius: var(--zy-radius);
-}
 
 /* Keep the existing shadcn semantic API, but source every value from Tea. */
 :root,

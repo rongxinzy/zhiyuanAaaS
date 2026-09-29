@@ -4,7 +4,6 @@ import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-c
 import {
   EnterpriseRendererLanguage,
   EnterpriseRendererSurface,
-  EnterpriseRendererTheme,
   type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
 } from '../renderer-contract.js';
 import { LoginForm } from './components/session/LoginForm.js';
@@ -15,6 +14,7 @@ import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
 import { SessionLayout } from './components/session/SessionLayout.js';
 import { translate, type TranslationKey } from './i18n.js';
 import { EnterpriseRendererClient } from './services/enterprise-renderer-client.js';
+import { applyEnterpriseTheme } from './services/enterprise-theme.js';
 
 interface RuntimeState {
   readonly language: EnterpriseRendererLanguageValue;
@@ -35,10 +35,7 @@ export function App() {
   useEffect(
     () =>
       client.start(message => {
-        document.documentElement.classList.toggle(
-          'dark',
-          message.theme === EnterpriseRendererTheme.Dark,
-        );
+        applyEnterpriseTheme(message);
         document.documentElement.lang =
           message.language === EnterpriseRendererLanguage.Chinese ? 'zh-CN' : 'en';
         setRuntime({

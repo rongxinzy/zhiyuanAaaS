@@ -26,12 +26,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   postMessage.mockRestore();
+  document.documentElement.removeAttribute('style');
+  document.documentElement.classList.remove('dark');
 });
 
 describe('enterprise session UI', () => {
   test('renders the Chinese login form for a signed-out session', async () => {
     render(<App />);
-    act(() => initialize({ ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } }));
+    act(() =>
+      initialize({
+        ok: true,
+        snapshot: { status: EnterpriseSessionStatus.SignedOut },
+      }),
+    );
 
     expect(await screen.findByRole('heading', { name: '登录知远' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Zhiyuan' })).toBeInTheDocument();
@@ -44,14 +51,25 @@ describe('enterprise session UI', () => {
 
   test('requires and sends the real AEP server address with login credentials', async () => {
     render(<App />);
-    act(() => initialize({ ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } }));
+    act(() =>
+      initialize({
+        ok: true,
+        snapshot: { status: EnterpriseSessionStatus.SignedOut },
+      }),
+    );
 
     fireEvent.change(await screen.findByLabelText('AEP 服务端地址'), {
       target: { value: 'https://aep.customer.example' },
     });
-    fireEvent.change(screen.getByLabelText('企业 ID'), { target: { value: 'enterprise-1' } });
-    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
+    fireEvent.change(screen.getByLabelText('企业 ID'), {
+      target: { value: 'enterprise-1' },
+    });
+    fireEvent.change(screen.getByLabelText('用户名'), {
+      target: { value: 'admin' },
+    });
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'secret' },
+    });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
 
     await waitFor(() =>
@@ -106,7 +124,9 @@ describe('enterprise session UI', () => {
       ),
     );
 
-    expect(await screen.findByRole('heading', { name: 'Enterprise account' })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: 'Enterprise account' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Enterprise account' })).not.toBeInTheDocument();
+    expect(document.querySelector('main .shadow-lg, main [data-slot="card"]')).toBeNull();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     expect(screen.getByText('Zhiyuan')).toBeInTheDocument();
@@ -154,6 +174,8 @@ describe('enterprise session UI', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Managed Model' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Enterprise models' })).not.toBeInTheDocument();
+    expect(document.querySelector('main .shadow-lg, main [data-slot="card"]')).toBeNull();
     expect(screen.getByText('Default')).toBeInTheDocument();
     expect(screen.getByText('128,000 tokens')).toBeInTheDocument();
     expect(screen.getByText('Tool calling')).toBeInTheDocument();
@@ -233,6 +255,29 @@ describe('enterprise session UI', () => {
     expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
   });
+
+  test('updates the active host theme without remounting a settings draft', () => {
+    render(<App />);
+    act(() =>
+      initialize(authenticated(false), 'en', EnterpriseRendererSurface.Settings, 'account'),
+    );
+    const input = screen.getByLabelText('Current password');
+    fireEvent.change(input, { target: { value: 'draft-value' } });
+    act(() =>
+      initialize(
+        authenticated(false),
+        'en',
+        EnterpriseRendererSurface.Settings,
+        'account',
+        EnterpriseRendererTheme.Dark,
+        { '--zy-background': 'Canvas', '--zy-radius': '6px' },
+      ),
+    );
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement.style.getPropertyValue('--zy-background')).toBe('Canvas');
+    expect(screen.getByLabelText('Current password')).toBe(input);
+    expect(input).toHaveValue('draft-value');
+  });
 });
 
 function initialize(
@@ -240,6 +285,8 @@ function initialize(
   language: EnterpriseRendererLanguageValue = EnterpriseRendererLanguage.Chinese,
   surface: EnterpriseRendererSurfaceValue = EnterpriseRendererSurface.SessionGate,
   pageId: string | null = null,
+  theme: EnterpriseRendererTheme = EnterpriseRendererTheme.Light,
+  themeVariables?: Record<string, string>,
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
@@ -251,7 +298,8 @@ function initialize(
         surface,
         pageId,
         language,
-        theme: EnterpriseRendererTheme.Light,
+        theme,
+        themeVariables,
         session,
       },
     }),

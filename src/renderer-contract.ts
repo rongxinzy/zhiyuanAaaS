@@ -49,6 +49,43 @@ export const EnterpriseRendererTheme = {
 export type EnterpriseRendererTheme =
   (typeof EnterpriseRendererTheme)[keyof typeof EnterpriseRendererTheme];
 
+// Optional v1 appearance capability. Only theme data crosses the sandbox.
+export const EnterpriseRendererThemeVariables = [
+  '--zy-background',
+  '--zy-foreground',
+  '--zy-surface',
+  '--zy-surface-foreground',
+  '--zy-surface-raised',
+  '--zy-surface-tertiary',
+  '--zy-surface-overlay',
+  '--zy-text-secondary',
+  '--zy-text-muted',
+  '--zy-border',
+  '--zy-border-subtle',
+  '--zy-input-border',
+  '--zy-primary',
+  '--zy-primary-strong',
+  '--zy-primary-hover',
+  '--zy-primary-muted',
+  '--zy-primary-foreground',
+  '--zy-accent',
+  '--zy-accent-foreground',
+  '--zy-success',
+  '--zy-warning',
+  '--zy-destructive',
+  '--zy-destructive-foreground',
+  '--zy-ring',
+  '--zy-radius',
+  '--zy-scroll-thumb',
+  '--zy-scroll-thumb-hover',
+  '--zy-style-font-sans',
+  '--zy-style-font-heading',
+  '--zy-style-font-mono',
+] as const;
+export type EnterpriseRendererThemeVariables = Partial<
+  Record<(typeof EnterpriseRendererThemeVariables)[number], string>
+>;
+
 export interface EnterpriseRendererReadyMessage {
   readonly source: typeof EnterpriseRendererMessageSource.Module;
   readonly apiVersion: 1;
@@ -63,6 +100,7 @@ export interface EnterpriseRendererInitializeMessage {
   readonly pageId: string | null;
   readonly language: EnterpriseRendererLanguage;
   readonly theme: EnterpriseRendererTheme;
+  readonly themeVariables?: EnterpriseRendererThemeVariables;
   readonly session: EnterpriseSessionResult;
 }
 
@@ -114,7 +152,10 @@ export interface EnterpriseRendererModelCatalogRequestMessage {
 }
 
 export type EnterpriseRendererModelCatalogResult =
-  | { readonly ok: true; readonly models: readonly ManagedProviderCatalogModel[] }
+  | {
+      readonly ok: true;
+      readonly models: readonly ManagedProviderCatalogModel[];
+    }
   | { readonly ok: false };
 
 export interface EnterpriseRendererModelCatalogResponseMessage {

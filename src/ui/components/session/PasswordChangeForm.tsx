@@ -3,6 +3,7 @@ import { type FormEvent, useState } from 'react';
 
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
 import { translate, type TranslationKey } from '../../i18n.js';
+import { cn } from '../../lib/utils.js';
 import { Alert, AlertDescription } from '../ui/alert.js';
 import { Button } from '../ui/button.js';
 import { Field, FieldError, FieldGroup, FieldLabel } from '../ui/field.js';
@@ -18,10 +19,8 @@ interface PasswordChangeFormProps {
   readonly submitLabel?: TranslationKey;
   readonly signOutLabel?: TranslationKey;
   readonly autoFocus?: boolean;
-  readonly onSubmit: (input: {
-    currentPassword: string;
-    newPassword: string;
-  }) => Promise<boolean>;
+  readonly compact?: boolean;
+  readonly onSubmit: (input: { currentPassword: string; newPassword: string }) => Promise<boolean>;
   readonly onSignOut: () => Promise<void>;
 }
 
@@ -34,6 +33,7 @@ export function PasswordChangeForm({
   submitLabel = 'updatePassword',
   signOutLabel = 'signOut',
   autoFocus = true,
+  compact = false,
   onSubmit,
   onSignOut,
 }: PasswordChangeFormProps) {
@@ -71,8 +71,11 @@ export function PasswordChangeForm({
           <AlertDescription>{translate(language, success)}</AlertDescription>
         </Alert>
       ) : null}
-      <FieldGroup>
-        <Field data-invalid={displayedError ? true : undefined}>
+      <FieldGroup className={cn(compact && 'grid gap-4 sm:grid-cols-2')}>
+        <Field
+          className={cn(compact && 'sm:col-span-2')}
+          data-invalid={displayedError ? true : undefined}
+        >
           <FieldLabel htmlFor="current-password">
             {translate(language, 'currentPassword')}
           </FieldLabel>
@@ -126,17 +129,22 @@ export function PasswordChangeForm({
           {validationError ? <FieldError>{translate(language, validationError)}</FieldError> : null}
         </Field>
       </FieldGroup>
-      <div className="flex flex-col gap-2">
-        <Button type="submit" size="lg" disabled={disabled} className="w-full">
+      <div className={cn('flex gap-2', compact ? 'flex-wrap' : 'flex-col')}>
+        <Button
+          type="submit"
+          size={compact ? 'default' : 'lg'}
+          disabled={disabled}
+          className={cn(!compact && 'w-full')}
+        >
           {pending ? <Spinner data-icon="inline-start" /> : <KeyRound data-icon="inline-start" />}
           {translate(language, pending ? 'updatingPassword' : submitLabel)}
         </Button>
         <Button
           type="button"
-          size="lg"
+          size={compact ? 'default' : 'lg'}
           variant="ghost"
           disabled={disabled}
-          className="w-full"
+          className={cn(!compact && 'w-full')}
           onClick={() => void onSignOut()}
         >
           {signingOut ? <Spinner data-icon="inline-start" /> : <LogOut data-icon="inline-start" />}
