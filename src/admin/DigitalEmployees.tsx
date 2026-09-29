@@ -6,7 +6,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import type { AdminConsoleClient } from './client.js';
 import { translate, type AdminLanguage } from './i18n.js';
@@ -196,6 +196,23 @@ function EmbeddedChat({
 }) {
   const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
   const [nonce, setNonce] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Measured pane height: the console shell's height chain is content-driven
+  // (min-h containers), so a CSS calc guess either overflows small viewports
+  // or wastes space on tall ones. Measure the pane's top offset once (and on
+  // window resize) and size it to exactly the remaining viewport.
+  const [paneHeight, setPaneHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const measure = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      setPaneHeight(Math.max(window.innerHeight - top - 16, 384));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   useEffect(() => {
     void portal.listEmployees().then(setEmployees).catch(() => setEmployees([]));
@@ -210,7 +227,11 @@ function EmbeddedChat({
   };
 
   return (
-    <div className="flex h-[calc(100vh-11.5rem)] min-h-[28rem] flex-1 gap-4">
+    <div
+      ref={rootRef}
+      className="flex min-h-0 flex-1 gap-4"
+      style={paneHeight !== undefined ? { height: paneHeight } : undefined}
+    >
       <div className="flex w-64 shrink-0 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
         <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
           {translate(language, 'digitalEmployeesList')}
