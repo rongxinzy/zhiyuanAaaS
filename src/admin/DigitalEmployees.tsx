@@ -138,20 +138,21 @@ function EmployeePanel({
   readonly client: AdminConsoleClient;
 }) {
   const [selected, setSelected] = useState<PortalEmployee | null>(null);
-  const [chatWith, setChatWith] = useState<PortalEmployee | null>(null);
 
   // Muse/Grok-Bot-style embedded conversation: mint the portal session in
   // the background and open the chat UI in an in-page pane — the console
   // stays the single shell. Falls back to a new tab (portal fragment link)
   // when the background mint fails.
 
-  // Muse/Grok-Bot-style embedded conversation: mint the portal session in
-  // the background and open the chat UI in an in-page pane — the console
-  // stays the single shell. Falls back to a new tab (portal fragment link)
-  // when the background mint fails.
+  // Silent handoff: mint the portal session and select the employee in the
+  // background (cookies land on the shared host), then open the chat UI in
+  // a new tab — no portal entry page flashing in between. Falls back to the
+  // fragment-token handoff when the background mint fails.
+  // (An embedded in-page pane was tried and rolled back at the user's
+  // request; the EmbeddedChat component stays in the file for a retry.)
   const openChat = async (employee: PortalEmployee) => {
     if (await portal.mintChatSession(employee.name)) {
-      setChatWith(employee);
+      window.open(`${chatUIBaseURL()}/workspace`, '_blank', 'noopener');
       return;
     }
     const token = await client.getAccessToken();
@@ -163,16 +164,6 @@ function EmployeePanel({
     window.open(href, '_blank', 'noopener');
   };
 
-  if (chatWith) {
-    return (
-      <EmbeddedChat
-        portal={portal}
-        current={chatWith}
-        onCurrentChange={setChatWith}
-        onClose={() => setChatWith(null)}
-      />
-    );
-  }
   return selected ? (
     <EmployeeDetail employee={selected} onBack={() => setSelected(null)} />
   ) : (

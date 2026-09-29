@@ -37,7 +37,7 @@ describe('admin digital employees', () => {
       ...overrides,
     }) as unknown as PortalClient;
 
-  test('opens the embedded chat pane after the silent session handoff', async () => {
+  test('opens chat in a new tab after the silent session handoff', async () => {
     const portal = makePortal();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<DigitalEmployees client={client as never} portal={portal} />);
@@ -45,12 +45,13 @@ describe('admin digital employees', () => {
     expect(await screen.findByText('sales-helper')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '打开对话' }));
-    // Silent handoff mints the session in the background and the console
-    // frames the chat UI in-page — no new tab, no portal entry page.
-    await waitFor(() => expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper'));
-    const frame = await screen.findByTitle('销售助理');
-    expect(frame).toHaveAttribute('src', 'http://localhost:30195/workspace?embed=1');
-    expect(open).not.toHaveBeenCalled();
+    // Silent handoff: the session and employee cookies are minted in the
+    // background, so the chat UI opens directly in a new tab — no portal
+    // entry page. (An in-page pane was tried and rolled back.)
+    await waitFor(() => expect(open).toHaveBeenCalledOnce());
+    expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper');
+    const [href] = open.mock.calls[0]!;
+    expect(href).toContain('http://localhost:30195/workspace');
     open.mockRestore();
   });
 
