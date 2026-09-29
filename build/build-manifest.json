@@ -19,7 +19,7 @@
     "packagedDirectory": "zhiyuan-enterprise/admin"
   },
   "zhiyuanCore": {
-    "commit": "9a3d1589ca25d867f17a4a1bfc71b676f7f308f3"
+    "commit": "0b64a18513e969be2884f022df71309da9c9ecad"
   },
   "aepProtocol": {
     "commit": "90e47c0418f38875da760ba30ccee1aa42f41542"
