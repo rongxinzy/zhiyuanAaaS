@@ -4,6 +4,14 @@ extends: electron-builder.json
 # Windows Explorer, the Start menu, the taskbar, and the installer filename.
 productName: 知远企业版
 executableName: 知远企业版
+# A distinct application identity keeps the enterprise and community builds
+# fully isolated: without it both installers share com.zhiyuanagent.app, so the
+# NSIS installer treats the community install as the same product (overwrites
+# it and shares the Windows uninstall registry entry).
+appId: com.zhiyuanagent.enterprise
+# The community browser-login deep link belongs to the community build. The
+# enterprise build uses in-app password login and must not claim the scheme.
+protocols: []
 
 extraResources:
   - from: ${env.ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE}
