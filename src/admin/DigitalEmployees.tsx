@@ -6,13 +6,14 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import type { AdminConsoleClient } from './client.js';
 import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
   PortalClient,
+  chatUIBaseURL,
   portalChatBaseURL,
   type PortalEmployee,
   type PortalRequest,
@@ -137,10 +138,144 @@ function EmployeePanel({
   readonly client: AdminConsoleClient;
 }) {
   const [selected, setSelected] = useState<PortalEmployee | null>(null);
+
+  // Muse/Grok-Bot-style embedded conversation: mint the portal session in
+  // the background and open the chat UI in an in-page pane — the console
+  // stays the single shell. Falls back to a new tab (portal fragment link)
+  // when the background mint fails.
+
+  // Silent handoff: mint the portal session and select the employee in the
+  // background (cookies land on the shared host), then open the chat UI in
+  // a new tab — no portal entry page flashing in between. Falls back to the
+  // fragment-token handoff when the background mint fails.
+  // (An embedded in-page pane was tried and rolled back at the user's
+  // request; the EmbeddedChat component stays in the file for a retry.)
+  const openChat = async (employee: PortalEmployee) => {
+    if (await portal.mintChatSession(employee.name)) {
+      window.open(`${chatUIBaseURL()}/workspace`, '_blank', 'noopener');
+      return;
+    }
+    const token = await client.getAccessToken();
+    if (!token) {
+      notify(AdminNotificationKind.Error, translate(language, 'digitalEmployeesChatNoSession'));
+      return;
+    }
+    const href = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}#token=${encodeURIComponent(token)}`;
+    window.open(href, '_blank', 'noopener');
+  };
+
   return selected ? (
     <EmployeeDetail employee={selected} onBack={() => setSelected(null)} />
   ) : (
-    <EmployeeList portal={portal} client={client} onSelected={setSelected} />
+    <EmployeeList portal={portal} client={client} onSelected={setSelected} onChat={openChat} />
+  );
+}
+
+// Embedded conversation pane: employee rail on the left, the framed chat UI
+// on the right (same host, so the minted portal cookies flow into the
+// frame). Switching employees re-mints and reloads the frame.
+function EmbeddedChat({
+  portal,
+  current,
+  onCurrentChange,
+  onClose,
+}: {
+  readonly portal: PortalClient;
+  readonly current: PortalEmployee;
+  readonly onCurrentChange: (employee: PortalEmployee) => void;
+  readonly onClose: () => void;
+}) {
+  const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Measured pane height: the console shell's height chain is content-driven
+  // (min-h containers), so a CSS calc guess either overflows small viewports
+  // or wastes space on tall ones. Measure the pane's top offset once (and on
+  // window resize) and size it to exactly the remaining viewport.
+  const [paneHeight, setPaneHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const measure = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      setPaneHeight(Math.max(window.innerHeight - top - 16, 384));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  useEffect(() => {
+    void portal.listEmployees().then(setEmployees).catch(() => setEmployees([]));
+  }, [portal]);
+
+  const switchTo = async (employee: PortalEmployee) => {
+    if (employee.name === current.name) return;
+    if (await portal.mintChatSession(employee.name)) {
+      onCurrentChange(employee);
+      setNonce((value) => value + 1);
+    }
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      className="flex min-h-0 flex-1 gap-4"
+      style={paneHeight !== undefined ? { height: paneHeight } : undefined}
+    >
+      <div className="flex w-64 shrink-0 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
+        <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
+          {translate(language, 'digitalEmployeesList')}
+        </div>
+        {(employees ?? []).map((employee) => (
+          <button
+            key={employee.name}
+            type="button"
+            onClick={() => void switchTo(employee)}
+            className={`flex flex-col items-start rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${
+              employee.name === current.name ? 'bg-accent font-medium' : ''
+            }`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              {employee.displayName || employee.name}
+              {employee.channels?.wecom ? (
+                <Badge variant="outline">{translate(language, 'wecomBadge')}</Badge>
+              ) : null}
+            </span>
+            <span className="text-xs text-muted-foreground">{employee.name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            {current.displayName || current.name}
+            <Badge variant={phaseBadgeVariant(current.phase)}>{current.phase || '—'}</Badge>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => setNonce((value) => value + 1)}>
+              {translate(language, 'statusRefresh')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => window.open(`${chatUIBaseURL()}/workspace`, '_blank', 'noopener')}
+            >
+              {translate(language, 'chatPaneOpenTab')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              {translate(language, 'chatPaneClose')}
+            </Button>
+          </div>
+        </div>
+        <iframe
+          key={`${current.name}-${nonce}`}
+          src={`${chatUIBaseURL()}/workspace?embed=1`}
+          title={current.displayName || current.name}
+          className="min-h-0 w-full flex-1 border-0"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -148,10 +283,12 @@ function EmployeeList({
   portal,
   client,
   onSelected,
+  onChat,
 }: {
   readonly portal: PortalClient;
   readonly client: AdminConsoleClient;
   readonly onSelected: (employee: PortalEmployee) => void;
+  readonly onChat: (employee: PortalEmployee) => void;
 }) {
   const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,18 +309,6 @@ function EmployeeList({
   useEffect(() => {
     void load();
   }, [portal]);
-
-  const openChat = async (employee: PortalEmployee) => {
-    const token = await client.getAccessToken();
-    if (!token) {
-      notify(AdminNotificationKind.Error, translate(language, 'digitalEmployeesChatNoSession'));
-      return;
-    }
-    // The token travels in the URL fragment (never sent to servers, never
-    // in Referer); the portal page exchanges and wipes it immediately.
-    const href = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}#token=${encodeURIComponent(token)}`;
-    window.open(href, '_blank', 'noopener');
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -253,7 +378,7 @@ function EmployeeList({
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => void openChat(employee)}
+                        onClick={() => void onChat(employee)}
                         title={translate(language, 'digitalEmployeesOpenChat')}
                       >
                         <MessageSquare data-icon="inline-start" />

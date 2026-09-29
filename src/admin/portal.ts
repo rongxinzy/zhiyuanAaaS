@@ -23,8 +23,22 @@ export type PortalMemoryStatus = {
   readonly healthy: boolean;
   readonly accounts: readonly {
     readonly accountID: string;
-    readonly adminUser: string;
     readonly createdAt: string;
+    readonly userCount: number;
+  }[];
+  readonly employees: readonly {
+    readonly name: string;
+    readonly memoryUser: string;
+    readonly sessions?: number;
+    readonly lastActive?: string;
+  }[];
+};
+
+export type PortalMemorySearchResult = {
+  readonly memories: readonly {
+    readonly uri: string;
+    readonly score: number;
+    readonly abstract: string;
   }[];
 };
 
@@ -32,6 +46,13 @@ export type PortalKnowledgeStatus = {
   readonly url: string;
   readonly configured: boolean;
   readonly healthy: boolean;
+  readonly knowledgeBases: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+    readonly documentCount?: number;
+    readonly createdAt?: string;
+  }[];
 };
 
 export type PortalRequest = {
@@ -73,8 +94,9 @@ export class PortalClient {
     method: string,
     path: string,
     body?: unknown,
+    extraHeaders?: Readonly<Record<string, string>>,
   ): Promise<{ readonly status: number; readonly data: unknown }> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const token = await this.#tokenProvider();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -85,6 +107,27 @@ export class PortalClient {
     });
     const data: unknown = await response.json().catch(() => null);
     return { status: response.status, data };
+  }
+
+  // Silent chat handoff: mint the portal session and select the employee
+  // server-side (cookies land on the shared host through the /api proxy),
+  // so the browser can open the chat UI directly — no portal entry page
+  // flashing between the console and the conversation. Returns false when
+  // any step fails; callers fall back to the portal /chat handoff link.
+  async mintChatSession(employee: string): Promise<boolean> {
+    const token = await this.#tokenProvider();
+    if (!token) return false;
+    const session = await this.#request('POST', '/api/v1/session', { token });
+    if (session.status !== 200) return false;
+    const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1];
+    if (!csrf) return false;
+    const selected = await this.#request(
+      'POST',
+      '/api/v1/session/employee',
+      { name: employee },
+      { 'X-CSRF-Token': decodeURIComponent(csrf) },
+    );
+    return selected.status === 200;
   }
 
   async listEmployees(): Promise<readonly PortalEmployee[]> {
@@ -115,6 +158,14 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/memory/status');
     if (status !== 200) throw portalError(status, data);
     return data as PortalMemoryStatus;
+  }
+
+  async memorySearch(employee: string, query: string): Promise<PortalMemorySearchResult> {
+    const { status, data } = await this.#request('POST', '/api/v1/memory/search', {
+      body: { employee, query },
+    });
+    if (status !== 200) throw portalError(status, data);
+    return data as PortalMemorySearchResult;
   }
 
   async knowledgeStatus(): Promise<PortalKnowledgeStatus> {
@@ -202,6 +253,15 @@ function portalError(status: number, data: unknown): PortalError {
 // portal and chat UI on one hostname (cookies ignore ports, not hosts), and
 // nothing environment-specific is baked into the build. VITE_PORTAL_URL
 // overrides for split deployments.
+export function chatUIBaseURL(): string {
+  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
+  if (env?.VITE_CHAT_UI_URL) return env.VITE_CHAT_UI_URL;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:30195`;
+  }
+  return 'http://localhost:30195';
+}
+
 export function portalChatBaseURL(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
   if (env?.VITE_PORTAL_URL) return env.VITE_PORTAL_URL;
