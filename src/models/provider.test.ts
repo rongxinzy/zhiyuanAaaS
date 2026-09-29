@@ -4,6 +4,7 @@ import type {
   AgentModel,
   CurrentIdentity,
   ModelConnection,
+  ServiceMetadata,
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -99,7 +100,7 @@ describe('ZhiyuanModelProvider', () => {
     const changed = vi.fn();
     const unsubscribe = provider.onDidChange(changed);
 
-    await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
+    await session.login({ aepBaseUrl: 'https://aep.example.test', username: 'admin', password: 'secret' });
     expect(changed).toHaveBeenCalledOnce();
     await provider.snapshot();
     expect(refreshEntitlement).toHaveBeenCalledTimes(1);
@@ -185,7 +186,7 @@ describe('ZhiyuanModelProvider', () => {
 
 async function authenticatedSession(client: PasswordSessionClient): Promise<ZhiyuanPasswordSession> {
   const session = new ZhiyuanPasswordSession(client);
-  await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' });
+  await session.login({ aepBaseUrl: 'https://aep.example.test', username: 'admin', password: 'secret' });
   return session;
 }
 
@@ -194,6 +195,7 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
     refreshSession: vi.fn(async () => tokens()),
+    getMetadata: vi.fn(async () => metadata()),
     loginWithPassword: vi.fn(async () => tokens()),
     changePassword: vi.fn(async () => tokens()),
     getCurrentIdentity: vi.fn(async () => identity()),
@@ -201,6 +203,16 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getModelConnection: vi.fn(async () => connection()),
     logout: vi.fn(async () => undefined),
     ...overrides,
+  };
+}
+
+function metadata(): ServiceMetadata {
+  return {
+    service: 'aep-control-service',
+    supportedProtocolVersions: ['1'],
+    capabilities: [],
+    jwksUri: 'https://aep.example.test/.well-known/jwks.json',
+    deploymentId: 'enterprise-1',
   };
 }
 

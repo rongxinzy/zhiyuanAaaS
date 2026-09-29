@@ -4,6 +4,7 @@ import type {
   AgentModel,
   CurrentIdentity,
   ModelConnection,
+  ServiceMetadata,
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -116,7 +117,7 @@ describe('Electron release candidate contract', () => {
         })),
       }),
     );
-    await session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'demo', username: 'agent-user', password: 'password' });
+    await session.login({ aepBaseUrl: 'https://aep.example.test', username: 'agent-user', password: 'password' });
     const extension = new ZhiyuanAaaSExtension({
       createSession: vi.fn(async () => session),
       warn: vi.fn(),
@@ -172,6 +173,7 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
     refreshSession: vi.fn(async () => tokens()),
+    getMetadata: vi.fn(async () => metadata()),
     loginWithPassword: vi.fn(async () => tokens()),
     changePassword: vi.fn(async () => tokens()),
     getCurrentIdentity: vi.fn(async () => identity()),
@@ -185,6 +187,16 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getModelConnection: vi.fn(async () => connection()),
     logout: vi.fn(async () => undefined),
     ...overrides,
+  };
+}
+
+function metadata(): ServiceMetadata {
+  return {
+    service: 'aep-control-service',
+    supportedProtocolVersions: ['1'],
+    capabilities: [],
+    jwksUri: 'https://aep.example.test/.well-known/jwks.json',
+    deploymentId: 'demo',
   };
 }
 

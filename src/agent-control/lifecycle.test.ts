@@ -20,7 +20,6 @@ describe('Zhiyuan Agent control lifecycle', () => {
 
     await session.login({
       aepBaseUrl: 'https://aep.example.test',
-      enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',
     });
@@ -46,6 +45,13 @@ function clientFixture(): ConstructorParameters<typeof ZhiyuanPasswordSession>[0
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
     refreshSession: vi.fn(),
+    getMetadata: vi.fn(async () => ({
+      service: 'aep-control-service',
+      supportedProtocolVersions: ['1'],
+      capabilities: [],
+      jwksUri: 'https://aep.example.test/.well-known/jwks.json',
+      deploymentId: 'enterprise-1',
+    })),
     loginWithPassword: vi.fn(async () => ({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',

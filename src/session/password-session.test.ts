@@ -3,10 +3,12 @@ import type {
   AepTokens,
   CurrentIdentity,
   ModelConnection,
+  ServiceMetadata,
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
+  AepMetadataError,
   ZhiyuanPasswordSession,
   type PasswordSessionClient,
 } from './password-session.js';
@@ -81,7 +83,6 @@ describe('Zhiyuan password session', () => {
 
     const login = session.login({
       aepBaseUrl: 'https://aep.example.test',
-      enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'never-persist-this',
     });
@@ -91,6 +92,11 @@ describe('Zhiyuan password session', () => {
     finishLogin!();
     await expect(login).resolves.toMatchObject({ status: 'authenticated' });
     await expect(logout).resolves.toEqual({ status: 'signed-out' });
+    expect(client.loginWithPassword).toHaveBeenCalledWith({
+      deploymentId: 'enterprise-1',
+      username: 'admin',
+      password: 'never-persist-this',
+    });
     expect(client.logout).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(session.snapshot())).not.toContain('never-persist-this');
   });
@@ -106,7 +112,6 @@ describe('Zhiyuan password session', () => {
     await expect(
       session.login({
         aepBaseUrl: 'https://aep.customer.example/',
-        enterpriseId: 'enterprise-1',
         username: 'admin',
         password: 'secret',
       }),
@@ -115,14 +120,76 @@ describe('Zhiyuan password session', () => {
     expect(loginClient.loginWithPassword).toHaveBeenCalledOnce();
   });
 
+  test('derives the deployment from server metadata before password login', async () => {
+    const client = mockClient({
+      getMetadata: vi.fn(async () => {
+        const { deploymentId: _deploymentId, ...rest } = metadata();
+        return { ...rest, deployment: { id: 'demo', name: 'Zhiyuan Demo' } };
+      }),
+    });
+    const session = new ZhiyuanPasswordSession(client);
+
+    await expect(
+      session.login({
+        aepBaseUrl: 'https://aep.example.test',
+        username: 'admin',
+        password: 'secret',
+      }),
+    ).resolves.toMatchObject({ status: 'authenticated' });
+    expect(client.loginWithPassword).toHaveBeenCalledWith({
+      deploymentId: 'demo',
+      username: 'admin',
+      password: 'secret',
+    });
+  });
+
+  test('rejects sign-in when server metadata cannot be retrieved', async () => {
+    const client = mockClient({
+      getMetadata: vi.fn(async () => {
+        throw new Error('connection refused');
+      }),
+    });
+    const session = new ZhiyuanPasswordSession(client);
+
+    await expect(
+      session.login({
+        aepBaseUrl: 'https://aep.example.test',
+        username: 'admin',
+        password: 'secret',
+      }),
+    ).rejects.toBeInstanceOf(AepMetadataError);
+    expect(client.loginWithPassword).not.toHaveBeenCalled();
+    expect(session.snapshot()).toEqual({ status: 'signed-out' });
+  });
+
+  test('rejects sign-in when server metadata omits the deployment', async () => {
+    const client = mockClient({
+      getMetadata: vi.fn(async () => {
+        const { deploymentId: _deploymentId, ...rest } = metadata();
+        return rest;
+      }),
+    });
+    const session = new ZhiyuanPasswordSession(client);
+
+    await expect(
+      session.login({
+        aepBaseUrl: 'https://aep.example.test',
+        username: 'admin',
+        password: 'secret',
+      }),
+    ).rejects.toBeInstanceOf(AepMetadataError);
+    expect(client.loginWithPassword).not.toHaveBeenCalled();
+  });
+
   test('validates password operations before calling the SDK', async () => {
     const client = mockClient();
     const session = new ZhiyuanPasswordSession(client);
 
     await expect(
-      session.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: '', username: 'admin', password: 'secret' }),
+      session.login({ aepBaseUrl: 'https://aep.example.test', username: '', password: 'secret' }),
     ).rejects.toThrow('required');
     await expect(session.changePassword('', 'new-secret')).rejects.toThrow('required');
+    expect(client.getMetadata).not.toHaveBeenCalled();
     expect(client.loginWithPassword).not.toHaveBeenCalled();
     expect(client.changePassword).not.toHaveBeenCalled();
   });
@@ -139,7 +206,6 @@ describe('Zhiyuan password session', () => {
 
     await session.login({
       aepBaseUrl: 'https://aep.example.test',
-      enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',
     });
@@ -163,7 +229,6 @@ describe('Zhiyuan password session', () => {
 
     await session.login({
       aepBaseUrl: 'https://aep.example.test',
-      enterpriseId: 'enterprise-1',
       username: 'admin',
       password: 'secret',
     });
@@ -184,7 +249,7 @@ describe('Zhiyuan password session', () => {
 
     let completed = false;
     const login = session
-      .login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'enterprise-1', username: 'admin', password: 'secret' })
+      .login({ aepBaseUrl: 'https://aep.example.test', username: 'admin', password: 'secret' })
       .then(() => {
         completed = true;
       });
@@ -202,6 +267,7 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
     refreshSession: vi.fn(async () => tokens()),
+    getMetadata: vi.fn(async () => metadata()),
     loginWithPassword: vi.fn(async () => tokens()),
     changePassword: vi.fn(async () => tokens()),
     getCurrentIdentity: vi.fn(async () => identity()),
@@ -209,6 +275,16 @@ function mockClient(overrides: Partial<PasswordSessionClient> = {}): PasswordSes
     getModelConnection: vi.fn(async () => modelConnection()),
     logout: vi.fn(async () => undefined),
     ...overrides,
+  };
+}
+
+function metadata(): ServiceMetadata {
+  return {
+    service: 'aep-control-service',
+    supportedProtocolVersions: ['1'],
+    capabilities: [],
+    jwksUri: 'https://aep.example.test/.well-known/jwks.json',
+    deploymentId: 'enterprise-1',
   };
 }
 

@@ -16,7 +16,6 @@ interface LoginFormProps {
   readonly error: TranslationKey | null;
   readonly onSubmit: (input: {
     aepBaseUrl: string;
-    enterpriseId: string;
     username: string;
     password: string;
   }) => Promise<void>;
@@ -24,14 +23,13 @@ interface LoginFormProps {
 
 export function LoginForm({ language, recoverable, pending, error, onSubmit }: LoginFormProps) {
   const [aepBaseUrl, setAepBaseUrl] = useState('');
-  const [enterpriseId, setEnterpriseId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState<TranslationKey | null>(null);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!aepBaseUrl.trim() || !enterpriseId.trim() || !username.trim() || !password) {
+    if (!aepBaseUrl.trim() || !username.trim() || !password) {
       setValidationError('requiredFields');
       return;
     }
@@ -42,7 +40,6 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
     setValidationError(null);
     void onSubmit({
       aepBaseUrl: aepBaseUrl.trim(),
-      enterpriseId: enterpriseId.trim(),
       username: username.trim(),
       password,
     });
@@ -83,20 +80,6 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
           {validationError === 'invalidAepServerUrl' ? (
             <FieldError>{translate(language, 'invalidAepServerUrl')}</FieldError>
           ) : null}
-        </Field>
-        <Field data-invalid={displayedError ? true : undefined}>
-          <FieldLabel htmlFor="enterprise-id">{translate(language, 'enterpriseId')}</FieldLabel>
-          <Input
-            id="enterprise-id"
-            name="enterpriseId"
-            value={enterpriseId}
-            onChange={event => setEnterpriseId(event.target.value)}
-            placeholder={translate(language, 'enterpriseIdPlaceholder')}
-            autoComplete="organization"
-            maxLength={256}
-            disabled={pending}
-            aria-invalid={displayedError ? true : undefined}
-          />
         </Field>
         <Field data-invalid={displayedError ? true : undefined}>
           <FieldLabel htmlFor="username">{translate(language, 'username')}</FieldLabel>

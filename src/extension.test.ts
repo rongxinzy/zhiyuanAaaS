@@ -287,6 +287,7 @@ function passwordSession(
     getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'signed-out' })),
     restoreSession: vi.fn(async () => null),
     refreshSession: vi.fn(),
+    getMetadata: vi.fn(),
     loginWithPassword: vi.fn(),
     changePassword: vi.fn(),
     getCurrentIdentity: vi.fn(),

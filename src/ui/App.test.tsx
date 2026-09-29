@@ -43,7 +43,7 @@ describe('enterprise session UI', () => {
     expect(await screen.findByRole('heading', { name: '登录知远' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Zhiyuan' })).toBeInTheDocument();
     expect(screen.getByLabelText('AEP 服务端地址')).toBeInTheDocument();
-    expect(screen.getByLabelText('企业 ID')).toBeInTheDocument();
+    expect(screen.queryByLabelText('企业 ID')).not.toBeInTheDocument();
     expect(screen.getByLabelText('用户名')).toBeInTheDocument();
     expect(screen.getByLabelText('密码')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
@@ -60,9 +60,6 @@ describe('enterprise session UI', () => {
 
     fireEvent.change(await screen.findByLabelText('AEP 服务端地址'), {
       target: { value: 'https://aep.customer.example' },
-    });
-    fireEvent.change(screen.getByLabelText('企业 ID'), {
-      target: { value: 'enterprise-1' },
     });
     fireEvent.change(screen.getByLabelText('用户名'), {
       target: { value: 'admin' },
@@ -85,6 +82,72 @@ describe('enterprise session UI', () => {
         }),
       ).toBe(true),
     );
+  });
+
+  test('explains when the server does not provide enterprise metadata', async () => {
+    render(<App />);
+    act(() =>
+      initialize({
+        ok: true,
+        snapshot: { status: EnterpriseSessionStatus.SignedOut },
+      }),
+    );
+
+    fireEvent.change(await screen.findByLabelText('AEP 服务端地址'), {
+      target: { value: 'https://aep.customer.example' },
+    });
+    fireEvent.change(screen.getByLabelText('用户名'), {
+      target: { value: 'admin' },
+    });
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+
+    const request = await waitForSessionRequest(EnterpriseRendererSessionOperation.Login);
+    act(() =>
+      respondToSession(request, {
+        ok: true,
+        snapshot: { status: EnterpriseSessionStatus.SignedOut },
+      }),
+    );
+
+    expect(
+      await screen.findByText('无法从该服务器获取企业部署信息，请确认 AEP 服务端地址正确后重试。'),
+    ).toBeInTheDocument();
+  });
+
+  test('keeps the generic sign-in failure for rejected credentials', async () => {
+    render(<App />);
+    act(() =>
+      initialize(
+        { ok: true, snapshot: { status: EnterpriseSessionStatus.SignedOut } },
+        EnterpriseRendererLanguage.English,
+      ),
+    );
+
+    fireEvent.change(await screen.findByLabelText('AEP server address'), {
+      target: { value: 'https://aep.customer.example' },
+    });
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'admin' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    const request = await waitForSessionRequest(EnterpriseRendererSessionOperation.Login);
+    act(() =>
+      respondToSession(request, {
+        ok: false,
+        error: { code: 'OPERATION_FAILED', message: 'Zhiyuan enterprise session operation failed.' },
+      }),
+    );
+
+    expect(
+      await screen.findByText('Sign-in failed. Check your account details or try again later.'),
+    ).toBeInTheDocument();
   });
 
   test('renders the English recovery state without exposing host errors', async () => {
@@ -308,6 +371,45 @@ function initialize(
 
 async function waitForCatalogRequests(count: number): Promise<void> {
   await waitFor(() => expect(catalogRequests()).toHaveLength(count));
+}
+
+async function waitForSessionRequest(
+  operation: EnterpriseRendererSessionOperation,
+): Promise<Record<string, unknown>> {
+  let request: Record<string, unknown> | undefined;
+  await waitFor(() => {
+    request = sessionRequests().find(message => message.operation === operation);
+    expect(request).toBeDefined();
+  });
+  return request!;
+}
+
+function respondToSession(request: Record<string, unknown>, result: unknown): void {
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      source: window,
+      data: {
+        source: EnterpriseRendererMessageSource.Host,
+        apiVersion: 1,
+        type: EnterpriseRendererMessageType.SessionResponse,
+        requestId: request.requestId,
+        result,
+      },
+    }),
+  );
+}
+
+function sessionRequests(): Array<Record<string, unknown>> {
+  const calls = postMessage.mock.calls as unknown as Array<readonly [unknown, ...unknown[]]>;
+  return calls
+    .map(call => call[0])
+    .filter(
+      (message: unknown): message is Record<string, unknown> =>
+        message !== null &&
+        typeof message === 'object' &&
+        (message as Record<string, unknown>).type ===
+          EnterpriseRendererMessageType.SessionRequest,
+    );
 }
 
 function respondToLatestCatalog(result: unknown): void {

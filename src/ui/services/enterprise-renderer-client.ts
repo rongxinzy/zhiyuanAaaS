@@ -21,6 +21,11 @@ import {
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_MODELS = 256;
 
+// The host v1 session bridge rejects login requests without a non-empty
+// enterpriseId; the extension runtime derives the deployment from server
+// metadata and ignores this value.
+const HOST_LOGIN_ENTERPRISE_ID = 'server-metadata';
+
 const PendingRequestKind = {
   Session: 'session',
   ModelCatalog: 'model-catalog',
@@ -81,8 +86,15 @@ export class EnterpriseRendererClient {
     return this.#request(EnterpriseRendererSessionOperation.Snapshot);
   }
 
-  login(input: EnterprisePasswordLoginInput): Promise<EnterpriseSessionResult> {
-    return this.#request(EnterpriseRendererSessionOperation.Login, input);
+  login(input: {
+    aepBaseUrl: string;
+    username: string;
+    password: string;
+  }): Promise<EnterpriseSessionResult> {
+    return this.#request(EnterpriseRendererSessionOperation.Login, {
+      ...input,
+      enterpriseId: HOST_LOGIN_ENTERPRISE_ID,
+    });
   }
 
   changePassword(input: EnterprisePasswordChangeInput): Promise<EnterpriseSessionResult> {
