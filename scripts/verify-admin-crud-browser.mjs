@@ -258,6 +258,10 @@ try {
     path: path.join(screenshots, "overview-dark.png"),
     fullPage: true, animations: "disabled",
   });
+  const loginsBeforeReload = state.requests.filter(
+    (item) =>
+      item.method === "POST" && item.path === "/aep/v1/auth/password/login",
+  ).length;
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "概览", exact: true }).waitFor();
   assert.equal(
@@ -266,7 +270,22 @@ try {
     ),
     true,
   );
-  checks.push("theme persistence and session restoration");
+  assert.notEqual(
+    await page.evaluate(() => localStorage.getItem("zhiyuan.admin.tokens")),
+    null,
+    "Reload must restore the persisted admin session",
+  );
+  assert.equal(
+    state.requests.filter(
+      (item) =>
+        item.method === "POST" && item.path === "/aep/v1/auth/password/login",
+    ).length,
+    loginsBeforeReload,
+    "Reload must restore the stored session instead of issuing a new password login",
+  );
+  checks.push(
+    "theme persistence and session restoration without a new password login",
+  );
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await page.getByLabel("密码", { exact: true }).waitFor();
   assert.equal(
