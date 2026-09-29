@@ -1,22 +1,42 @@
 import {
-  Boxes,
-  Check,
-  CircleAlert,
-  Eye,
-  EyeOff,
-  KeyRound,
-  Pencil,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  ShieldCheck,
-  Trash2,
+  AppstoreOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  EditOutlined,
+  KeyOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
+  UploadOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import {
+  Alert,
+  Badge,
+  Button,
+  Checkbox,
+  Descriptions,
+  Drawer,
+  Dropdown,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Skeleton,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
   Upload,
-  UserRound,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+  theme,
+  type TableProps,
+} from "antd";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type {
   AdminModel,
@@ -33,142 +53,26 @@ import {
   AdminSubjectType,
   hasAdminPermission,
   type AdminIdentity,
+  type AdminIdentitySource,
   type AdminResources,
   type AdminSkill,
-  type AdminSkillVersion,
   type AdminSkillAssignment,
+  type AdminSkillVersion,
+  type AdminUserSession,
 } from "./client.js";
-import {
-  translate,
-  type AdminLanguage,
-  type AdminTranslationKey,
-} from "./i18n.js";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "../ui/components/ui/alert-dialog.js";
-import { Alert, AlertDescription } from "../ui/components/ui/alert.js";
-import { Badge } from "../ui/components/ui/badge.js";
-import { Button } from "../ui/components/ui/button.js";
-import { Checkbox } from "../ui/components/ui/checkbox.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/components/ui/dialog.js";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../ui/components/ui/empty.js";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLegend,
-  FieldLabel,
-  FieldSet,
-} from "../ui/components/ui/field.js";
-import { Skeleton } from "../ui/components/ui/skeleton.js";
-import { Spinner } from "../ui/components/ui/spinner.js";
-import { BooleanSwitch } from "./BooleanSwitch.js";
-import { Input } from "../ui/components/ui/input.js";
-import { cn } from "../ui/lib/utils.js";
+import { translate, type AdminLanguage, type AdminTranslationKey } from "./i18n.js";
+import { resourcesCopy as rc } from "./resources-copy.js";
+import { formatTimestamp } from "./format.js";
 import { runBatch } from "./batch.js";
 import { AdminNotificationKind, notify } from "./notifications.js";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../ui/components/ui/table.js";
+
+const language: AdminLanguage = "zh";
+const t = (key: AdminTranslationKey) => translate(language, key);
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 1024;
 const RBAC_ID_PATTERN = /^[A-Za-z0-9._\-]{1,100}$/;
 
-function validRBACID(value: string): boolean {
-  return RBAC_ID_PATTERN.test(value);
-}
-
-function PasswordInput({
-  id,
-  value,
-  onChange,
-  placeholder,
-  disabled,
-  minLength,
-  maxLength,
-  required,
-  "aria-invalid": ariaInvalid,
-  "aria-describedby": ariaDescribedBy,
-}: {
-  readonly id: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly placeholder: string;
-  readonly disabled: boolean;
-  readonly minLength?: number;
-  readonly maxLength?: number;
-  readonly required?: boolean;
-  readonly "aria-invalid"?: boolean;
-  readonly "aria-describedby"?: string | undefined;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="relative">
-      <Input
-        id={id}
-        type={visible ? "text" : "password"}
-        autoComplete="new-password"
-        minLength={minLength}
-        maxLength={maxLength}
-        required={required}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        aria-invalid={ariaInvalid}
-        aria-describedby={ariaDescribedBy}
-        className="pr-10"
-      />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="absolute right-1 top-1/2"
-        style={{ transform: "translateY(-50%)" }}
-        onPointerDown={(event) => event.preventDefault()}
-        aria-label={translate(
-          language,
-          visible ? "hidePassword" : "showPassword",
-        )}
-        title={translate(language, visible ? "hidePassword" : "showPassword")}
-        onClick={() => setVisible((current) => !current)}
-        disabled={disabled}
-      >
-        {visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-      </Button>
-    </div>
-  );
-}
-
-const language: AdminLanguage = "zh";
 type AdminUser = PlatformUser & { readonly email?: string | null };
 
 export const AdminResourceTab = {
@@ -187,47 +91,35 @@ interface ResourcesProps {
   readonly identity?: AdminIdentity | undefined;
 }
 
+const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false } as const;
+
 export function Resources({ client, tab, identity }: ResourcesProps) {
   const [resources, setResources] = useState<AdminResources | null>(null);
-  const [modelResources, setModelResources] = useState<{
-    readonly models: readonly AdminModel[];
-    readonly assignments: readonly ModelAssignment[];
-  }>({ models: [], assignments: [] });
+  const [modelResources, setModelResources] = useState<ModelResources>({
+    models: [],
+    assignments: [],
+    available: false,
+    skillsAvailable: false,
+  });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const [granting, setGranting] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    readonly created: number;
-    readonly rejected: number;
-    readonly errors: readonly string[];
-  } | null>(null);
-  const [editor, setEditor] = useState<{
-    readonly kind: "user" | "team" | "role" | "skill";
-    readonly id?: string;
-  } | null>(null);
-  const [versionSkill, setVersionSkill] = useState<AdminSkill | null>(null);
-  const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
+  const [error, setError] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setError(false);
     try {
+      const canQueryModels =
+        hasAdminPermission(identity, AdminPermission.ModelsRead) &&
+        typeof client.models === "function";
       const [next, models] = await Promise.all([
         client.resources(identity),
-        hasAdminPermission(identity, AdminPermission.ModelsRead) &&
-        typeof client.models === "function"
+        canQueryModels
           ? client.models(identity)
           : Promise.resolve({ models: [], assignments: [] }),
       ]);
       setResources(next);
-      setModelResources(models);
-      setVersionSkill((current) =>
-        current
-          ? (next.skills.find((item) => item.id === current.id) ?? current)
-          : null,
-      );
+      setModelResources({ ...models, available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign), skillsAvailable: hasAdminPermission(identity, AdminPermission.SkillsRead) && hasAdminPermission(identity, AdminPermission.SkillsAssign) });
     } catch {
-      setError("resourcesLoadFailed");
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -236,11 +128,8 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
     void load();
   }, [load]);
   const reportError = useCallback(() => {
-    notify(
-      AdminNotificationKind.Error,
-      translate(language, "operationUnavailable"),
-    );
-  }, [language]);
+    notify(AdminNotificationKind.Error, t("operationUnavailable"));
+  }, []);
   const canMutate =
     tab === AdminResourceTab.Users
       ? hasAdminPermission(identity, AdminPermission.UsersWrite)
@@ -253,1411 +142,883 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             : hasAdminPermission(identity, AdminPermission.SkillsAssign);
 
   return (
-    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="flex w-full flex-col gap-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs text-tertiary-foreground">
-              {translate(language, "workspaceLabel")}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold leading-snug">
-              {translate(language, resourceTitle(tab))}
-            </h2>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {canMutate && tab === AdminResourceTab.Users ? (
-              <Button size="sm" onClick={() => setEditor({ kind: "user" })}>
-                <Plus data-icon="inline-start" />
-                {translate(language, "addUser")}
-              </Button>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Users ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setImportResult(null);
-                  setImporting(true);
-                }}
-              >
-                <Upload data-icon="inline-start" />
-                {translate(language, "importUsers")}
-              </Button>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Teams ? (
-              <Button size="sm" onClick={() => setEditor({ kind: "team" })}>
-                <Plus data-icon="inline-start" />
-                {translate(language, "addTeam")}
-              </Button>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Roles ? (
-              <Button size="sm" onClick={() => setEditor({ kind: "role" })}>
-                <Plus data-icon="inline-start" />
-                {translate(language, "addRole")}
-              </Button>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Skills ? (
-              <Button size="sm" onClick={() => setEditor({ kind: "skill" })}>
-                <Plus data-icon="inline-start" />
-                {translate(language, "addSkill")}
-              </Button>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Assignments && resources ? (
-              <Button size="sm" onClick={() => setGranting(true)}>
-                <UserRound data-icon="inline-start" />
-                {translate(language, "grantSkill")}
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={translate(language, "refresh")}
-              title={translate(language, "refresh")}
-              disabled={loading}
-              onClick={() => void load()}
-            >
-              {loading ? <Spinner /> : <RefreshCw />}
+    <section aria-label={sectionTitle(tab)}>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          title={t("resourcesLoadFailed")}
+          action={
+            <Button size="small" onClick={() => void load()}>
+              {rc.retry}
             </Button>
-          </div>
-        </div>
-        {error ? (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>{translate(language, error)}</AlertDescription>
-          </Alert>
-        ) : null}
-        {loading && !resources ? (
-          <ResourceListSkeleton />
-        ) : resources ? (
-          <>
-            <ResourceTable
-              tab={tab}
+          }
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+      {loading && !resources ? (
+        <Skeleton active paragraph={{ rows: 6 }} title />
+      ) : resources ? (
+        <>
+          {tab === AdminResourceTab.Users ? (
+            <UsersSection
+              client={client}
+              identity={identity}
               resources={resources}
               modelResources={modelResources}
-              canMutate={canMutate}
+              canWrite={canMutate}
+              loading={loading}
+              onRefresh={load}
               onChanged={load}
-              client={client}
               onError={reportError}
-              onGrant={() => setGranting(true)}
-              onEdit={(kind) => setEditor(kind)}
-              onResetUser={setResetUser}
-              onVersion={setVersionSkill}
             />
-            {importResult ? (
-              <Alert>
-                <Check aria-hidden="true" />
-                <AlertDescription>
-                  <p>
-                    {translate(language, "usersImported")}:{" "}
-                    {importResult.created} /{" "}
-                    {translate(language, "usersRejected")}:{" "}
-                    {importResult.rejected}
-                  </p>
-                  {importResult.errors.length > 0 ? (
-                    <div className="mt-1 text-xs">
-                      <p>{translate(language, "usersImportErrors")}</p>
-                      <ul className="list-disc pl-4">
-                        {importResult.errors.map((message, index) => (
-                          <li key={`${message}-${index}`}>{message}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Assignments ? (
-              <SkillGrantDialog
-                client={client}
-                open={granting}
-                users={resources.users}
-                roles={resources.roles}
-                teams={resources.teams}
-                skills={resources.skills}
-                existingAssignments={resources.assignments}
-                onOpenChange={setGranting}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && tab === AdminResourceTab.Users ? (
-              <UserImportDialog
-                client={client}
-                open={importing}
-                onOpenChange={setImporting}
-                onChanged={async (result) => {
-                  setImportResult(result);
-                  await load();
-                }}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && editor?.kind === "user" ? (
-              <UserEditorDialog
-                client={client}
-                existingUsernames={resources.users.map((item) => item.username)}
-                user={
-                  editor.id
-                    ? resources.users.find((item) => item.id === editor.id)
-                    : undefined
-                }
-                roles={resources.roles}
-                teams={resources.teams}
-                open
-                onOpenChange={(open) => {
-                  if (!open) setEditor(null);
-                }}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && editor?.kind === "team" ? (
-              <TeamEditorDialog
-                client={client}
-                existingTeams={resources.teams}
-                team={
-                  editor.id
-                    ? resources.teams.find((item) => item.id === editor.id)
-                    : undefined
-                }
-                open
-                onOpenChange={(open) => {
-                  if (!open) setEditor(null);
-                }}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && editor?.kind === "role" ? (
-              <RoleEditorDialog
-                client={client}
-                existingRoleIds={resources.roles.map((item) => item.id)}
-                role={
-                  editor.id
-                    ? resources.roles.find((item) => item.id === editor.id)
-                    : undefined
-                }
-                permissions={resources.permissions}
-                open
-                onOpenChange={(open) => {
-                  if (!open) setEditor(null);
-                }}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && editor?.kind === "skill" ? (
-              <SkillEditorDialog
-                client={client}
-                existingSkillIds={resources.skills.map((item) => item.id)}
-                skill={
-                  editor.id
-                    ? resources.skills.find((item) => item.id === editor.id)
-                    : undefined
-                }
-                open
-                onOpenChange={(open) => {
-                  if (!open) setEditor(null);
-                }}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && resetUser ? (
-              <PasswordResetDialog
-                client={client}
-                user={resetUser}
-                open
-                onOpenChange={(open) => {
-                  if (!open) setResetUser(null);
-                }}
-                onChanged={load}
-                onError={reportError}
-              />
-            ) : null}
-            {canMutate && versionSkill ? (
-              <SkillVersionDialog
-                client={client}
-                skill={versionSkill}
-                open
-                onOpenChange={(open) => {
-                  if (!open) setVersionSkill(null);
-                }}
-                onChanged={load}
-              />
-            ) : null}
-          </>
-        ) : null}
-      </div>
+          ) : null}
+          {tab === AdminResourceTab.Teams ? (
+            <TeamsSection
+              client={client}
+              resources={resources}
+              modelResources={modelResources}
+              canWrite={canMutate}
+              loading={loading}
+              onRefresh={load}
+              onChanged={load}
+              onError={reportError}
+            />
+          ) : null}
+          {tab === AdminResourceTab.Roles ? (
+            <RolesSection
+              client={client}
+              resources={resources}
+              modelResources={modelResources}
+              canWrite={canMutate}
+              loading={loading}
+              onRefresh={load}
+              onChanged={load}
+              onError={reportError}
+            />
+          ) : null}
+          {tab === AdminResourceTab.Skills ? (
+            <SkillsSection
+              canAssign={hasAdminPermission(identity, AdminPermission.SkillsAssign)}
+              client={client}
+              resources={resources}
+              canWrite={canMutate}
+              loading={loading}
+              onRefresh={load}
+              onChanged={load}
+              onError={reportError}
+            />
+          ) : null}
+          {tab === AdminResourceTab.Assignments ? (
+            <AssignmentsSection
+              client={client}
+              resources={resources}
+              canWrite={canMutate}
+              loading={loading}
+              onRefresh={load}
+              onChanged={load}
+              onError={reportError}
+            />
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
 
-function ResourceTable({
-  tab,
-  resources,
-  modelResources,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onGrant,
-  onEdit,
-  onResetUser,
-  onVersion,
+function sectionTitle(tab: AdminResourceTab): string {
+  if (tab === AdminResourceTab.Users) return rc.pageUsers;
+  if (tab === AdminResourceTab.Teams) return rc.pageTeams;
+  if (tab === AdminResourceTab.Roles) return rc.pageRoles;
+  if (tab === AdminResourceTab.Skills) return rc.pageSkills;
+  return rc.pageAssignments;
+}
+
+function SectionHeader({
+  title,
+  description,
+  extra,
 }: {
-  readonly tab: AdminResourceTab;
-  readonly resources: AdminResources;
-  readonly modelResources: {
-    readonly models: readonly AdminModel[];
-    readonly assignments: readonly ModelAssignment[];
-  };
-  readonly canMutate: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onGrant: () => void;
-  readonly onEdit: (editor: {
-    readonly kind: "user" | "team" | "role" | "skill";
-    readonly id?: string;
-  }) => void;
-  readonly onResetUser: (user: PlatformUser) => void;
-  readonly onVersion: (skill: AdminSkill) => void;
+  readonly title: string;
+  readonly description: string;
+  readonly extra?: ReactNode;
 }) {
-  const access = createResourceAccess(resources, modelResources);
-  if (tab === AdminResourceTab.Users)
-    return (
-      <UsersTable
-        users={resources.users}
-        access={access}
-        canMutate={canMutate}
-        client={client}
-        onChanged={onChanged}
-        onError={onError}
-        onEdit={onEdit}
-        onResetUser={onResetUser}
-      />
-    );
-  if (tab === AdminResourceTab.Teams)
-    return (
-      <TeamsTable
-        teams={resources.teams}
-        access={access}
-        canMutate={canMutate}
-        client={client}
-        onChanged={onChanged}
-        onError={onError}
-        onEdit={onEdit}
-      />
-    );
-  if (tab === AdminResourceTab.Roles)
-    return (
-      <RolesTable
-        roles={resources.roles}
-        access={access}
-        canMutate={canMutate}
-        client={client}
-        onChanged={onChanged}
-        onError={onError}
-        onEdit={onEdit}
-      />
-    );
-  if (tab === AdminResourceTab.Skills)
-    return (
-      <SkillsTable
-        skills={resources.skills}
-        canMutate={canMutate}
-        client={client}
-        onChanged={onChanged}
-        onError={onError}
-        onEdit={onEdit}
-        onVersion={onVersion}
-      />
-    );
   return (
-    <AssignmentsTable
-      assignments={resources.assignments}
-      skills={resources.skills}
-      users={resources.users}
-      canMutate={canMutate}
-      client={client}
-      onChanged={onChanged}
-      onError={onError}
-      onGrant={onGrant}
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 16,
+        flexWrap: "wrap",
+        marginBottom: 16,
+      }}
+    >
+      <div>
+        <Typography.Title level={2} style={{ marginTop: 0, marginBottom: 4 }}>
+          {title}
+        </Typography.Title>
+        <Typography.Text type="secondary">{description}</Typography.Text>
+      </div>
+      {extra ? <Space wrap>{extra}</Space> : null}
+    </div>
+  );
+}
+
+function RefreshButton({
+  loading,
+  onRefresh,
+}: {
+  readonly loading: boolean;
+  readonly onRefresh: () => Promise<void>;
+}) {
+  return (
+    <Button
+      icon={<ReloadOutlined />}
+      aria-label={t("refresh")}
+      title={t("refresh")}
+      loading={loading}
+      onClick={() => void onRefresh()}
     />
   );
 }
 
-type ResourceAccess = {
-  readonly forUser: (user: PlatformUser) => {
-    readonly skills: number;
-    readonly models: number;
-  };
-  readonly forSubject: (
-    type: "role" | "team",
-    id: string,
-  ) => { readonly skills: number; readonly models: number };
-};
-
-function createResourceAccess(
-  resources: AdminResources,
-  modelResources: {
-    readonly models: readonly AdminModel[];
-    readonly assignments: readonly ModelAssignment[];
-  },
-): ResourceAccess {
-  const enabledSkills = new Set(
-    resources.skills
-      .filter((skill) => skill.enabled && skill.state === "active")
-      .map((skill) => skill.id),
-  );
-  const enabledModels = new Set(
-    modelResources.models
-      .filter((model) => model.enabled)
-      .map((model) => model.id),
-  );
-  const roles = new Map(resources.roles.map((role) => [role.id, role]));
-  const teams = new Map(resources.teams.map((team) => [team.id, team]));
-  const count = (
-    subjects: readonly {
-      readonly type: "user" | "role" | "team";
-      readonly id: string;
-    }[],
-  ) => {
-    const keys = new Set(
-      subjects.map((subject) => `${subject.type}:${subject.id}`),
-    );
-    return {
-      skills: new Set(
-        resources.assignments
-          .filter(
-            (item) =>
-              enabledSkills.has(item.skillId) &&
-              keys.has(`${item.subjectType}:${item.subjectId}`),
-          )
-          .map((item) => item.skillId),
-      ).size,
-      models: new Set(
-        modelResources.assignments
-          .filter(
-            (item) =>
-              enabledModels.has(item.resourceId) &&
-              keys.has(`${item.subject.type}:${item.subject.id}`),
-          )
-          .map((item) => item.resourceId),
-      ).size,
-    };
-  };
-  return {
-    forUser: (user) => {
-      if (user.status !== "active") return { skills: 0, models: 0 };
-      const roleSubjects = (user.roleIds ?? [])
-        .filter((id) => roles.get(id)?.enabled)
-        .map((id) => ({ type: "role" as const, id }));
-      const teamSubjects = (user.teamIds ?? [])
-        .filter((id) => teams.get(id)?.enabled)
-        .map((id) => ({ type: "team" as const, id }));
-      return count([
-        { type: "user", id: user.id },
-        ...roleSubjects,
-        ...teamSubjects,
-      ]);
-    },
-    forSubject: (type, id) => count([{ type, id }]),
-  };
+function UnknownText({ children }: { readonly children?: string }) {
+  return <Typography.Text type="secondary">{children ?? rc.valueUnknown}</Typography.Text>;
 }
 
-function useRowMutation(onDone: () => Promise<void>, onError: () => void) {
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const run = useCallback(
-    async (id: string, operation: () => Promise<void>) => {
-      setPendingId(id);
+function EnabledBadge({ enabled }: { readonly enabled: boolean }) {
+  return (
+    <Badge
+      status={enabled ? "success" : "default"}
+      text={enabled ? rc.statusEnabled : rc.statusDisabled}
+    />
+  );
+}
+
+function NameCell({
+  name,
+  detail,
+}: {
+  readonly name: string;
+  readonly detail: string;
+}) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div>{name}</div>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {detail}
+      </Typography.Text>
+    </div>
+  );
+}
+
+type MutationRunner = (operation: () => Promise<void>) => Promise<void>;
+
+function useMutationRunner(onChanged: () => Promise<void>, onError: () => void) {
+  const [pending, setPending] = useState(false);
+  const run = useCallback<MutationRunner>(
+    async (operation) => {
+      setPending(true);
       try {
         await operation();
-        await onDone();
+        await onChanged();
       } catch {
         onError();
       } finally {
-        setPendingId(null);
+        setPending(false);
       }
     },
-    [onDone, onError],
+    [onChanged, onError],
   );
-  return { pendingId, run };
+  return { pending, run };
 }
 
-function UsersTable({
-  users,
-  access,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onEdit,
-  onResetUser,
-}: {
-  readonly users: readonly PlatformUser[];
-  readonly access: ResourceAccess;
-  readonly canMutate: boolean;
+interface SectionProps {
   readonly client: AdminConsoleClient;
+  readonly resources: AdminResources;
+  readonly canWrite: boolean;
+  readonly loading: boolean;
+  readonly onRefresh: () => Promise<void>;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
-  readonly onEdit: (editor: {
-    readonly kind: "user";
-    readonly id: string;
-  }) => void;
-  readonly onResetUser: (user: PlatformUser) => void;
-}) {
-  const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (users.length === 0)
-    return (
-      <EmptyState label="usersEmpty" hint="usersEmptyHint" icon={UserRound} />
-    );
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, "user")}</TableHead>
-            <TableHead>{translate(language, "effectiveResources")}</TableHead>
-            <TableHead>{translate(language, "status")}</TableHead>
-            {canMutate ? (
-              <TableHead className="text-right">
-                {translate(language, "actions")}
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <UserRound
-                    className="size-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate font-normal">
-                      {user.displayName}
-                    </div>
-                    <div className="truncate text-xs text-tertiary-foreground">
-                      {user.username}
-                    </div>
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <ResourceAccessBadges access={access.forUser(user)} />
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant={user.status === "active" ? "success" : "outline"}
-                >
-                  {translate(
-                    language,
-                    user.status === "active" ? "active" : "disabled",
-                  )}
-                </Badge>
-              </TableCell>
-              {canMutate ? (
-                <TableCell>
-                  <div className="flex justify-end gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pendingId !== null}
-                      onClick={() => onEdit({ kind: "user", id: user.id })}
-                    >
-                      <Pencil data-icon="inline-start" />
-                      {translate(language, "edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pendingId !== null}
-                      onClick={() => onResetUser(user)}
-                    >
-                      <RotateCcw data-icon="inline-start" />
-                      {translate(language, "resetPassword")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pendingId !== null}
-                      onClick={() =>
-                        void run(user.id, async () => {
-                          await client.updateUser(user.id, {
-                            status:
-                              user.status === "active" ? "disabled" : "active",
-                          });
-                        })
-                      }
-                    >
-                      {translate(
-                        language,
-                        user.status === "active" ? "disable" : "enable",
-                      )}
-                    </Button>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
 }
 
-function TeamsTable({
-  teams,
-  access,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onEdit,
-}: {
-  readonly teams: AdminResources["teams"];
-  readonly access: ResourceAccess;
-  readonly canMutate: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onEdit: (editor: {
-    readonly kind: "team";
-    readonly id: string;
-  }) => void;
-}) {
-  const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (teams.length === 0)
-    return <EmptyState label="teamsEmpty" hint="teamsEmptyHint" icon={Users} />;
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, "team")}</TableHead>
-            <TableHead>{translate(language, "effectiveResources")}</TableHead>
-            <TableHead>{translate(language, "status")}</TableHead>
-            <TableHead>{translate(language, "members")}</TableHead>
-            {canMutate ? (
-              <TableHead className="text-right">
-                {translate(language, "actions")}
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {teams.map((team) => (
-            <TableRow key={team.id}>
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <Users
-                    className="size-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate font-normal">{team.name}</div>
-                    <div className="truncate text-xs text-tertiary-foreground">
-                      {team.id}
-                    </div>
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <ResourceAccessBadges
-                  access={access.forSubject("team", team.id)}
-                />
-              </TableCell>
-              <TableCell>
-                <Badge variant={team.enabled ? "success" : "outline"}>
-                  {translate(language, team.enabled ? "enabled" : "disabled")}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-xs text-tertiary-foreground">
-                {team.memberCount}
-              </TableCell>
-              {canMutate ? (
-                <TableCell>
-                  <div className="flex justify-end gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pendingId !== null}
-                      onClick={() => onEdit({ kind: "team", id: team.id })}
-                    >
-                      <Pencil data-icon="inline-start" />
-                      {translate(language, "edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pendingId !== null}
-                      onClick={() =>
-                        void run(team.id, async () => {
-                          await client.updateTeam(team.id, {
-                            enabled: !team.enabled,
-                          });
-                        })
-                      }
-                    >
-                      {translate(language, team.enabled ? "disable" : "enable")}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                            disabled={pendingId !== null || team.builtIn}
-                          />
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        {translate(language, "delete")}
-                      </AlertDialogTrigger>
-                      <AlertDialogContent size="sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            {translate(language, "deleteTeamTitle")}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {translate(language, "deleteResourceDescription")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={pendingId !== null}>
-                            {translate(language, "cancel")}
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                            disabled={pendingId !== null}
-                            onClick={() =>
-                              void run(team.id, async () => {
-                                await client.deleteTeam(team.id);
-                              })
-                            }
-                          >
-                            {translate(language, "delete")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
+interface ModelResources {
+  readonly models: readonly AdminModel[];
+  readonly assignments: readonly ModelAssignment[];
+  readonly available: boolean;
+  readonly skillsAvailable: boolean;
 }
 
-function RolesTable({
-  roles,
-  access,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onEdit,
-}: {
-  readonly roles: readonly Role[];
-  readonly access: ResourceAccess;
-  readonly canMutate: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onEdit: (editor: {
-    readonly kind: "role";
-    readonly id: string;
-  }) => void;
-}) {
-  const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (roles.length === 0)
-    return (
-      <EmptyState label="rolesEmpty" hint="rolesEmptyHint" icon={ShieldCheck} />
-    );
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, "role")}</TableHead>
-            <TableHead>{translate(language, "permissions")}</TableHead>
-            <TableHead>{translate(language, "effectiveResources")}</TableHead>
-            <TableHead>{translate(language, "status")}</TableHead>
-            {canMutate ? (
-              <TableHead className="text-right">
-                {translate(language, "actions")}
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {roles.map((role) => (
-            <TableRow key={role.id}>
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <ShieldCheck
-                    className="size-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate font-normal">{role.name}</div>
-                    <div className="truncate text-xs text-tertiary-foreground">
-                      {role.id}
-                    </div>
-                  </div>
-                  {role.builtIn ? (
-                    <Badge variant="info">
-                      {translate(language, "builtIn")}
-                    </Badge>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell className="text-xs text-tertiary-foreground">
-                {role.permissions.length}
-              </TableCell>
-              <TableCell>
-                <ResourceAccessBadges
-                  access={access.forSubject("role", role.id)}
-                />
-              </TableCell>
-              <TableCell>
-                <Badge variant={role.enabled ? "success" : "outline"}>
-                  {translate(language, role.enabled ? "enabled" : "disabled")}
-                </Badge>
-              </TableCell>
-              {canMutate ? (
-                <TableCell>
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pendingId !== null}
-                      onClick={() => onEdit({ kind: "role", id: role.id })}
-                    >
-                      <Pencil data-icon="inline-start" />
-                      {translate(language, "edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pendingId !== null}
-                      onClick={() =>
-                        void run(role.id, async () => {
-                          await client.updateRole(role.id, {
-                            enabled: !role.enabled,
-                          });
-                        })
-                      }
-                    >
-                      {translate(language, role.enabled ? "disable" : "enable")}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                            disabled={pendingId !== null || role.builtIn}
-                          />
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        {translate(language, "delete")}
-                      </AlertDialogTrigger>
-                      <AlertDialogContent size="sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            {translate(language, "deleteRoleTitle")}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {translate(language, "deleteResourceDescription")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={pendingId !== null}>
-                            {translate(language, "cancel")}
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                            disabled={pendingId !== null}
-                            onClick={() =>
-                              void run(role.id, async () => {
-                                await client.deleteRole(role.id);
-                              })
-                            }
-                          >
-                            {translate(language, "delete")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
+// ---------------------------------------------------------------------------
+// Effective access computation (users / teams / roles share the same rules).
+// ---------------------------------------------------------------------------
+
+interface AccessRow {
+  readonly key: string;
+  readonly resourceType: "skill" | "model";
+  readonly resourceId: string;
+  readonly resourceName: string;
+  readonly source: string;
+  readonly effective: boolean;
+  readonly reason: string | null;
 }
 
-function ResourceAccessBadges({
-  access,
-}: {
-  readonly access: { readonly skills: number; readonly models: number };
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Badge variant="secondary">
-        {access.skills} {translate(language, "skills")}
-      </Badge>
-      <Badge variant="secondary">
-        {access.models} {translate(language, "models")}
-      </Badge>
-    </div>
-  );
+function skillEffective(skill: AdminSkill | undefined): boolean {
+  return Boolean(skill && skill.enabled && skill.state === "active");
 }
 
-function SkillsTable({
-  skills,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onEdit,
-  onVersion,
-}: {
-  readonly skills: readonly AdminSkill[];
-  readonly canMutate: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onEdit: (editor: {
-    readonly kind: "skill";
-    readonly id: string;
-  }) => void;
-  readonly onVersion: (skill: AdminSkill) => void;
-}) {
-  const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (skills.length === 0)
-    return (
-      <EmptyState label="skillsEmpty" hint="skillsEmptyHint" icon={Boxes} />
-    );
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, "skill")}</TableHead>
-            <TableHead>{translate(language, "versions")}</TableHead>
-            <TableHead>{translate(language, "status")}</TableHead>
-            {canMutate ? (
-              <TableHead className="text-right">
-                {translate(language, "actions")}
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {skills.map((skill) => (
-            <TableRow key={skill.id}>
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <Boxes
-                    className="size-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate font-normal">{skill.name}</div>
-                    <div className="truncate text-xs text-tertiary-foreground">
-                      {skill.description || skill.id}
-                    </div>
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex min-w-0 flex-col gap-1">
-                  {skill.versions.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      {translate(language, "noVersions")}
-                    </span>
-                  ) : (
-                    skill.versions.slice(0, 3).map((version) => (
-                      <SkillVersionRow
-                        key={version.version}
-                        skillId={skill.id}
-                        version={version}
-                        disabled={pendingId !== null}
-                        canMutate={canMutate}
-                        onWithdraw={() =>
-                          void run(
-                            `${skill.id}:${version.version}`,
-                            async () => {
-                              await client.deleteSkillVersion(
-                                skill.id,
-                                version.version,
-                              );
-                            },
-                          )
-                        }
-                      />
-                    ))
-                  )}
-                  {skill.versions.length > 3 ? (
-                    <span className="text-xs text-tertiary-foreground">
-                      +{skill.versions.length - 3}
-                    </span>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={skill.enabled ? "success" : "outline"}>
-                  {translate(language, skill.enabled ? "enabled" : "disabled")}
-                </Badge>
-              </TableCell>
-              {canMutate ? (
-                <TableCell>
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pendingId !== null}
-                      onClick={() => onEdit({ kind: "skill", id: skill.id })}
-                    >
-                      <Pencil data-icon="inline-start" />
-                      {translate(language, "edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pendingId !== null}
-                      onClick={() => onVersion(skill)}
-                    >
-                      <Upload data-icon="inline-start" />
-                      {translate(language, "uploadVersion")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pendingId !== null}
-                      onClick={() =>
-                        void run(skill.id, async () => {
-                          await client.updateSkill(skill.id, {
-                            enabled: !skill.enabled,
-                          });
-                        })
-                      }
-                    >
-                      {translate(
-                        language,
-                        skill.enabled ? "disable" : "enable",
-                      )}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                            disabled={pendingId !== null}
-                          />
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        {translate(language, "delete")}
-                      </AlertDialogTrigger>
-                      <AlertDialogContent size="sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            {translate(language, "deleteSkillTitle")}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {translate(language, "skillDeleteDescription")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={pendingId !== null}>
-                            {translate(language, "cancel")}
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                            disabled={pendingId !== null}
-                            onClick={() =>
-                              void run(skill.id, async () => {
-                                await client.deleteSkill(skill.id);
-                              })
-                            }
-                          >
-                            {translate(language, "delete")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-function SkillVersionRow({
-  skillId,
-  version,
-  disabled,
-  canMutate,
-  onWithdraw,
-}: {
-  readonly skillId: string;
-  readonly version: AdminSkillVersion;
-  readonly disabled: boolean;
-  readonly canMutate: boolean;
-  readonly onWithdraw: () => void;
-}) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs">
-      <span className="truncate text-tertiary-foreground">
-        {version.version}
-      </span>
-      <Badge variant={version.state === "published" ? "success" : "outline"}>
-        {translate(language, versionStateLabel(version.state))}
-      </Badge>
-      {canMutate ? (
-        <AlertDialog>
-          <AlertDialogTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                aria-label={translate(language, "withdrawVersion")}
-                title={translate(language, "withdrawVersion")}
-                disabled={disabled}
-              />
-            }
-          >
-            <Trash2 />
-          </AlertDialogTrigger>
-          <AlertDialogContent size="sm">
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {translate(language, "withdrawVersionTitle")}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {translate(language, "withdrawVersionDescription")}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={disabled}>
-                {translate(language, "cancel")}
-              </AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                disabled={disabled}
-                onClick={onWithdraw}
-              >
-                {translate(language, "confirmWithdrawVersion")}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : null}
-    </span>
-  );
-}
-
-function AssignmentsTable({
-  assignments,
-  skills,
-  users,
-  canMutate,
-  client,
-  onChanged,
-  onError,
-  onGrant,
-}: {
-  readonly assignments: readonly AdminSkillAssignment[];
-  readonly skills: readonly AdminSkill[];
-  readonly users: readonly PlatformUser[];
-  readonly canMutate: boolean;
-  readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-  readonly onGrant: () => void;
-}) {
-  const { pendingId, run } = useRowMutation(onChanged, onError);
-  if (assignments.length === 0)
-    return (
-      <div className="flex flex-col items-center gap-4">
-        <EmptyState
-          label="assignmentsEmpty"
-          hint="assignmentsEmptyHint"
-          icon={KeyRound}
-        />
-        {canMutate ? (
-          <Button size="sm" onClick={onGrant}>
-            <UserRound data-icon="inline-start" />
-            {translate(language, "grantSkill")}
-          </Button>
-        ) : null}
-      </div>
-    );
-  const skillNames = new Map(skills.map((skill) => [skill.id, skill.name]));
-  const userNames = new Map(users.map((user) => [user.id, user]));
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, "skill")}</TableHead>
-            <TableHead>{translate(language, "subject")}</TableHead>
-            {canMutate ? (
-              <TableHead className="text-right">
-                {translate(language, "actions")}
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {assignments.map((assignment) => (
-            <TableRow key={assignment.id}>
-              <TableCell className="font-normal">
-                {skillNames.get(assignment.skillId) || assignment.skillId}
-              </TableCell>
-              <TableCell>
-                <SubjectCell
-                  subjectType={assignment.subjectType}
-                  subjectId={assignment.subjectId}
-                  user={userNames.get(assignment.subjectId)}
-                />
-              </TableCell>
-              {canMutate ? (
-                <TableCell className="text-right">
-                  <AlertDialog>
-                    <AlertDialogTrigger
-                      render={
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                          disabled={pendingId !== null}
-                        />
-                      }
-                    >
-                      {translate(language, "revoke")}
-                    </AlertDialogTrigger>
-                    <AlertDialogContent size="sm">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          {translate(language, "revokeConfirmTitle")}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {translate(language, "revokeConfirmDescription")}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel disabled={pendingId !== null}>
-                          {translate(language, "cancel")}
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                          disabled={pendingId !== null}
-                          onClick={() =>
-                            void run(assignment.id, async () => {
-                              await client.deleteSkillAssignment(assignment.id);
-                            })
-                          }
-                        >
-                          {translate(language, "confirmRevoke")}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-export function SubjectCell({
-  subjectType,
-  subjectId,
-  user,
-}: {
-  readonly subjectType: string;
-  readonly subjectId: string;
-  readonly user: PlatformUser | undefined;
-}) {
-  if (subjectType === "user" && user) {
-    return (
-      <div className="min-w-0">
-        <div className="truncate font-normal">{user.displayName}</div>
-        <div className="truncate text-xs text-tertiary-foreground">
-          {user.username}
-        </div>
-      </div>
-    );
+function buildAccessRows(input: {
+  readonly resources: AdminResources;
+  readonly modelResources: ModelResources;
+  readonly subjects: readonly { readonly type: "user" | "role" | "team"; readonly id: string; readonly label: string }[];
+  readonly accountActive: boolean;
+}): readonly AccessRow[] {
+  const { resources, modelResources, subjects, accountActive } = input;
+  const skills = new Map(resources.skills.map((skill) => [skill.id, skill]));
+  const models = new Map(modelResources.models.map((model) => [model.id, model]));
+  const subjectKeys = new Map(subjects.map((subject) => [`${subject.type}:${subject.id}`, subject]));
+  const rows: AccessRow[] = [];
+  for (const assignment of resources.assignments) {
+    const subject = subjectKeys.get(`${assignment.subjectType}:${assignment.subjectId}`);
+    if (!subject) continue;
+    const skill = skills.get(assignment.skillId);
+    const effective = skill !== undefined && accountActive && skillEffective(skill);
+    rows.push({
+      key: `skill:${assignment.id}`,
+      resourceType: "skill",
+      resourceId: assignment.skillId,
+      resourceName: skill?.name ?? assignment.skillId,
+      source:
+        subject.type === "user"
+          ? rc.accessDirect
+          : `${subject.type === "role" ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
+      effective,
+      reason: effective
+        ? null
+        : skill === undefined
+          ? rc.accessStateUnknown
+          : !accountActive
+            ? rc.accessUserDisabled
+            : rc.accessResourceDisabled,
+    });
   }
-  return (
-    <span className="text-tertiary-foreground">
-      {subjectType}: {subjectId}
-    </span>
-  );
+  for (const assignment of modelResources.assignments) {
+    const subject = subjectKeys.get(`${assignment.subject.type}:${assignment.subject.id}`);
+    if (!subject) continue;
+    const model = models.get(assignment.resourceId);
+    const effective = model !== undefined && accountActive && Boolean(model.enabled);
+    rows.push({
+      key: `model:${assignment.id}`,
+      resourceType: "model",
+      resourceId: assignment.resourceId,
+      resourceName: model?.displayName ?? assignment.resourceId,
+      source:
+        subject.type === "user"
+          ? rc.accessDirect
+          : `${subject.type === "role" ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
+      effective,
+      reason: effective
+        ? null
+        : model === undefined
+          ? rc.accessStateUnknown
+          : !accountActive
+            ? rc.accessUserDisabled
+            : rc.accessResourceDisabled,
+    });
+  }
+  return rows;
 }
 
-type SelectionOption = {
-  readonly id: string;
-  readonly label: string;
-  readonly description?: string;
-};
+function userSubjects(
+  user: PlatformUser,
+  resources: AdminResources,
+): readonly { readonly type: "user" | "role" | "team"; readonly id: string; readonly label: string }[] {
+  const roles = new Map(resources.roles.map((role) => [role.id, role]));
+  const teams = new Map(resources.teams.map((team) => [team.id, team]));
+  return [
+    { type: "user" as const, id: user.id, label: user.displayName },
+    ...(user.roleIds ?? [])
+      .filter((id) => roles.get(id)?.enabled)
+      .map((id) => ({ type: "role" as const, id, label: roles.get(id)?.name ?? id })),
+    ...(user.teamIds ?? [])
+      .filter((id) => teams.get(id)?.enabled)
+      .map((id) => ({ type: "team" as const, id, label: teams.get(id)?.name ?? id })),
+  ];
+}
 
-function SelectionList({
-  label,
-  options,
-  selected,
-  onToggle,
-  disabled,
-  error,
-  errorId,
+function AccessTable({
+  rows,
+  modelsAvailable = true,
+  skillsAvailable = true,
 }: {
-  readonly label: string;
-  readonly options: readonly SelectionOption[];
-  readonly selected: ReadonlySet<string>;
-  readonly onToggle: (id: string) => void;
-  readonly disabled: boolean;
-  readonly error?: string | undefined;
-  readonly errorId?: string;
+  readonly rows: readonly AccessRow[];
+  readonly modelsAvailable?: boolean;
+  readonly skillsAvailable?: boolean;
 }) {
-  const listId = useId();
-  return (
-    <FieldSet
-      data-invalid={Boolean(error)}
-      aria-label={label}
-      aria-invalid={error ? true : undefined}
-      aria-describedby={error ? errorId : undefined}
-      className="gap-2"
-    >
-      <FieldLegend variant="label">{label}</FieldLegend>
-      <div
-        className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1"
-      >
-        {options.length === 0 ? (
-          <p className="px-2 py-3 text-sm text-muted-foreground">
-            {translate(language, "noOptions")}
-          </p>
+  const columns: TableProps<AccessRow>["columns"] = [
+    {
+      title: rc.accessResource,
+      key: "resource",
+      render: (_, row) => (
+        <Space size={8}>
+          <Tag color={row.resourceType === "skill" ? "geekblue" : "purple"}>
+            {row.resourceType === "skill" ? rc.resourceTypeSkill : rc.resourceTypeModel}
+          </Tag>
+          <span>{row.resourceName}</span>
+        </Space>
+      ),
+    },
+    { title: rc.accessPermission, key: "permission", render: () => rc.accessUse },
+    { title: rc.accessSource, dataIndex: "source", key: "source" },
+    {
+      title: rc.accessState,
+      key: "effective",
+      render: (_, row) =>
+        row.effective ? (
+          <Badge status="success" text={rc.accessEffective} />
         ) : (
-          options.map((option, index) => {
-            const checkboxId = `${listId}-option-${index}`;
-            return (
-              <div
-                key={option.id}
-                className="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-              >
-                <Checkbox
-                  id={checkboxId}
-                  checked={selected.has(option.id)}
-                  onCheckedChange={() => onToggle(option.id)}
-                  disabled={disabled}
-                />
-                <FieldLabel
-                  htmlFor={checkboxId}
-                  className="min-w-0 flex-1 cursor-pointer font-normal"
-                >
-                  <span className="block truncate">{option.label}</span>
-                  {option.description ? (
-                    <span className="block truncate text-xs text-tertiary-foreground">
-                      {option.description}
-                    </span>
-                  ) : null}
-                </FieldLabel>
-              </div>
-            );
-          })
-        )}
-      </div>
-      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
-    </FieldSet>
+          <Badge status="default" text={row.reason ?? rc.accessResourceDisabled} />
+        ),
+    },
+  ];
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      {skillsAvailable ? null : <Alert type="info" showIcon title={rc.accessSkillsUnknown} />}
+      {modelsAvailable ? null : (
+        <Alert type="info" showIcon title={rc.accessModelsUnknown} />
+      )}
+      {rows.length === 0 ? (
+        <Empty
+          description={modelsAvailable && skillsAvailable ? rc.accessEmpty : rc.accessStateUnknown}
+          children={<Typography.Text type="secondary">{rc.accessEmptyHint}</Typography.Text>}
+        />
+      ) : (
+        <Table<AccessRow> rowKey="key" columns={columns} dataSource={[...rows]} pagination={PAGINATION} size="small" />
+      )}
+    </Space>
   );
 }
 
-function SkillEditorDialog({
+function accessCount(rows: readonly AccessRow[]): { readonly skills: number; readonly models: number } {
+  const effective = rows.filter((row) => row.effective);
+  return {
+    skills: new Set(effective.filter((row) => row.resourceType === "skill").map((row) => row.resourceId)).size,
+    models: new Set(effective.filter((row) => row.resourceType === "model").map((row) => row.resourceId)).size,
+  };
+}
+
+function ResourceAccessTags({
+  rows,
+  modelsAvailable = true,
+  skillsAvailable = true,
+}: {
+  readonly rows: readonly AccessRow[];
+  readonly modelsAvailable?: boolean;
+  readonly skillsAvailable?: boolean;
+}) {
+  const counts = accessCount(rows);
+  return (
+    <Space size={4} wrap>
+      <Tag>{skillsAvailable ? `${counts.skills} ${t("skills")}` : rc.accessSkillsUnknown}</Tag>
+      {modelsAvailable ? (
+        <Tag>{`${counts.models} ${t("models")}`}</Tag>
+      ) : (
+        <Tag>{rc.accessModelsUnknown}</Tag>
+      )}
+    </Space>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+function UsersSection({
   client,
-  existingSkillIds,
-  skill,
+  identity,
+  resources,
+  modelResources,
+  canWrite,
+  loading,
+  onRefresh,
+  onChanged,
+  onError,
+}: SectionProps & {
+  readonly identity?: AdminIdentity | undefined;
+  readonly modelResources: ModelResources;
+}) {
+  const { token } = theme.useToken();
+  const [query, setQuery] = useState("");
+  const [teamFilter, setTeamFilter] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"active" | "disabled" | null>(null);
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
+  const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
+  const [disableTarget, setDisableTarget] = useState<PlatformUser | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    readonly created: number;
+    readonly rejected: number;
+    readonly errors: readonly string[];
+  } | null>(null);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+
+  const teamNames = useMemo(() => new Map(resources.teams.map((team) => [team.id, team.name])), [resources.teams]);
+  const roleNames = useMemo(() => new Map(resources.roles.map((role) => [role.id, role.name])), [resources.roles]);
+  const rows = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return resources.users.filter((user) => {
+      if (normalized && !`${user.displayName} ${user.username}`.toLowerCase().includes(normalized)) return false;
+      if (teamFilter && !(user.teamIds ?? []).includes(teamFilter)) return false;
+      if (roleFilter && !(user.roleIds ?? []).includes(roleFilter)) return false;
+      if (statusFilter && user.status !== statusFilter) return false;
+      return true;
+    });
+  }, [resources.users, query, teamFilter, roleFilter, statusFilter]);
+
+  const detailUser = detailUserId ? resources.users.find((user) => user.id === detailUserId) ?? null : null;
+
+  const columns: TableProps<PlatformUser>["columns"] = [
+    {
+      title: rc.nameAndAccount,
+      key: "name",
+      render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+    },
+    {
+      title: rc.belongTeams,
+      key: "teams",
+      render: (_, user) =>
+        (user.teamIds ?? []).length > 0 ? (
+          <Space size={4} wrap>
+            {(user.teamIds ?? []).map((id) => (
+              <Tag key={id}>{teamNames.get(id) ?? id}</Tag>
+            ))}
+          </Space>
+        ) : (
+          <UnknownText>{rc.noTeams}</UnknownText>
+        ),
+    },
+    {
+      title: rc.accountRoles,
+      key: "roles",
+      render: (_, user) =>
+        (user.roleIds ?? []).length > 0 ? (
+          <Space size={4} wrap>
+            {(user.roleIds ?? []).map((id) => (
+              <Tag key={id}>{roleNames.get(id) ?? id}</Tag>
+            ))}
+          </Space>
+        ) : (
+          <UnknownText>{rc.noRoles}</UnknownText>
+        ),
+    },
+    { title: rc.sourceColumn, key: "source", render: () => <UnknownText>{rc.sourceUnknown}</UnknownText> },
+    {
+      title: t("status"),
+      key: "status",
+      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+    },
+    { title: rc.lastLogin, key: "lastLogin", render: () => <UnknownText /> },
+    {
+      title: t("actions"),
+      key: "actions",
+      align: "right",
+      render: (_, user) => (
+        <Space size={0} wrap>
+          <Button type="link" size="small" disabled={pending} onClick={() => setDetailUserId(user.id)}>
+            {rc.view}
+          </Button>
+          {canWrite ? (
+            <>
+              <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: user.id })}>
+                {t("edit")}
+              </Button>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: "reset", icon: <KeyOutlined />, label: t("resetPassword") },
+                    user.status === "active"
+                      ? { key: "disable", icon: <DeleteOutlined />, danger: true, label: t("disable") }
+                      : { key: "enable", icon: <PlusOutlined />, label: t("enable") },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === "reset") setResetUser(user);
+                    else if (key === "disable") setDisableTarget(user);
+                    else if (key === "enable")
+                      void run(async () => {
+                        await client.updateUser(user.id, { status: "active" });
+                      });
+                  },
+                }}
+              >
+                <Button type="text" size="small" aria-label={rc.moreActions} icon={<DownOutlined />} />
+              </Dropdown>
+            </>
+          ) : null}
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <SectionHeader
+        title={rc.pageUsers}
+        description={rc.pageUsersDescription}
+        extra={
+          <>
+            {canWrite ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
+                {t("addUser")}
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => {
+                  setImportResult(null);
+                  setImportOpen(true);
+                }}
+              >
+                {t("importUsers")}
+              </Button>
+            ) : null}
+            <RefreshButton loading={loading} onRefresh={onRefresh} />
+          </>
+        }
+      />
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input.Search
+          aria-label={rc.searchUserPlaceholder}
+          placeholder={rc.searchUserPlaceholder}
+          allowClear
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          style={{ width: 220 }}
+        />
+        <Select
+          aria-label={rc.belongTeams}
+          placeholder={rc.allTeams}
+          allowClear
+          value={teamFilter}
+          onChange={(value: string | undefined) => setTeamFilter(value ?? null)}
+          options={resources.teams.map((team) => ({ value: team.id, label: team.name }))}
+          style={{ minWidth: 160 }}
+        />
+        <Select
+          aria-label={rc.accountRoles}
+          placeholder={rc.allRoles}
+          allowClear
+          value={roleFilter}
+          onChange={(value: string | undefined) => setRoleFilter(value ?? null)}
+          options={resources.roles.map((role) => ({ value: role.id, label: role.name }))}
+          style={{ minWidth: 160 }}
+        />
+        <Select
+          aria-label={t("status")}
+          placeholder={rc.allStatus}
+          allowClear
+          value={statusFilter}
+          onChange={(value: "active" | "disabled" | undefined) => setStatusFilter(value ?? null)}
+          options={[
+            { value: "active", label: rc.statusEnabled },
+            { value: "disabled", label: rc.statusDisabled },
+          ]}
+          style={{ minWidth: 140 }}
+        />
+      </Space>
+      {importResult ? (
+        <Alert
+          type={importResult.rejected > 0 ? "warning" : "success"}
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={`${rc.importResultTitle}：${t("usersImported")}: ${importResult.created} / ${t("usersRejected")}: ${importResult.rejected}`}
+          description={
+            importResult.errors.length > 0 ? (
+              <div>
+                <p>{rc.userImportPartial}</p>
+                <ul style={{ paddingInlineStart: token.padding, marginBottom: 0 }}>
+                  {importResult.errors.map((message, index) => (
+                    <li key={`${message}-${index}`}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : undefined
+          }
+          closable={{ onClose: () => setImportResult(null) }}
+        />
+      ) : null}
+      {rows.length === 0 ? (
+        <Empty description={t("usersEmpty")}>
+          <Typography.Text type="secondary">{t("usersEmptyHint")}</Typography.Text>
+        </Empty>
+      ) : (
+        <Table<PlatformUser>
+          rowKey="id"
+          columns={columns}
+          dataSource={[...rows]}
+          pagination={PAGINATION}
+          loading={loading && rows.length > 0}
+        />
+      )}
+      {detailUser ? (
+        <UserDetailDrawer
+          client={client}
+          identity={identity}
+          user={detailUser}
+          resources={resources}
+          modelResources={modelResources}
+          canWrite={canWrite}
+          open
+          onClose={() => setDetailUserId(null)}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      {canWrite && editor ? (
+        <UserEditorModal
+          client={client}
+          existingUsernames={resources.users.map((user) => user.username)}
+          user={editor.id ? (resources.users.find((user) => user.id === editor.id) as AdminUser | undefined) : undefined}
+          roles={resources.roles}
+          teams={resources.teams}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      {canWrite && resetUser ? (
+        <PasswordResetModal
+          client={client}
+          user={resetUser}
+          open
+          onOpenChange={(open) => {
+            if (!open) setResetUser(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      {canWrite && disableTarget ? (
+        <DisableUserModal
+          client={client}
+          identity={identity}
+          user={disableTarget}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDisableTarget(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      {canWrite ? (
+        <UserImportModal
+          client={client}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onChanged={async (result) => {
+            setImportResult(result);
+            await onChanged();
+          }}
+          onError={onError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// User detail drawer
+// ---------------------------------------------------------------------------
+
+function UserDetailDrawer({
+  client,
+  identity,
+  user,
+  resources,
+  modelResources,
+  canWrite,
+  open,
+  onClose,
+  onChanged,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly user: AdminUser;
+  readonly resources: AdminResources;
+  readonly modelResources: ModelResources;
+  readonly canWrite: boolean;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [adjusting, setAdjusting] = useState(false);
+  const teamNames = useMemo(() => new Map(resources.teams.map((team) => [team.id, team])), [resources.teams]);
+  const roleNames = useMemo(() => new Map(resources.roles.map((role) => [role.id, role])), [resources.roles]);
+  const accessRows = useMemo(
+    () =>
+      buildAccessRows({
+        resources,
+        modelResources,
+        subjects: userSubjects(user, resources),
+        accountActive: user.status === "active",
+      }),
+    [resources, modelResources, user],
+  );
+  const userTeams = (user.teamIds ?? []).map((id) => teamNames.get(id)).filter((team): team is NonNullable<typeof team> => Boolean(team));
+  const userRoles = (user.roleIds ?? []).map((id) => roleNames.get(id)).filter((role): role is NonNullable<typeof role> => Boolean(role));
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      size={720}
+      title={
+        <Space size={8}>
+          <span>{user.displayName}</span>
+          <Tag>{user.username}</Tag>
+          <EnabledBadge enabled={user.status === "active"} />
+        </Space>
+      }
+    >
+      <Tabs
+        items={[
+          {
+            key: "basic",
+            label: rc.detailBasic,
+            children: (
+              <Descriptions
+                column={1}
+                size="small"
+                items={[
+                  { key: "name", label: t("displayName"), children: user.displayName },
+                  { key: "username", label: t("username"), children: user.username },
+                  { key: "email", label: t("email"), children: user.email ?? <UnknownText>{rc.emailUnset}</UnknownText> },
+                  { key: "type", label: rc.accountType, children: <UnknownText /> },
+                  { key: "source", label: rc.sourceColumn, children: <UnknownText>{rc.sourceUnknown}</UnknownText> },
+                  { key: "status", label: t("status"), children: <EnabledBadge enabled={user.status === "active"} /> },
+                  { key: "lastLogin", label: rc.lastLogin, children: <UnknownText /> },
+                  { key: "createdAt", label: rc.createdAtLabel, children: formatTimestamp(user.createdAt) || <UnknownText /> },
+                  { key: "updatedAt", label: rc.updatedAtLabel, children: formatTimestamp(user.updatedAt) || <UnknownText /> },
+                ]}
+              />
+            ),
+          },
+          {
+            key: "org",
+            label: rc.detailOrg,
+            children: (
+              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <div>
+                  <Typography.Title level={5}>{rc.belongTeams}</Typography.Title>
+                  {userTeams.length === 0 ? (
+                    <UnknownText>{rc.noTeams}</UnknownText>
+                  ) : (
+                    <Space size={4} wrap>
+                      {userTeams.map((team) => (
+                        <Tag key={team.id} icon={<TeamOutlined />}>
+                          {team.name}
+                        </Tag>
+                      ))}
+                    </Space>
+                  )}
+                </div>
+                <div>
+                  <Typography.Title level={5}>{rc.accountRoles}</Typography.Title>
+                  {userRoles.length === 0 ? (
+                    <UnknownText>{rc.noRoles}</UnknownText>
+                  ) : (
+                    <Space size={4} wrap>
+                      {userRoles.map((role) => (
+                        <Tag key={role.id} icon={<SafetyCertificateOutlined />}>
+                          {role.name}
+                        </Tag>
+                      ))}
+                    </Space>
+                  )}
+                </div>
+                {canWrite ? (
+                  <Button icon={<EditOutlined />} onClick={() => setAdjusting(true)}>
+                    {rc.adjustOrg}
+                  </Button>
+                ) : null}
+              </Space>
+            ),
+          },
+          {
+            key: "access",
+            label: rc.detailAccess,
+            children: (
+              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                <Alert type="info" showIcon title={rc.accessNote} />
+                <AccessTable rows={accessRows} modelsAvailable={modelResources.available} skillsAvailable={modelResources.skillsAvailable} />
+              </Space>
+            ),
+          },
+          {
+            key: "links",
+            label: rc.detailLinks,
+            children: <UserAccountLinks client={client} identity={identity} userId={user.id} onError={onError} />,
+          },
+          {
+            key: "sessions",
+            label: rc.detailSessions,
+            children: <UserLoginSessions client={client} identity={identity} userId={user.id} onError={onError} />,
+          },
+        ]}
+      />
+      {canWrite && adjusting ? (
+        <AdjustOrgModal
+          client={client}
+          user={user}
+          roles={resources.roles}
+          teams={resources.teams}
+          open
+          onOpenChange={setAdjusting}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+    </Drawer>
+  );
+}
+
+function AdjustOrgModal({
+  client,
+  user,
+  roles,
+  teams,
   open,
   onOpenChange,
   onChanged,
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly existingSkillIds: readonly string[];
-  readonly skill: AdminSkill | undefined;
+  readonly user: PlatformUser;
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const editing = Boolean(skill);
-  const [id, setId] = useState(skill?.id ?? "");
-  const [name, setName] = useState(skill?.name ?? "");
-  const [description, setDescription] = useState(skill?.description ?? "");
-  const [enabled, setEnabled] = useState(skill?.enabled !== false);
+  const [form] = Form.useForm<{ roles: string[]; teams: string[] }>();
   const [pending, setPending] = useState(false);
-  useEffect(() => {
-    setId(skill?.id ?? "");
-    setName(skill?.name ?? "");
-    setDescription(skill?.description ?? "");
-    setEnabled(skill?.enabled !== false);
-  }, [skill]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedId = id.trim();
-    if (!skill && existingSkillIds.includes(normalizedId)) {
-      notify(
-        AdminNotificationKind.Error,
-        translate(language, "skillIdAlreadyExists"),
-      );
-      return;
-    }
+  const submit = async (values: { roles: string[]; teams: string[] }) => {
     setPending(true);
     try {
-      if (skill)
-        await client.updateSkill(skill.id, {
-          name: name.trim(),
-          description: description.trim(),
-          enabled,
-        });
-      else
-        await client.createSkill({
-          id: normalizedId,
-          name: name.trim(),
-          description: description.trim(),
-          enabled,
-        });
+      await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams });
       onOpenChange(false);
       await onChanged();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "changesSaved"),
-      );
+      notify(AdminNotificationKind.Success, t("changesSaved"));
     } catch {
       onError();
     } finally {
@@ -1665,315 +1026,673 @@ function SkillEditorDialog({
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={rc.adjustOrgTitle}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {translate(
-              language,
-              editing ? "skillEditTitle" : "skillEditorTitle",
-            )}
-          </DialogTitle>
-          <DialogDescription>
-            {translate(language, "skillEditorDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <FieldGroup className="gap-4">
-            {editing ? null : (
-              <Field>
-                <FieldLabel htmlFor="skill-id">
-                  {translate(language, "skillId")}
-                </FieldLabel>
-                <Input
-                  id="skill-id"
-                  value={id}
-                  disabled={pending}
-                  required
-                  onChange={(event) => setId(event.target.value)}
-                />
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="skill-name">
-                {translate(language, "skillName")}
-              </FieldLabel>
-              <Input
-                id="skill-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={pending}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="skill-description">
-                {translate(language, "description")}
-              </FieldLabel>
-              <Input
-                id="skill-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder={translate(language, "descriptionPlaceholder")}
-                disabled={pending}
-              />
-            </Field>
-            {editing ? (
-              <BooleanSwitch
-                id="skill-enabled"
-                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={pending}
-              />
-            ) : null}
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Alert type="warning" showIcon title={rc.adjustOrgNote} style={{ marginBottom: 16 }} />
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        initialValues={{ roles: [...(user.roleIds ?? [])], teams: [...(user.teamIds ?? [])] }}
+        onFinish={submit}
+      >
+        <Form.Item
+          name="roles"
+          label={t("selectRoles")}
+          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
+        >
+          <Checkbox.Group
+            options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
+          />
+        </Form.Item>
+        <Form.Item
+          name="teams"
+          label={t("selectTeams")}
+          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("teamRequired")))) }]}
+        >
+          <Checkbox.Group
+            options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
-function SkillVersionDialog({
+function UserAccountLinks({
   client,
-  skill,
+  identity,
+  userId,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly userId: string;
+  readonly onError: () => void;
+}) {
+  const canRead = hasAdminPermission(identity, AdminPermission.IdentityRead);
+  const canWrite = hasAdminPermission(identity, AdminPermission.IdentityWrite);
+  const [rows, setRows] = useState<readonly { readonly key: string; readonly source: AdminIdentitySource; readonly externalId: string; readonly status: string }[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const sources = (await client.identitySources()).items;
+      const mappings = await Promise.all(sources.map((source) => client.identityMappings(source.id)));
+      setRows(
+        sources.flatMap((source, index) =>
+          (mappings[index]?.items ?? [])
+            .filter((mapping) => mapping.localSubjectId === userId)
+            .map((mapping) => ({
+              key: `${source.id}:${mapping.externalId}`,
+              source,
+              externalId: mapping.externalId,
+              status: mapping.status,
+            })),
+        ),
+      );
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, userId]);
+  useEffect(() => {
+    if (canRead) void load();
+  }, [canRead, load]);
+  if (!canRead) return <Alert type="warning" showIcon title={rc.linksNoPermission} />;
+  if (error)
+    return (
+      <Alert
+        type="error"
+        showIcon
+        title={rc.linksLoadFailed}
+        action={
+          <Button size="small" onClick={() => void load()}>
+            {rc.retry}
+          </Button>
+        }
+      />
+    );
+  if (loading && !rows) return <Skeleton active paragraph={{ rows: 2 }} />;
+  if (!rows || rows.length === 0)
+    return (
+      <Empty description={rc.linksEmpty}>
+        <Typography.Text type="secondary">{rc.linksEmptyHint}</Typography.Text>
+      </Empty>
+    );
+  return (
+    <Table
+      rowKey="key"
+      size="small"
+      pagination={false}
+      dataSource={[...rows]}
+      columns={[
+        { title: rc.linkSource, key: "source", render: (_, row) => row.source.displayName },
+        { title: rc.linkExternal, dataIndex: "externalId", key: "externalId" },
+        {
+          title: t("status"),
+          key: "status",
+          render: (_, row) => <EnabledBadge enabled={row.status === "active"} />,
+        },
+        ...(canWrite
+          ? [
+              {
+                title: t("actions"),
+                key: "actions",
+                align: "right" as const,
+                render: (_: unknown, row: (typeof rows)[number]) => (
+                  <Popconfirm
+                    title={rc.unlinkTitle}
+                    description={rc.unlinkImpact}
+                    okText={rc.confirmUnlink}
+                    cancelText={t("cancel")}
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() =>
+                      void (async () => {
+                        try {
+                          await client.deleteIdentityMapping(row.source.id, row.externalId);
+                          await load();
+                        } catch {
+                          onError();
+                        }
+                      })()
+                    }
+                  >
+                    <Button type="link" size="small" danger>
+                      {rc.unlinkAction}
+                    </Button>
+                  </Popconfirm>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
+}
+
+function UserLoginSessions({
+  client,
+  identity,
+  userId,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+  readonly userId: string;
+  readonly onError: () => void;
+}) {
+  const canRevoke = hasAdminPermission(identity, AdminPermission.SessionsWrite);
+  const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [detail, setDetail] = useState<AdminUserSession | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      setSessions(await client.sessions(userId));
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, userId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const { pending, run } = useMutationRunner(load, onError);
+  if (error)
+    return (
+      <Alert
+        type="error"
+        showIcon
+        title={rc.sessionsLoadFailed}
+        action={
+          <Button size="small" onClick={() => void load()}>
+            {rc.retry}
+          </Button>
+        }
+      />
+    );
+  if (loading && !sessions) return <Skeleton active paragraph={{ rows: 2 }} />;
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Typography.Text type="secondary">{rc.sessionsNote}</Typography.Text>
+      {!sessions || sessions.length === 0 ? (
+        <Empty description={rc.sessionsEmpty}>
+          <Typography.Text type="secondary">{rc.sessionsEmptyHint}</Typography.Text>
+        </Empty>
+      ) : (
+        <Table
+          rowKey="sessionId"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...sessions]}
+          columns={[
+            { title: rc.sessionClient, key: "client", render: () => <UnknownText /> },
+            {
+              title: rc.sessionLastActive,
+              key: "lastSeenAt",
+              render: (_, session) => formatTimestamp(session.lastSeenAt) || <UnknownText />,
+            },
+            {
+              title: t("status"),
+              key: "status",
+              render: (_, session) => (
+                <Badge
+                  status={session.revokedAt ? "default" : "success"}
+                  text={session.revokedAt ? rc.sessionStateRevoked : rc.sessionStateActive}
+                />
+              ),
+            },
+            {
+              title: t("actions"),
+              key: "actions",
+              align: "right",
+              render: (_, session) => (
+                <Space size={0}>
+                  <Button type="link" size="small" onClick={() => setDetail(session)}>
+                    {rc.view}
+                  </Button>
+                  {canRevoke && !session.revokedAt ? (
+                    <Popconfirm
+                      title={rc.revokeLoginTitle}
+                      description={rc.revokeLoginImpact}
+                      okText={rc.confirmRevokeLogin}
+                      cancelText={t("cancel")}
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() =>
+                        void run(async () => {
+                          await client.revokeUserSession(session.sessionId);
+                        })
+                      }
+                    >
+                      <Button type="link" size="small" danger disabled={pending}>
+                        {rc.revokeLogin}
+                      </Button>
+                    </Popconfirm>
+                  ) : null}
+                </Space>
+              ),
+            },
+          ]}
+        />
+      )}
+      <Modal
+        open={detail !== null}
+        title={rc.sessionDetail}
+        footer={
+          <Button type="primary" onClick={() => setDetail(null)}>
+            {rc.ok}
+          </Button>
+        }
+        onCancel={() => setDetail(null)}
+      >
+        {detail ? (
+          <Descriptions
+            column={1}
+            size="small"
+            items={[
+              { key: "sessionId", label: t("sessionId"), children: <Typography.Text copyable>{detail.sessionId}</Typography.Text> },
+              { key: "userId", label: t("userId"), children: detail.userId },
+              { key: "topic", label: rc.sessionSubject, children: detail.topic },
+              { key: "createdAt", label: rc.sessionCreatedAt, children: formatTimestamp(detail.createdAt) || <UnknownText /> },
+              { key: "lastSeenAt", label: rc.sessionLastActive, children: formatTimestamp(detail.lastSeenAt) || <UnknownText /> },
+              ...(detail.revokedAt
+                ? [{ key: "revokedAt", label: rc.sessionRevokedAt, children: formatTimestamp(detail.revokedAt) }]
+                : []),
+            ]}
+          />
+        ) : null}
+      </Modal>
+    </Space>
+  );
+}
+
+function DisableUserModal({
+  client,
+  identity,
+  user,
   open,
   onOpenChange,
   onChanged,
+  onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly skill: AdminSkill;
+  readonly identity?: AdminIdentity | undefined;
+  readonly user: PlatformUser;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
 }) {
-  const [version, setVersion] = useState("");
-  const [archive, setArchive] = useState<File | null>(null);
+  const canRevokeSessions = hasAdminPermission(identity, AdminPermission.SessionsWrite);
+  const [activeSessions, setActiveSessions] = useState<number | null>(null);
+  const [sessionsUnknown, setSessionsUnknown] = useState(false);
   const [pending, setPending] = useState(false);
-  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const [result, setResult] = useState<{ readonly revoked: number; readonly failed: number } | null>(null);
   useEffect(() => {
-    if (open) {
-      setVersion("");
-      setArchive(null);
-      setPendingVersion(null);
-    }
-  }, [open, skill.id]);
-  const upload = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!version.trim() || !archive) {
-      notify(
-        AdminNotificationKind.Error,
-        translate(language, "skillUploadFailed"),
-      );
-      return;
-    }
+    if (!open) return;
+    setResult(null);
+    setActiveSessions(null);
+    setSessionsUnknown(false);
+    void client
+      .sessions(user.id)
+      .then((sessions) => setActiveSessions(sessions.filter((session) => !session.revokedAt).length))
+      .catch(() => setSessionsUnknown(true));
+  }, [open, client, user.id]);
+  const disable = async () => {
     setPending(true);
     try {
-      await client.uploadSkillVersion(
-        skill.id,
-        version.trim(),
-        new Uint8Array(await archive.arrayBuffer()),
-      );
-      setVersion("");
-      setArchive(null);
+      await client.updateUser(user.id, { status: "disabled" });
+      let revoked = 0;
+      let failed = 0;
+      if (canRevokeSessions) {
+        try {
+          const sessions = await client.sessions(user.id);
+          const outcomes = await runBatch(
+            sessions.filter((session) => !session.revokedAt).map((session) => session.sessionId),
+            (sessionId) => client.revokeUserSession(sessionId),
+          );
+          revoked = outcomes.filter((outcome) => outcome.ok).length;
+          failed = outcomes.length - revoked;
+        } catch {
+          failed = -1;
+        }
+      } else {
+        failed = -1;
+      }
+      setResult({ revoked, failed });
       await onChanged();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "versionUploaded"),
-      );
     } catch {
-      notify(
-        AdminNotificationKind.Error,
-        translate(language, "skillUploadFailed"),
-      );
+      onError();
+      onOpenChange(false);
     } finally {
       setPending(false);
     }
   };
-  const publish = async (candidate: string) => {
-    setPendingVersion(candidate);
+  return (
+    <Modal
+      open={open}
+      title={result ? rc.disableResultTitle : `${rc.disableUserTitle}：${user.displayName}`}
+      okText={result ? rc.ok : rc.confirmDisableUser}
+      cancelText={t("cancel")}
+      okButtonProps={result ? {} : { danger: true }}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      cancelButtonProps={result ? { style: { display: "none" } } : {}}
+      onOk={() => {
+        if (result) onOpenChange(false);
+        else void disable();
+      }}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
+      }}
+    >
+      {result ? (
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Alert type="success" showIcon title={rc.disableAccountDone} />
+          <Alert
+            type={result.failed !== 0 ? "warning" : "info"}
+            showIcon
+            title={
+              result.failed > 0
+                ? rc.disableSessionsFailed
+                : result.failed < 0
+                  ? (canRevokeSessions ? rc.disableSessionsUnknown : rc.disableSessionsNoPermission)
+                  : result.revoked > 0
+                    ? `${rc.disableSessionsRevoked}：${result.revoked}`
+                    : rc.disableSessionsNone
+            }
+          />
+          <Typography.Text type="secondary">{rc.disableBoundaryNote}</Typography.Text>
+        </Space>
+      ) : (
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Alert type="warning" showIcon title={rc.disableUserImpact} />
+          <Descriptions
+            column={1}
+            size="small"
+            items={[
+              {
+                key: "sessions",
+                label: rc.disableUserActiveSessions,
+                children:
+                  activeSessions !== null ? (
+                    String(activeSessions)
+                  ) : sessionsUnknown ? (
+                    <UnknownText>{rc.disableUserSessionsUnknown}</UnknownText>
+                  ) : (
+                    <Skeleton active paragraph={false} title={{ width: 60 }} />
+                  ),
+              },
+            ]}
+          />
+          <Typography.Text type="secondary">{rc.disableUserOwnershipNote}</Typography.Text>
+        </Space>
+      )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// User editor / password reset / import
+// ---------------------------------------------------------------------------
+
+function UserEditorModal({
+  client,
+  existingUsernames,
+  user,
+  roles,
+  teams,
+  open,
+  onOpenChange,
+  onChanged,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly existingUsernames: readonly string[];
+  readonly user: AdminUser | undefined;
+  readonly roles: readonly Role[];
+  readonly teams: readonly Team[];
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const editing = Boolean(user);
+  const [form] = Form.useForm();
+  const [pending, setPending] = useState(false);
+  const submit = async (values: {
+    username?: string;
+    displayName: string;
+    email?: string;
+    temporaryPassword?: string;
+    roles: string[];
+    teams: string[];
+    requirePasswordChange?: boolean;
+  }) => {
+    const normalizedUsername = (values.username ?? "").trim();
+    if (!user && existingUsernames.includes(normalizedUsername)) {
+      form.setFields([{ name: "username", errors: [t("usernameAlreadyExists")] }]);
+      return;
+    }
+    setPending(true);
     try {
-      await client.publishSkillVersion(skill.id, candidate);
-      await onChanged();
+      if (user) {
+        await client.updateUser(user.id, {
+          displayName: values.displayName.trim(),
+          email: values.email?.trim() || null,
+        });
+        await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams });
+      } else {
+        await client.createUser({
+          username: normalizedUsername,
+          displayName: values.displayName.trim(),
+          email: values.email?.trim() || null,
+          temporaryPassword: values.temporaryPassword ?? "",
+          roleIds: values.roles,
+          teamIds: values.teams,
+          requirePasswordChange: values.requirePasswordChange !== false,
+        });
+      }
       onOpenChange(false);
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "changesSaved"),
-      );
+      await onChanged();
+      notify(AdminNotificationKind.Success, t(editing ? "userUpdated" : "userCreated"));
     } catch {
-      notify(
-        AdminNotificationKind.Error,
-        translate(language, "skillPublishFailed"),
-      );
+      onError();
     } finally {
-      setPendingVersion(null);
+      setPending(false);
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending && pendingVersion === null) onOpenChange(nextOpen);
+      title={t(editing ? "userEditTitle" : "userEditorTitle")}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="min-w-0 sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {translate(language, "uploadVersion")}: {skill.name}
-          </DialogTitle>
-          <DialogDescription>
-            {translate(language, "skillEditorDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-4">
-          <form onSubmit={upload} noValidate className="flex min-w-0 flex-col gap-4">
-            <FieldGroup className="gap-4">
-              <Field>
-                <FieldLabel htmlFor="skill-version">
-                  {translate(language, "skillVersion")}
-                </FieldLabel>
-                <Input
-                  id="skill-version"
-                  value={version}
-                  onChange={(event) => setVersion(event.target.value)}
-                  placeholder="1.0.0"
-                  disabled={pending || pendingVersion !== null}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="skill-package">
-                  {translate(language, "skillPackage")}
-                </FieldLabel>
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="relative shrink-0">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={pending || pendingVersion !== null}
-                    >
-                      <Upload data-icon="inline-start" />
-                      {translate(language, "chooseSkillPackage")}
-                    </Button>
-                    <Input
-                      id="skill-package"
-                      type="file"
-                      accept=".zip,application/zip"
-                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={(event) =>
-                        setArchive(event.target.files?.[0] ?? null)
-                      }
-                      disabled={pending || pendingVersion !== null}
-                      aria-label={translate(language, "skillPackage")}
-                    />
-                  </div>
-                  <span className="min-w-0 truncate text-sm text-muted-foreground">
-                    {archive?.name ?? translate(language, "noFileSelected")}
-                  </span>
-                </div>
-              </Field>
-            </FieldGroup>
-            <Button
-              type="submit"
-              className="self-start"
-              disabled={pending || pendingVersion !== null}
-            >
-              {pending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              {translate(language, pending ? "saving" : "uploadVersion")}
-            </Button>
-          </form>
-          <div className="flex min-w-0 flex-col gap-2">
-            <p className="text-sm font-semibold">
-              {translate(language, "versions")}
-            </p>
-            {skill.versions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {translate(language, "noVersions")}
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {skill.versions.map((item) => (
-                  <div
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-                    key={item.version}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-normal">
-                        {item.version}
-                      </p>
-                      <p className="truncate text-xs text-tertiary-foreground">
-                        {item.sha256} · {item.size}{" "}
-                        {translate(language, "bytes")}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge
-                        variant={
-                          item.state === "published" ? "success" : "outline"
-                        }
-                      >
-                        {translate(language, versionStateLabel(item.state))}
-                      </Badge>
-                      {item.state === "draft" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={pending || pendingVersion !== null}
-                          onClick={() => void publish(item.version)}
-                        >
-                          {pendingVersion === item.version ? (
-                            <Spinner data-icon="inline-start" />
-                          ) : null}
-                          {translate(
-                            language,
-                            pendingVersion === item.version
-                              ? "publishing"
-                              : "publishVersion",
-                          )}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={pending || pendingVersion !== null}
-            onClick={() => onOpenChange(false)}
+      <Typography.Paragraph type="secondary">
+        {t(editing ? "userEditDescription" : "userEditorDescription")}
+      </Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        autoComplete="off"
+        initialValues={{
+          username: user?.username ?? "",
+          displayName: user?.displayName ?? "",
+          email: user?.email ?? "",
+          temporaryPassword: "",
+          roles: [...(user?.roleIds ?? [])],
+          teams: [...(user?.teamIds ?? [])],
+          requirePasswordChange: true,
+        }}
+        onFinish={submit}
+      >
+        {editing ? null : (
+          <Form.Item
+            name="username"
+            label={t("username")}
+            rules={[{ required: true, whitespace: true, message: t("usernameRequired") }]}
           >
-            {translate(language, "cancel")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <Input autoComplete="off" disabled={pending} />
+          </Form.Item>
+        )}
+        <Form.Item
+          name="displayName"
+          label={t("displayName")}
+          rules={[{ required: true, whitespace: true, message: t("displayNameRequired") }]}
+        >
+          <Input autoComplete="off" disabled={pending} />
+        </Form.Item>
+        <Form.Item name="email" label={t("email")} rules={[{ type: "email", message: t("email") }]}>
+          <Input autoComplete="off" placeholder={t("emailPlaceholder")} disabled={pending} />
+        </Form.Item>
+        {editing ? null : (
+          <Form.Item
+            name="temporaryPassword"
+            label={t("temporaryPassword")}
+            extra={t("passwordPolicy")}
+            rules={[
+              { required: true, message: t("passwordPolicy") },
+              { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t("passwordPolicy") },
+            ]}
+          >
+            <Input.Password
+              autoComplete="new-password"
+              placeholder={t("temporaryPasswordPlaceholder")}
+              disabled={pending}
+            />
+          </Form.Item>
+        )}
+        <Form.Item
+          name="roles"
+          label={t("selectRoles")}
+          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
+        >
+          <Checkbox.Group
+            options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
+            disabled={pending}
+          />
+        </Form.Item>
+        <Form.Item
+          name="teams"
+          label={t("selectTeams")}
+          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("teamRequired")))) }]}
+        >
+          <Checkbox.Group
+            options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
+            disabled={pending}
+          />
+        </Form.Item>
+        {editing ? null : (
+          <Form.Item name="requirePasswordChange" label={t("requirePasswordChange")} valuePropName="checked">
+            <Switch disabled={pending} />
+          </Form.Item>
+        )}
+      </Form>
+    </Modal>
+  );
+}
+
+function PasswordResetModal({
+  client,
+  user,
+  open,
+  onOpenChange,
+  onChanged,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly user: PlatformUser;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [form] = Form.useForm<{ temporaryPassword: string; requirePasswordChange: boolean }>();
+  const [pending, setPending] = useState(false);
+  const submit = async (values: { temporaryPassword: string; requirePasswordChange: boolean }) => {
+    setPending(true);
+    try {
+      await client.resetUserPassword(user.id, {
+        temporaryPassword: values.temporaryPassword,
+        requirePasswordChange: values.requirePasswordChange,
+      });
+      onOpenChange(false);
+      await onChanged();
+    } catch {
+      onError();
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={open}
+      title={t("resetPasswordTitle")}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
+      }}
+    >
+      <Typography.Paragraph type="secondary">
+        {t("resetPasswordDescription")} <Typography.Text strong>{user.displayName}</Typography.Text>
+      </Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        autoComplete="off"
+        initialValues={{ temporaryPassword: "", requirePasswordChange: true }}
+        onFinish={submit}
+      >
+        <Form.Item
+          name="temporaryPassword"
+          label={t("temporaryPassword")}
+          extra={t("passwordPolicy")}
+          rules={[
+            { required: true, message: t("passwordPolicy") },
+            { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t("passwordPolicy") },
+          ]}
+        >
+          <Input.Password
+            autoComplete="new-password"
+            placeholder={t("temporaryPasswordPlaceholder")}
+            disabled={pending}
+          />
+        </Form.Item>
+        <Form.Item name="requirePasswordChange" label={t("requirePasswordChange")} valuePropName="checked">
+          <Switch disabled={pending} />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
@@ -1983,7 +1702,7 @@ type UserImportResult = {
   readonly errors: readonly string[];
 };
 
-function UserImportDialog({
+function UserImportModal({
   client,
   open,
   onOpenChange,
@@ -2006,9 +1725,7 @@ function UserImportDialog({
       setFailed(false);
     }
   }, [open]);
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submit = async () => {
     if (!file) {
       setFailed(true);
       return;
@@ -2019,12 +1736,9 @@ function UserImportDialog({
       const payload = normalizeUserImport(JSON.parse(await file.text()));
       const result = await client.importUsers(payload);
       const created = typeof result.created === "number" ? result.created : 0;
-      const rejected =
-        typeof result.rejected === "number" ? result.rejected : 0;
+      const rejected = typeof result.rejected === "number" ? result.rejected : 0;
       const errors = Array.isArray(result.errors)
-        ? result.errors
-            .filter((item): item is string => typeof item === "string")
-            .slice(0, 20)
+        ? result.errors.filter((item): item is string => typeof item === "string").slice(0, 20)
         : [];
       onOpenChange(false);
       await onChanged({ created, rejected, errors });
@@ -2035,68 +1749,48 @@ function UserImportDialog({
       setPending(false);
     }
   };
-
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={t("importUsersTitle")}
+      okText={t("importUsers")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => void submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "importUsersTitle")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "importUsersDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          {failed ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden="true" />
-              <AlertDescription>
-                {translate(language, "importUsersFailed")}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <FieldGroup className="gap-4">
-            <Field>
-              <FieldLabel htmlFor="users-import-file">
-                {translate(language, "importUsersFile")}
-              </FieldLabel>
-              <Input
-                id="users-import-file"
-                type="file"
-                accept="application/json,.json"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                disabled={pending}
-              />
-            </Field>
-            <p className="text-xs text-tertiary-foreground">
-              {translate(language, "importUsersHint")}
-            </p>
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              {translate(language, pending ? "importingUsers" : "importUsers")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Typography.Paragraph type="secondary">{t("importUsersDescription")}</Typography.Paragraph>
+      {failed ? (
+        <Alert type="error" showIcon title={t("importUsersFailed")} style={{ marginBottom: 16 }} />
+      ) : null}
+      <Upload
+        accept="application/json,.json"
+        maxCount={1}
+        disabled={pending}
+        fileList={
+          file
+            ? [{ uid: "users-import", name: file.name, size: file.size }]
+            : []
+        }
+        beforeUpload={(candidate) => {
+          setFile(candidate);
+          setFailed(false);
+          return false;
+        }}
+        onChange={({ fileList }) => setFile(fileList[0]?.originFileObj ?? null)}
+        onRemove={() => setFile(null)}
+      >
+        <Button icon={<UploadOutlined />} aria-label={t("importUsersFile")} disabled={pending}>
+          {t("importUsersFile")}
+        </Button>
+      </Upload>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
+        {t("importUsersHint")}
+      </Typography.Paragraph>
+    </Modal>
   );
 }
 
@@ -2111,15 +1805,9 @@ function normalizeUserImport(value: unknown): JsonObject {
   if (!users || users.length === 0 || users.length > 1000)
     throw new Error("Invalid user import row count.");
   for (const row of users) {
-    if (!row || typeof row !== "object")
-      throw new Error("Invalid user import row.");
+    if (!row || typeof row !== "object") throw new Error("Invalid user import row.");
     const item = row as Record<string, unknown>;
-    for (const key of [
-      "externalRowId",
-      "username",
-      "displayName",
-      "temporaryPassword",
-    ]) {
+    for (const key of ["externalRowId", "username", "displayName", "temporaryPassword"]) {
       if (typeof item[key] !== "string" || item[key].trim() === "")
         throw new Error(`Missing ${key}.`);
     }
@@ -2128,314 +1816,291 @@ function normalizeUserImport(value: unknown): JsonObject {
     for (const key of ["teamIds", "roleIds"]) {
       if (
         item[key] !== undefined &&
-        (!Array.isArray(item[key]) ||
-          item[key].some((entry) => typeof entry !== "string"))
+        (!Array.isArray(item[key]) || item[key].some((entry) => typeof entry !== "string"))
       )
         throw new Error(`Invalid ${key}.`);
-      if (!Array.isArray(item[key]) || item[key].length === 0)
-        throw new Error(`Missing ${key}.`);
+      if (!Array.isArray(item[key]) || item[key].length === 0) throw new Error(`Missing ${key}.`);
     }
-    if (
-      item.requirePasswordChange !== undefined &&
-      typeof item.requirePasswordChange !== "boolean"
-    )
+    if (item.requirePasswordChange !== undefined && typeof item.requirePasswordChange !== "boolean")
       throw new Error("Invalid requirePasswordChange.");
   }
   return { users } as JsonObject;
 }
 
-function UserEditorDialog({
+// ---------------------------------------------------------------------------
+// Teams
+// ---------------------------------------------------------------------------
+
+function TeamsSection({
   client,
-  existingUsernames,
-  user,
-  roles,
-  teams,
-  open,
-  onOpenChange,
+  resources,
+  modelResources,
+  canWrite,
+  loading,
+  onRefresh,
   onChanged,
   onError,
-}: {
-  readonly client: AdminConsoleClient;
-  readonly existingUsernames: readonly string[];
-  readonly user: AdminUser | undefined;
-  readonly roles: readonly Role[];
-  readonly teams: readonly Team[];
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly onChanged: () => Promise<void>;
-  readonly onError: () => void;
-}) {
-  const editing = Boolean(user);
-  const [username, setUsername] = useState(user?.username ?? "");
-  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
-  const [email, setEmail] = useState(user?.email ?? "");
-  const [temporaryPassword, setTemporaryPassword] = useState("");
-  const [enabled, setEnabled] = useState(user?.status !== "disabled");
-  const [requirePasswordChange, setRequirePasswordChange] = useState(true);
-  const [roleIds, setRoleIds] = useState<ReadonlySet<string>>(
-    new Set(user?.roleIds ?? []),
-  );
-  const [teamIds, setTeamIds] = useState<ReadonlySet<string>>(
-    new Set(user?.teamIds ?? []),
-  );
-  const [pending, setPending] = useState(false);
-  const [errorField, setErrorField] = useState<
-    "username" | "displayName" | "password" | "role" | "team" | null
-  >(null);
-  useEffect(() => {
-    setUsername(user?.username ?? "");
-    setDisplayName(user?.displayName ?? "");
-    setEmail(user?.email ?? "");
-    setTemporaryPassword("");
-    setEnabled(user?.status !== "disabled");
-    setRequirePasswordChange(true);
-    setRoleIds(new Set(user?.roleIds ?? []));
-    setTeamIds(new Set(user?.teamIds ?? []));
-    setErrorField(null);
-  }, [user]);
-  const toggleIds = (
-    current: ReadonlySet<string>,
-    id: string,
-  ): ReadonlySet<string> => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
-  };
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedUsername = username.trim();
-    if (!user && existingUsernames.includes(normalizedUsername)) {
-      setErrorField("username");
-      notify(
-        AdminNotificationKind.Error,
-        translate(language, "usernameAlreadyExists"),
-      );
-      return;
-    }
-    if (roleIds.size === 0) {
-      setErrorField("role");
-      notify(AdminNotificationKind.Error, translate(language, "roleRequired"));
-      return;
-    }
-    if (teamIds.size === 0) {
-      setErrorField("team");
-      notify(AdminNotificationKind.Error, translate(language, "teamRequired"));
-      return;
-    }
-    setErrorField(null);
-    setPending(true);
-    try {
-      if (user) {
-        await client.updateUser(user.id, {
-          displayName: displayName.trim(),
-          email: email.trim() || null,
-          status: enabled ? "active" : "disabled",
-        });
-        await client.replaceUserRBAC(user.id, {
-          roleIds: [...roleIds],
-          teamIds: [...teamIds],
-        });
-      } else
-        await client.createUser({
-          username: normalizedUsername,
-          displayName: displayName.trim(),
-          email: email.trim() || null,
-          temporaryPassword,
-          roleIds: [...roleIds],
-          teamIds: [...teamIds],
-          requirePasswordChange,
-        });
-      onOpenChange(false);
-      await onChanged();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, editing ? "userUpdated" : "userCreated"),
-      );
-    } catch {
-      onError();
-    } finally {
-      setPending(false);
-    }
-  };
+}: SectionProps & { readonly modelResources: ModelResources }) {
+  const [query, setQuery] = useState("");
+  const [detailTeamId, setDetailTeamId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const rows = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return normalized
+      ? resources.teams.filter((team) => `${team.name} ${team.id}`.toLowerCase().includes(normalized))
+      : resources.teams;
+  }, [resources.teams, query]);
+  const detailTeam = detailTeamId ? resources.teams.find((team) => team.id === detailTeamId) ?? null : null;
+  const columns: TableProps<Team>["columns"] = [
+    {
+      title: t("team"),
+      key: "team",
+      render: (_, team) => (
+        <Space size={8}>
+          <NameCell name={team.name} detail={team.id} />
+          {team.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+        </Space>
+      ),
+    },
+    { title: rc.memberCount, dataIndex: "memberCount", key: "memberCount", width: 100 },
+    {
+      title: t("effectiveResources"),
+      key: "access",
+      render: (_, team) => (
+        <ResourceAccessTags
+          modelsAvailable={modelResources.available}
+          skillsAvailable={modelResources.skillsAvailable}
+          rows={buildAccessRows({
+            resources,
+            modelResources,
+            subjects: [{ type: "team", id: team.id, label: team.name }],
+            accountActive: team.enabled,
+          })}
+        />
+      ),
+    },
+    { title: t("status"), key: "status", render: (_, team) => <EnabledBadge enabled={team.enabled} /> },
+    {
+      title: t("actions"),
+      key: "actions",
+      align: "right",
+      render: (_, team) => (
+        <Space size={0} wrap>
+          <Button type="link" size="small" disabled={pending} onClick={() => setDetailTeamId(team.id)}>
+            {rc.view}
+          </Button>
+          {canWrite ? (
+            <>
+              <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: team.id })}>
+                {t("edit")}
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                disabled={pending}
+                onClick={() =>
+                  void run(async () => {
+                    await client.updateTeam(team.id, { enabled: !team.enabled });
+                  })
+                }
+              >
+                {team.enabled ? t("disable") : t("enable")}
+              </Button>
+              <Popconfirm
+                title={t("deleteTeamTitle")}
+                description={t("deleteResourceDescription")}
+                okText={t("delete")}
+                cancelText={t("cancel")}
+                okButtonProps={{ danger: true }}
+                disabled={team.builtIn}
+                onConfirm={() =>
+                  void run(async () => {
+                    await client.deleteTeam(team.id);
+                  })
+                }
+              >
+                <Button type="link" size="small" danger disabled={pending || team.builtIn}>
+                  {t("delete")}
+                </Button>
+              </Popconfirm>
+            </>
+          ) : null}
+        </Space>
+      ),
+    },
+  ];
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
-      }}
-    >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {translate(language, editing ? "userEditTitle" : "userEditorTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {translate(
-              language,
-              editing ? "userEditDescription" : "userEditorDescription",
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={submit}
-          autoComplete="off"
-          className="flex flex-col gap-4"
-        >
-          <FieldGroup className="gap-4">
-            {editing ? null : (
-              <Field data-invalid={errorField === "username"}>
-                <FieldLabel htmlFor="user-username">
-                  {translate(language, "username")}
-                </FieldLabel>
-                <Input
-                  id="user-username"
-                  autoComplete="off"
-                  value={username}
-                  onChange={(event) => {
-                    setUsername(event.target.value);
-                    if (errorField === "username") setErrorField(null);
-                  }}
-                  disabled={pending}
-                  required
-                  aria-invalid={errorField === "username"}
-                />
-                {errorField === "username" ? (
-                  <FieldError>{translate(language, "usernameAlreadyExists")}</FieldError>
-                ) : null}
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="user-display-name">
-                {translate(language, "displayName")}
-              </FieldLabel>
-              <Input
-                id="user-display-name"
-                autoComplete="off"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                disabled={pending}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="user-email">
-                {translate(language, "email")}
-              </FieldLabel>
-              <Input
-                id="user-email"
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder={translate(language, "emailPlaceholder")}
-                disabled={pending}
-              />
-            </Field>
-            {editing ? null : (
-              <Field>
-                <FieldLabel htmlFor="user-temp-password">
-                  {translate(language, "temporaryPassword")}
-                </FieldLabel>
-                <PasswordInput
-                  id="user-temp-password"
-                  value={temporaryPassword}
-                  onChange={setTemporaryPassword}
-                  minLength={PASSWORD_MIN_LENGTH}
-                  maxLength={PASSWORD_MAX_LENGTH}
-                  placeholder={translate(
-                    language,
-                    "temporaryPasswordPlaceholder",
-                  )}
-                  disabled={pending}
-                  required
-                />
-                {errorField !== "password" ? (
-                  <FieldDescription>
-                    {translate(language, "passwordPolicy")}
-                  </FieldDescription>
-                ) : null}
-              </Field>
-            )}
-            <SelectionList
-              label={translate(language, "selectRoles")}
-              options={roles.map((role) => ({
-                id: role.id,
-                label: role.name,
-                description: role.description,
-              }))}
-              selected={roleIds}
-              onToggle={(id) => {
-                setRoleIds((current) => toggleIds(current, id));
-                if (errorField === "role") setErrorField(null);
-              }}
-              disabled={pending}
-              error={
-                errorField === "role"
-                  ? translate(language, "roleRequired")
-                  : undefined
-              }
-              errorId="user-roles-error"
-            />
-            <SelectionList
-              label={translate(language, "selectTeams")}
-              options={teams.map((team) => ({
-                id: team.id,
-                label: team.name,
-                description: team.description,
-              }))}
-              selected={teamIds}
-              onToggle={(id) => {
-                setTeamIds((current) => toggleIds(current, id));
-                if (errorField === "team") setErrorField(null);
-              }}
-              disabled={pending}
-              error={
-                errorField === "team"
-                  ? translate(language, "teamRequired")
-                  : undefined
-              }
-              errorId="user-teams-error"
-            />
-            {editing ? (
-              <BooleanSwitch
-                id="user-enabled"
-                label={`${translate(language, "accountEnabled")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={pending}
-              />
-            ) : (
-              <BooleanSwitch
-                id="user-require-password-change"
-                label={translate(language, "requirePasswordChange")}
-                checked={requirePasswordChange}
-                onCheckedChange={setRequirePasswordChange}
-                disabled={pending}
-              />
-            )}
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <div>
+      <SectionHeader
+        title={rc.pageTeams}
+        description={rc.pageTeamsDescription}
+        extra={
+          <>
+            {canWrite ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
+                {t("addTeam")}
+              </Button>
+            ) : null}
+            <RefreshButton loading={loading} onRefresh={onRefresh} />
+          </>
+        }
+      />
+      <Input.Search
+        aria-label={rc.searchTeamPlaceholder}
+        placeholder={rc.searchTeamPlaceholder}
+        allowClear
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        style={{ width: 240, marginBottom: 16 }}
+      />
+      {rows.length === 0 ? (
+        <Empty description={t("teamsEmpty")}>
+          <Typography.Text type="secondary">{t("teamsEmptyHint")}</Typography.Text>
+        </Empty>
+      ) : (
+        <Table<Team>
+          rowKey="id"
+          columns={columns}
+          dataSource={[...rows]}
+          pagination={PAGINATION}
+        />
+      )}
+      {detailTeam ? (
+        <TeamDetailDrawer
+          team={detailTeam}
+          resources={resources}
+          modelResources={modelResources}
+          canWrite={canWrite}
+          open
+          onClose={() => setDetailTeamId(null)}
+          onEdit={() => {
+            setDetailTeamId(null);
+            setEditor({ id: detailTeam.id });
+          }}
+        />
+      ) : null}
+      {canWrite && editor ? (
+        <TeamEditorModal
+          client={client}
+          existingTeams={resources.teams}
+          team={editor.id ? resources.teams.find((team) => team.id === editor.id) : undefined}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+    </div>
   );
 }
 
-function TeamEditorDialog({
+function TeamDetailDrawer({
+  team,
+  resources,
+  modelResources,
+  canWrite,
+  open,
+  onClose,
+  onEdit,
+}: {
+  readonly team: Team;
+  readonly resources: AdminResources;
+  readonly modelResources: ModelResources;
+  readonly canWrite: boolean;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onEdit: () => void;
+}) {
+  const members = resources.users.filter((user) => (user.teamIds ?? []).includes(team.id));
+  const roleNames = new Map(resources.roles.map((role) => [role.id, role.name]));
+  const accessRows = buildAccessRows({
+    resources,
+    modelResources,
+    subjects: [{ type: "team", id: team.id, label: team.name }],
+    accountActive: team.enabled,
+  });
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      size={640}
+      title={
+        <Space size={8}>
+          <span>{team.name}</span>
+          <EnabledBadge enabled={team.enabled} />
+        </Space>
+      }
+      extra={
+        canWrite ? (
+          <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
+            {t("edit")}
+          </Button>
+        ) : null
+      }
+    >
+      <Tabs
+        items={[
+          {
+            key: "members",
+            label: `${rc.teamMembersTab}（${team.memberCount}）`,
+            children:
+              members.length === 0 ? (
+                <Empty description={<UnknownText>{rc.notCollected}</UnknownText>} />
+              ) : (
+                <Table
+                  rowKey="id"
+                  size="small"
+                  pagination={PAGINATION}
+                  dataSource={[...members]}
+                  columns={[
+                    {
+                      title: t("user"),
+                      key: "user",
+                      render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+                    },
+                    {
+                      title: rc.accountRoles,
+                      key: "roles",
+                      render: (_, user) =>
+                        (user.roleIds ?? []).length > 0 ? (
+                          <Space size={4} wrap>
+                            {(user.roleIds ?? []).map((id) => (
+                              <Tag key={id}>{roleNames.get(id) ?? id}</Tag>
+                            ))}
+                          </Space>
+                        ) : (
+                          <UnknownText>{rc.noRoles}</UnknownText>
+                        ),
+                    },
+                    {
+                      title: t("status"),
+                      key: "status",
+                      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+                    },
+                  ]}
+                />
+              ),
+          },
+          {
+            key: "access",
+            label: rc.teamAccessTab,
+            children: (
+              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                <Typography.Text type="secondary">{rc.teamAccessNote}</Typography.Text>
+                <AccessTable rows={accessRows} modelsAvailable={modelResources.available} skillsAvailable={modelResources.skillsAvailable} />
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Drawer>
+  );
+}
+
+function TeamEditorModal({
   client,
   existingTeams,
   team,
@@ -2453,45 +2118,31 @@ function TeamEditorDialog({
   readonly onError: () => void;
 }) {
   const editing = Boolean(team);
-  const [id, setId] = useState(team?.id ?? "");
-  const [name, setName] = useState(team?.name ?? "");
-  const [description, setDescription] = useState(team?.description ?? "");
-  const [enabled, setEnabled] = useState(team?.enabled !== false);
+  const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  useEffect(() => {
-    setId(team?.id ?? "");
-    setName(team?.name ?? "");
-    setDescription(team?.description ?? "");
-    setEnabled(team?.enabled !== false);
-  }, [team]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedId = id.trim();
-    const normalizedName = name.trim();
+  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean }) => {
+    const normalizedId = (values.id ?? "").trim();
     if (!team && existingTeams.some((item) => item.id === normalizedId)) {
-      notify(AdminNotificationKind.Error, translate(language, "teamIdAlreadyExists"));
+      form.setFields([{ name: "id", errors: [t("teamIdAlreadyExists")] }]);
       return;
     }
     setPending(true);
     try {
       if (team)
         await client.updateTeam(team.id, {
-          name: name.trim(),
-          description: description.trim(),
-          enabled,
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
+          enabled: values.enabled !== false,
         });
       else
         await client.createTeam({
           id: normalizedId,
-          name: normalizedName,
-          description: description.trim(),
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
         });
       onOpenChange(false);
       await onChanged();
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "changesSaved"),
-      );
+      notify(AdminNotificationKind.Success, t("changesSaved"));
     } catch {
       onError();
     } finally {
@@ -2499,97 +2150,344 @@ function TeamEditorDialog({
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={t(editing ? "teamEditTitle" : "teamEditorTitle")}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {translate(language, editing ? "teamEditTitle" : "teamEditorTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {translate(language, "teamEditorDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <FieldGroup className="gap-4">
-            {editing ? null : (
-              <Field>
-                <FieldLabel htmlFor="team-id">
-                  {translate(language, "teamId")}
-                </FieldLabel>
-                <Input
-                  id="team-id"
-                  value={id}
-                  onChange={(event) => setId(event.target.value)}
-                  disabled={pending}
-                  required
-                  pattern={RBAC_ID_PATTERN.source}
-                  title={translate(language, "rbacIdHint")}
-                />
-                <FieldDescription>
-                  {translate(language, "rbacIdHint")}
-                </FieldDescription>
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="team-name">
-                {translate(language, "teamName")}
-              </FieldLabel>
-              <Input
-                id="team-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={pending}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="team-description">
-                {translate(language, "description")}
-              </FieldLabel>
-              <Input
-                id="team-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder={translate(language, "descriptionPlaceholder")}
-                disabled={pending}
-              />
-            </Field>
-            {editing ? (
-              <BooleanSwitch
-                id="team-enabled"
-                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={pending}
-              />
-            ) : null}
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Typography.Paragraph type="secondary">{t("teamEditorDescription")}</Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        initialValues={{
+          id: team?.id ?? "",
+          name: team?.name ?? "",
+          description: team?.description ?? "",
+          enabled: team?.enabled !== false,
+        }}
+        onFinish={submit}
+      >
+        {editing ? null : (
+          <Form.Item
+            name="id"
+            label={t("teamId")}
+            extra={t("rbacIdHint")}
+            rules={[
+              { required: true, whitespace: true, message: t("fieldRequired") },
+              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+            ]}
+          >
+            <Input disabled={pending} />
+          </Form.Item>
+        )}
+        <Form.Item name="name" label={t("teamName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="description" label={t("description")}>
+          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        </Form.Item>
+        {editing ? (
+          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          </Form.Item>
+        ) : null}
+      </Form>
+    </Modal>
   );
 }
 
-function RoleEditorDialog({
+// ---------------------------------------------------------------------------
+// Roles
+// ---------------------------------------------------------------------------
+
+function RolesSection({
+  client,
+  resources,
+  modelResources,
+  canWrite,
+  loading,
+  onRefresh,
+  onChanged,
+  onError,
+}: SectionProps & { readonly modelResources: ModelResources }) {
+  const [query, setQuery] = useState("");
+  const [detailRoleId, setDetailRoleId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const rows = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return normalized
+      ? resources.roles.filter((role) => `${role.name} ${role.id}`.toLowerCase().includes(normalized))
+      : resources.roles;
+  }, [resources.roles, query]);
+  const detailRole = detailRoleId ? resources.roles.find((role) => role.id === detailRoleId) ?? null : null;
+  const memberCount = (roleId: string) =>
+    resources.users.filter((user) => (user.roleIds ?? []).includes(roleId)).length;
+  const columns: TableProps<Role>["columns"] = [
+    {
+      title: t("role"),
+      key: "role",
+      render: (_, role) => (
+        <Space size={8}>
+          <NameCell name={role.name} detail={role.id} />
+          {role.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+        </Space>
+      ),
+    },
+    {
+      title: rc.permissionCount,
+      key: "permissions",
+      width: 100,
+      render: (_, role) => role.permissions.length,
+    },
+    {
+      title: rc.roleMemberCount,
+      key: "members",
+      width: 100,
+      render: (_, role) => memberCount(role.id),
+    },
+    {
+      title: t("effectiveResources"),
+      key: "access",
+      render: (_, role) => (
+        <ResourceAccessTags
+          modelsAvailable={modelResources.available}
+          skillsAvailable={modelResources.skillsAvailable}
+          rows={buildAccessRows({
+            resources,
+            modelResources,
+            subjects: [{ type: "role", id: role.id, label: role.name }],
+            accountActive: role.enabled,
+          })}
+        />
+      ),
+    },
+    { title: t("status"), key: "status", render: (_, role) => <EnabledBadge enabled={role.enabled} /> },
+    {
+      title: t("actions"),
+      key: "actions",
+      align: "right",
+      render: (_, role) => (
+        <Space size={0} wrap>
+          <Button type="link" size="small" disabled={pending} onClick={() => setDetailRoleId(role.id)}>
+            {rc.view}
+          </Button>
+          {canWrite ? (
+            <>
+              <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: role.id })}>
+                {t("edit")}
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                disabled={pending}
+                onClick={() =>
+                  void run(async () => {
+                    await client.updateRole(role.id, { enabled: !role.enabled });
+                  })
+                }
+              >
+                {role.enabled ? t("disable") : t("enable")}
+              </Button>
+              <Popconfirm
+                title={t("deleteRoleTitle")}
+                description={t("deleteResourceDescription")}
+                okText={t("delete")}
+                cancelText={t("cancel")}
+                okButtonProps={{ danger: true }}
+                disabled={role.builtIn}
+                onConfirm={() =>
+                  void run(async () => {
+                    await client.deleteRole(role.id);
+                  })
+                }
+              >
+                <Button type="link" size="small" danger disabled={pending || role.builtIn}>
+                  {t("delete")}
+                </Button>
+              </Popconfirm>
+            </>
+          ) : null}
+        </Space>
+      ),
+    },
+  ];
+  return (
+    <div>
+      <SectionHeader
+        title={rc.pageRoles}
+        description={rc.pageRolesDescription}
+        extra={
+          <>
+            {canWrite ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
+                {t("addRole")}
+              </Button>
+            ) : null}
+            <RefreshButton loading={loading} onRefresh={onRefresh} />
+          </>
+        }
+      />
+      <Input.Search
+        aria-label={rc.searchRolePlaceholder}
+        placeholder={rc.searchRolePlaceholder}
+        allowClear
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        style={{ width: 240, marginBottom: 16 }}
+      />
+      {rows.length === 0 ? (
+        <Empty description={t("rolesEmpty")}>
+          <Typography.Text type="secondary">{t("rolesEmptyHint")}</Typography.Text>
+        </Empty>
+      ) : (
+        <Table<Role>
+          rowKey="id"
+          columns={columns}
+          dataSource={[...rows]}
+          pagination={PAGINATION}
+        />
+      )}
+      {detailRole ? (
+        <RoleDetailDrawer
+          role={detailRole}
+          resources={resources}
+          canWrite={canWrite}
+          open
+          onClose={() => setDetailRoleId(null)}
+          onEdit={() => {
+            setDetailRoleId(null);
+            setEditor({ id: detailRole.id });
+          }}
+        />
+      ) : null}
+      {canWrite && editor ? (
+        <RoleEditorModal
+          client={client}
+          existingRoleIds={resources.roles.map((role) => role.id)}
+          role={editor.id ? resources.roles.find((role) => role.id === editor.id) : undefined}
+          permissions={resources.permissions}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function RoleDetailDrawer({
+  role,
+  resources,
+  canWrite,
+  open,
+  onClose,
+  onEdit,
+}: {
+  readonly role: Role;
+  readonly resources: AdminResources;
+  readonly canWrite: boolean;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onEdit: () => void;
+}) {
+  const permissionDescriptions = new Map(resources.permissions.map((permission) => [permission.id, permission.description]));
+  const subjects = resources.users.filter((user) => (user.roleIds ?? []).includes(role.id));
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      size={640}
+      title={
+        <Space size={8}>
+          <span>{role.name}</span>
+          {role.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+          <EnabledBadge enabled={role.enabled} />
+        </Space>
+      }
+      extra={
+        canWrite ? (
+          <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
+            {t("edit")}
+          </Button>
+        ) : null
+      }
+    >
+      <Tabs
+        items={[
+          {
+            key: "permissions",
+            label: `${rc.rolePermissionsTab}（${role.permissions.length}）`,
+            children:
+              role.permissions.length === 0 ? (
+                <Empty description={<UnknownText>{rc.notCollected}</UnknownText>} />
+              ) : (
+                <Table
+                  rowKey="id"
+                  size="small"
+                  pagination={PAGINATION}
+                  dataSource={role.permissions.map((id) => ({ id, description: permissionDescriptions.get(id) }))}
+                  columns={[
+                    { title: t("permissions"), dataIndex: "id", key: "id" },
+                    {
+                      title: t("description"),
+                      key: "description",
+                      render: (_, item) =>
+                        item.description ? (
+                          <Typography.Text type="secondary">{item.description}</Typography.Text>
+                        ) : (
+                          <UnknownText />
+                        ),
+                    },
+                  ]}
+                />
+              ),
+          },
+          {
+            key: "subjects",
+            label: `${rc.roleSubjectsTab}（${subjects.length}）`,
+            children:
+              subjects.length === 0 ? (
+                <Empty description={rc.roleSubjectsEmpty} />
+              ) : (
+                <Table<PlatformUser>
+                  rowKey="id"
+                  size="small"
+                  pagination={PAGINATION}
+                  dataSource={[...subjects]}
+                  columns={[
+                    {
+                      title: t("user"),
+                      key: "user",
+                      render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+                    },
+                    {
+                      title: t("status"),
+                      key: "status",
+                      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+                    },
+                  ]}
+                />
+              ),
+          },
+        ]}
+      />
+    </Drawer>
+  );
+}
+
+function RoleEditorModal({
   client,
   existingRoleIds,
   role,
@@ -2609,203 +2507,758 @@ function RoleEditorDialog({
   readonly onError: () => void;
 }) {
   const editing = Boolean(role);
-  const [id, setId] = useState(role?.id ?? "");
-  const [name, setName] = useState(role?.name ?? "");
-  const [description, setDescription] = useState(role?.description ?? "");
-  const [enabled, setEnabled] = useState(role?.enabled !== false);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(
-    new Set(role?.permissions ?? []),
-  );
+  const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setId(role?.id ?? "");
-    setName(role?.name ?? "");
-    setDescription(role?.description ?? "");
-    setEnabled(role?.enabled !== false);
-    setSelected(new Set(role?.permissions ?? []));
-    setFailed(false);
-  }, [role]);
-  const toggle = (id: string) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedId = id.trim();
+  const submit = async (values: {
+    id?: string;
+    name: string;
+    description?: string;
+    permissions?: string[];
+    enabled?: boolean;
+  }) => {
+    const normalizedId = (values.id ?? "").trim();
     if (!role && existingRoleIds.includes(normalizedId)) {
-      notify(AdminNotificationKind.Error, translate(language, "roleIdAlreadyExists"));
+      form.setFields([{ name: "id", errors: [t("roleIdAlreadyExists")] }]);
       return;
     }
     setPending(true);
-    setFailed(false);
     try {
       if (role)
         await client.updateRole(role.id, {
-          name: name.trim(),
-          description: description.trim(),
-          enabled,
-          permissions: [...selected],
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
+          enabled: values.enabled !== false,
+          permissions: values.permissions ?? [],
         });
       else
         await client.createRole({
           id: normalizedId,
-          name: name.trim(),
-          description: description.trim(),
-          permissions: [...selected],
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
+          permissions: values.permissions ?? [],
         });
       onOpenChange(false);
       await onChanged();
+      notify(AdminNotificationKind.Success, t("changesSaved"));
     } catch {
-      setFailed(true);
       onError();
     } finally {
       setPending(false);
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={t(editing ? "roleEditTitle" : "roleEditorTitle")}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {translate(language, editing ? "roleEditTitle" : "roleEditorTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {translate(language, "roleEditorDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <FieldGroup className="gap-4">
-            {editing ? null : (
-              <Field>
-                <FieldLabel htmlFor="role-id">
-                  {translate(language, "roleId")}
-                </FieldLabel>
-                <Input
-                  id="role-id"
-                  value={id}
-                  onChange={(event) => setId(event.target.value)}
-                  disabled={pending}
-                  required
-                  pattern={RBAC_ID_PATTERN.source}
-                  title={translate(language, "rbacIdHint")}
-                />
-                <FieldDescription>
-                  {translate(language, "rbacIdHint")}
-                </FieldDescription>
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="role-name">
-                {translate(language, "roleName")}
-              </FieldLabel>
-              <Input
-                id="role-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={pending}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="role-description">
-                {translate(language, "description")}
-              </FieldLabel>
-              <Input
-                id="role-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder={translate(language, "descriptionPlaceholder")}
-                disabled={pending}
-              />
-            </Field>
-            <SelectionList
-              label={translate(language, "permissions")}
-              options={permissions.map((permission) => ({
-                id: permission.id,
-                label: permission.id,
-                description: permission.description,
-              }))}
-              selected={selected}
-              onToggle={toggle}
-              disabled={pending}
-            />
-            {editing ? (
-              <BooleanSwitch
-                id="role-enabled"
-                label={`${translate(language, "status")}: ${translate(language, enabled ? "enabled" : "disabled")}`}
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={pending}
-              />
-            ) : null}
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Typography.Paragraph type="secondary">{t("roleEditorDescription")}</Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        initialValues={{
+          id: role?.id ?? "",
+          name: role?.name ?? "",
+          description: role?.description ?? "",
+          permissions: [...(role?.permissions ?? [])],
+          enabled: role?.enabled !== false,
+        }}
+        onFinish={submit}
+      >
+        {editing ? null : (
+          <Form.Item
+            name="id"
+            label={t("roleId")}
+            extra={t("rbacIdHint")}
+            rules={[
+              { required: true, whitespace: true, message: t("fieldRequired") },
+              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+            ]}
+          >
+            <Input disabled={pending} />
+          </Form.Item>
+        )}
+        <Form.Item name="name" label={t("roleName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="description" label={t("description")}>
+          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        </Form.Item>
+        <Form.Item name="permissions" label={t("permissions")}>
+          <Checkbox.Group
+            disabled={pending}
+            options={permissions.map((permission) => ({
+              value: permission.id,
+              label: permission.description ? `${permission.id} — ${permission.description}` : permission.id,
+            }))}
+          />
+        </Form.Item>
+        {editing ? (
+          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          </Form.Item>
+        ) : null}
+      </Form>
+    </Modal>
   );
 }
 
-function PasswordResetDialog({
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+function SkillsSection({
   client,
-  user,
+  resources,
+  canWrite,
+  canAssign,
+  loading,
+  onRefresh,
+  onChanged,
+  onError,
+}: SectionProps & { readonly canAssign: boolean }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
+  const [grant, setGrant] = useState<{ readonly skillId?: string } | null>(null);
+  const [blockedSkill, setBlockedSkill] = useState<AdminSkill | null>(null);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const rows = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return resources.skills.filter((skill) => {
+      if (statusFilter === "enabled" && !skill.enabled) return false;
+      if (statusFilter === "disabled" && skill.enabled) return false;
+      if (!normalized) return true;
+      return `${skill.name} ${skill.description ?? ""} ${skill.id}`.toLowerCase().includes(normalized);
+    });
+  }, [resources.skills, query, statusFilter]);
+  const detailSkill = detailSkillId ? resources.skills.find((skill) => skill.id === detailSkillId) ?? null : null;
+  const assignmentsFor = (skillId: string) => resources.assignments.filter((item) => item.skillId === skillId);
+  const latestPublished = (skill: AdminSkill) =>
+    skill.versions.find((version) => version.state === "published")?.version ?? null;
+  const blockedRefs = blockedSkill ? assignmentsFor(blockedSkill.id) : [];
+  const columns: TableProps<AdminSkill>["columns"] = [
+    {
+      title: t("skill"),
+      key: "skill",
+      render: (_, skill) => <NameCell name={skill.name} detail={skill.description || skill.id} />,
+    },
+    {
+      title: rc.skillPurpose,
+      key: "purpose",
+      render: (_, skill) =>
+        skill.description ? (
+          <Typography.Text type="secondary">{skill.description}</Typography.Text>
+        ) : (
+          <UnknownText />
+        ),
+    },
+    {
+      title: t("versions"),
+      key: "versions",
+      width: 120,
+      render: (_, skill) => {
+        const published = latestPublished(skill);
+        return published ? <Tag color="green">{published}</Tag> : <UnknownText>—</UnknownText>;
+      },
+    },
+    { title: t("status"), key: "status", render: (_, skill) => <EnabledBadge enabled={skill.enabled} /> },
+    { title: rc.skillEmployees, key: "employees", render: () => <UnknownText>{rc.notCollected}</UnknownText> },
+    {
+      title: t("actions"),
+      key: "actions",
+      align: "right",
+      render: (_, skill) => {
+        const refs = assignmentsFor(skill.id);
+        return (
+          <Space size={0} wrap>
+            <Button type="link" size="small" disabled={pending} onClick={() => setDetailSkillId(skill.id)}>
+              {rc.view}
+            </Button>
+            {canWrite ? (
+              <>
+                <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: skill.id })}>
+                  {t("edit")}
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(async () => {
+                      await client.updateSkill(skill.id, { enabled: !skill.enabled });
+                    })
+                  }
+                >
+                  {skill.enabled ? t("disable") : t("enable")}
+                </Button>
+                {refs.length > 0 ? (
+                  <Button type="link" size="small" danger disabled={pending} onClick={() => setBlockedSkill(skill)}>
+                    {t("delete")}
+                  </Button>
+                ) : (
+                  <Popconfirm
+                    title={rc.deleteSkillConfirm}
+                    description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
+                    okText={t("delete")}
+                    cancelText={t("cancel")}
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() =>
+                      void run(async () => {
+                        await client.deleteSkill(skill.id);
+                      })
+                    }
+                  >
+                    <Button type="link" size="small" danger disabled={pending}>
+                      {t("delete")}
+                    </Button>
+                  </Popconfirm>
+                )}
+              </>
+            ) : null}
+          </Space>
+        );
+      },
+    },
+  ];
+  return (
+    <div>
+      <SectionHeader
+        title={rc.pageSkills}
+        description={rc.pageSkillsDescription}
+        extra={
+          <>
+            {canAssign ? (
+              <Button icon={<KeyOutlined />} onClick={() => setGrant({})}>{t("grantSkill")}</Button>
+            ) : null}
+            {canWrite ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>{t("addSkill")}</Button>
+            ) : null}
+            <RefreshButton loading={loading} onRefresh={onRefresh} />
+          </>
+        }
+      />
+      <Space size={8} wrap style={{ marginBottom: 16 }}>
+        <Input.Search
+          aria-label={rc.searchSkillPlaceholder}
+          placeholder={rc.searchSkillPlaceholder}
+          allowClear
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          style={{ width: 240 }}
+        />
+        <Select
+          aria-label={rc.allStatus}
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: rc.allStatus },
+            { value: "enabled", label: rc.statusEnabled },
+            { value: "disabled", label: rc.statusDisabled },
+          ]}
+          style={{ width: 140 }}
+        />
+      </Space>
+      {rows.length === 0 ? (
+        <Empty description={t("skillsEmpty")}>
+          <Typography.Text type="secondary">{t("skillsEmptyHint")}</Typography.Text>
+        </Empty>
+      ) : (
+        <Table<AdminSkill>
+          rowKey="id"
+          columns={columns}
+          dataSource={[...rows]}
+          pagination={PAGINATION}
+        />
+      )}
+      {detailSkill ? (
+        <SkillDetailDrawer
+          client={client}
+          skill={detailSkill}
+          resources={resources}
+          canWrite={canWrite}
+          canAssign={canAssign}
+          open
+          onClose={() => setDetailSkillId(null)}
+          onChanged={onChanged}
+          onError={onError}
+          onEdit={() => {
+            setDetailSkillId(null);
+            setEditor({ id: detailSkill.id });
+          }}
+          onGrant={() => {
+            setDetailSkillId(null);
+            setGrant({ skillId: detailSkill.id });
+          }}
+        />
+      ) : null}
+      {canWrite && editor ? (
+        <SkillEditorModal
+          client={client}
+          existingSkillIds={resources.skills.map((skill) => skill.id)}
+          skill={editor.id ? resources.skills.find((skill) => skill.id === editor.id) : undefined}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      {canAssign && grant ? (
+        <SkillGrantModal
+          client={client}
+          users={resources.users}
+          roles={resources.roles}
+          teams={resources.teams}
+          skills={resources.skills}
+          existingAssignments={resources.assignments}
+          presetSkillId={grant.skillId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setGrant(null);
+          }}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+      <Modal
+        open={blockedSkill !== null}
+        title={rc.skillDeleteBlockedTitle}
+        footer={
+          <Button type="primary" onClick={() => setBlockedSkill(null)}>
+            {rc.ok}
+          </Button>
+        }
+        onCancel={() => setBlockedSkill(null)}
+      >
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text>{rc.skillDeleteBlockedNote}</Typography.Text>
+          <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+            {blockedRefs.map((assignment) => (
+              <li key={assignment.id}>
+                <SubjectCell
+                  subjectType={assignment.subjectType}
+                  subjectId={assignment.subjectId}
+                  user={
+                    assignment.subjectType === AdminSubjectType.User
+                      ? resources.users.find((user) => user.id === assignment.subjectId)
+                      : undefined
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </Space>
+      </Modal>
+    </div>
+  );
+}
+
+function SkillDetailDrawer({
+  client,
+  skill,
+  resources,
+  canWrite,
+  canAssign,
+  open,
+  onClose,
+  onChanged,
+  onError,
+  onEdit,
+  onGrant,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly skill: AdminSkill;
+  readonly resources: AdminResources;
+  readonly canWrite: boolean;
+  readonly canAssign: boolean;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+  readonly onEdit: () => void;
+  readonly onGrant: () => void;
+}) {
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const assignments = resources.assignments.filter((item) => item.skillId === skill.id);
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      size={720}
+      title={
+        <Space size={8}>
+          <span>{skill.name}</span>
+          <EnabledBadge enabled={skill.enabled} />
+        </Space>
+      }
+      extra={
+        canWrite ? (
+          <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
+            {t("edit")}
+          </Button>
+        ) : null
+      }
+    >
+      <Tabs
+        items={[
+          {
+            key: "config",
+            label: rc.skillDetailConfig,
+            children: (
+              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <Descriptions
+                  column={1}
+                  bordered
+                  size="small"
+                  items={[
+                    { key: "id", label: t("skillId"), children: skill.id },
+                    { key: "name", label: t("skillName"), children: skill.name },
+                    {
+                      key: "description",
+                      label: t("description"),
+                      children: skill.description ? skill.description : <UnknownText />,
+                    },
+                    { key: "status", label: t("status"), children: <EnabledBadge enabled={skill.enabled} /> },
+                  ]}
+                />
+                {canWrite ? (
+                  <Space wrap>
+                    <Button icon={<EditOutlined />} onClick={onEdit}>
+                      {t("edit")}
+                    </Button>
+                    <Button
+                      disabled={pending}
+                      onClick={() =>
+                        void run(async () => {
+                          await client.updateSkill(skill.id, { enabled: !skill.enabled });
+                        })
+                      }
+                    >
+                      {skill.enabled ? t("disable") : t("enable")}
+                    </Button>
+                  </Space>
+                ) : null}
+              </Space>
+            ),
+          },
+          {
+            key: "versions",
+            label: `${rc.skillDetailVersions}（${skill.versions.length}）`,
+            children: (
+              <VersionManager
+                client={client}
+                skill={skill}
+                canWrite={canWrite}
+                onChanged={onChanged}
+                onError={onError}
+              />
+            ),
+          },
+          {
+            key: "access",
+            label: canAssign ? `${rc.skillDetailAccess}（${assignments.length}）` : rc.skillDetailAccess,
+            children: (
+              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                {canAssign ? (
+                  <Button icon={<KeyOutlined />} onClick={onGrant}>
+                    {rc.grantAccess}
+                  </Button>
+                ) : null}
+                {!canAssign ? <Alert type="info" title={rc.accessSkillsUnknown} /> : assignments.length === 0 ? (
+                  <Empty description={rc.skillAccessEmpty}>
+                    <Typography.Text type="secondary">{rc.skillAccessEmptyHint}</Typography.Text>
+                  </Empty>
+                ) : (
+                  <Table<AdminSkillAssignment>
+                    rowKey="id"
+                    size="small"
+                    pagination={PAGINATION}
+                    dataSource={[...assignments]}
+                    columns={[
+                      {
+                        title: rc.assignmentSubject,
+                        key: "subject",
+                        render: (_, assignment) => (
+                          <SubjectCell
+                            subjectType={assignment.subjectType}
+                            subjectId={assignment.subjectId}
+                            user={
+                              assignment.subjectType === AdminSubjectType.User
+                                ? resources.users.find((user) => user.id === assignment.subjectId)
+                                : undefined
+                            }
+                          />
+                        ),
+                      },
+                      ...(canAssign
+                        ? [
+                            {
+                              title: t("actions"),
+                              key: "actions",
+                              align: "right" as const,
+                              render: (_: unknown, assignment: AdminSkillAssignment) => (
+                                <Popconfirm
+                                  title={t("revokeConfirmTitle")}
+                                  description={t("revokeConfirmDescription")}
+                                  okText={t("confirmRevoke")}
+                                  cancelText={t("cancel")}
+                                  okButtonProps={{ danger: true }}
+                                  onConfirm={() =>
+                                    void run(async () => {
+                                      await client.deleteSkillAssignment(assignment.id);
+                                    })
+                                  }
+                                >
+                                  <Button type="link" size="small" danger disabled={pending}>
+                                    {rc.assignmentRevoke}
+                                  </Button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                )}
+              </Space>
+            ),
+          },
+          {
+            key: "employees",
+            label: rc.skillDetailEmployees,
+            children: (
+              <Empty description={rc.skillEmployeesEmpty}>
+                <Typography.Text type="secondary">{rc.skillEmployeesEmptyHint}</Typography.Text>
+              </Empty>
+            ),
+          },
+        ]}
+      />
+    </Drawer>
+  );
+}
+
+function VersionManager({
+  client,
+  skill,
+  canWrite,
+  onChanged,
+  onError,
+}: {
+  readonly client: AdminConsoleClient;
+  readonly skill: AdminSkill;
+  readonly canWrite: boolean;
+  readonly onChanged: () => Promise<void>;
+  readonly onError: () => void;
+}) {
+  const [version, setVersion] = useState("");
+  const [archive, setArchive] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const busy = uploading || pending || pendingVersion !== null;
+  const upload = async () => {
+    if (!version.trim() || !archive) {
+      notify(AdminNotificationKind.Error, t("skillUploadFailed"));
+      return;
+    }
+    setUploading(true);
+    try {
+      await client.uploadSkillVersion(skill.id, version.trim(), new Uint8Array(await archive.arrayBuffer()));
+      setVersion("");
+      setArchive(null);
+      await onChanged();
+      notify(AdminNotificationKind.Success, t("versionUploaded"));
+    } catch {
+      notify(AdminNotificationKind.Error, t("skillUploadFailed"));
+    } finally {
+      setUploading(false);
+    }
+  };
+  const publish = async (candidate: string) => {
+    setPendingVersion(candidate);
+    try {
+      await client.publishSkillVersion(skill.id, candidate);
+      await onChanged();
+      notify(AdminNotificationKind.Success, t("changesSaved"));
+    } catch {
+      notify(AdminNotificationKind.Error, t("skillPublishFailed"));
+    } finally {
+      setPendingVersion(null);
+    }
+  };
+  return (
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      {canWrite ? (
+        <Space size={8} wrap align="start">
+          <Input
+            aria-label={t("skillVersion")}
+            placeholder={t("skillVersion")}
+            value={version}
+            disabled={busy}
+            onChange={(event) => setVersion(event.target.value)}
+            style={{ width: 160 }}
+          />
+          <Upload
+            accept=".zip,application/zip"
+            maxCount={1}
+            disabled={busy}
+            beforeUpload={(file) => {
+              setArchive(file);
+              return false;
+            }}
+            onRemove={() => {
+              setArchive(null);
+            }}
+          >
+            <Button icon={<UploadOutlined />} disabled={busy}>
+              {t("chooseSkillPackage")}
+            </Button>
+          </Upload>
+          <Button type="primary" loading={uploading} disabled={busy || !version.trim() || !archive} onClick={() => void upload()}>
+            {t("uploadVersion")}
+          </Button>
+        </Space>
+      ) : null}
+      {skill.versions.length === 0 ? (
+        <Empty description={t("noVersions")} />
+      ) : (
+        <Table<AdminSkillVersion>
+          rowKey="version"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...skill.versions]}
+          columns={[
+            { title: t("skillVersion"), dataIndex: "version", key: "version" },
+            {
+              title: t("status"),
+              key: "state",
+              render: (_, item) => (
+                <Tag color={item.state === "published" ? "green" : item.state === "draft" ? "gold" : "default"}>
+                  {t(versionStateLabel(item.state))}
+                </Tag>
+              ),
+            },
+            {
+              title: rc.versionSize,
+              key: "size",
+              render: (_, item) => `${item.size} ${t("bytes")}`,
+            },
+            {
+              title: rc.versionSha,
+              key: "sha256",
+              render: (_, item) => (
+                <Typography.Text copyable={{ text: item.sha256 }} style={{ fontSize: 12 }}>
+                  {`${item.sha256.slice(0, 12)}…`}
+                </Typography.Text>
+              ),
+            },
+            {
+              title: rc.versionCreatedAt,
+              key: "createdAt",
+              render: (_, item) => (item.createdAt ? formatTimestamp(item.createdAt) || <UnknownText /> : <UnknownText />),
+            },
+            ...(canWrite
+              ? [
+                  {
+                    title: t("actions"),
+                    key: "actions",
+                    align: "right" as const,
+                    render: (_: unknown, item: AdminSkillVersion) => (
+                      <Space size={0} wrap>
+                        {item.state === "draft" ? (
+                          <Button
+                            type="link"
+                            size="small"
+                            loading={pendingVersion === item.version}
+                            disabled={busy}
+                            onClick={() => void publish(item.version)}
+                          >
+                            {rc.publishAction}
+                          </Button>
+                        ) : null}
+                        <Popconfirm
+                          title={t("withdrawVersionTitle")}
+                          description={t("withdrawVersionDescription")}
+                          okText={t("confirmWithdrawVersion")}
+                          cancelText={t("cancel")}
+                          okButtonProps={{ danger: true }}
+                          onConfirm={() =>
+                            void run(async () => {
+                              await client.deleteSkillVersion(skill.id, item.version);
+                            })
+                          }
+                        >
+                          <Button type="link" size="small" danger disabled={busy}>
+                            {rc.withdrawAction}
+                          </Button>
+                        </Popconfirm>
+                      </Space>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      )}
+    </Space>
+  );
+}
+
+function SkillEditorModal({
+  client,
+  existingSkillIds,
+  skill,
   open,
   onOpenChange,
   onChanged,
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly user: PlatformUser;
+  readonly existingSkillIds: readonly string[];
+  readonly skill: AdminSkill | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const [temporaryPassword, setTemporaryPassword] = useState("");
-  const [requirePasswordChange, setRequirePasswordChange] = useState(true);
+  const editing = Boolean(skill);
+  const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const [passwordError, setPasswordError] = useState<AdminTranslationKey | null>(null);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (
-      temporaryPassword.length < PASSWORD_MIN_LENGTH ||
-      temporaryPassword.length > PASSWORD_MAX_LENGTH
-    ) {
-      setPasswordError("passwordPolicy");
+  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean }) => {
+    const normalizedId = (values.id ?? "").trim();
+    if (!skill && existingSkillIds.includes(normalizedId)) {
+      form.setFields([{ name: "id", errors: [t("skillIdAlreadyExists")] }]);
       return;
     }
     setPending(true);
-    setPasswordError(null);
     try {
-      await client.resetUserPassword(user.id, {
-        temporaryPassword,
-        requirePasswordChange,
-      });
+      if (skill)
+        await client.updateSkill(skill.id, {
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
+          enabled: values.enabled !== false,
+        });
+      else
+        await client.createSkill({
+          id: normalizedId,
+          name: values.name.trim(),
+          description: (values.description ?? "").trim(),
+        });
       onOpenChange(false);
-      setTemporaryPassword("");
       await onChanged();
+      notify(AdminNotificationKind.Success, t("changesSaved"));
     } catch {
       onError();
     } finally {
@@ -2813,120 +3266,98 @@ function PasswordResetDialog({
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={t(editing ? "skillEditTitle" : "skillEditorTitle")}
+      okText={t("save")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      mask={{ closable: false }}
+      onOk={() => form.submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "resetPasswordTitle")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "resetPasswordDescription")}{" "}
-            <span className="font-normal text-foreground">
-              {user.displayName}
-            </span>
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={submit}
-          noValidate
-          autoComplete="off"
-          className="flex flex-col gap-4"
-        >
-          <FieldGroup>
-            <Field data-invalid={Boolean(passwordError)}>
-              <FieldLabel htmlFor="reset-temp-password">
-                {translate(language, "temporaryPassword")}
-              </FieldLabel>
-              <PasswordInput
-                id="reset-temp-password"
-                value={temporaryPassword}
-                onChange={(value) => {
-                  setTemporaryPassword(value);
-                  if (passwordError) setPasswordError(null);
-                }}
-                minLength={PASSWORD_MIN_LENGTH}
-                maxLength={PASSWORD_MAX_LENGTH}
-                placeholder={translate(
-                  language,
-                  "temporaryPasswordPlaceholder",
-                )}
-                disabled={pending}
-                aria-invalid={Boolean(passwordError)}
-                aria-describedby={passwordError ? "reset-temp-password-error" : undefined}
-              />
-              <FieldDescription>
-                {translate(language, "passwordPolicy")}
-              </FieldDescription>
-              {passwordError ? <FieldError id="reset-temp-password-error">{translate(language, passwordError)}</FieldError> : null}
-            </Field>
-            <BooleanSwitch
-              id="reset-require-password-change"
-              label={translate(language, "requirePasswordChange")}
-              checked={requirePasswordChange}
-              onCheckedChange={setRequirePasswordChange}
-              disabled={pending}
-            />
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(language, "cancel")}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : null}
-              {translate(language, pending ? "saving" : "save")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <Typography.Paragraph type="secondary">{t("skillEditorDescription")}</Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        preserve={false}
+        initialValues={{
+          id: skill?.id ?? "",
+          name: skill?.name ?? "",
+          description: skill?.description ?? "",
+          enabled: skill?.enabled !== false,
+        }}
+        onFinish={submit}
+      >
+        {editing ? null : (
+          <Form.Item
+            name="id"
+            label={t("skillId")}
+            extra={t("rbacIdHint")}
+            rules={[
+              { required: true, whitespace: true, message: t("fieldRequired") },
+              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+            ]}
+          >
+            <Input disabled={pending} />
+          </Form.Item>
+        )}
+        <Form.Item name="name" label={t("skillName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+          <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="description" label={t("description")}>
+          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        </Form.Item>
+        {editing ? (
+          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          </Form.Item>
+        ) : null}
+      </Form>
+    </Modal>
   );
 }
 
-function SkillGrantDialog({
+function SkillGrantModal({
   client,
-  open,
   users,
   roles,
   teams,
   skills,
   existingAssignments,
+  presetSkillId,
+  open,
   onOpenChange,
   onChanged,
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly open: boolean;
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
   readonly teams: readonly Team[];
   readonly skills: readonly AdminSkill[];
   readonly existingAssignments: readonly AdminSkillAssignment[];
+  readonly presetSkillId?: string | undefined;
+  readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const [skillId, setSkillId] = useState<string | null>(null);
+  const [skillId, setSkillId] = useState<string | null>(presetSkillId ?? null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
-  const reset = useCallback(() => {
-    setSkillId(null);
-    setSelected(new Set());
-    setFailed(false);
-    setFailedSubjects([]);
-  }, []);
   useEffect(() => {
-    if (open) reset();
-  }, [open, reset]);
+    if (open) {
+      setSkillId(presetSkillId ?? null);
+      setSelected(new Set());
+      setFailed(false);
+      setFailedSubjects([]);
+    }
+  }, [open, presetSkillId]);
   const toggleSubject = useCallback((subjectKey: string) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -2948,9 +3379,7 @@ function SkillGrantDialog({
         const id = subjectKey.slice(separator + 1);
         return client.createSkillAssignment({ skillId, subject: { type, id } });
       });
-      const failures = results
-        .filter((result) => !result.ok)
-        .map((result) => result.item);
+      const failures = results.filter((result) => !result.ok).map((result) => result.item);
       if (failures.length > 0) {
         setFailed(true);
         setFailedSubjects(failures);
@@ -2960,124 +3389,209 @@ function SkillGrantDialog({
       }
       onOpenChange(false);
       await onChanged();
+      notify(AdminNotificationKind.Success, t("changesSaved"));
     } catch {
-      setFailed(true);
+      onError();
     } finally {
       setPending(false);
     }
   };
   return (
-    <Dialog
+    <Modal
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending) onOpenChange(nextOpen);
+      title={t("grantSkillTitle")}
+      okText={t("grant")}
+      cancelText={t("cancel")}
+      confirmLoading={pending}
+      okButtonProps={{ disabled: !skillId || selected.size === 0 }}
+      mask={{ closable: false }}
+      onOk={() => void submit()}
+      onCancel={() => {
+        if (!pending) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, "grantSkillTitle")}</DialogTitle>
-          <DialogDescription>
-            {translate(language, "grantSkillDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        {failed ? (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>
-              <p>{translate(language, "grantFailed")}</p>
-              {failedSubjects.length > 0 ? (
-                <p className="mt-1 text-xs">
-                  {translate(language, "grantFailedSubjects")}:{" "}
-                  {failedSubjects.join(", ")}
-                </p>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <div className="flex flex-col gap-3">
-          <FieldGroup className="gap-3">
-            <Field>
-              <FieldLabel>{translate(language, "selectSkill")}</FieldLabel>
-              <div
-                role="group"
-                aria-label={translate(language, "selectSkill")}
-                className="flex flex-col gap-1"
-              >
-                {skills.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {translate(language, "skillsEmpty")}
-                  </p>
-                ) : (
-                  skills.map((skill) => (
-                    <Button
-                      key={skill.id}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-pressed={skillId === skill.id}
-                      className="justify-between"
-                      onClick={() =>
-                        setSkillId((current) =>
-                          current === skill.id ? null : skill.id,
-                        )
-                      }
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Boxes
-                          className="size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{skill.name}</span>
-                      </span>
-                      {skill.enabled ? null : (
-                        <Badge variant="outline">
-                          {translate(language, "disabled")}
-                        </Badge>
-                      )}
-                    </Button>
-                  ))
-                )}
-              </div>
-            </Field>
-            <Field>
-              <SubjectMultiPicker
-                users={users}
-                roles={roles}
-                teams={teams}
-                excluded={
-                  new Set(
-                    existingAssignments
-                      .filter((item) => item.skillId === skillId)
-                      .map((item) => `${item.subjectType}:${item.subjectId}`),
-                  )
-                }
-                selected={selected}
-                onToggle={toggleSubject}
-                disabled={pending}
-              />
-            </Field>
-          </FieldGroup>
+      <Typography.Paragraph type="secondary">{t("grantSkillDescription")}</Typography.Paragraph>
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={t("grantFailed")}
+          description={
+            failedSubjects.length > 0 ? `${t("grantFailedSubjects")}: ${failedSubjects.join(", ")}` : undefined
+          }
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <div>
+          <Typography.Text strong>{t("selectSkill")}</Typography.Text>
+          <Select
+            aria-label={t("selectSkill")}
+            value={skillId}
+            onChange={(value) => setSkillId(value)}
+            disabled={pending || Boolean(presetSkillId)}
+            placeholder={t("selectSkill")}
+            style={{ width: "100%", marginTop: 8 }}
+            options={skills.map((skill) => ({
+              value: skill.id,
+              label: skill.enabled ? skill.name : `${skill.name}（${t("disabled")}）`,
+            }))}
+          />
         </div>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={pending}
-            onClick={() => onOpenChange(false)}
-          >
-            {translate(language, "cancel")}
-          </Button>
-          <Button
-            type="button"
-            disabled={pending || !skillId || selected.size === 0}
-            onClick={() => void submit()}
-          >
-            {pending ? <Spinner data-icon="inline-start" /> : null}
-            {translate(language, pending ? "granting" : "grant")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <SubjectMultiPicker
+          users={users}
+          roles={roles}
+          teams={teams}
+          excluded={
+            new Set(
+              existingAssignments
+                .filter((item) => item.skillId === skillId)
+                .map((item) => `${item.subjectType}:${item.subjectId}`),
+            )
+          }
+          selected={selected}
+          onToggle={toggleSubject}
+          disabled={pending}
+        />
+      </Space>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assignments
+// ---------------------------------------------------------------------------
+
+function AssignmentsSection({
+  client,
+  resources,
+  canWrite,
+  loading,
+  onRefresh,
+  onChanged,
+  onError,
+}: SectionProps) {
+  const [grantOpen, setGrantOpen] = useState(false);
+  const { pending, run } = useMutationRunner(onChanged, onError);
+  const skillNames = new Map(resources.skills.map((skill) => [skill.id, skill.name]));
+  const userNames = new Map(resources.users.map((user) => [user.id, user]));
+  return (
+    <div>
+      <SectionHeader
+        title={rc.pageAssignments}
+        description={rc.pageAssignmentsDescription}
+        extra={
+          <>
+            {canWrite ? (
+              <Button type="primary" icon={<KeyOutlined />} onClick={() => setGrantOpen(true)}>
+                {t("grantSkill")}
+              </Button>
+            ) : null}
+            <RefreshButton loading={loading} onRefresh={onRefresh} />
+          </>
+        }
+      />
+      {resources.assignments.length === 0 ? (
+        <Empty description={t("assignmentsEmpty")}>
+          <Space orientation="vertical" size={12}>
+            <Typography.Text type="secondary">{t("assignmentsEmptyHint")}</Typography.Text>
+            {canWrite ? (
+              <Button type="primary" icon={<KeyOutlined />} onClick={() => setGrantOpen(true)}>
+                {t("grantSkill")}
+              </Button>
+            ) : null}
+          </Space>
+        </Empty>
+      ) : (
+        <Table<AdminSkillAssignment>
+          rowKey="id"
+          pagination={PAGINATION}
+          dataSource={[...resources.assignments]}
+          columns={[
+            {
+              title: t("skill"),
+              key: "skill",
+              render: (_, assignment) => skillNames.get(assignment.skillId) || assignment.skillId,
+            },
+            {
+              title: rc.assignmentSubject,
+              key: "subject",
+              render: (_, assignment) => (
+                <SubjectCell
+                  subjectType={assignment.subjectType}
+                  subjectId={assignment.subjectId}
+                  user={userNames.get(assignment.subjectId)}
+                />
+              ),
+            },
+            ...(canWrite
+              ? [
+                  {
+                    title: t("actions"),
+                    key: "actions",
+                    align: "right" as const,
+                    render: (_: unknown, assignment: AdminSkillAssignment) => (
+                      <Popconfirm
+                        title={t("revokeConfirmTitle")}
+                        description={t("revokeConfirmDescription")}
+                        okText={t("confirmRevoke")}
+                        cancelText={t("cancel")}
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() =>
+                          void run(async () => {
+                            await client.deleteSkillAssignment(assignment.id);
+                          })
+                        }
+                      >
+                        <Button type="link" size="small" danger disabled={pending}>
+                          {rc.assignmentRevoke}
+                        </Button>
+                      </Popconfirm>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      )}
+      {canWrite && grantOpen ? (
+        <SkillGrantModal
+          client={client}
+          users={resources.users}
+          roles={resources.roles}
+          teams={resources.teams}
+          skills={resources.skills}
+          existingAssignments={resources.assignments}
+          open
+          onOpenChange={setGrantOpen}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared pickers (exported for Operations and other work areas)
+// ---------------------------------------------------------------------------
+
+export function SubjectCell({
+  subjectType,
+  subjectId,
+  user,
+}: {
+  readonly subjectType: string;
+  readonly subjectId: string;
+  readonly user: PlatformUser | undefined;
+}) {
+  if (subjectType === AdminSubjectType.User && user) {
+    return <NameCell name={user.displayName} detail={user.username} />;
+  }
+  return (
+    <Typography.Text type="secondary">
+      {subjectType}: {subjectId}
+    </Typography.Text>
   );
 }
 
@@ -3102,152 +3616,89 @@ export function SubjectMultiPicker({
   readonly subjectType?: "all" | "user" | "role" | "team";
   readonly searchQuery?: string;
 }) {
-  const listId = useId();
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
   const options = [
     ...users.map((user) => ({
       key: `${AdminSubjectType.User}:${user.id}`,
       label: user.displayName,
       description: user.username,
-      type: translate(language, "user"),
-      subjectType: AdminSubjectType.User,
+      type: t("user"),
+      subjectType: AdminSubjectType.User as AdminSubjectType,
     })),
     ...roles.map((role) => ({
       key: `${AdminSubjectType.Role}:${role.id}`,
       label: role.name,
       description: role.id,
-      type: translate(language, "role"),
-      subjectType: AdminSubjectType.Role,
+      type: t("role"),
+      subjectType: AdminSubjectType.Role as AdminSubjectType,
     })),
     ...teams.map((team) => ({
       key: `${AdminSubjectType.Team}:${team.id}`,
       label: team.name,
       description: team.id,
-      type: translate(language, "team"),
-      subjectType: AdminSubjectType.Team,
+      type: t("team"),
+      subjectType: AdminSubjectType.Team as AdminSubjectType,
     })),
   ].filter((option) => {
     if (excluded.has(option.key)) return false;
     if (subjectType !== "all" && option.subjectType !== subjectType) return false;
     if (!normalizedQuery) return true;
-    return `${option.label} ${option.description} ${option.key}`
-      .toLocaleLowerCase()
-      .includes(normalizedQuery);
+    return `${option.label} ${option.description} ${option.key}`.toLocaleLowerCase().includes(normalizedQuery);
   });
   return (
-    <>
-      <FieldLabel>{translate(language, "selectSubjects")}</FieldLabel>
-      <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-1">
+    <div>
+      <Typography.Text strong>{t("selectSubjects")}</Typography.Text>
+      <div
+        role="group"
+        aria-label={t("selectSubjects")}
+        style={{
+          marginTop: 8,
+          maxHeight: 240,
+          overflowY: "auto",
+          border: "1px solid rgba(128, 128, 128, 0.35)",
+          borderRadius: 8,
+          padding: 4,
+        }}
+      >
         {options.length === 0 ? (
-          <p className="px-2 py-3 text-sm text-muted-foreground">
-            {translate(language, "noMatchingSubjects")}
-          </p>
+          <Typography.Text type="secondary" style={{ display: "block", padding: "12px 8px" }}>
+            {t("noMatchingSubjects")}
+          </Typography.Text>
         ) : (
-          options.map((option, index) => {
-            const checkboxId = `${listId}-subject-${index}`;
-            return (
-              <div
-                key={option.key}
-                className="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-              >
-                <Checkbox
-                  id={checkboxId}
-                  checked={selected.has(option.key)}
-                  onCheckedChange={() => onToggle(option.key)}
-                  disabled={disabled}
-                />
-                <FieldLabel
-                  htmlFor={checkboxId}
-                  className="min-w-0 flex-1 cursor-pointer font-normal"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <UserRound
-                      className="size-4 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                    <span className="min-w-0 text-left">
-                      <span className="block truncate">
-                        {option.label}{" "}
-                        <span className="text-xs text-tertiary-foreground">
-                          ({option.type})
-                        </span>
-                      </span>
-                      <span className="block truncate text-xs text-tertiary-foreground">
-                        {option.description}
-                      </span>
-                    </span>
-                  </span>
-                </FieldLabel>
-              </div>
-            );
-          })
+          options.map((option) => (
+            <Checkbox
+              key={option.key}
+              checked={selected.has(option.key)}
+              onChange={() => onToggle(option.key)}
+              disabled={disabled}
+              style={{ display: "flex", marginInlineStart: 0, padding: "6px 8px", alignItems: "flex-start" }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {option.label}{" "}
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    ({option.type})
+                  </Typography.Text>
+                </span>
+                <Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>
+                  {option.description}
+                </Typography.Text>
+              </span>
+            </Checkbox>
+          ))
         )}
       </div>
-      <p className="flex items-center gap-1.5 text-xs text-tertiary-foreground">
-        {translate(language, "selectedSubjectsLabel")}
-        <Badge variant="secondary">{selected.size}</Badge>
-      </p>
-    </>
-  );
-}
-
-function EmptyState({
-  label,
-  hint,
-  icon: Icon,
-}: {
-  readonly label: AdminTranslationKey;
-  readonly hint: AdminTranslationKey;
-  readonly icon: LucideIcon;
-}) {
-  return (
-    <Empty>
-      <EmptyHeader>
-        <EmptyMedia>
-          <Icon aria-hidden="true" />
-        </EmptyMedia>
-        <EmptyTitle>{translate(language, label)}</EmptyTitle>
-        <EmptyDescription>{translate(language, hint)}</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
-function ResourceListSkeleton({ rows = 6 }: { readonly rows?: number }) {
-  return (
-    <div
-      className="overflow-hidden rounded-lg border border-border bg-card"
-      aria-label={translate(language, "loadingResources")}
-      role="status"
-    >
-      {Array.from({ length: rows }, (_, index) => (
-        <div
-          className="flex items-center gap-3 border-b p-4 last:border-b-0"
-          key={index}
-        >
-          <Skeleton className="size-8 shrink-0 rounded-lg" />
-          <div className="min-w-0 flex-1 flex flex-col gap-2">
-            <Skeleton className="h-3.5 w-1/3" />
-            <Skeleton className="h-3 w-1/2" />
-          </div>
-          <Skeleton className="h-7 w-16" />
-        </div>
-      ))}
+      <Space size={8} style={{ marginTop: 8 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t("selectedSubjectsLabel")}
+        </Typography.Text>
+        <Badge count={selected.size} showZero color="geekblue" />
+      </Space>
     </div>
   );
 }
 
-function resourceTitle(tab: AdminResourceTab): AdminTranslationKey {
-  if (tab === AdminResourceTab.Users) return "users";
-  if (tab === AdminResourceTab.Teams) return "teams";
-  if (tab === AdminResourceTab.Roles) return "roles";
-  if (tab === AdminResourceTab.Skills) return "skills";
-  return "assignments";
-}
-
-function versionStateLabel(
-  state: AdminSkillVersion["state"],
-): AdminTranslationKey {
+function versionStateLabel(state: AdminSkillVersion["state"]): AdminTranslationKey {
   if (state === "published") return "versionPublished";
   if (state === "withdrawn") return "versionWithdrawn";
   return "versionDraft";

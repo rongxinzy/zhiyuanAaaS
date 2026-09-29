@@ -1,602 +1,341 @@
-import assert from 'node:assert/strict';
-import http from 'node:http';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright-core';
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import http from "node:http";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright-core";
+import { createAdminFixture, state } from "./admin-browser-fixture.mjs";
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const staticServerScript = path.join(repositoryRoot, 'scripts', 'serve-admin.mjs');
-const state = {
-  users: [{ id: 'admin-1', username: 'admin', displayName: '管理员', email: null, status: 'active', roleIds: ['admin'], teamIds: [] }],
-  teams: [],
-  roles: [],
-  skills: [],
-  skillAssignments: [],
-  models: [],
-  modelAssignments: [],
-  credentials: [],
-  credentialAssignments: [],
-  licenses: [],
-  controlEvents: [],
-  dataPlane: {
-    desired: { deploymentId: 'demo', revision: 'rev-1', routes: [], publishedAt: null, contentHash: '' },
-    status: { state: 'ready', observedRevision: 'rev-1', contentHash: '', lastAppliedAt: null, resourceCount: 0 },
-  },
-  requests: [],
-  nextId: 1,
-};
-
-const api = http.createServer(async (request, response) => {
-  const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-  const body = await readBody(request);
-  state.requests.push({ method: request.method ?? '', path: url.pathname });
-  try {
-    await route(request.method ?? 'GET', url.pathname, body, response);
-  } catch (error) {
-    console.error('[admin-crud-e2e] mock route failed', error);
-    writeJson(response, 500, { code: 'MOCK_FAILURE', detail: String(error) });
-  }
-});
-
-let staticServer;
+// Browser plugin not available: use the repository's Playwright workflow.
+// Login -> seven business areas -> real form interaction -> API fixture changes.
+// These fixtures test browser/API contracts, not production service behavior.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const screenshots =
+  process.env.ZHIYUAN_ADMIN_SCREENSHOTS ?? "/tmp/zhiyuan-admin-antd-qa";
+const api = createAdminFixture();
+let server;
 let browser;
+let page;
+const errors = [];
+const checks = [];
+const expectedFailurePaths = new Set();
 try {
-  const apiPort = await listenOnRandomPort(api);
-  const staticPort = await freePort();
-  staticServer = spawn(process.execPath, [staticServerScript], {
-    cwd: repositoryRoot,
-    env: { ...process.env, ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`, ZHIYUAN_ADMIN_PORT: String(staticPort) },
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  await waitForHttp(`http://127.0.0.1:${staticPort}/`);
-
-  const executablePath = await findChrome();
-  browser = await chromium.launch({ headless: true, executablePath });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  await page.goto(`http://127.0.0.1:${staticPort}/`, { waitUntil: 'networkidle' });
-
-  await page.getByLabel('密码', { exact: true }).fill('change-this-admin-password');
-  await page.getByRole('button', { name: '登录' }).click();
-  await waitForText(page, '概览');
-
-  await page.getByRole('button', { name: '资源管理' }).click();
-  await waitForText(page, 'admin');
-
-  let dialog = page.getByRole('dialog');
-  await page.getByRole('tab', { name: '团队' }).click();
-  await page.getByRole('button', { name: '新增团队' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('团队 ID').fill('e2e-team');
-  await dialog.getByLabel('名称').fill('E2E Team');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Team');
-  assert.ok(state.teams.some(item => item.id === 'e2e-team'));
-  await page.getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('名称').fill('E2E Team Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Team Updated');
-  assert.equal(state.teams.find(item => item.id === 'e2e-team')?.name, 'E2E Team Updated');
-  await page.getByRole('button', { name: '停用' }).click();
-  await waitForValue(() => state.teams.find(item => item.id === 'e2e-team')?.enabled, false);
-  await page.getByRole('button', { name: '启用' }).click();
-  await waitForValue(() => state.teams.find(item => item.id === 'e2e-team')?.enabled, true);
-
-  await page.getByRole('tab', { name: '角色' }).click();
-  await page.getByRole('button', { name: '新增角色' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('角色 ID').fill('e2e-role');
-  await dialog.getByLabel('名称').fill('E2E Role');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Role');
-  assert.ok(state.roles.some(item => item.id === 'e2e-role'));
-  await page.getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('名称').fill('E2E Role Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Role Updated');
-  assert.equal(state.roles.find(item => item.id === 'e2e-role')?.name, 'E2E Role Updated');
-  await page.getByRole('button', { name: '停用' }).click();
-  await waitForValue(() => state.roles.find(item => item.id === 'e2e-role')?.enabled, false);
-  await page.getByRole('button', { name: '启用' }).click();
-  await waitForValue(() => state.roles.find(item => item.id === 'e2e-role')?.enabled, true);
-
-  await page.getByRole('tab', { name: '用户' }).click();
-  await page.getByRole('button', { name: '新增用户' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('用户名').fill('e2e-user');
-  await dialog.getByLabel('显示名称').fill('E2E 用户');
-  await dialog.getByLabel('临时密码').fill('e2e-temporary-password');
-  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
-  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E 用户');
-  const createdUser = state.users.find(item => item.username === 'e2e-user');
-  assert.ok(createdUser, 'user create request did not reach the mock service');
-
-  await page.getByRole('tab', { name: '技能', exact: true }).click();
-  await page.getByRole('button', { name: '新增技能' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('技能 ID').fill('e2e-skill');
-  await dialog.getByLabel('名称').fill('E2E Skill');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Skill');
-  assert.ok(state.skills.some(item => item.id === 'e2e-skill'));
-
-  await page.getByRole('tab', { name: '技能授权' }).click();
-  await page.getByRole('button', { name: '授权技能' }).first().click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'E2E Skill' }).click();
-  await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
-  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
-  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
-  await dialog.getByRole('button', { name: '授权' }).click();
-  await waitForText(page, 'E2E 用户');
-  assert.equal(state.skillAssignments.length, 3);
-  assert.deepEqual(new Set(state.skillAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
-
-  await page.getByRole('tab', { name: '技能', exact: true }).click();
-  await page.getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('名称').fill('E2E Skill Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Skill Updated');
-  assert.equal(state.skills.find(item => item.id === 'e2e-skill')?.name, 'E2E Skill Updated');
-  await page.getByRole('button', { name: '停用' }).click();
-  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.enabled, false);
-  await page.getByRole('button', { name: '启用' }).click();
-  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.enabled, true);
-
-  await page.getByRole('button', { name: '上传版本' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('版本号').fill('1.0.0');
-  await dialog.getByLabel('技能 ZIP 包').setInputFiles({ name: 'e2e-skill.zip', mimeType: 'application/zip', buffer: Buffer.from('zip') });
-  await dialog.getByRole('button', { name: '上传版本' }).click();
-  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 1);
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/skills/e2e-skill/versions'));
-  await dialog.getByRole('button', { name: '发布版本' }).click();
-  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions[0]?.state, 'published');
-  await dialog.waitFor({ state: 'hidden' });
-  await page.getByRole('button', { name: '撤回版本' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤回版本' }).click();
-  await waitForValue(() => state.skills.find(item => item.id === 'e2e-skill')?.versions.length, 0);
-
-  await page.getByRole('tab', { name: '技能授权' }).click();
-  while (state.skillAssignments.length > 0) {
-    const expectedLength = state.skillAssignments.length - 1;
-    await page.getByRole('button', { name: '撤销授权' }).first().click();
-    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
-    await waitForValue(() => state.skillAssignments.length, expectedLength);
-  }
-  assert.equal(state.skillAssignments.length, 0);
-  await page.getByRole('tab', { name: '技能', exact: true }).click();
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
-  await waitForNoText(page, 'E2E Skill Updated');
-  assert.equal(state.skills.length, 0);
-
-  await page.getByRole('button', { name: '企业模型' }).click();
-  await page.getByRole('button', { name: '添加模型' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('模型 ID').fill('e2e-model');
-  await dialog.getByLabel('显示名称').fill('E2E Model');
-  await dialog.getByLabel('网关地址').fill('http://127.0.0.1:8090/v1');
-  await dialog.getByLabel('上游模型').fill('deepseek-chat');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Model');
-  assert.ok(state.models.some(item => item.id === 'e2e-model'));
-  await page.getByRole('button', { name: '编辑模型' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('显示名称').fill('E2E Model Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Model Updated');
-  assert.equal(state.models.find(item => item.id === 'e2e-model')?.displayName, 'E2E Model Updated');
-  await page.getByRole('button', { name: '分配模型' }).click();
-  await page.getByRole('heading', { name: '为成员分配模型' }).waitFor({ state: 'visible' });
-  const modelSubject = page.getByRole('checkbox', { name: /E2E 用户/ });
-  await modelSubject.waitFor({ state: 'visible' });
-  assert.equal(await modelSubject.getAttribute('aria-checked'), 'false');
-  await modelSubject.click();
-  await waitForAttribute(modelSubject, 'aria-checked', 'true');
-  await page.getByRole('checkbox', { name: /E2E Role/ }).click();
-  await page.getByRole('checkbox', { name: /E2E Team/ }).click();
-  await page.getByRole('button', { name: '授权' }).click();
-  await waitForValue(() => state.modelAssignments.length, 3);
-  await page.getByRole('heading', { name: '企业模型' }).waitFor({ state: 'visible' });
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/model-assignments'), 'model assignment request did not reach the mock service');
-  assert.equal(state.modelAssignments.length, 3);
-  assert.deepEqual(new Set(state.modelAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
-  while (state.modelAssignments.length > 0) {
-    const expectedLength = state.modelAssignments.length - 1;
-    await page.getByRole('button', { name: '撤销授权' }).first().click();
-    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
-    await waitForValue(() => state.modelAssignments.length, expectedLength);
-  }
-  assert.equal(state.modelAssignments.length, 0);
-  await page.getByRole('button', { name: '操作' }).click();
-  await page.getByRole('menuitem', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
-  await waitForNoText(page, 'E2E Model Updated');
-  assert.equal(state.models.length, 0);
-
-  await page.getByRole('button', { name: '平台运维' }).click();
-  await page.getByRole('tab', { name: '凭证' }).click();
-  await page.getByRole('button', { name: '添加凭证' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('名称').fill('E2E Credential');
-  await dialog.getByLabel('服务').fill('model-gateway');
-  await dialog.getByLabel('凭证值').fill('e2e-secret');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Credential');
-  assert.equal(state.credentials.length, 1);
-  await page.getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('名称').fill('E2E Credential Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E Credential Updated');
-  assert.equal(state.credentials[0].name, 'E2E Credential Updated');
-  const credentialId = state.credentials[0].id;
-  await page.getByRole('button', { name: '轮换凭证' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('凭证值').fill('e2e-rotated-secret');
-  await dialog.getByRole('button', { name: '轮换凭证' }).click();
-  await waitForValue(() => state.credentials[0]?.maskedValue, 'e2e-rotated-***');
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === `/aep/v1/admin/credentials/${credentialId}/rotate`));
-  await page.getByRole('button', { name: '停用' }).click();
-  await waitForValue(() => state.credentials[0]?.enabled, false);
-  assert.equal(state.credentials[0].enabled, false);
-  await page.getByRole('button', { name: '启用' }).click();
-  await waitForValue(() => state.credentials[0]?.enabled, true);
-  assert.equal(state.credentials[0].enabled, true);
-  await page.getByRole('button', { name: '授权凭证' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByRole('checkbox', { name: /E2E 用户/ }).click();
-  await dialog.getByRole('checkbox', { name: /E2E Role/ }).click();
-  await dialog.getByRole('checkbox', { name: /E2E Team/ }).click();
-  await dialog.getByRole('button', { name: '授权' }).click();
-  await waitForValue(() => state.credentialAssignments.length, 3);
-  assert.deepEqual(new Set(state.credentialAssignments.map(item => item.subject.type)), new Set(['user', 'role', 'team']));
-  while (state.credentialAssignments.length > 0) {
-    const expectedLength = state.credentialAssignments.length - 1;
-    await page.getByRole('button', { name: '撤销' }).first().click();
-    await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销' }).click();
-    await waitForValue(() => state.credentialAssignments.length, expectedLength);
-  }
-  assert.equal(state.credentialAssignments.length, 0);
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认删除凭证' }).click();
-  await waitForNoText(page, 'E2E Credential Updated');
-  assert.equal(state.credentials.length, 0);
-
-  await page.getByRole('tab', { name: '许可证' }).click();
-  await page.getByRole('button', { name: '导入许可证' }).click();
-  dialog = page.getByRole('dialog');
-  const licenseEnvelope = JSON.stringify({ format: 'zhiyuan-license-v1', keyId: 'e2e-key', payload: { licenseId: 'e2e-license' }, signature: 'e2e-signature' });
-  await dialog.getByLabel('许可证文件').setInputFiles({ name: 'e2e-license.json', mimeType: 'application/json', buffer: Buffer.from(licenseEnvelope) });
-  await dialog.getByRole('button', { name: '导入许可证' }).click();
-  await waitForText(page, 'e2e-license');
-  assert.equal(state.licenses.length, 1);
-  await page.getByRole('button', { name: '撤销许可证' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认撤销许可证' }).click();
-  await waitForValue(() => state.licenses[0]?.status, 'revoked');
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/licenses/e2e-license/revoke'));
-
-  await page.getByRole('button', { name: '事件与审计' }).click();
-  await waitForText(page, '暂无管控事件');
-  await page.getByRole('button', { name: '发布' }).click();
-  await waitForText(page, 'model.catalog.changed');
-  assert.equal(state.controlEvents.length, 1);
-  const eventId = state.controlEvents[0].eventId;
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === '/aep/v1/admin/control-events'));
-  await page.getByRole('button', { name: '查看详情' }).click();
-  await page.getByText(new RegExp(eventId)).first().waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByRole('button', { name: '关闭' }).click();
-  await page.getByRole('button', { name: '取消事件' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认取消事件' }).click();
-  await waitForValue(() => state.controlEvents[0]?.state, 'cancelled');
-  assert.ok(state.requests.some(item => item.method === 'POST' && item.path === `/aep/v1/admin/control-events/${eventId}/cancel`));
-
-  await page.getByRole('button', { name: '平台运维' }).click();
-  await page.getByRole('tab', { name: '数据平面' }).click();
-  await waitForText(page, 'rev-1');
-  await page.getByRole('button', { name: '添加路由' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('模型 ID').fill('e2e-route');
-  await dialog.getByLabel('网关路径').fill('/v1/chat/completions');
-  await dialog.getByLabel('上游模型').fill('deepseek-chat');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'e2e-route');
-  assert.equal(state.dataPlane.desired.routes.length, 0);
-  await page.getByLabel('版本号').fill('rev-2');
-  await page.getByRole('button', { name: '发布期望状态' }).click();
-  await waitForValue(() => state.dataPlane.desired.revision, 'rev-2');
-  assert.equal(state.dataPlane.desired.routes.length, 1);
-  assert.ok(state.requests.some(item => item.method === 'PUT' && item.path === '/aep/v1/admin/data-plane/desired-state'));
-  await page.getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('网关路径').fill('/v1/responses');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, '/v1/responses');
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认删除路由' }).click();
-  await page.getByRole('button', { name: '发布期望状态' }).click();
-  await waitForValue(() => state.dataPlane.desired.routes.length, 0);
-
-  await page.getByRole('button', { name: '资源管理' }).click();
-  await page.getByRole('tab', { name: '团队' }).click();
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
-  await waitForNoText(page, 'E2E Team Updated');
-  assert.equal(state.teams.length, 0);
-  await page.getByRole('tab', { name: '角色' }).click();
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click();
-  await waitForNoText(page, 'E2E Role Updated');
-  assert.equal(state.roles.length, 0);
-  await page.getByRole('tab', { name: '用户' }).click();
-  await waitForText(page, 'E2E 用户');
-  await page.getByRole('row').filter({ hasText: 'E2E 用户' }).getByRole('button', { name: '编辑' }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByLabel('显示名称').fill('E2E 用户 Updated');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await waitForText(page, 'E2E 用户 Updated');
-  assert.equal(createdUser.displayName, 'E2E 用户 Updated');
-  await page.getByRole('button', { name: '停用' }).last().click();
-  await waitForValue(() => createdUser.status, 'disabled');
-  assert.equal(createdUser.status, 'disabled');
-
-  const loginRequestsBeforeReload = state.requests.filter(item => item.method === 'POST' && item.path === '/aep/v1/auth/password/login').length;
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.getByLabel('密码', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByLabel('密码', { exact: true }).fill('change-this-admin-password');
-  await page.getByRole('button', { name: '登录' }).click();
-  await waitForText(page, '概览');
-  assert.equal(
-    state.requests.filter(item => item.method === 'POST' && item.path === '/aep/v1/auth/password/login').length,
-    loginRequestsBeforeReload + 1,
-    'Reload must require a new password login instead of restoring a browser-stored refresh token.',
+  await fs.mkdir(screenshots, { recursive: true });
+  const apiPort = await listen(api);
+  const port = await freePort();
+  const origin = `http://127.0.0.1:${port}`;
+  server = spawn(
+    process.execPath,
+    [path.join(root, "scripts/serve-admin.mjs")],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        ZHIYUAN_ADMIN_PORT: String(port),
+        ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
+        ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
+      },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
   );
-  await page.getByRole('button', { name: '资源管理' }).click();
-  await page.getByRole('tab', { name: '用户' }).click();
-  await waitForText(page, 'E2E 用户 Updated');
-  assert.ok(state.requests.some(item => item.path === '/aep/v1/user/me'));
-  console.log(JSON.stringify({ status: 'passed', checks: ['login', 'user create/update/disable', 'team create/update/enable/disable/delete', 'role create/update/enable/disable/delete', 'Skill create/update/enable/disable/delete/grant/revoke/version publish/withdraw', 'model create/update/grant/revoke/delete', 'credential create/update/rotate/enable/disable/grant/revoke/delete', 'license import/revoke', 'control event publish/detail/cancel', 'data plane route create/update/delete/publish', 'reload requires reauthentication'], requests: state.requests.length }));
+  await waitForHttp(origin);
+  browser = await chromium.launch({
+    headless: true,
+    executablePath: await findChrome(),
+  });
+  page = await browser.newPage({
+    viewport: { width: 1440, height: 1000 },
+  });
+  page.setDefaultTimeout(10000);
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === 'error' && [...expectedFailurePaths].some(route => message.location().url.endsWith(route))) return;
+    if (message.type() === "error" || message.type() === "warning")
+      errors.push(message.text());
+  });
+  await page.goto(origin, { waitUntil: "networkidle" });
+  assert.match(await page.title(), /知远|Zhiyuan/);
+  await page.screenshot({
+    path: path.join(screenshots, "login.png"),
+    fullPage: true, animations: "disabled",
+  });
+  assert.equal(await page.getByLabel("部署 ID").inputValue(), "");
+  await page.getByLabel("部署 ID").fill("demo");
+  await page.getByLabel("用户名", { exact: true }).fill("admin");
+  await page.getByLabel("密码", { exact: true }).fill("e2e-test-password");
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await page.getByRole("heading", { name: "概览", exact: true }).waitFor();
+  assert.equal(await page.getByRole("menuitem").count(), 7);
+  await page.screenshot({
+    path: path.join(screenshots, "overview.png"),
+    fullPage: true, animations: "disabled",
+  });
+  checks.push("explicit login, seven business entries, overview");
+
+  async function visit(route, expected) {
+    await page.goto(`${origin}/#${route}`);
+    await page.locator(".admin-page").getByText(expected, { exact: true }).first().waitFor();
+    await page.waitForLoadState("networkidle");
+    assert.equal(await page.locator("vite-error-overlay").count(), 0);
+  }
+  await visit("employees", "E2E 销售助理");
+  await page.screenshot({
+    path: path.join(screenshots, "employees.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await page
+    .getByRole("row")
+    .filter({ hasText: "E2E 销售助理" })
+    .getByRole("button", { name: /管理|查看/ })
+    .first()
+    .click();
+  for (const label of [
+    "基本配置",
+    "知识与技能",
+    "长期记忆",
+    "发布与使用",
+    "运行记录",
+  ]) {
+    await page.getByRole("tab", { name: label, exact: true }).click();
+    await page.waitForLoadState("networkidle");
+  }
+  await page.screenshot({
+    path: path.join(screenshots, "employee-detail.png"),
+    fullPage: true, animations: "disabled",
+  });
+  checks.push("employee detail: all five business tabs");
+  await visit("knowledge", "E2E 产品资料");
+  await page.screenshot({
+    path: path.join(screenshots, "knowledge.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await visit("users", "管理员");
+  await page.screenshot({
+    path: path.join(screenshots, "users.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await visit("users/teams", "团队管理");
+  await page.getByRole('button', { name: /新增团队$/ }).click();
+  let dialog = page.getByRole('dialog');
+  await dialog.getByLabel('团队 ID', { exact: true }).fill('e2e-team');
+  await dialog.getByLabel('名称', { exact: true }).fill('E2E 业务团队');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.getByText('E2E 业务团队', { exact: true }).first().waitFor();
+  await visit('users', '用户列表');
+  await page.getByRole('button', { name: /新增用户$/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('用户名', { exact: true }).fill('e2e-member');
+  await dialog.getByLabel('显示名称', { exact: true }).fill('E2E 业务成员');
+  await dialog.getByLabel('临时密码', { exact: true }).fill('e2e-temporary-password');
+  await dialog.getByRole('checkbox', { name: /企业成员/ }).check();
+  await dialog.getByRole('checkbox', { name: /E2E 业务团队/ }).check();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.getByText('E2E 业务成员', { exact: true }).first().waitFor();
+  const member = state.users.find(user => user.username === 'e2e-member');
+  assert.deepEqual(member.teamIds, ['e2e-team']);
+  assert.deepEqual(member.roleIds, ['member']);
+  let memberRow = page.getByRole('row').filter({ hasText: 'E2E 业务成员' });
+  await memberRow.getByRole('button', { name: '查看', exact: true }).click();
+  for (const label of ['基本信息', '团队与角色', '访问权限', '关联账号', '登录会话']) {
+    await page.getByRole('dialog').getByRole('tab', { name: new RegExp('^' + label) }).click();
+  }
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await memberRow.getByRole('button', { name: '更多', exact: true }).hover();
+  await page.getByRole('menuitem', { name: /停用/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '确认停用', exact: true }).click();
+  await dialog.getByText('账号已停用', { exact: true }).waitFor();
+  assert.equal(member.status, 'disabled');
+  await dialog.locator('button.ant-btn-primary:not(.ant-btn-loading)').filter({ hasText: '确定' }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  checks.push('team and user creation, membership, five detail tabs, disable result');
+
+  await visit("users/roles", "角色权限");
+  await visit("users/accounts", "账号关联");
+  await visit("users/sessions", "登录会话");
+  await page.screenshot({
+    path: path.join(screenshots, "sessions.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await page.getByRole('button', { name: /撤销登录$/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '确认撤销', exact: true }).click();
+  await waitForValue(() => Boolean(state.sessions[0].revokedAt), true);
+  checks.push('session revoke with explicit confirmation');
+  await visit("skills", "技能管理");
+  await page.getByRole('button', { name: /新增技能$/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('技能 ID', { exact: true }).fill('e2e-skill');
+  await dialog.getByLabel('名称', { exact: true }).fill('E2E 报表整理');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.getByRole('row').filter({ hasText: 'E2E 报表整理' }).getByRole('button', { name: '查看', exact: true }).click();
+  for (const label of ['说明与配置', '版本记录', '使用权限', '关联数字员工']) {
+    await page.getByRole('dialog').getByRole('tab', { name: new RegExp('^' + label) }).click();
+  }
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.equal(state.skills[0].id, 'e2e-skill');
+  await page.screenshot({ path: path.join(screenshots, 'skills.png'), fullPage: true, animations: 'disabled' });
+  checks.push('skill registration and four detail tabs');
+  await visit("system/models", "模型列表");
+  await page.screenshot({
+    path: path.join(screenshots, "models.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await visit("system/models/connections", "接入配置");
+  await page.getByRole('button', { name: /新建接入配置$/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('名称', { exact: true }).fill('E2E 模型接入');
+  await dialog.getByLabel('服务', { exact: true }).fill('openai');
+  await dialog.getByLabel('新密钥', { exact: true }).fill('e2e-never-render-this-key');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.getByText('E2E 模型接入', { exact: true }).first().waitFor();
+  assert.equal(state.credentials.length, 1);
+  assert.equal(state.credentials[0].deliveryMode, 'server_only');
+  assert.equal((await page.locator('body').innerText()).includes('e2e-never-render-this-key'), false);
+  const rotatePath = `/aep/v1/admin/credentials/${state.credentials[0].id}/rotate`;
+  expectedFailurePaths.add(rotatePath);
+  state.failNext = `POST ${rotatePath}`;
+  await page.getByRole('row').filter({ hasText: 'E2E 模型接入' }).getByRole('button', { name: /更新密钥$/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('新密钥', { exact: true }).fill('e2e-rotated-key');
+  await dialog.getByRole('button', { name: /更新密钥$/ }).click();
+  await dialog.getByRole('alert').waitFor();
+  assert.equal(state.credentials[0].maskedValue, 'e2e-***');
+  await page.screenshot({ path: path.join(screenshots, 'key-rotation-failure.png'), fullPage: true, animations: "disabled" });
+  await dialog.getByRole('button', { name: /更新密钥$/ }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(state.credentials[0].maskedValue, 'e2e-rotated-***');
+  checks.push('credential create and rotation failure/retry, no secret echo');
+  await visit("system/models", "模型列表");
+  await page.getByRole('button', { name: /添加模型$/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('模型 ID', { exact: true }).fill('e2e-model');
+  await dialog.getByLabel('显示名称', { exact: true }).fill('E2E 企业模型');
+  await dialog.getByLabel('网关地址', { exact: true }).fill('https://gateway.example.test/v1');
+  await dialog.getByLabel('上游模型', { exact: true }).fill('test-model');
+  await dialog.getByRole('combobox', { name: '接入配置', exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'E2E 模型接入' }).click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.getByText('E2E 企业模型', { exact: true }).first().waitFor();
+  assert.equal(state.models[0].credentialId, state.credentials[0].id);
+  checks.push('model registration reuses a server-only connection');
+  await visit("system/models/configuration", "配置生效详情");
+  await visit("system/channels", "E2E 企业微信");
+  await visit("system/services", "服务状态");
+  await page.screenshot({
+    path: path.join(screenshots, "services.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await visit("system/settings", "基本设置");
+  await visit("system/licenses", "产品授权");
+  await visit("audit", "日志审计");
+  await page.getByRole("tab", { name: "登录日志", exact: true }).click();
+  await page.getByText("登录历史查询尚未接入", { exact: true }).waitFor();
+  checks.push(
+    "all available module routes, truthful unsupported login history",
+  );
+
+  await visit("overview", "概览");
+  await page.getByRole("combobox", { name: "外观", exact: true }).click();
+  await page.getByText("深色", { exact: true }).last().click();
+  await page.waitForFunction(() =>
+    document.documentElement.classList.contains("dark"),
+  );
+  await page.keyboard.press("Escape");
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)")
+    .waitFor({ state: "hidden" });
+  // Wait for the finite theme transition before collecting color evidence.
+  await page.waitForTimeout(350);
+  await page.screenshot({
+    path: path.join(screenshots, "overview-dark.png"),
+    fullPage: true, animations: "disabled",
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "概览", exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(() =>
+      document.documentElement.classList.contains("dark"),
+    ),
+    true,
+  );
+  checks.push("theme persistence and session restoration");
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await page.getByLabel("密码", { exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("zhiyuan.admin.tokens")),
+    null,
+  );
+  checks.push("logout clears session");
+  assert.deepEqual(errors, [], "Browser console must be clear");
+  const result = {
+    status: "passed",
+    mode: "mock-api",
+    checks,
+    requests: state.requests.length,
+    screenshots,
+    consoleErrors: errors,
+  };
+  await fs.writeFile(
+    path.join(screenshots, "result.json"),
+    JSON.stringify(result, null, 2),
+  );
+  console.log(JSON.stringify(result));
+} catch (error) {
+  await page?.screenshot({ path: path.join(screenshots, "failure.png"), fullPage: true, animations: "disabled" }).catch(() => undefined);
+  console.error(JSON.stringify({ checks, errors, route: page?.url() }));
+  throw error;
 } finally {
   await browser?.close().catch(() => undefined);
-  if (staticServer) staticServer.kill();
+  server?.kill();
   api.close();
 }
 
-async function route(method, pathname, rawBody, response) {
-  if (pathname === '/aep/v1/auth/password/login' && method === 'POST') {
-    return writeJson(response, 200, { accessToken: 'e2e-access', refreshToken: 'e2e-refresh', modelAccessToken: 'e2e-model', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, deploymentId: 'demo', sessionId: 'e2e-session', passwordChangeRequired: false });
-  }
-  if (pathname === '/aep/v1/auth/refresh' && method === 'POST') {
-    return writeJson(response, 200, { accessToken: 'e2e-access', refreshToken: 'e2e-refresh', modelAccessToken: 'e2e-model', tokenType: 'Bearer', expiresIn: 3600, modelAccessExpiresIn: 3600, deploymentId: 'demo', sessionId: 'e2e-session', passwordChangeRequired: false });
-  }
-  if (pathname === '/aep/v1/user/me' && method === 'GET') {
-    return writeJson(response, 200, { user: { id: 'admin-1', displayName: '管理员', email: null }, deployment: { id: 'demo', name: '演示部署' }, deploymentId: 'demo', sessionId: 'e2e-session', roles: ['admin'], permissions: [], sessionExpiresAt: '2027-01-01T00:00:00Z', passwordChangeRequired: false });
-  }
-  if (method === 'GET' && pathname === '/aep/v1/admin/users') return writeJson(response, 200, { items: state.users, nextCursor: null });
-  if (method === 'POST' && pathname === '/aep/v1/admin/users') {
-    const input = jsonBody(rawBody);
-    const user = { id: `user-${state.nextId++}`, username: input.username, displayName: input.displayName, email: input.email ?? null, status: 'active', roleIds: input.roleIds ?? [], teamIds: input.teamIds ?? [] };
-    state.users.push(user);
-    return writeJson(response, 201, user);
-  }
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/users/')) {
-    const user = state.users.find(item => item.id === pathname.split('/').at(-1));
-    Object.assign(user ?? {}, jsonBody(rawBody));
-    return writeJson(response, 200, user);
-  }
-  if (method === 'PUT' && pathname.startsWith('/aep/v1/admin/users/') && pathname.endsWith('/rbac')) {
-    const user = state.users.find(item => item.id === pathname.split('/').at(-2));
-    const input = jsonBody(rawBody);
-    if (user) Object.assign(user, { roleIds: input.roleIds ?? [], teamIds: input.teamIds ?? [] });
-    return writeJson(response, 200, input);
-  }
-  if (method === 'GET' && pathname === '/aep/v1/admin/teams') return writeJson(response, 200, { teams: state.teams });
-  if (method === 'POST' && pathname === '/aep/v1/admin/teams') return createRecord(response, state.teams, jsonBody(rawBody));
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/teams/')) return patchRecord(response, state.teams, pathname, jsonBody(rawBody));
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/teams/')) return deleteRecord(response, state.teams, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/roles') return writeJson(response, 200, { roles: state.roles, permissions: [] });
-  if (method === 'POST' && pathname === '/aep/v1/admin/roles') return createRecord(response, state.roles, jsonBody(rawBody));
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/roles/')) return patchRecord(response, state.roles, pathname, jsonBody(rawBody));
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/roles/')) return deleteRecord(response, state.roles, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/permissions') return writeJson(response, 200, { permissions: [] });
-  if (method === 'GET' && pathname === '/aep/v1/admin/skills') return writeJson(response, 200, { skills: state.skills });
-  if (method === 'POST' && pathname === '/aep/v1/admin/skills') return createRecord(response, state.skills, { ...jsonBody(rawBody), state: 'active', enabled: true, versions: [] });
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/skills/')) return patchRecord(response, state.skills, pathname, jsonBody(rawBody));
-  if (method === 'POST' && pathname.endsWith('/versions') && pathname.startsWith('/aep/v1/admin/skills/')) {
-    const skill = state.skills.find(item => item.id === pathname.split('/').at(-2));
-    if (!skill) return writeJson(response, 404, { code: 'NOT_FOUND' });
-    skill.versions = [{ version: '1.0.0', state: 'draft', sha256: 'a'.repeat(64), size: 3 }];
-    return writeJson(response, 201, skill.versions[0]);
-  }
-  if (method === 'POST' && pathname.endsWith('/publish') && pathname.startsWith('/aep/v1/admin/skills/')) {
-    const parts = pathname.split('/');
-    const skill = state.skills.find(item => item.id === parts.at(-4));
-    const version = skill?.versions.find(item => item.version === parts.at(-2));
-    if (!version) return writeJson(response, 404, { code: 'NOT_FOUND' });
-    version.state = 'published';
-    return writeJson(response, 200, version);
-  }
-  if (method === 'DELETE' && pathname.includes('/versions/')) {
-    const parts = pathname.split('/');
-    const skill = state.skills.find(item => item.id === parts.at(-3));
-    if (skill) skill.versions = skill.versions.filter(item => item.version !== parts.at(-1));
-    return response.writeHead(204).end();
-  }
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/skills/') && pathname.split('/').length === 6) return deleteRecord(response, state.skills, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/skill-assignments') return writeJson(response, 200, { items: state.skillAssignments });
-  if (method === 'POST' && pathname === '/aep/v1/admin/skill-assignments') return createAssignment(response, state.skillAssignments, jsonBody(rawBody), 'skill');
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/skill-assignments/')) return deleteRecord(response, state.skillAssignments, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/models') return writeJson(response, 200, { models: state.models, assignments: state.modelAssignments });
-  if (method === 'POST' && pathname === '/aep/v1/admin/models') return createRecord(response, state.models, jsonBody(rawBody));
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/models/')) return patchRecord(response, state.models, pathname, jsonBody(rawBody));
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/models/')) return deleteRecord(response, state.models, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/model-assignments') return writeJson(response, 200, { assignments: state.modelAssignments });
-  if (method === 'POST' && pathname === '/aep/v1/admin/model-assignments') return createAssignment(response, state.modelAssignments, jsonBody(rawBody), 'model');
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/model-assignments/')) return deleteRecord(response, state.modelAssignments, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/credentials') return writeJson(response, 200, { credentials: state.credentials, assignments: state.credentialAssignments });
-  if (method === 'POST' && pathname === '/aep/v1/admin/credentials') {
-    const input = jsonBody(rawBody);
-    return createRecord(response, state.credentials, { ...input, id: `credential-${state.nextId++}`, maskedValue: 'e2e-***', updatedAt: new Date().toISOString() });
-  }
-  if (method === 'PATCH' && pathname.startsWith('/aep/v1/admin/credentials/')) return patchRecord(response, state.credentials, pathname, jsonBody(rawBody));
-  if (method === 'POST' && pathname.startsWith('/aep/v1/admin/credentials/') && pathname.endsWith('/rotate')) {
-    const credential = state.credentials.find(item => item.id === pathname.split('/').at(-2));
-    if (!credential) return writeJson(response, 404, { code: 'NOT_FOUND' });
-    credential.maskedValue = 'e2e-rotated-***';
-    credential.updatedAt = new Date().toISOString();
-    return writeJson(response, 200, credential);
-  }
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/credentials/')) return deleteRecord(response, state.credentials, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/credential-assignments') return writeJson(response, 200, { assignments: state.credentialAssignments });
-  if (method === 'POST' && pathname === '/aep/v1/admin/credential-assignments') return createAssignment(response, state.credentialAssignments, jsonBody(rawBody), 'credential');
-  if (method === 'DELETE' && pathname.startsWith('/aep/v1/admin/credential-assignments/')) return deleteRecord(response, state.credentialAssignments, pathname);
-  if (method === 'GET' && pathname === '/aep/v1/admin/licenses') return writeJson(response, 200, { items: state.licenses, nextCursor: null });
-  if (method === 'POST' && pathname === '/aep/v1/admin/licenses/import') {
-    const license = { licenseId: 'e2e-license', customerId: 'e2e-customer', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'e2e-key', status: 'active', issuedAt: '2026-09-01T00:00:00Z', expiresAt: '2027-09-01T00:00:00Z', graceEndsAt: '2027-09-08T00:00:00Z', limits: { users: 10, activations: 10 }, features: ['model_gateway'], activeUsers: 1, activeActivations: 1, revokedAt: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' };
-    state.licenses.push(license);
-    return writeJson(response, 201, license);
-  }
-  if (method === 'POST' && pathname.endsWith('/revoke') && pathname.startsWith('/aep/v1/admin/licenses/')) {
-    const license = state.licenses.find(item => item.licenseId === pathname.split('/').at(-2));
-    if (!license) return writeJson(response, 404, { code: 'NOT_FOUND' });
-    license.status = 'revoked';
-    license.revokedAt = new Date().toISOString();
-    return writeJson(response, 200, license);
-  }
-  if (method === 'GET' && pathname === '/aep/v1/admin/events') return writeJson(response, 200, { items: [], nextCursor: null });
-  if (method === 'GET' && pathname === '/aep/v1/admin/control-events') return writeJson(response, 200, { items: state.controlEvents, nextCursor: null });
-  if (method === 'POST' && pathname === '/aep/v1/admin/control-events') {
-    const input = jsonBody(rawBody);
-    const event = { ...input, eventId: `e2e-event-${state.nextId++}`, state: 'active', createdAt: new Date().toISOString(), createdBy: 'admin', deliverySummary: { pending: 1, received: 0, running: 0, succeeded: 0, failed: 0, expired: 0, superseded: 0 } };
-    state.controlEvents.push(event);
-    return writeJson(response, 201, event);
-  }
-  if (method === 'GET' && pathname.startsWith('/aep/v1/admin/control-events/') && !pathname.endsWith('/deliveries')) {
-    const event = state.controlEvents.find(item => item.eventId === pathname.split('/').at(-1));
-    return event ? writeJson(response, 200, event) : writeJson(response, 404, { code: 'NOT_FOUND' });
-  }
-  if (method === 'POST' && pathname.endsWith('/cancel') && pathname.startsWith('/aep/v1/admin/control-events/')) {
-    const event = state.controlEvents.find(item => item.eventId === pathname.split('/').at(-2));
-    if (!event) return writeJson(response, 404, { code: 'NOT_FOUND' });
-    event.state = 'cancelled';
-    return writeJson(response, 200, event);
-  }
-  if (method === 'GET' && pathname === '/aep/v1/admin/sessions') return writeJson(response, 200, { items: [], nextCursor: null });
-  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/desired-state') return writeJson(response, 200, state.dataPlane.desired);
-  if (method === 'PUT' && pathname === '/aep/v1/admin/data-plane/desired-state') {
-    const input = jsonBody(rawBody);
-    state.dataPlane.desired = { ...state.dataPlane.desired, ...input, publishedAt: new Date().toISOString() };
-    state.dataPlane.status = { ...state.dataPlane.status, observedRevision: state.dataPlane.desired.revision, resourceCount: state.dataPlane.desired.routes.length };
-    return writeJson(response, 200, state.dataPlane.desired);
-  }
-  if (method === 'GET' && pathname === '/aep/v1/admin/data-plane/status') return writeJson(response, 200, state.dataPlane.status);
-  return writeJson(response, 404, { code: 'NOT_FOUND', path: pathname });
-}
-
-function createRecord(response, collection, input) {
-  const record = { ...input, id: input.id ?? `record-${state.nextId++}`, enabled: input.enabled ?? true, builtIn: false, permissions: input.permissions ?? [], versions: input.versions ?? [] };
-  collection.push(record);
-  return writeJson(response, 201, record);
-}
-
-function patchRecord(response, collection, pathname, input) {
-  const record = collection.find(item => item.id === pathname.split('/').at(-1));
-  if (!record) return writeJson(response, 404, { code: 'NOT_FOUND' });
-  Object.assign(record, input);
-  if (input.state === 'active' || input.state === 'withdrawn') record.enabled = input.state === 'active';
-  return writeJson(response, 200, record);
-}
-
-function deleteRecord(response, collection, pathname) {
-  const id = pathname.split('/').at(-1);
-  const index = collection.findIndex(item => item.id === id);
-  if (index >= 0) collection.splice(index, 1);
-  response.writeHead(204).end();
-}
-
-function createAssignment(response, collection, input, resourceType) {
-  const resourceId = input[`${resourceType}Id`];
-  const record = { id: `${resourceType}-assignment-${state.nextId++}`, resourceType, resourceId, [`${resourceType}Id`]: resourceId, subject: input.subject, subjectType: input.subject.type, subjectId: input.subject.id };
-  collection.push(record);
-  return writeJson(response, 201, record);
-}
-
-function jsonBody(raw) {
-  if (!raw || Buffer.isBuffer(raw) && raw.length === 0) return {};
-  return JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : raw);
-}
-
-function readBody(request) {
-  return new Promise(resolve => {
-    const chunks = [];
-    request.on('data', chunk => chunks.push(chunk));
-    request.on('end', () => resolve(Buffer.concat(chunks)));
-  });
-}
-
-function writeJson(response, status, value) {
-  response.writeHead(status, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(value));
-}
-
-async function findChrome() {
-  const candidates = [process.env.ZHIYUAN_CHROME_PATH, 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].filter(Boolean);
-  for (const candidate of candidates) {
-    try { await fs.access(candidate); return candidate; } catch { /* try next known installation */ }
-  }
-  throw new Error('Chrome/Chromium was not found. Set ZHIYUAN_CHROME_PATH to a browser executable.');
-}
-
-async function listenOnRandomPort(server) {
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+async function listen(server) {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return server.address().port;
 }
-
 async function freePort() {
   const server = http.createServer();
-  const port = await listenOnRandomPort(server);
-  await new Promise(resolve => server.close(resolve));
+  const port = await listen(server);
+  await new Promise((resolve) => server.close(resolve));
   return port;
 }
-
-async function waitForHttp(url) {
+async function waitForHttp(origin) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    try { const response = await fetch(url); if (response.ok) return; } catch { /* server is still starting */ }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      if ((await fetch(origin)).ok) return;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`HTTP server did not start: ${url}`);
+  throw new Error("Admin test server did not start");
 }
-
-async function waitForText(page, value) {
-  await page.getByText(value, { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
-}
-
-async function waitForNoText(page, value) {
-  await page.getByText(value, { exact: true }).first().waitFor({ state: 'detached', timeout: 10_000 });
-}
-
-async function waitForAttribute(locator, name, expected) {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    if (await locator.getAttribute(name) === expected) return;
-    await new Promise(resolve => setTimeout(resolve, 50));
+async function findChrome() {
+  for (const candidate of [
+    process.env.ZHIYUAN_CHROME_PATH,
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  ].filter(Boolean)) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {}
   }
-  throw new Error(`Timed out waiting for ${name}=${expected}`);
+  throw new Error("Set ZHIYUAN_CHROME_PATH to a Chrome/Chromium executable");
 }
 
 async function waitForValue(read, expected) {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    if (read() === expected) return;
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for value ${String(expected)}`);
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) { if (read() === expected) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+  assert.equal(read(), expected);
 }

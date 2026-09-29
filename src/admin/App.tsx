@@ -1,88 +1,48 @@
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import {
-  AlertCircle,
-  Activity,
-  BarChart3,
-  Bot,
-  Boxes,
-  Brain,
-  CheckCircle2,
-  CircleGauge,
-  ClipboardList,
-  Cpu,
-  Eye,
-  EyeOff,
-  Fingerprint,
-  LayoutDashboard,
-  LibraryBig,
-  LogIn,
-  LogOut,
-  Monitor,
-  Moon,
-  RefreshCw,
-  ShieldCheck,
-  Settings2,
-  Sun,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+  App as AntApp,
+  Alert,
+  Breadcrumb,
+  Button,
+  Card,
+  Col,
+  ConfigProvider,
+  Form,
+  Input,
+  Layout,
+  Menu,
+  Result,
+  Row,
+  Select,
+  Skeleton,
+  Space,
+  Statistic,
+  Table,
+  Tabs,
+  Typography,
+  theme,
+} from "antd";
+import zhCN from "antd/locale/zh_CN";
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
-
+  AppstoreOutlined,
+  AuditOutlined,
+  BookOutlined,
+  DashboardOutlined,
+  LogoutOutlined,
+  RobotOutlined,
+  SettingOutlined,
+  TeamOutlined,
+} from "@ant-design/icons";
 import {
   AdminConsoleClient,
   AdminConsoleStatus,
-  AdminPermission,
+  AdminPermission as P,
   hasAdminPermission,
+  type AdminIdentity,
   type AdminOverview,
   type AdminSession,
+  type AdminEventRecord,
 } from "./client.js";
-import {
-  translate,
-  type AdminLanguage,
-  type AdminTranslationKey,
-} from "./i18n.js";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "../ui/components/ui/alert.js";
-import { Badge } from "../ui/components/ui/badge.js";
-import { Button } from "../ui/components/ui/button.js";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../ui/components/ui/card.js";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "../ui/components/ui/field.js";
-import { Input } from "../ui/components/ui/input.js";
-import { Skeleton } from "../ui/components/ui/skeleton.js";
-import { Spinner } from "../ui/components/ui/spinner.js";
-import { cn } from "../ui/lib/utils.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "../ui/components/ui/dropdown-menu.js";
-import {
-  Tabs,
-  TabsIndicator,
-  TabsList,
-  TabsTrigger,
-} from "../ui/components/ui/tabs.js";
 import {
   AdminThemeMode,
   applyAdminTheme,
@@ -90,910 +50,885 @@ import {
   persistAdminTheme,
   subscribeToSystemTheme,
 } from "./theme.js";
-import { AdminResourceTab, Resources } from "./Resources.js";
-import { Models } from "./Models.js";
-import { Events } from "./Events.js";
-import { Operations } from "./Operations.js";
-import { DigitalEmployees } from "./DigitalEmployees.js";
-import { KnowledgeView, MemoryView } from "./ServiceStatus.js";
-import { Identity } from "./Identity.js";
-import {
-  AdminNotificationKind,
-  AdminNotificationViewport,
-  notify,
-} from "./notifications.js";
+import { translate } from "./i18n.js";
+import { shellCopy as c } from "./shell-copy.js";
+import { AdminNotificationViewport } from "./notifications.js";
+import { PortalClient, type PortalEmployee } from "./portal.js";
 
-const language: AdminLanguage = "zh";
-const AdminPage = {
-  Overview: "overview",
-  Resources: "resources",
-  Identity: "identity",
-  DigitalEmployees: "digital-employees",
-  Memory: "memory",
-  Knowledge: "knowledge",
-  Models: "models",
-  Events: "events",
-  Operations: "operations",
-} as const;
-type AdminPage = (typeof AdminPage)[keyof typeof AdminPage];
+const Resources = lazy(() =>
+  import("./Resources.js").then((m) => ({ default: m.Resources })),
+);
+const Identity = lazy(() =>
+  import("./Identity.js").then((m) => ({ default: m.Identity })),
+);
+const Models = lazy(() =>
+  import("./Models.js").then((m) => ({ default: m.Models })),
+);
+const Employees = lazy(() =>
+  import("./DigitalEmployees.js").then((m) => ({
+    default: m.DigitalEmployees,
+  })),
+);
+const Knowledge = lazy(() =>
+  import("./ServiceStatus.js").then((m) => ({ default: m.KnowledgeView })),
+);
+const Services = lazy(() =>
+  import("./ServiceStatus.js").then((m) => ({ default: m.ServicesView })),
+);
+const Operations = lazy(() =>
+  import("./Operations.js").then((m) => ({ default: m.Operations })),
+);
+const Sessions = lazy(() =>
+  import("./Operations.js").then((m) => ({ default: m.SessionsView })),
+);
+const Credentials = lazy(() =>
+  import("./Operations.js").then((m) => ({ default: m.CredentialsView })),
+);
+const ConfigurationStatus = lazy(() =>
+  import("./Operations.js").then((m) => ({
+    default: m.ConfigurationStatusView,
+  })),
+);
+const Events = lazy(() =>
+  import("./Events.js").then((m) => ({ default: m.Events })),
+);
 
-const navigation = [
+const modules = [
   {
-    page: AdminPage.Overview,
-    label: "overview",
-    icon: LayoutDashboard,
+    key: "overview",
+    label: c.overview,
+    icon: <DashboardOutlined />,
     permissions: [],
   },
   {
-    page: AdminPage.Resources,
-    label: "resources",
-    icon: Boxes,
+    key: "employees",
+    label: c.employees,
+    icon: <RobotOutlined />,
+    permissions: [],
+  },
+  {
+    key: "knowledge",
+    label: c.knowledge,
+    icon: <BookOutlined />,
+    permissions: [],
+  },
+  {
+    key: "skills",
+    label: c.skills,
+    icon: <AppstoreOutlined />,
+    permissions: [P.SkillsRead],
+  },
+  {
+    key: "users",
+    label: c.users,
+    icon: <TeamOutlined />,
+    permissions: [P.UsersRead, P.TeamsRead, P.RolesRead, P.IdentityRead],
+  },
+  {
+    key: "audit",
+    label: c.audit,
+    icon: <AuditOutlined />,
+    permissions: [P.EventsRead],
+  },
+  {
+    key: "system",
+    label: c.system,
+    icon: <SettingOutlined />,
     permissions: [
-      AdminPermission.UsersRead,
-      AdminPermission.TeamsRead,
-      AdminPermission.RolesRead,
-      AdminPermission.SkillsRead,
-    ],
-  },
-  {
-    page: AdminPage.Identity,
-    label: "identity",
-    icon: Fingerprint,
-    permissions: [AdminPermission.IdentityRead],
-  },
-  {
-    // The portal authorizes every call (owner or admin); no AEP permission
-    // gates this module.
-    page: AdminPage.DigitalEmployees,
-    label: "digitalEmployees",
-    icon: Bot,
-    permissions: [],
-  },
-  {
-    // Portal-authorised service status (OpenViking memory stack).
-    page: AdminPage.Memory,
-    label: "memory",
-    icon: Brain,
-    permissions: [],
-  },
-  {
-    // Portal-authorised service status (WeKnora knowledge stack).
-    page: AdminPage.Knowledge,
-    label: "knowledge",
-    icon: LibraryBig,
-    permissions: [],
-  },
-  {
-    page: AdminPage.Models,
-    label: "models",
-    icon: Cpu,
-    permissions: [AdminPermission.ModelsRead],
-  },
-  {
-    page: AdminPage.Events,
-    label: "events",
-    icon: ClipboardList,
-    permissions: [AdminPermission.EventsRead],
-  },
-  {
-    page: AdminPage.Operations,
-    label: "operations",
-    icon: Settings2,
-    permissions: [
-      AdminPermission.LicensesRead,
-      AdminPermission.UsersRead,
-      AdminPermission.CredentialsRead,
-      AdminPermission.DataPlaneWrite,
+      P.ModelsRead,
+      P.CredentialsRead,
+      P.LicensesRead,
+      P.DataPlaneWrite,
     ],
   },
 ] as const;
-
-const OVERVIEW_CARDS = [
-  { key: "users", icon: Users, permission: AdminPermission.UsersRead },
-  { key: "teams", icon: Users, permission: AdminPermission.TeamsRead },
-  { key: "skills", icon: Boxes, permission: AdminPermission.SkillsRead },
-  { key: "models", icon: Cpu, permission: AdminPermission.ModelsRead },
-  {
-    key: "pendingEvents",
-    icon: ClipboardList,
-    permission: AdminPermission.EventsRead,
-  },
-] as const;
+const legacyRoutes: Record<string, string> = {
+  resources: "users",
+  identity: "users/accounts",
+  "digital-employees": "employees",
+  memory: "system/services",
+  models: "system/models",
+  events: "audit",
+  operations: "system/licenses",
+};
+function readRoute() {
+  const raw = window.location.hash.replace(/^#\/?/, "") || "overview";
+  if (raw === "system/connections") return "system/models/connections";
+  if (raw === "system/configuration") return "system/models/configuration";
+  if (raw === "resources/skills") return "skills";
+  const [first = "overview", ...rest] = raw.split("/");
+  return `${legacyRoutes[first] ?? first}${rest.length ? "/" + rest.join("/") : ""}`;
+}
+function navigate(route: string) {
+  window.location.hash = route;
+}
+const t = (key: Parameters<typeof translate>[1]) => translate("zh", key);
 
 export function AdminApp() {
+  const [mode, setMode] = useState<AdminThemeMode>(initialAdminTheme);
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const update = () => {
+      applyAdminTheme(mode);
+      setDark(document.documentElement.classList.contains("dark"));
+    };
+    update();
+    return subscribeToSystemTheme(update);
+  }, [mode]);
+  return (
+    <ConfigProvider
+      locale={zhCN}
+      button={{ autoInsertSpace: false }}
+      theme={{
+        algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        cssVar: { key: "zhiyuan-admin" },
+        token: { colorPrimary: "#1677ff", borderRadius: 6, fontSize: 14 },
+      }}
+    >
+      <AntApp>
+        <ConsoleRoot
+          themeControl={
+            <Select
+              aria-label={c.theme}
+              value={mode}
+              style={{ width: 110 }}
+              options={[
+                { value: "system", label: c.systemTheme },
+                { value: "light", label: c.light },
+                { value: "dark", label: c.dark },
+              ]}
+              onChange={(value) => {
+                persistAdminTheme(value);
+                setMode(value);
+              }}
+            />
+          }
+        />
+        <AdminNotificationViewport />
+      </AntApp>
+    </ConfigProvider>
+  );
+}
+
+function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [client] = useState(() => new AdminConsoleClient());
   const [session, setSession] = useState<AdminSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [page, setPage] = useState<AdminPage>(AdminPage.Overview);
-
+  const [error, setError] = useState(false);
+  const [route, setRoute] = useState(readRoute);
   useEffect(() => {
+    let live = true;
     void client
       .restore()
-      .then(setSession)
-      .catch(() => setSession({ status: AdminConsoleStatus.SignedOut }))
-      .finally(() => setLoading(false));
+      .then((value) => {
+        if (live) setSession(value);
+      })
+      .catch(() => {
+        if (live) setSession({ status: AdminConsoleStatus.SignedOut });
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client]);
-
-  const signIn = async (input: {
-    deploymentId: string;
-    username: string;
-    password: string;
-  }) => {
+  useEffect(() => {
+    const change = () => setRoute(readRoute());
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
+  }, []);
+  const signOut = async () => {
     setPending(true);
     try {
-      setSession(await client.login(input));
-      notify(
-        AdminNotificationKind.Success,
-        translate(language, "signInSucceeded"),
-      );
-    } catch (cause) {
-      console.error(
-        "[ZhiyuanAdmin] login failed before session creation",
-        cause,
-      );
-      notify(AdminNotificationKind.Error, translate(language, "signInFailed"));
+      await client.logout();
+      setSession({ status: AdminConsoleStatus.SignedOut });
+      navigate("overview");
     } finally {
       setPending(false);
     }
   };
-
-  const signOut = async () => {
-    setPending(true);
-    await client.logout();
-    setSession({ status: AdminConsoleStatus.SignedOut });
-    setPending(false);
-  };
-
   if (loading)
     return (
-      <>
-        <AdminNotificationViewport />
-        <LoadingView />
-      </>
+      <main className="admin-login">
+        <Skeleton active />
+      </main>
     );
   if (!session || session.status === AdminConsoleStatus.SignedOut)
     return (
-      <>
-        <AdminNotificationViewport />
-        <LoginView pending={pending} onSubmit={signIn} />
-      </>
+      <main className="admin-login">
+        <div className="admin-login-theme">{themeControl}</div>
+        <Card className="admin-login-card">
+          <Typography.Text type="secondary">
+            ZHIYUAN · {c.brand}
+          </Typography.Text>
+          <Typography.Title level={2}>{c.signIn}</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            {c.signInHint}
+          </Typography.Paragraph>
+          {error && (
+            <Alert
+              type="error"
+              showIcon
+              title={t("signInFailed")}
+              style={{ marginBottom: 20 }}
+            />
+          )}
+          <Form
+            layout="vertical"
+            requiredMark={false}
+            disabled={pending}
+            onFinish={async (values: {
+              deploymentId: string;
+              username: string;
+              password: string;
+            }) => {
+              setPending(true);
+              setError(false);
+              try {
+                setSession(
+                  await client.login({
+                    ...values,
+                    deploymentId: values.deploymentId.trim(),
+                    username: values.username.trim(),
+                  }),
+                );
+              } catch {
+                setError(true);
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            <Form.Item
+              label={t("deploymentId")}
+              name="deploymentId"
+              rules={[
+                {
+                  required: true,
+                  whitespace: true,
+                  message: t("requiredFields"),
+                },
+              ]}
+            >
+              <Input autoComplete="organization" />
+            </Form.Item>
+            <Form.Item
+              label={t("username")}
+              name="username"
+              rules={[
+                {
+                  required: true,
+                  whitespace: true,
+                  message: t("requiredFields"),
+                },
+              ]}
+            >
+              <Input autoComplete="username" />
+            </Form.Item>
+            <Form.Item
+              label={t("password")}
+              name="password"
+              rules={[{ required: true, message: t("requiredFields") }]}
+            >
+              <Input.Password autoComplete="current-password" />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" block loading={pending}>
+              {t("signIn")}
+            </Button>
+          </Form>
+        </Card>
+      </main>
     );
   if (session.status === AdminConsoleStatus.Forbidden)
     return (
-      <>
-        <AdminNotificationViewport />
-        <ForbiddenView identity={session.identity?.user.displayName} />
-      </>
-    );
-  return (
-    <>
-      <AdminNotificationViewport />
-      <ConsoleLayout
-        client={client}
-        identity={session.identity}
-        pending={pending}
-        page={page}
-        setPage={setPage}
-        onSignOut={signOut}
-      />
-    </>
-  );
-}
-
-function LoadingView() {
-  return (
-    <main className="flex min-h-full items-center justify-center bg-background">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Spinner />
-        {translate(language, "loadingConsole")}
-      </div>
-    </main>
-  );
-}
-
-function ConsoleLayout({
-  client,
-  identity,
-  pending,
-  page,
-  setPage,
-  onSignOut,
-}: {
-  readonly client: AdminConsoleClient;
-  readonly identity?: AdminSession["identity"] | undefined;
-  readonly pending: boolean;
-  readonly page: AdminPage;
-  readonly setPage: (page: AdminPage) => void;
-  readonly onSignOut: () => Promise<void>;
-}) {
-  const [resourceTab, setResourceTab] = useState<AdminResourceTab>(
-    AdminResourceTab.Users,
-  );
-  const visibleNavigation = navigation.filter(
-    (item) =>
-      item.permissions.length === 0 ||
-      item.permissions.some((permission) =>
-        hasAdminPermission(identity, permission),
-      ),
-  );
-  const visiblePages = new Set(visibleNavigation.map((item) => item.page));
-  const activePage = visiblePages.has(page) ? page : AdminPage.Overview;
-  const activeLabel =
-    navigation.find((item) => item.page === activePage)?.label ?? "overview";
-  const resourceTabs = (
-    [
-      AdminResourceTab.Users,
-      AdminResourceTab.Teams,
-      AdminResourceTab.Roles,
-      AdminResourceTab.Skills,
-      AdminResourceTab.Assignments,
-    ] as const
-  ).filter((tab) => {
-    if (tab === AdminResourceTab.Users)
-      return hasAdminPermission(identity, AdminPermission.UsersRead);
-    if (tab === AdminResourceTab.Teams)
-      return hasAdminPermission(identity, AdminPermission.TeamsRead);
-    if (tab === AdminResourceTab.Roles)
-      return hasAdminPermission(identity, AdminPermission.RolesRead);
-    if (tab === AdminResourceTab.Skills)
-      return hasAdminPermission(identity, AdminPermission.SkillsRead);
-    if (tab === AdminResourceTab.Assignments)
-      return hasAdminPermission(identity, AdminPermission.SkillsAssign);
-    return false;
-  });
-  const activeResourceTab = resourceTabs.includes(resourceTab)
-    ? resourceTab
-    : (resourceTabs[0] ?? AdminResourceTab.Users);
-  return (
-    <main className="flex min-h-full bg-background">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
-        <div className="flex h-14 items-center gap-3 border-b border-border px-5">
-          <BrandMark />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">
-              {translate(language, "brandShort")}
-            </div>
-            <div className="truncate text-xs text-tertiary-foreground">
-              {translate(language, "adminWorkspace")}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col p-3">
-          <div className="flex flex-col gap-1">
-            <span className="px-3 pb-1 text-xs font-normal text-tertiary-foreground">
-              {translate(language, "workspaceLabel")}
-            </span>
-            {visibleNavigation.map((item) => (
-              <NavItem
-                key={item.page}
-                icon={item.icon}
-                active={activePage === item.page}
-                label={translate(language, item.label)}
-                onClick={() => setPage(item.page)}
-              />
-            ))}
-          </div>
-          <div className="mt-auto border-t border-border px-3 pt-4">
-            <div className="flex items-center gap-2 text-xs font-normal">
-              <CircleGauge
-                className="size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              {translate(language, "controlPlane")}
-            </div>
-            <p className="mt-1.5 text-xs leading-relaxed text-tertiary-foreground">
-              {translate(language, "controlPlaneDescription")}
-            </p>
-          </div>
-        </div>
-        <div className="border-t border-border p-3">
-          <div className="mb-2 flex min-w-0 items-center gap-2 px-2">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-normal">
-              {(identity?.user.displayName ?? "A").slice(0, 1)}
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-normal">
-                {identity?.user.displayName ?? translate(language, "username")}
-              </div>
-              <div className="truncate text-xs text-tertiary-foreground">
-                {identity?.deployment?.name ??
-                  translate(language, "deployment")}
-              </div>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-muted-foreground"
-            disabled={pending}
-            onClick={() => void onSignOut()}
-          >
-            <LogOut data-icon="inline-start" />
-            {translate(language, "signOut")}
-          </Button>
-        </div>
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col overflow-clip">
-        {/* overflow-clip keeps the PageTransition entrance slide from extending
-            the document's scrollable overflow, which flashed a layout-shifting
-            vertical scrollbar on every nav switch. */}
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="md:hidden">
-              <BrandMark />
-            </div>
-            <p className="truncate text-base font-semibold">
-              {translate(language, activeLabel)}
-            </p>
-          </div>
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 rounded-lg p-0 md:hidden"
-              disabled={pending}
-              onClick={() => void onSignOut()}
-              aria-label={translate(language, "signOut")}
-            >
-              <LogOut className="size-4" />
-            </Button>
-          </div>
-        </header>
-        <nav
-          className="flex gap-1 overflow-x-auto border-b border-border bg-background px-3 py-2 md:hidden"
-          aria-label={translate(language, "navigation")}
-        >
-          {visibleNavigation.map((item) => (
-            <NavItem
-              key={item.page}
-              icon={item.icon}
-              active={activePage === item.page}
-              label={translate(language, item.label)}
-              onClick={() => setPage(item.page)}
-              compact
-            />
-          ))}
-        </nav>
-        <PageTransition pageKey={page}>
-          {activePage === AdminPage.Overview ? (
-            <OverviewView client={client} identity={identity} />
-          ) : activePage === AdminPage.Identity ? (
-            <Identity client={client} identity={identity} />
-          ) : activePage === AdminPage.DigitalEmployees ? (
-            <DigitalEmployees client={client} />
-          ) : activePage === AdminPage.Memory ? (
-            <MemoryView client={client} />
-          ) : activePage === AdminPage.Knowledge ? (
-            <KnowledgeView client={client} />
-          ) : activePage === AdminPage.Models ? (
-            <Models client={client} identity={identity} />
-          ) : activePage === AdminPage.Events ? (
-            <Events client={client} identity={identity} />
-          ) : activePage === AdminPage.Operations ? (
-            <Operations client={client} identity={identity} />
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="overflow-x-auto border-b border-border bg-background px-4 sm:px-6">
-                <Tabs
-                  value={activeResourceTab}
-                  onValueChange={(value) =>
-                    setResourceTab(value as AdminResourceTab)
-                  }
-                >
-                  <TabsList variant="line" className="w-max">
-                    {resourceTabs.map((tab) => (
-                      <TabsTrigger key={tab} value={tab} className="px-3">
-                        {translate(language, tab)}
-                      </TabsTrigger>
-                    ))}
-                    <TabsIndicator />
-                  </TabsList>
-                </Tabs>
-              </div>
-              <Resources
-                client={client}
-                tab={activeResourceTab}
-                identity={identity}
-              />
-            </div>
-          )}
-        </PageTransition>
-      </div>
-    </main>
-  );
-}
-
-function BrandMark() {
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card">
-      <ShieldCheck className="size-4" aria-hidden="true" />
-    </div>
-  );
-}
-
-function NavItem({
-  icon: Icon,
-  active,
-  label,
-  onClick,
-  compact = false,
-}: {
-  readonly icon: LucideIcon;
-  readonly active: boolean;
-  readonly label: string;
-  readonly onClick: () => void;
-  readonly compact?: boolean;
-}) {
-  return (
-    <Button
-      data-admin-nav="true"
-      variant="ghost"
-      size="sm"
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        compact ? "shrink-0 gap-2" : "w-full justify-start gap-3",
-        "rounded-lg border border-transparent px-3 py-2 font-normal",
-        active
-          ? "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
-          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-      )}
-      onClick={onClick}
-    >
-      <Icon data-icon="inline-start" />
-      {label}
-    </Button>
-  );
-}
-
-function PageTransition({
-  pageKey,
-  children,
-}: {
-  readonly pageKey: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div
-      key={pageKey}
-      className="flex min-h-0 flex-1 flex-col motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 duration-200"
-    >
-      {children}
-    </div>
-  );
-}
-
-function ThemeToggle() {
-  const [mode, setMode] = useState<AdminThemeMode>(() => initialAdminTheme());
-  useLayoutEffect(() => {
-    applyAdminTheme(mode);
-    if (mode !== AdminThemeMode.System) return;
-    return subscribeToSystemTheme(() => applyAdminTheme(mode));
-  }, [mode]);
-  const options = [
-    AdminThemeMode.Light,
-    AdminThemeMode.Dark,
-    AdminThemeMode.System,
-  ] as const;
-  const modeLabel = translate(
-    language,
-    mode === AdminThemeMode.Light
-      ? "themeLight"
-      : mode === AdminThemeMode.Dark
-        ? "themeDark"
-        : "themeSystem",
-  );
-  const Icon =
-    mode === AdminThemeMode.Light
-      ? Sun
-      : mode === AdminThemeMode.Dark
-        ? Moon
-        : Monitor;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`${translate(language, "themeToggleLabel")}: ${modeLabel}`}
-            title={modeLabel}
-          />
+      <Result
+        status="403"
+        title={c.forbidden}
+        subTitle={session.identity?.user.displayName}
+        extra={
+          <Button onClick={() => void signOut()}>{c.switchAccount}</Button>
         }
-      >
-        <Icon className="text-muted-foreground" aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup
-          value={mode}
-          onValueChange={(value) => {
-            const target = value as AdminThemeMode;
-            setMode(target);
-            persistAdminTheme(target);
-          }}
-        >
-          {options.map((option) => (
-            <DropdownMenuRadioItem key={option} value={option}>
-              {translate(
-                language,
-                option === AdminThemeMode.Light
-                  ? "themeLight"
-                  : option === AdminThemeMode.Dark
-                    ? "themeDark"
-                    : "themeSystem",
-              )}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      />
+    );
+  const identity = session.identity;
+  const allowed = (permission: P) => hasAdminPermission(identity, permission);
+  const visible = modules.filter(
+    (m) => m.permissions.length === 0 || m.permissions.some(allowed),
   );
-}
-
-function LoginView({
-  pending,
-  onSubmit,
-}: {
-  readonly pending: boolean;
-  readonly onSubmit: (input: {
-    deploymentId: string;
-    username: string;
-    password: string;
-  }) => Promise<void>;
-}) {
-  const [validationError, setValidationError] =
-    useState<AdminTranslationKey | null>(null);
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const deploymentId = String(values.get("deploymentId") ?? "").trim();
-    const username = String(values.get("username") ?? "").trim();
-    const password = String(values.get("password") ?? "");
-    if (!deploymentId || !username || !password) {
-      setValidationError("requiredFields");
-      return;
-    }
-    setValidationError(null);
-    void onSubmit({ deploymentId, username, password });
+  const [page = "overview", subpage, detailTab] = route.split("/");
+  const selected = modules.find((m) => m.key === page);
+  const accessible = visible.some((m) => m.key === page);
+  const enterprise =
+    identity?.deployment?.name ??
+    identity?.enterprise?.name ??
+    identity?.deploymentId ??
+    c.enterprise;
+  const props = { client, identity };
+  const tabs = (
+    items: {
+      key: string;
+      label: string;
+      permission?: P | readonly P[];
+      children: ReactNode;
+    }[],
+  ) => {
+    const usable = items.filter(
+      (item) =>
+        !item.permission ||
+        (typeof item.permission === "string"
+          ? allowed(item.permission)
+          : item.permission.some(allowed)),
+    );
+    const key = subpage ?? usable[0]?.key;
+    if (!key || !usable.some((item) => item.key === key))
+      return <Result status="403" title={c.forbidden} />;
+    return (
+      <Tabs
+        activeKey={key}
+        onChange={(key) => navigate(`${page}/${key}`)}
+        items={usable}
+        destroyOnHidden
+      />
+    );
   };
+  let content: ReactNode;
+  switch (page) {
+    case "overview":
+      content = <Overview {...props} onNavigate={navigate} />;
+      break;
+    case "employees":
+      content = (
+        <Employees
+          key={subpage ?? "employees"}
+          {...props}
+          initialTab={subpage === "requests" ? "requests" : "employees"}
+        />
+      );
+      break;
+    case "knowledge":
+      content = <Knowledge client={client} />;
+      break;
+    case "skills":
+      content = <Resources {...props} tab="skills" />;
+      break;
+    case "users":
+      content = tabs([
+        {
+          key: "users",
+          label: c.userList,
+          permission: P.UsersRead,
+          children: <Resources {...props} tab="users" />,
+        },
+        {
+          key: "teams",
+          label: c.teams,
+          permission: P.TeamsRead,
+          children: <Resources {...props} tab="teams" />,
+        },
+        {
+          key: "roles",
+          label: c.roles,
+          permission: P.RolesRead,
+          children: <Resources {...props} tab="roles" />,
+        },
+        {
+          key: "accounts",
+          label: c.accounts,
+          permission: P.IdentityRead,
+          children: <Identity {...props} />,
+        },
+        {
+          key: "sessions",
+          label: c.sessions,
+          permission: P.UsersRead,
+          children: <Sessions {...props} />,
+        },
+      ]);
+      break;
+    case "audit":
+      content = <Events {...props} />;
+      break;
+    case "system":
+      content = tabs([
+        {
+          key: "models",
+          label: c.models,
+          permission: [P.ModelsRead, P.CredentialsRead, P.DataPlaneWrite],
+          children: <ModelServices {...props} tab={detailTab} />,
+        },
+        {
+          key: "channels",
+          label: c.channels,
+          children: <Channels client={client} />,
+        },
+        {
+          key: "services",
+          label: c.services,
+          children: <Services client={client} />,
+        },
+        {
+          key: "settings",
+          label: c.settings,
+          children: (
+            <Card title={c.settings}>
+              <Typography.Paragraph>{c.settingsHint}</Typography.Paragraph>
+              <Typography.Text type="secondary">
+                {c.enterprise}: {enterprise}
+              </Typography.Text>
+            </Card>
+          ),
+        },
+        {
+          key: "licenses",
+          label: c.licenses,
+          permission: P.LicensesRead,
+          children: <Operations {...props} />,
+        },
+      ]);
+      break;
+    default:
+      content = (
+        <Result
+          status="404"
+          title={c.notFound}
+          extra={
+            <Button onClick={() => navigate("overview")}>{c.overview}</Button>
+          }
+        />
+      );
+  }
   return (
-    <main className="relative flex min-h-full items-center justify-center bg-background p-6">
-      <div className="absolute right-4 top-4">
-        <ThemeToggle />
-      </div>
-      <section className="flex w-full max-w-md flex-col gap-6">
-        <header className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg border bg-card">
-              <ShieldCheck className="size-5" aria-hidden="true" />
-            </div>
-            <span className="text-base font-semibold">
-              {translate(language, "brand")}
-            </span>
+    <Layout className="admin-shell">
+      <Layout.Sider width={208} theme="light" className="admin-sidebar">
+        <div className="admin-brand">
+          <RobotOutlined />
+          <div>
+            <strong>{c.brandShort}</strong>
+            <small>{c.admin}</small>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-lg font-semibold leading-snug">
-              {translate(language, "signInTitle")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {translate(language, "signInDescription")}
-            </p>
-          </div>
-        </header>
-        <form
-          className="flex flex-col gap-5"
-          noValidate
-          aria-busy={pending}
-          onSubmit={handleSubmit}
-        >
-          <FieldGroup className="gap-4">
-            <Field>
-              <FieldLabel htmlFor="admin-deployment-id">
-                {translate(language, "deploymentId")}
-              </FieldLabel>
-              <Input
-                id="admin-deployment-id"
-                name="deploymentId"
-                defaultValue="demo"
-                placeholder={translate(language, "deploymentIdPlaceholder")}
-                disabled={pending}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="admin-username">
-                {translate(language, "username")}
-              </FieldLabel>
-              <Input
-                id="admin-username"
-                name="username"
-                defaultValue="admin"
-                placeholder={translate(language, "usernamePlaceholder")}
-                autoComplete="username"
-                disabled={pending}
-              />
-            </Field>
-            <Field data-invalid={Boolean(validationError)}>
-              <FieldLabel htmlFor="admin-password">
-                {translate(language, "password")}
-              </FieldLabel>
-              <div className="relative">
-                <Input
-                  id="admin-password"
-                  name="password"
-                  type={passwordVisible ? "text" : "password"}
-                  placeholder={translate(language, "passwordPlaceholder")}
-                  autoComplete="current-password"
-                  disabled={pending}
-                  aria-invalid={Boolean(validationError)}
-                  className="pr-10"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="absolute right-1 top-1/2"
-                  style={{ transform: "translateY(-50%)" }}
-                  onPointerDown={(event) => event.preventDefault()}
-                  aria-label={translate(
-                    language,
-                    passwordVisible ? "hidePassword" : "showPassword",
-                  )}
-                  title={translate(
-                    language,
-                    passwordVisible ? "hidePassword" : "showPassword",
-                  )}
-                  onClick={() => setPasswordVisible((current) => !current)}
-                  disabled={pending}
-                >
-                  {passwordVisible ? (
-                    <EyeOff aria-hidden="true" />
-                  ) : (
-                    <Eye aria-hidden="true" />
-                  )}
-                </Button>
+        </div>
+        <Menu
+          aria-label={c.navigation}
+          mode="inline"
+          selectedKeys={[page]}
+          items={visible.map(({ key, label, icon }) => ({
+            key,
+            label,
+            icon,
+            "aria-label": label,
+          }))}
+          onClick={({ key }) => navigate(key)}
+        />
+        <div className="admin-sidebar-note">{c.accountScope}</div>
+      </Layout.Sider>
+      <Layout className="admin-body">
+        <Layout.Header className="admin-header">
+          <Typography.Text strong ellipsis>
+            {enterprise}
+          </Typography.Text>
+          <Space wrap>
+            {themeControl}
+            <Typography.Text className="admin-user">
+              {identity?.user.displayName}
+            </Typography.Text>
+            <Button
+              aria-label={c.signOut}
+              icon={<LogoutOutlined />}
+              loading={pending}
+              onClick={() => void signOut()}
+            >
+              {c.signOut}
+            </Button>
+          </Space>
+        </Layout.Header>
+        <Layout.Content className="admin-content">
+          <Breadcrumb
+            items={[
+              { title: c.admin },
+              { title: selected?.label ?? c.notFound },
+            ]}
+          />
+          <div className="admin-page">
+            <Suspense fallback={<Skeleton active />}>
+              <div key={page}>
+                {accessible ? (
+                  content
+                ) : selected ? (
+                  <Result status="403" title={c.forbidden} />
+                ) : (
+                  content
+                )}
               </div>
-              {validationError ? (
-                <FieldError>{translate(language, validationError)}</FieldError>
-              ) : null}
-            </Field>
-          </FieldGroup>
-          <Button
-            type="submit"
-            size="lg"
-            disabled={pending}
-            className="w-full"
-            aria-busy={pending}
-          >
-            {pending ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <LogIn data-icon="inline-start" />
-            )}
-            {translate(language, pending ? "signingIn" : "signIn")}
-          </Button>
-        </form>
-      </section>
-    </main>
+            </Suspense>
+          </div>
+        </Layout.Content>
+      </Layout>
+    </Layout>
   );
 }
 
-function ForbiddenView({
-  identity,
-}: {
-  readonly identity: string | undefined;
-}) {
-  return (
-    <main className="flex min-h-full items-center justify-center bg-muted p-6">
-      <Alert variant="warning" className="max-w-md">
-        <AlertCircle aria-hidden="true" />
-        <AlertTitle>{translate(language, "accessDeniedTitle")}</AlertTitle>
-        <AlertDescription>
-          {translate(language, "accessDeniedDescription")}
-          {identity ? ` (${identity})` : ""}
-        </AlertDescription>
-      </Alert>
-    </main>
-  );
-}
-
-function OverviewView({
+function ModelServices({
   client,
   identity,
+  tab,
 }: {
-  readonly client: AdminConsoleClient;
-  readonly identity?: AdminSession["identity"] | undefined;
+  client: AdminConsoleClient;
+  identity: AdminIdentity | undefined;
+  tab: string | undefined;
 }) {
-  const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await client.overview(identity);
-      setOverview(result);
-      if (result.failed?.length)
-        notify(
-          AdminNotificationKind.Error,
-          translate(language, "refreshFailed"),
-        );
-    } catch {
-      notify(AdminNotificationKind.Error, translate(language, "refreshFailed"));
-    } finally {
-      setLoading(false);
-    }
-  }, [client, identity]);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const props = { client, identity };
+  const items = [
+    {
+      key: "catalog",
+      label: c.modelList,
+      permission: P.ModelsRead,
+      children: <Models {...props} />,
+    },
+    {
+      key: "connections",
+      label: c.connections,
+      permission: P.CredentialsRead,
+      children: <Credentials {...props} />,
+    },
+    {
+      key: "configuration",
+      label: c.configuration,
+      permission: P.DataPlaneWrite,
+      children: <ConfigurationStatus {...props} />,
+    },
+  ].filter((item) => hasAdminPermission(identity, item.permission));
+  const active = tab ?? items[0]?.key;
+  if (!active || !items.some((item) => item.key === active))
+    return <Result status="403" title={c.forbidden} />;
   return (
-    <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-      <div className="flex w-full flex-col gap-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs text-tertiary-foreground">
-              {translate(language, "overviewEyebrow")}
-            </p>
-            <h2 className="mt-1 text-xl font-semibold leading-snug">
-              {translate(language, "overviewTitle")}
-            </h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              {translate(language, "overviewDescription")}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={translate(language, "refresh")}
-            title={translate(language, "refresh")}
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            {loading ? <Spinner /> : <RefreshCw />}
-          </Button>
+    <Tabs
+      type="card"
+      activeKey={active}
+      onChange={(key) => navigate(`system/models/${key}`)}
+      items={items}
+      destroyOnHidden
+    />
+  );
+}
+
+function Channels({ client }: { client: AdminConsoleClient }) {
+  const [rows, setRows] = useState<readonly PortalEmployee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError(false);
+    void new PortalClient(() => client.getAccessToken())
+      .listEmployees()
+      .then((items) => {
+        if (live) setRows(items.filter((item) => item.channels?.wecom));
+      })
+      .catch(() => {
+        if (live) {
+          setRows([]);
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, revision]);
+  return (
+    <section>
+      <div className="admin-page-heading">
+        <div>
+          <Typography.Title level={2}>{c.channels}</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            {c.channelHint}
+          </Typography.Paragraph>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          {OVERVIEW_CARDS.filter((card) =>
-            hasAdminPermission(identity, card.permission),
-          ).map(({ key, icon }) => (
-            <OverviewCard
-              key={key}
-              label={translate(language, key)}
-              icon={icon}
-              value={overview?.[key]}
-              failed={overview?.failed?.includes(key) ?? false}
-            />
-          ))}
-        </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
-          <ResourceComposition overview={overview} loading={loading} identity={identity} />
-          <Card>
-            <CardHeader className="flex-row items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
-                <CardTitle>{translate(language, "overviewStatusTitle")}</CardTitle>
-              </div>
-              <Badge variant="success">
-                <CheckCircle2 data-icon="inline-start" />
-                {translate(language, "connected")}
-              </Badge>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                {translate(language, "overviewStatusDescription")}
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <StatusMetric label={translate(language, "overviewResourcesTracked")} value={trackedResourceCount(overview)} loading={loading} />
-                <StatusMetric label={translate(language, "overviewPendingWork")} value={overview?.pendingEvents} loading={loading} />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
+          {t("refresh")}
+        </Button>
       </div>
+      <Alert
+        type={error ? "error" : "info"}
+        title={error ? c.channelFailure : c.channelScope}
+        style={{ marginBottom: 16 }}
+      />
+      <Table
+        rowKey="name"
+        loading={loading}
+        dataSource={[...rows]}
+        scroll={{ x: 580 }}
+        columns={[
+          { title: c.employees, dataIndex: "displayName" },
+          {
+            title: c.channelName,
+            render: (_, employee) =>
+              employee.channels?.wecomName || t("wecomBadge"),
+          },
+          { title: c.channelStatus, render: () => c.configured },
+        ]}
+      />
     </section>
   );
 }
 
-function trackedResourceCount(overview: AdminOverview | null): number | null | undefined {
-  if (!overview) return undefined;
-  const values = [overview.users, overview.teams, overview.skills, overview.models];
-  if (values.some((value) => value === null)) return null;
-  return values.reduce<number>((total, value) => total + (value ?? 0), 0);
-}
-
-function ResourceComposition({
-  overview,
-  loading,
+function Overview({
+  client,
   identity,
+  onNavigate,
 }: {
-  readonly overview: AdminOverview | null;
-  readonly loading: boolean;
-  readonly identity?: AdminSession["identity"] | undefined;
+  client: AdminConsoleClient;
+  identity: AdminIdentity | undefined;
+  onNavigate: (route: string) => void;
 }) {
-  const rows = OVERVIEW_CARDS.slice(0, 4).filter((card) =>
-    hasAdminPermission(identity, card.permission),
-  );
-  const values = rows.map(({ key }) => overview?.[key]);
-  const max = Math.max(...values.map((value) => value ?? 0), 1);
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center gap-2">
-        <BarChart3 className="size-4 text-muted-foreground" aria-hidden="true" />
-        <div>
-          <CardTitle>{translate(language, "overviewCompositionTitle")}</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {translate(language, "overviewCompositionDescription")}
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {rows.map(({ key }) => {
-          const value = overview?.[key];
-          const width = value == null ? 0 : Math.max((value / max) * 100, value > 0 ? 4 : 0);
-          return (
-            <div key={key} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-muted-foreground">{translate(language, key)}</span>
-                {loading && value === undefined ? (
-                  <Skeleton className="h-4 w-8" />
-                ) : (
-                  <span className="font-medium">{value == null ? translate(language, value === null ? "metricLoadFailed" : "notAvailable") : value}</span>
-                )}
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${width}%` }} />
-              </div>
-            </div>
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [records, setRecords] = useState<readonly AdminEventRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [auditFailed, setAuditFailed] = useState(false);
+  const [revision, refresh] = useState(0);
+  const canAudit = hasAdminPermission(identity, P.EventsRead);
+  const [employeeCounts, setEmployeeCounts] = useState<{
+    total: number;
+    ready: number;
+  } | null>(null);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    setAuditFailed(false);
+    const portal = new PortalClient(() => client.getAccessToken());
+    void portal
+      .listEmployees()
+      .then((items) => {
+        if (live)
+          setEmployeeCounts({
+            total: items.length,
+            ready: items.filter((item) => item.phase === "Ready").length,
+          });
+      })
+      .catch(() => {
+        if (live) setEmployeeCounts(null);
+      });
+    void portal
+      .listRequests("pending")
+      .then((items) => {
+        if (live)
+          setPendingCount(
+            items.filter((item) => item.state === "pending").length,
           );
-        })}
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusMetric({
-  label,
-  value,
-  loading,
-}: {
-  readonly label: string;
-  readonly value: number | null | undefined;
-  readonly loading: boolean;
-}) {
+      })
+      .catch(() => {
+        if (live) setPendingCount(null);
+      });
+    void client
+      .overview(identity)
+      .then((value) => {
+        if (live) {
+          setOverview(value);
+          setFailed(Boolean(value.failed?.length));
+        }
+      })
+      .catch(() => {
+        if (live) {
+          setOverview(null);
+          setFailed(true);
+        }
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    if (canAudit)
+      void client
+        .searchAudit({ limit: 5 })
+        .then((value) => {
+          if (live) setRecords(value.items);
+        })
+        .catch(() => {
+          if (live) {
+            setRecords([]);
+            setAuditFailed(true);
+          }
+        });
+    return () => {
+      live = false;
+    };
+  }, [client, identity, canAudit, revision]);
+  const metrics = [
+    {
+      key: "users",
+      label: c.accountCount,
+      permission: P.UsersRead,
+      route: "users",
+    },
+    {
+      key: "teams",
+      label: c.teams,
+      permission: P.TeamsRead,
+      route: "users/teams",
+    },
+    {
+      key: "skills",
+      label: c.skills,
+      permission: P.SkillsRead,
+      route: "skills",
+    },
+    {
+      key: "models",
+      label: c.models,
+      permission: P.ModelsRead,
+      route: "system/models",
+    },
+  ] as const;
   return (
-    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      {loading && value === undefined ? <Skeleton className="mt-1 h-6 w-10" /> : <div className="mt-1 text-lg font-semibold">{value == null ? "-" : value}</div>}
-    </div>
-  );
-}
-
-function OverviewCard({
-  label,
-  value,
-  failed,
-  icon: Icon,
-}: {
-  readonly label: string;
-  readonly value: number | null | undefined;
-  readonly failed: boolean;
-  readonly icon: LucideIcon;
-}) {
-  return (
-    <Card className="min-h-28 justify-between">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <Icon className="size-4 text-tertiary-foreground" aria-hidden="true" />
-      </div>
-      {value === undefined ? (
-        <Skeleton className="h-7 w-12" />
-      ) : value === null ? (
-        <div className="text-sm font-normal text-muted-foreground">
-          {translate(language, failed ? "metricLoadFailed" : "notAvailable")}
+    <section>
+      <div className="admin-page-heading">
+        <div>
+          <Typography.Title level={2}>{c.overview}</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            {c.overviewHint}
+          </Typography.Paragraph>
         </div>
-      ) : (
-        <div className="text-lg font-semibold leading-tight">{value}</div>
+        <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
+          {t("refresh")}
+        </Button>
+      </div>
+      {failed && (
+        <Alert
+          type="warning"
+          showIcon
+          title={c.overviewFailed}
+          style={{ marginBottom: 20 }}
+        />
       )}
-    </Card>
+      <Card title={c.runningSummary} style={{ marginBottom: 20 }}>
+        <Row gutter={[24, 16]}>
+          <Col xs={24} sm={8}>
+            <Statistic
+              title={c.visibleEmployees}
+              value={employeeCounts?.total ?? c.unknown}
+            />
+          </Col>
+          <Col xs={24} sm={8}>
+            <Statistic
+              title={c.readyEmployees}
+              value={employeeCounts?.ready ?? c.unknown}
+            />
+          </Col>
+          <Col xs={24} sm={8}>
+            <Statistic
+              title={c.pendingRequests}
+              value={pendingCount ?? c.unknown}
+            />
+          </Col>
+        </Row>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginTop: 16, marginBottom: 0 }}
+        >
+          {c.runSummaryHint}
+        </Typography.Paragraph>
+      </Card>
+      <Row gutter={[16, 16]}>
+        {metrics
+          .filter((m) => hasAdminPermission(identity, m.permission))
+          .map((m) => (
+            <Col xs={24} sm={12} xl={6} key={m.key}>
+              <Card>
+                <Statistic
+                  title={m.label}
+                  loading={loading}
+                  value={overview?.[m.key] ?? c.unknown}
+                />
+                <Button
+                  type="link"
+                  style={{ paddingInline: 0 }}
+                  onClick={() => onNavigate(m.route)}
+                >
+                  {c.manage}
+                </Button>
+              </Card>
+            </Col>
+          ))}
+      </Row>
+      <Row gutter={[20, 20]} style={{ marginTop: 24 }}>
+        <Col xs={24} xl={10}>
+          <Card title={c.quickLinks}>
+            <Space wrap>
+              <Button onClick={() => onNavigate("employees")}>
+                {c.employees}
+              </Button>
+              <Button onClick={() => onNavigate("knowledge")}>
+                {c.knowledge}
+              </Button>
+              {hasAdminPermission(identity, P.UsersRead) && (
+                <Button onClick={() => onNavigate("users")}>{c.users}</Button>
+              )}
+            </Space>
+            <Typography.Paragraph type="secondary" style={{ marginTop: 20 }}>
+              {c.countHint}
+            </Typography.Paragraph>
+          </Card>
+          <Card title={c.pendingWork} style={{ marginTop: 20 }}>
+              <Space orientation="vertical">
+              <Typography.Text>
+                {c.pendingRequests}: {pendingCount ?? c.unknown}
+              </Typography.Text>
+              <Button onClick={() => onNavigate("employees/requests")}>
+                {c.reviewRequests}
+              </Button>
+            </Space>
+          </Card>
+        </Col>
+        <Col xs={24} xl={14}>
+          <Card title={c.recentActivity}>
+            {canAudit ? (
+              auditFailed ? (
+                <Alert type="warning" title={c.auditFailed} />
+              ) : (
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="key"
+                  dataSource={records.map((row, index) => ({
+                    ...row,
+                    key: row.eventId ?? `record-${index}`,
+                  }))}
+                  columns={[
+                    {
+                      title: c.event,
+                      dataIndex: "type",
+                      render: (v: string) => v || c.unknown,
+                    },
+                    {
+                      title: c.actor,
+                      dataIndex: "userId",
+                      render: (v: string) => v || c.unknown,
+                    },
+                    {
+                      title: c.result,
+                      dataIndex: "result",
+                      render: (v: string) => v || c.unknown,
+                    },
+                  ]}
+                />
+              )
+            ) : (
+              <Typography.Text type="secondary">
+                {c.auditRestricted}
+              </Typography.Text>
+            )}
+          </Card>
+        </Col>
+      </Row>
+    </section>
   );
 }

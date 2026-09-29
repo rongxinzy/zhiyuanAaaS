@@ -1,4 +1,5 @@
-import '../ui/index.css';
+import 'antd/dist/reset.css';
+import './admin.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AdminApp } from './App.js';

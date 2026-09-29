@@ -1,5 +1,4 @@
-import { FieldLabel } from '../ui/components/ui/field.js';
-import { Switch } from '../ui/components/ui/switch.js';
+import { Switch, Typography, theme } from "antd";
 
 export function BooleanSwitch({
   id,
@@ -14,17 +13,26 @@ export function BooleanSwitch({
   readonly onCheckedChange: (checked: boolean) => void;
   readonly disabled?: boolean;
 }) {
+  const { token } = theme.useToken();
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5">
-      <FieldLabel htmlFor={id} className="cursor-pointer font-normal">
-        {label}
-      </FieldLabel>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: token.margin,
+        padding: `${token.paddingXXS + 2}px ${token.paddingSM}px`,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: token.borderRadius,
+      }}
+    >
+      <Typography.Text id={`${id}-label`}>{label}</Typography.Text>
       <Switch
         id={id}
         checked={checked}
-        onCheckedChange={onCheckedChange}
+        onChange={onCheckedChange}
         disabled={disabled}
-        aria-label={label}
+        aria-labelledby={`${id}-label`}
       />
     </div>
   );

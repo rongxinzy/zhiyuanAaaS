@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cloneElement, type ReactElement } from "react";
-
 import {
   cleanup,
   fireEvent,
@@ -9,301 +7,153 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { ConfigProvider } from "antd";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-
 import { Events } from "./Events.js";
-import { AdminNotificationViewport } from "./notifications.js";
 import { administratorIdentity } from "./test-fixtures.js";
 
-function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
+afterEach(cleanup);
+function render(ui: ReactNode) {
   return rtlRender(
-    <>
-      <AdminNotificationViewport />
-      {cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity })}
-    </>,
+    <ConfigProvider button={{ autoInsertSpace: false }}>{ui}</ConfigProvider>,
   );
 }
-
-const activeEvent = {
-  eventId: "event-1",
-  type: "model.catalog.changed",
-  scope: { type: "global" },
-  task: { type: "model.reconcile" },
-  expiresAt: "2026-09-05T00:00:00Z",
-  state: "active",
-  createdAt: "2026-09-04T00:00:00Z",
-  createdBy: "admin",
-  deliverySummary: {
-    pending: 1,
-    received: 0,
-    running: 0,
-    succeeded: 0,
-    failed: 0,
-    expired: 0,
-    superseded: 0,
-  },
-} as const;
-
-describe("admin events", () => {
-  afterEach(() => cleanup());
-
-  test("loads event details and cancels an active event", async () => {
-    const client = {
-      controlEvents: vi
-        .fn()
-        .mockResolvedValue({ items: [activeEvent], nextCursor: null }),
-      getControlEvent: vi.fn().mockResolvedValue(activeEvent),
-      cancelControlEvent: vi
-        .fn()
-        .mockResolvedValue({ ...activeEvent, state: "cancelled" }),
-      publishControlEvent: vi.fn(),
-      searchAudit: vi.fn(),
-    };
-    render(<Events client={client as never} />);
+function fixture() {
+  return {
+    searchAudit: vi.fn().mockResolvedValue({
+      items: [
+        {
+          eventId: "e1",
+          type: "skill.changed",
+          userId: "user-a",
+          result: "success",
+        },
+      ],
+      nextCursor: null,
+    }),
+    controlEvents: vi.fn().mockResolvedValue({
+      items: [
+        {
+          eventId: "control-1",
+          type: "model.catalog.changed",
+          state: "active",
+        },
+      ],
+      nextCursor: null,
+    }),
+    deliverySummary: vi.fn().mockResolvedValue({
+      items: [
+        {
+          deliveryId: "d1",
+          eventId: "control-1",
+          state: "failed",
+          attemptCount: 2,
+        },
+      ],
+      nextCursor: null,
+    }),
+    publishControlEvent: vi.fn(),
+    cancelControlEvent: vi.fn(),
+  };
+}
+describe("read-only audit", () => {
+  test("loads records by default and never offers protocol mutations", async () => {
+    const client = fixture();
+    render(
+      <Events client={client as never} identity={administratorIdentity} />,
+    );
+    expect(await screen.findByText("skill.changed")).toBeInTheDocument();
+    expect(client.searchAudit).toHaveBeenCalledWith({ limit: 50 });
     expect(
-      await screen.findByText("model.catalog.changed"),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /发布事件|取消事件/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
-    await waitFor(() =>
-      expect(client.getControlEvent).toHaveBeenCalledWith("event-1"),
-    );
-    expect(await screen.findByText(/"eventId": "event-1"/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消事件" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "确认取消事件" }),
-    );
-    await waitFor(() =>
-      expect(client.cancelControlEvent).toHaveBeenCalledWith("event-1"),
-    );
-  });
-
-  test("refreshes the event list after publishing", async () => {
-    const client = {
-      controlEvents: vi
-        .fn()
-        .mockResolvedValueOnce({ items: [], nextCursor: null })
-        .mockResolvedValueOnce({ items: [activeEvent], nextCursor: null }),
-      publishControlEvent: vi.fn().mockResolvedValue({ eventId: "event-1" }),
-      searchAudit: vi.fn(),
-    };
-    render(<Events client={client as never} />);
-    expect(await screen.findByText("暂无管控事件")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
-    await waitFor(() => expect(client.publishControlEvent).toHaveBeenCalled());
-    await waitFor(() => expect(client.controlEvents).toHaveBeenCalledTimes(2));
-    expect(
-      await screen.findByText("model.catalog.changed"),
-    ).toBeInTheDocument();
-  });
-
-  test("publishes a selected scoped event with its mapped task and resource reference", async () => {
-    const client = {
-      controlEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-      publishControlEvent: vi
-        .fn()
-        .mockResolvedValue({ eventId: "event-skill-1" }),
-      searchAudit: vi.fn(),
-    };
-    render(<Events client={client as never} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "技能清单" }));
-    fireEvent.click(screen.getByRole("button", { name: "用户" }));
-    fireEvent.change(screen.getByLabelText("事件作用域 ID"), {
-      target: { value: "user-1" },
-    });
-    fireEvent.change(screen.getByLabelText("事件资源 ID"), {
-      target: { value: "skill-1" },
-    });
-    fireEvent.change(screen.getByLabelText("事件资源版本"), {
-      target: { value: "1.2.0" },
-    });
-    fireEvent.change(screen.getByLabelText("事件有效期（分钟）"), {
-      target: { value: "15" },
-    });
-    fireEvent.change(screen.getByLabelText("事件替代键"), {
-      target: { value: "skill:skill-1" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
-
-    await waitFor(() =>
-      expect(client.publishControlEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "skill.manifest.changed",
-          scope: { type: "user", id: "user-1" },
-          task: { type: "skill.reconcile" },
-          resource: { type: "skill", id: "skill-1", revision: "1.2.0" },
-          supersedesKey: "skill:skill-1",
-          expiresAt: expect.any(String),
-        }),
-      ),
-    );
-  });
-
-  test("rejects a non-global event without a scope target before sending", async () => {
-    const client = {
-      controlEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-      publishControlEvent: vi.fn(),
-      searchAudit: vi.fn(),
-    };
-    render(<Events client={client as never} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "团队" }));
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
-
-    expect(
-      await screen.findByText(
-        "事件字段不完整，请检查作用域、资源引用和有效期。",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("记录标识")).toBeInTheDocument();
+    expect(screen.getByText("e1")).toBeInTheDocument();
     expect(client.publishControlEvent).not.toHaveBeenCalled();
   });
-
-  test("filters and paginates audit records", async () => {
-    const client = {
-      controlEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-      publishControlEvent: vi.fn(),
-      searchAudit: vi
-        .fn()
-        .mockResolvedValueOnce({
-          items: [
-            {
-              eventId: "audit-1",
-              type: "skill.changed",
-              userId: "u1",
-              result: "success",
-            },
-          ],
-          nextCursor: "audit-page-2",
-        })
-        .mockResolvedValueOnce({
-          items: [
-            {
-              eventId: "audit-2",
-              type: "skill.failed",
-              userId: "u1",
-              result: "failure",
-            },
-          ],
-          nextCursor: null,
-        }),
-    };
-    render(<Events client={client as never} />);
-    fireEvent.change(screen.getByLabelText("用户 ID"), {
-      target: { value: "u1" },
-    });
-    fireEvent.change(screen.getByLabelText("资源类型"), {
-      target: { value: "skill" },
-    });
-    const searchButtons = screen.getAllByRole("button", { name: "查询" });
-    fireEvent.click(searchButtons.at(-1)!);
-    expect(await screen.findByText("skill.changed")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(client.searchAudit).toHaveBeenCalledWith({
-        userId: "u1",
-        resourceType: "skill",
-        limit: 100,
-      }),
+  test("filters and cursor-paginates the same query", async () => {
+    const client = fixture();
+    client.searchAudit
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+      .mockResolvedValueOnce({
+        items: [{ eventId: "e2", type: "model.changed" }],
+        nextCursor: "next",
+      })
+      .mockResolvedValueOnce({
+        items: [{ eventId: "e3", type: "model.failed" }],
+        nextCursor: null,
+      });
+    render(
+      <Events client={client as never} identity={administratorIdentity} />,
     );
+    await screen.findByText("当前条件下暂无记录");
+    fireEvent.change(screen.getByLabelText("操作类型"), {
+      target: { value: "model" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /查询/ })).not.toHaveClass(
+        "ant-btn-loading",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /查询/ }));
+    expect(await screen.findByText("model.changed")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
-    expect(await screen.findByText("skill.failed")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(client.searchAudit).toHaveBeenLastCalledWith({
-        userId: "u1",
-        resourceType: "skill",
-        cursor: "audit-page-2",
-        limit: 100,
-      }),
-    );
-  });
-
-  test("filters control events by scope and time", async () => {
-    const client = {
-      controlEvents: vi
-        .fn()
-        .mockResolvedValueOnce({ items: [activeEvent], nextCursor: null })
-        .mockResolvedValueOnce({ items: [activeEvent], nextCursor: null }),
-      publishControlEvent: vi.fn(),
-      searchAudit: vi.fn(),
-    };
-    render(<Events client={client as never} />);
-    expect(
-      await screen.findByText("model.catalog.changed"),
-    ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("作用域类型"), {
-      target: { value: "user" },
+    expect(await screen.findByText("model.failed")).toBeInTheDocument();
+    expect(client.searchAudit).toHaveBeenLastCalledWith({
+      type: "model",
+      cursor: "next",
+      limit: 50,
     });
-    fireEvent.change(screen.getByLabelText("作用域 ID"), {
-      target: { value: "u1" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "查询" }).at(-1)!);
-    await waitFor(() =>
-      expect(client.controlEvents).toHaveBeenLastCalledWith({
-        scopeType: "user",
-        scopeId: "u1",
-        limit: 100,
-      }),
-    );
   });
-
-  test("surfaces delivery lookup failures in the page error state", async () => {
-    const client = {
-      controlEvents: vi
-        .fn()
-        .mockResolvedValue({ items: [activeEvent], nextCursor: null }),
-      publishControlEvent: vi.fn().mockResolvedValue({ eventId: "event-1" }),
-      searchAudit: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-      deliverySummary: vi
-        .fn()
-        .mockRejectedValue(new Error("control service unavailable")),
-    };
-    render(<Events client={client as never} />);
-    expect(
-      await screen.findByText("model.catalog.changed"),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
-    await waitFor(() => expect(client.publishControlEvent).toHaveBeenCalled());
-    fireEvent.click(
-      await screen.findByRole("button", { name: "查看投递状态" }),
-    );
-    await waitFor(() =>
-      expect(client.deliverySummary).toHaveBeenCalledWith("event-1", {
-        limit: 100,
-      }),
-    );
-    expect(
-      await screen.findByText("事件操作失败，请稍后重试。"),
-    ).toBeInTheDocument();
-  });
-
-  test("hides event mutations for a read-only operator", async () => {
-    const client = {
-      controlEvents: vi
-        .fn()
-        .mockResolvedValue({ items: [activeEvent], nextCursor: null }),
-      getControlEvent: vi.fn().mockResolvedValue(activeEvent),
-      cancelControlEvent: vi.fn(),
-      publishControlEvent: vi.fn(),
-      searchAudit: vi.fn(),
-    };
+  test("rejects unauthorized read without requesting data", async () => {
+    const client = fixture();
     render(
       <Events
         client={client as never}
-        identity={{ roles: [], permissions: ["events.read"] } as never}
+        identity={{ ...administratorIdentity, roles: [], permissions: [] }}
       />,
     );
-
-    expect(
-      await screen.findByText("model.catalog.changed"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "发布" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "取消事件" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "查看详情" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("没有管理权限")).toBeInTheDocument();
+    expect(client.searchAudit).not.toHaveBeenCalled();
+  });
+  test("distinguishes errors and retries", async () => {
+    const client = fixture();
+    client.searchAudit.mockRejectedValueOnce(new Error("offline"));
+    render(
+      <Events client={client as never} identity={administratorIdentity} />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("记录加载失败");
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    expect(await screen.findByText("skill.changed")).toBeInTheDocument();
+  });
+  test("loads execution delivery outcomes separately and retries failure", async () => {
+    const client = fixture();
+    client.deliverySummary.mockRejectedValueOnce(new Error("offline"));
+    render(
+      <Events client={client as never} identity={administratorIdentity} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "配置执行记录" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看执行结果" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "执行结果暂无法获取",
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "刷新" }).at(-1)!);
+    await waitFor(() =>
+      expect(client.deliverySummary).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByText("failed")).toBeInTheDocument();
+    expect(client.cancelControlEvent).not.toHaveBeenCalled();
+  });
+  test("does not label telemetry as complete login history", async () => {
+    const client = fixture();
+    render(
+      <Events client={client as never} identity={administratorIdentity} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "登录日志" }));
+    expect(await screen.findByText("登录历史查询尚未接入")).toBeInTheDocument();
   });
 });

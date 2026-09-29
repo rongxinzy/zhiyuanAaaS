@@ -1,14 +1,11 @@
 import {
-  ArrowLeft,
-  CircleAlert,
-  IdCard,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Check,
-} from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+  LinkOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyOutlined,
+} from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AutoComplete, Alert, Button, Empty, Form, Input, Modal, Radio, Select, Space, Table, Tag, Typography } from 'antd';
 import type { PlatformUser } from '@aep/sdk-node';
 
 import {
@@ -22,55 +19,8 @@ import {
   type AdminIdentityMapping,
   type AdminIdentitySource,
 } from './client.js';
-import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
-import { UserMultiPicker } from './UserMultiPicker.js';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '../ui/components/ui/alert-dialog.js';
-import { Alert, AlertDescription } from '../ui/components/ui/alert.js';
-import { Badge } from '../ui/components/ui/badge.js';
-import { Button } from '../ui/components/ui/button.js';
-import { BooleanSwitch } from './BooleanSwitch.js';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/components/ui/dialog.js';
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '../ui/components/ui/empty.js';
-import { Field, FieldGroup, FieldLabel } from '../ui/components/ui/field.js';
-import { Input } from '../ui/components/ui/input.js';
-import { Skeleton } from '../ui/components/ui/skeleton.js';
-import { Spinner } from '../ui/components/ui/spinner.js';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../ui/components/ui/table.js';
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from '../ui/components/ui/toggle-group.js';
+import { identityCopy as copy } from './identity-copy.js';
+import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
 const language: AdminLanguage = 'zh';
@@ -83,562 +33,520 @@ const IdentitySourceKindOrder = [
 
 const IDENTITY_SOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 
+const NO_SOURCES: readonly AdminIdentitySource[] = [];
+const NO_ROWS: readonly MappingRow[] = [];
+const NO_USERS: readonly PlatformUser[] = [];
+
+/** A mapping joined with the source it belongs to, for the flat list. */
+interface MappingRow extends AdminIdentityMapping {
+  readonly sourceName: string;
+  readonly sourceKind: string;
+}
+
+/**
+ * Account mappings (账号关联): links external accounts from source platforms
+ * such as WeCom directories to platform users. Rebinding an external account
+ * requires an explicit confirmation so an existing binding is never silently
+ * overwritten. This is not SSO or directory sync.
+ */
 export function Identity({ client, identity }: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
   const canWrite = hasAdminPermission(identity, AdminPermission.IdentityWrite);
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const selectedSource = selectedSourceId;
-  return selectedSource ? (
-    <MappingPanel
-      key={selectedSource}
-      client={client}
-      sourceId={selectedSource}
-      canWrite={canWrite}
-      identity={identity}
-      onBack={() => setSelectedSourceId(null)}
-    />
-  ) : (
-    <SourcePanel client={client} canWrite={canWrite} onSelected={setSelectedSourceId} />
-  );
-}
+  const canReadUsers = hasAdminPermission(identity, AdminPermission.UsersRead);
 
-function SourcePanel({ client, canWrite, onSelected }: {
-  readonly client: AdminConsoleClient;
-  readonly canWrite: boolean;
-  readonly onSelected: (sourceId: string) => void;
-}) {
   const [sources, setSources] = useState<readonly AdminIdentitySource[] | null>(null);
+  const [rows, setRows] = useState<readonly MappingRow[] | null>(null);
+  const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const [creating, setCreating] = useState(false);
-  const load = async () => {
+  const [failed, setFailed] = useState(false);
+  const [partialFailures, setPartialFailures] = useState<readonly string[]>([]);
+  const [creatingSource, setCreatingSource] = useState(false);
+  const [editing, setEditing] = useState<MappingRow | 'new' | null>(null);
+  const [unlinking, setUnlinking] = useState<MappingRow | null>(null);
+  const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [revision, refresh] = useState(0);
+
+  useEffect(() => {
+    let live = true;
     setLoading(true);
-    setError(null);
-    try {
-      setSources((await client.identitySources()).items);
-    } catch {
-      setError('identityLoadFailed');
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => { void load(); }, [client]);
+    setFailed(false);
+    setPartialFailures([]);
+    const loadUsers = canReadUsers
+      ? client.users().catch(() => null)
+      : Promise.resolve(null);
+    void Promise.all([client.identitySources(), loadUsers])
+      .then(([page, knownUsers]) => {
+        const items = page.items;
+        return Promise.allSettled(items.map(source => client.identityMappings(source.id)))
+          .then(results => {
+            if (!live) return;
+            setSources(items);
+            setUsers(knownUsers);
+            const next: MappingRow[] = [];
+            const failedSources: string[] = [];
+            results.forEach((result, index) => {
+              if (result.status === 'fulfilled') {
+                for (const mapping of result.value.items) {
+                  next.push({ ...mapping, sourceName: items[index]!.displayName, sourceKind: items[index]!.kind });
+                }
+              } else {
+                failedSources.push(items[index]!.displayName);
+              }
+            });
+            setRows(next);
+            setPartialFailures(failedSources);
+          });
+      })
+      .catch(() => {
+        if (live) {
+          setFailed(true);
+          setSources(null);
+          setRows(null);
+        }
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, canReadUsers, revision]);
+
+  const usersById = useMemo(() => new Map((users ?? []).map(user => [user.id, user])), [users]);
+
+  const userLabel = useCallback((userId: string): { readonly primary: string; readonly secondary: string } => {
+    const user = usersById.get(userId);
+    if (user) return { primary: user.displayName, secondary: `${userId}${user.username ? ` · ${user.username}` : ''}` };
+    return { primary: userId, secondary: userId };
+  }, [usersById]);
+
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    const keyword = search.trim().toLowerCase();
+    return rows.filter(row => {
+      if (sourceFilter && row.sourceId !== sourceFilter) return false;
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (!keyword) return true;
+      const label = userLabel(row.localSubjectId);
+      return (
+        row.externalId.toLowerCase().includes(keyword) ||
+        label.primary.toLowerCase().includes(keyword) ||
+        label.secondary.toLowerCase().includes(keyword)
+      );
+    });
+  }, [rows, search, sourceFilter, statusFilter, userLabel]);
+
+  const columns = useMemo(() => [
+    {
+      title: copy.sourceListTitle,
+      key: 'source',
+      render: (_: unknown, row: MappingRow) => (
+        <Space orientation="vertical" size={0}>
+          <span>{row.sourceName}</span>
+          <Tag>{identityKindLabel(row.sourceKind)}</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: copy.externalAccount,
+      key: 'externalId',
+      render: (_: unknown, row: MappingRow) => (
+        <Typography.Text code copyable={{ text: row.externalId }}>{row.externalId}</Typography.Text>
+      ),
+    },
+    {
+      title: copy.platformUser,
+      key: 'user',
+      render: (_: unknown, row: MappingRow) => {
+        const label = userLabel(row.localSubjectId);
+        return (
+          <Space orientation="vertical" size={0}>
+            <span>{label.primary}</span>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label.secondary}</Typography.Text>
+          </Space>
+        );
+      },
+    },
+    {
+      title: translate(language, 'status'),
+      key: 'status',
+      render: (_: unknown, row: MappingRow) => row.status === AdminIdentityMappingStatus.Active
+        ? <Tag color="success">{copy.linkActive}</Tag>
+        : <Tag>{copy.linkDisabled}</Tag>,
+    },
+    {
+      title: copy.linkTime,
+      key: 'linkTime',
+      render: () => <Typography.Text type="secondary">{copy.linkTimeUnknown}</Typography.Text>,
+    },
+    ...(canWrite ? [{
+      title: translate(language, 'actions'),
+      key: 'actions',
+      render: (_: unknown, row: MappingRow) => (
+        <Space size={0}>
+          <Button type="link" size="small" onClick={() => setEditing(row)}>{translate(language, 'edit')}</Button>
+          <Button type="link" size="small" danger onClick={() => setUnlinking(row)}>{copy.unlink}</Button>
+        </Space>
+      ),
+    }] : []),
+  ], [canWrite, userLabel]);
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <IdCard className="size-4 text-muted-foreground" aria-hidden="true" />
-          {translate(language, 'identitySourcesList')}
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Typography.Title level={4} style={{ marginBottom: 4 }}>{copy.pageTitle}</Typography.Title>
+          <Typography.Text type="secondary">{copy.pageDescription}</Typography.Text>
         </div>
-        <div className="flex items-center gap-1.5">
+        <Space wrap>
           {canWrite ? (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus data-icon="inline-start" />
-              {translate(language, 'addIdentitySource')}
-            </Button>
+            <>
+              <Button icon={<PlusOutlined />} onClick={() => setCreatingSource(true)}>{copy.addSource}</Button>
+              <Button type="primary" icon={<LinkOutlined />} onClick={() => setEditing('new')}>{copy.addLink}</Button>
+            </>
           ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={translate(language, 'refresh')}
-            title={translate(language, 'refresh')}
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            {loading ? <Spinner /> : <RefreshCw />}
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+            {translate(language, 'refresh')}
           </Button>
-        </div>
+        </Space>
       </div>
-      {error ? (
-        <Alert variant="destructive">
-          <CircleAlert aria-hidden="true" />
-          <AlertDescription>{translate(language, error)}</AlertDescription>
-        </Alert>
+
+      {!canReadUsers ? (
+        <Alert type="info" showIcon title={copy.userNamesUnavailable} />
       ) : null}
-      {loading && !sources ? (
-        <IdentitySkeleton />
-      ) : sources && sources.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia><IdCard aria-hidden="true" /></EmptyMedia>
-            <EmptyTitle>{translate(language, 'identitySourcesEmpty')}</EmptyTitle>
-            <EmptyDescription>{translate(language, 'identitySourcesEmptyHint')}</EmptyDescription>
-            {canWrite ? (
-              <EmptyContent>
-                <Button size="sm" onClick={() => setCreating(true)}>
-                  <Plus data-icon="inline-start" />
-                  {translate(language, 'addIdentitySource')}
-                </Button>
-              </EmptyContent>
-            ) : null}
-          </EmptyHeader>
-        </Empty>
-      ) : sources ? (
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{translate(language, 'identitySourceName')}</TableHead>
-                <TableHead>{translate(language, 'identitySourceKind')}</TableHead>
-                <TableHead>{translate(language, 'status')}</TableHead>
-                <TableHead className="text-right">{translate(language, 'actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sources.map(source => (
-                <TableRow key={source.id}>
-                  <TableCell>
-                    <div className="min-w-0">
-                      <div className="truncate font-normal">{source.displayName}</div>
-                      <div className="truncate text-xs text-tertiary-foreground">{source.id}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="info">{identityKindLabel(source.kind)}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={source.enabled ? 'success' : 'outline'}>
-                      {translate(language, source.enabled ? 'enabled' : 'disabled')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" aria-label={source.displayName} title={source.displayName} onClick={() => onSelected(source.id)}>
-                      {translate(language, 'identityMappings')}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : null}
-      {canWrite && creating ? (
-        <SourceCreateDialog
-          client={client}
-          open
-          onOpenChange={setCreating}
-          onChanged={load}
-          onCreated={onSelected}
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={copy.sourcesLoadFailed}
+          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
         />
       ) : null}
-    </div>
-  );
-}
-
-function SourceCreateDialog({ client, open, onOpenChange, onChanged, onCreated }: {
-  readonly client: AdminConsoleClient;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly onChanged: () => Promise<void>;
-  readonly onCreated: (sourceId: string) => void;
-}) {
-  const [sourceId, setSourceId] = useState('');
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<AdminIdentitySourceKind>(AdminIdentitySourceKind.Directory);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState<AdminTranslationKey | null>(null);
-  useEffect(() => {
-    if (open) { setSourceId(''); setName(''); setKind(AdminIdentitySourceKind.Directory); setFailed(null); }
-  }, [open]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!IDENTITY_SOURCE_ID_PATTERN.test(sourceId.trim())) { setFailed('identitySourceIdRequired'); return; }
-    if (!name.trim()) { setFailed('identitySourceNameRequired'); return; }
-    setPending(true);
-    setFailed(null);
-    try {
-      await client.createIdentitySource({ id: sourceId.trim(), kind, displayName: name.trim() });
-      notify(AdminNotificationKind.Success, translate(language, 'identitySourceCreated'));
-      onOpenChange(false);
-      await onChanged();
-      onCreated(sourceId.trim());
-    } catch {
-      setFailed('identitySourceFormFailed');
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, 'identitySourceEditorTitle')}</DialogTitle>
-          <DialogDescription>{translate(language, 'identitySourceEditorDescription')}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          {failed ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden="true" />
-              <AlertDescription>{translate(language, failed)}</AlertDescription>
-            </Alert>
-          ) : null}
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="identity-source-id">{translate(language, 'identitySourceId')}</FieldLabel>
-              <Input
-                id="identity-source-id"
-                value={sourceId}
-                onChange={event => setSourceId(event.target.value)}
-                placeholder={translate(language, 'identitySourceIdPlaceholder')}
-                disabled={pending}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="identity-source-name">{translate(language, 'identitySourceName')}</FieldLabel>
-              <Input
-                id="identity-source-name"
-                value={name}
-                onChange={event => setName(event.target.value)}
-                disabled={pending}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{translate(language, 'identitySourceKind')}</FieldLabel>
-              <ToggleGroup
-                value={[kind]}
-                onValueChange={next => { if (next[0]) setKind(next[0] as AdminIdentitySourceKind); }}
-                variant="outline"
-                className="flex-wrap"
-                aria-label={translate(language, 'identitySourceKind')}
-              >
-                {IdentitySourceKindOrder.map(candidate => (
-                  <ToggleGroupItem key={candidate} value={candidate}>
-                    {identityKindLabel(candidate)}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
-              {translate(language, 'cancel')}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-              {translate(language, pending ? 'saving' : 'save')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function MappingPanel({ client, sourceId, canWrite, identity, onBack }: {
-  readonly client: AdminConsoleClient;
-  readonly sourceId: string;
-  readonly canWrite: boolean;
-  readonly identity?: AdminIdentity | undefined;
-  readonly onBack: () => void;
-}) {
-  const [mappings, setMappings] = useState<readonly AdminIdentityMapping[] | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [page, resources] = await Promise.all([
-        client.identityMappings(sourceId),
-        client.users().catch(() => [] as readonly PlatformUser[]),
-      ]);
-      setMappings(page.items);
-      setUsers(resources);
-    } catch {
-      setError('identityLoadFailed');
-    } finally {
-      setLoading(false);
-    }
-  }, [client, sourceId]);
-  useEffect(() => { void load(); }, [load]);
-  const [editing, setEditing] = useState<AdminIdentityMapping | 'new' | null>(null);
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <IdCard className="size-4 text-muted-foreground" aria-hidden="true" />
-            {translate(language, 'identityMappings')}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">{translate(language, 'identityMappingsDescription')}</p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {canWrite ? (
-            <Button size="sm" onClick={() => setEditing('new')}>
-              <Plus data-icon="inline-start" />
-              {translate(language, 'addIdentityMapping')}
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={translate(language, 'refresh')}
-            title={translate(language, 'refresh')}
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            {loading ? <Spinner /> : <RefreshCw />}
-          </Button>
-        </div>
-      </div>
-      <div>
-        <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onBack}>
-          <ArrowLeft data-icon="inline-start" />
-          {translate(language, 'backToSources')}
-        </Button>
-      </div>
-      {error ? (
-        <Alert variant="destructive">
-          <CircleAlert aria-hidden="true" />
-          <AlertDescription>{translate(language, error)}</AlertDescription>
-        </Alert>
+      {partialFailures.length > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          title={copy.partialSourcesFailed}
+          description={<Space wrap>{partialFailures.map(name => <Tag key={name}>{name}</Tag>)}</Space>}
+        />
       ) : null}
-      {loading && !mappings ? (
-        <IdentitySkeleton />
-      ) : mappings && mappings.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia><IdCard aria-hidden="true" /></EmptyMedia>
-            <EmptyTitle>{translate(language, 'identityMappingsEmpty')}</EmptyTitle>
-            <EmptyDescription>{translate(language, 'identityMappingsEmptyHint')}</EmptyDescription>
-            {canWrite ? (
-              <EmptyContent>
-                <Button size="sm" onClick={() => setEditing('new')}>
-                  <Plus data-icon="inline-start" />
-                  {translate(language, 'addIdentityMapping')}
-                </Button>
-              </EmptyContent>
-            ) : null}
-          </EmptyHeader>
-        </Empty>
-      ) : mappings ? (
-        <MappingTable
-          mappings={mappings}
-          canWrite={canWrite}
+
+      <Space wrap>
+        <Input.Search
+          allowClear
+          placeholder={copy.searchPlaceholder}
+          onSearch={value => setSearch(value)}
+          style={{ width: 240 }}
+        />
+        <Select
+          allowClear
+          placeholder={copy.sourceListTitle}
+          value={sourceFilter}
+          onChange={value => setSourceFilter(value)}
+          style={{ minWidth: 180 }}
+          options={(sources ?? NO_SOURCES).map(source => ({ value: source.id, label: source.displayName }))}
+        />
+        <Select
+          allowClear
+          placeholder={translate(language, 'status')}
+          value={statusFilter}
+          onChange={value => setStatusFilter(value)}
+          style={{ minWidth: 140 }}
+          options={[
+            { value: AdminIdentityMappingStatus.Active, label: copy.linkActive },
+            { value: AdminIdentityMappingStatus.Disabled, label: copy.linkDisabled },
+          ]}
+        />
+      </Space>
+
+      {failed && rows === null ? null : (
+        <Table
+          rowKey={row => `${row.sourceId}/${row.externalSubjectType}/${row.externalId}`}
+          columns={columns}
+          dataSource={[...filtered]}
+          loading={loading && rows === null}
+          scroll={{ x: 720 }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={sources && sources.length === 0 ? copy.sourcesEmpty : copy.linksEmpty}
+              />
+            ),
+          }}
+          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+        />
+      )}
+
+      {canWrite && creatingSource ? (
+        <SourceCreateModal
           client={client}
-          onChanged={load}
-          onEdit={setEditing}
-          onError={() => setError('identityMappingDeleteFailed')}
+          open
+          onClose={() => setCreatingSource(false)}
+          onChanged={() => refresh(value => value + 1)}
         />
       ) : null}
       {canWrite && editing ? (
-        <MappingDialog
+        <MappingModal
           client={client}
-          sourceId={sourceId}
-          {...(editing === 'new' ? {} : { mapping: editing })}
-          users={users}
           open
-          onOpenChange={open => { if (!open) setEditing(null); }}
-          onChanged={load}
+          sources={sources ?? NO_SOURCES}
+          rows={rows ?? NO_ROWS}
+          editing={editing === 'new' ? undefined : editing}
+          userOptions={(users ?? NO_USERS).map(user => ({
+            value: user.id,
+            label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}`,
+          }))}
+          onClose={() => setEditing(null)}
+          onChanged={() => refresh(value => value + 1)}
+        />
+      ) : null}
+      {canWrite && unlinking ? (
+        <UnlinkModal
+          client={client}
+          row={unlinking}
+          onClose={() => setUnlinking(null)}
+          onChanged={() => refresh(value => value + 1)}
         />
       ) : null}
     </div>
   );
 }
 
-function MappingTable({ mappings, canWrite, client, onChanged, onEdit, onError }: {
-  readonly mappings: readonly AdminIdentityMapping[];
-  readonly canWrite: boolean;
+function SourceCreateModal({ client, open, onClose, onChanged }: {
   readonly client: AdminConsoleClient;
-  readonly onChanged: () => Promise<void>;
-  readonly onEdit: (mapping: AdminIdentityMapping) => void;
-  readonly onError: () => void;
-}) {
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const remove = async (mapping: AdminIdentityMapping) => {
-    const key = mapping.externalId;
-    setPendingKey(key);
-    try {
-      await client.deleteIdentityMapping(mapping.sourceId, mapping.externalId);
-      await onChanged();
-    } catch {
-      onError();
-    } finally {
-      setPendingKey(null);
-    }
-  };
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{translate(language, 'identityExternalId')}</TableHead>
-            <TableHead>{translate(language, 'identityLocalUserId')}</TableHead>
-            <TableHead>{translate(language, 'status')}</TableHead>
-            {canWrite ? <TableHead className="text-right">{translate(language, 'actions')}</TableHead> : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {mappings.map(mapping => (
-            <TableRow key={`${mapping.externalSubjectType}/${mapping.externalId}`}>
-              <TableCell className="max-w-64 truncate text-xs">{mapping.externalId}</TableCell>
-              <TableCell className="max-w-64 truncate text-xs text-tertiary-foreground">{mapping.localSubjectId}</TableCell>
-              <TableCell>
-                <Badge variant={mapping.status === 'active' ? 'success' : 'outline'}>
-                  {translate(language, mapping.status === 'active' ? 'active' : 'disabled')}
-                </Badge>
-              </TableCell>
-              {canWrite ? (
-                <TableCell>
-                  <div className="flex justify-end gap-1.5">
-                    <Button size="sm" variant="ghost" disabled={pendingKey !== null} onClick={() => onEdit(mapping)}>
-                      <Pencil data-icon="inline-start" />
-                      {translate(language, 'edit')}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                            disabled={pendingKey !== null}
-                          />
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        {translate(language, 'delete')}
-                      </AlertDialogTrigger>
-                      <AlertDialogContent size="sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{translate(language, 'deleteIdentityMappingTitle')}</AlertDialogTitle>
-                          <AlertDialogDescription>{translate(language, 'deleteIdentityMappingDescription')}</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={pendingKey !== null}>{translate(language, 'cancel')}</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-primary-foreground hover:bg-destructive-hover"
-                            disabled={pendingKey !== null}
-                            onClick={() => void remove(mapping)}
-                          >
-                            {translate(language, 'confirmDeleteIdentityMapping')}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-function MappingDialog({ client, sourceId, mapping, users, open, onOpenChange, onChanged }: {
-  readonly client: AdminConsoleClient;
-  readonly sourceId: string;
-  readonly mapping?: AdminIdentityMapping;
-  readonly users: readonly PlatformUser[];
   readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly onChanged: () => Promise<void>;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
 }) {
-  const editing = Boolean(mapping);
-  const [externalId, setExternalId] = useState(mapping?.externalId ?? '');
-  const [localUserId, setLocalUserId] = useState(mapping?.localSubjectId ?? '');
-  const [active, setActive] = useState(mapping?.status !== 'disabled');
+  const [form] = Form.useForm<{ id: string; displayName: string; kind: AdminIdentitySourceKind }>();
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState<AdminTranslationKey | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (open) {
-      setExternalId(mapping?.externalId ?? '');
-      setLocalUserId(mapping?.localSubjectId ?? '');
-      setActive(mapping?.status !== 'disabled');
-      setFailed(null);
+      form.resetFields();
+      form.setFieldsValue({ kind: AdminIdentitySourceKind.Directory });
+      setFailed(false);
     }
-  }, [open, mapping]);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!externalId.trim()) { setFailed('identityExternalIdRequired'); return; }
-    if (!localUserId.trim()) { setFailed('identityLocalUserIdRequired'); return; }
+  }, [open, form]);
+  const submit = async (values: { id: string; displayName: string; kind: AdminIdentitySourceKind }) => {
     setPending(true);
-    setFailed(null);
+    setFailed(false);
     try {
-      await client.upsertIdentityMapping(sourceId, {
-        externalSubjectType: AdminIdentitySubjectType.User,
-        externalId: externalId.trim(),
-        localSubjectId: localUserId.trim(),
-      });
-      notify(AdminNotificationKind.Success, translate(language, 'identityMappingSaved'));
-      onOpenChange(false);
-      await onChanged();
+      await client.createIdentitySource({ id: values.id.trim(), kind: values.kind, displayName: values.displayName.trim() });
+      notify(AdminNotificationKind.Success, copy.sourceCreated);
+      onClose();
+      onChanged();
     } catch {
-      setFailed('identityMappingFormFailed');
+      setFailed(true);
     } finally {
       setPending(false);
     }
   };
   return (
-    <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{translate(language, editing ? 'identityMappingEditTitle' : 'identityMappingEditorTitle')}</DialogTitle>
-          <DialogDescription>{translate(language, 'identityMappingEditorDescription')}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          {failed ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden="true" />
-              <AlertDescription>{translate(language, failed)}</AlertDescription>
-            </Alert>
-          ) : null}
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="identity-external-id">{translate(language, 'identityExternalId')}</FieldLabel>
-              <Input
-                id="identity-external-id"
-                value={externalId}
-                onChange={event => setExternalId(event.target.value)}
-                placeholder={translate(language, 'identityExternalIdPlaceholder')}
-                disabled={pending}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="identity-local-user-id">{translate(language, 'identityLocalUserId')}</FieldLabel>
-              <Input
-                id="identity-local-user-id"
-                value={localUserId}
-                onChange={event => setLocalUserId(event.target.value)}
-                placeholder={translate(language, 'identityLocalUserIdPlaceholder')}
-                disabled={pending}
-              />
-            </Field>
-            {users.length > 0 ? (
-              <Field>
-                <UserMultiPicker
-                  users={users}
-                  selected={new Set(localUserId ? [localUserId] : [])}
-                  onToggle={userId => setLocalUserId(current => (current === userId ? '' : userId))}
-                  disabled={pending}
-                />
-              </Field>
-            ) : null}
-            <BooleanSwitch
-              id="identity-mapping-active"
-              label={`${translate(language, 'identityMappingStatus')}: ${translate(language, active ? 'active' : 'disabled')}`}
-              checked={active}
-              onCheckedChange={setActive}
-              disabled={pending}
-            />
-          </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
-              {translate(language, 'cancel')}
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-              {translate(language, pending ? 'saving' : 'save')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open={open}
+      title={copy.addSourceTitle}
+      okText={translate(language, 'save')}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      destroyOnHidden
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void form.submit()}
+    >
+      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
+        {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.sourceCreateFailed} /> : null}
+        <Form.Item
+          name="id"
+          label={copy.sourceIdLabel}
+          rules={[
+            { required: true, message: copy.sourceIdInvalid },
+            { pattern: IDENTITY_SOURCE_ID_PATTERN, message: copy.sourceIdInvalid },
+          ]}
+        >
+          <Input placeholder={copy.sourceIdPlaceholder} />
+        </Form.Item>
+        <Form.Item name="displayName" label={copy.sourceNameLabel} rules={[{ required: true, message: copy.sourceNameRequired }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="kind" label={copy.sourceKindLabel} rules={[{ required: true }]}>
+          <Radio.Group>
+            {IdentitySourceKindOrder.map(kind => (
+              <Radio.Button key={kind} value={kind}>{identityKindLabel(kind)}</Radio.Button>
+            ))}
+          </Radio.Group>
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+function MappingModal({ client, open, sources, rows, editing, userOptions, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly open: boolean;
+  readonly sources: readonly AdminIdentitySource[];
+  readonly rows: readonly MappingRow[];
+  readonly editing: MappingRow | undefined;
+  readonly userOptions: readonly { readonly value: string; readonly label: string }[];
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [form] = Form.useForm<{ sourceId: string; externalId: string; localSubjectId: string }>();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [conflict, setConflict] = useState<{ readonly current: string; readonly next: string } | null>(null);
+  useEffect(() => {
+    if (open) {
+      form.resetFields();
+      const initial: { sourceId?: string; externalId: string; localSubjectId: string } = {
+        externalId: editing?.externalId ?? '',
+        localSubjectId: editing?.localSubjectId ?? '',
+      };
+      const sourceId = editing?.sourceId ?? sources[0]?.id;
+      if (sourceId) initial.sourceId = sourceId;
+      form.setFieldsValue(initial);
+      setFailed(false);
+      setConflict(null);
+    }
+  }, [open, editing, sources, form]);
+  const submit = async (values: { sourceId: string; externalId: string; localSubjectId: string }) => {
+    const externalId = values.externalId.trim();
+    const localSubjectId = values.localSubjectId.trim();
+    // An external account must never silently move to another user: when the
+    // new binding differs from the current one, show both and require an
+    // explicit confirmation before the upsert overwrites it.
+    const existing = rows.find(row => row.sourceId === values.sourceId && row.externalId === externalId);
+    if (existing && existing.localSubjectId !== localSubjectId && !conflict) {
+      setConflict({ current: existing.localSubjectId, next: localSubjectId });
+      return;
+    }
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.upsertIdentityMapping(values.sourceId, {
+        externalSubjectType: AdminIdentitySubjectType.User,
+        externalId,
+        localSubjectId,
+      });
+      notify(AdminNotificationKind.Success, copy.mappingSaved);
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open={open}
+      title={editing ? copy.editLinkTitle : copy.addLinkTitle}
+      okText={conflict ? copy.bindingConflictConfirm : translate(language, 'save')}
+      okButtonProps={conflict ? { danger: true } : {}}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      destroyOnHidden
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void form.submit()}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={values => void submit(values)}
+        onValuesChange={() => setConflict(null)}
+        disabled={pending}
+      >
+        {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.mappingSaveFailed} /> : null}
+        {conflict ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={copy.bindingConflictTitle}
+            description={
+              <div>
+                <div>{copy.bindingConflictCurrent}：<Typography.Text code>{conflict.current}</Typography.Text></div>
+                <div>{copy.bindingConflictNext}：<Typography.Text code>{conflict.next}</Typography.Text></div>
+              </div>
+            }
+          />
+        ) : null}
+        <Form.Item name="sourceId" label={copy.sourceListTitle} rules={[{ required: true }]}>
+          <Select
+            options={sources.map(source => ({ value: source.id, label: source.displayName }))}
+            disabled={Boolean(editing)}
+          />
+        </Form.Item>
+        <Form.Item
+          name="externalId"
+          label={copy.externalAccount}
+          rules={[{ required: true, message: copy.mappingExternalIdRequired }]}
+        >
+          <Input disabled={Boolean(editing)} />
+        </Form.Item>
+        <Form.Item
+          name="localSubjectId"
+          label={copy.selectPlatformUser}
+          rules={[{ required: true, message: copy.mappingUserRequired }]}
+          extra={copy.selectPlatformUserPlaceholder}
+        >
+          <AutoComplete
+            options={[...userOptions]}
+            showSearch={{ filterOption: (input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) }}
+          />
+        </Form.Item>
+        <Alert type="info" showIcon title={copy.noOverwriteNote} />
+      </Form>
+    </Modal>
+  );
+}
+
+function UnlinkModal({ client, row, onClose, onChanged }: {
+  readonly client: AdminConsoleClient;
+  readonly row: MappingRow;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const submit = async () => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await client.deleteIdentityMapping(row.sourceId, row.externalId);
+      notify(AdminNotificationKind.Success, copy.mappingRemoved);
+      onClose();
+      onChanged();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      title={copy.unlinkTitle}
+      okText={copy.confirmUnlink}
+      okButtonProps={{ danger: true }}
+      cancelText={translate(language, 'cancel')}
+      confirmLoading={pending}
+      onCancel={() => { if (!pending) onClose(); }}
+      onOk={() => void submit()}
+    >
+      {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.mappingDeleteFailed} /> : null}
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={2}>
+          <span>{copy.sourceListTitle}：<strong>{row.sourceName}</strong></span>
+          <span>{copy.externalAccount}：<Typography.Text code>{row.externalId}</Typography.Text></span>
+        </Space>
+        <Alert type="warning" showIcon icon={<SafetyOutlined />} title={copy.unlinkImpact} />
+      </Space>
+    </Modal>
   );
 }
 
@@ -647,21 +555,4 @@ function identityKindLabel(kind: string): string {
   if (kind === AdminIdentitySourceKind.Ldap) return translate(language, 'identityKindLdap');
   if (kind === AdminIdentitySourceKind.Oidc) return translate(language, 'identityKindOidc');
   return kind;
-}
-
-function IdentitySkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card" role="status">
-      {Array.from({ length: 3 }, (_, index) => (
-        <div className="flex items-center gap-3 border-b p-4 last:border-b-0" key={index}>
-          <Skeleton className="size-8 shrink-0 rounded-lg" />
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <Skeleton className="h-3.5 w-1/3" />
-            <Skeleton className="h-3 w-1/2" />
-          </div>
-          <Skeleton className="h-7 w-16" />
-        </div>
-      ))}
-    </div>
-  );
 }
