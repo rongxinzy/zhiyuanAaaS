@@ -193,6 +193,36 @@ Actions workflow after the exact core commit and AaaS inputs are pinned. A
 package made by disabling host packaging hooks is renderer-smoke-only and must
 not be published.
 
+### Windows Code Signing
+
+Signing is centralized in the rongxinzy/RongxinAI repository, following the
+same model as pi-connect, engram-cjk, and xiaoruan-ai-agent. This repository
+holds no signing credentials and needs no GitHub secret: the Certum
+credentials (`CERTUM_USER_ID`, `CERTUM_OTP_URI`, `CERTUM_CERT_THUMBPRINT`)
+live only in the RongxinAI `release` environment, and the certificate private
+key never leaves the Certum cloud HSM.
+
+- Unsigned installers come from this repository's
+  `Build Windows enterprise package` workflow artifact.
+- Signed installers come from the RongxinAI
+  `Sign Zhiyuan Enterprise Windows package` workflow. Dispatch it with the run
+  ID of one successful unsigned build from this repository; it checks out this
+  repository at the corresponding commit, connects Certum SimplySign through
+  the shared `setup-certum-signing` action, and repackages with
+  `build/electron-builder.overlay-signed.cjs` while injecting
+  `CERTUM_CERT_THUMBPRINT`. The signed overlay is parsed from the YAML overlay
+  and only adds `win.signtoolOptions`, so electron-builder signs the packaged
+  executables and the NSIS installer in one pass; re-signing the installer
+  afterwards would leave the inner executables unsigned. The same workflow
+  verifies every installer, the packaged `知远企业版.exe`, and the bundled
+  uninstaller with RongxinAI's own
+  `scripts/ci/verify-windows-authenticode.ps1`.
+- Local developers who need a signed build dispatch the central workflow; do
+  not install SimplySign Desktop locally for this repository.
+
+Centrally signed runtime binaries such as engram.exe keep their existing
+signatures through the host `win.signExts` exclusion.
+
 ## Tests and Acceptance
 
 Use the narrowest relevant test first, then the full gate for release changes:
