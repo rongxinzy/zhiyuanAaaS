@@ -205,7 +205,7 @@ try {
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('新密钥', { exact: true }).fill('e2e-rotated-key');
   await dialog.getByRole('button', { name: /更新密钥$/ }).click();
-  await dialog.getByRole('alert').waitFor();
+  await dialog.getByRole('alert').filter({ hasText: '凭证轮换失败' }).waitFor();
   assert.equal(state.credentials[0].maskedValue, 'e2e-***');
   await page.screenshot({ path: path.join(screenshots, 'key-rotation-failure.png'), fullPage: true, animations: "disabled" });
   await dialog.getByRole('button', { name: /更新密钥$/ }).click();
