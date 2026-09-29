@@ -12,6 +12,6 @@ export default defineConfig({
   },
   test: {
     root: repositoryRoot,
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
   },
 });
