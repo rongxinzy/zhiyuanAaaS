@@ -93,7 +93,6 @@ try {
   accessToken = await loginApi();
   await ensureMemberRole();
   await page.goto(adminOrigin, { waitUntil: 'networkidle' });
-  await page.getByLabel('部署 ID', { exact: true }).fill(deploymentId);
   await page.getByLabel('用户名', { exact: true }).fill(adminUsername);
   await page.getByLabel('密码', { exact: true }).fill(adminPassword);
   await page.getByRole('button', { name: '登录', exact: true }).click();

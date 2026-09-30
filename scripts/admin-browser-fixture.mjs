@@ -173,6 +173,15 @@ async function route(method, pathname, rawBody, response, query) {
       return writeJson(response, 200, mapping);
     }
   }
+  if (method === "GET" && pathname === "/aep/v1/metadata")
+    return writeJson(response, 200, {
+      service: "zhiyuan-aep",
+      supportedProtocolVersions: ["1.0"],
+      capabilities: [],
+      jwksUri: "/.well-known/jwks.json",
+      deploymentId: "demo",
+      deployment: { id: "demo", name: "演示部署" },
+    });
   if (method === "POST" && pathname === "/aep/v1/auth/logout")
     return writeJson(response, 200, {});
   if (

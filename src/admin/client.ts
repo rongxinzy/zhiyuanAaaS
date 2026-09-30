@@ -28,6 +28,7 @@ import {
   type PlatformUser,
   type Permission,
   type Role,
+  type ServiceMetadata,
   type Team,
 } from '@aep/sdk-node';
 
@@ -279,6 +280,13 @@ export interface AdminControlEvents {
   readonly nextCursor: string | null;
 }
 
+export class AdminMetadataError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AdminMetadataError';
+  }
+}
+
 export class AdminConsoleClient {
   readonly #baseUrl: string;
   readonly #tokenStore: AepTokenStore;
@@ -300,13 +308,13 @@ export class AdminConsoleClient {
   }
 
   async login(input: {
-    readonly deploymentId: string;
     readonly username: string;
     readonly password: string;
   }): Promise<AdminSession> {
     const client = this.#getClient();
-    this.#deploymentId = input.deploymentId;
-    await client.loginWithPassword(input);
+    const deploymentId = await this.#resolveDeploymentId(client);
+    this.#deploymentId = deploymentId;
+    await client.loginWithPassword({ ...input, deploymentId });
     return this.#identitySession(client);
   }
 
@@ -722,6 +730,22 @@ export class AdminConsoleClient {
   #requireClient(): AepClient {
     if (!this.#client) throw new Error('Admin console is not authenticated.');
     return this.#client;
+  }
+
+  // The console is deployed against a single AEP deployment, so the login
+  // form never asks for a deployment ID; the server metadata names it.
+  async #resolveDeploymentId(client: AepClient): Promise<string> {
+    let metadata: ServiceMetadata;
+    try {
+      metadata = await client.getMetadata();
+    } catch (error) {
+      throw new AdminMetadataError('AEP server metadata could not be retrieved.', { cause: error });
+    }
+    const deploymentId = metadata.deploymentId ?? metadata.deployment?.id;
+    if (!deploymentId) {
+      throw new AdminMetadataError('AEP server metadata did not include a deployment ID.');
+    }
+    return deploymentId;
   }
 
   // The pinned SDK release predates the identity-sources admin endpoints, so
