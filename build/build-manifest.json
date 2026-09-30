@@ -19,10 +19,10 @@
     "packagedDirectory": "zhiyuan-enterprise/admin"
   },
   "zhiyuanCore": {
-    "commit": "e874fbf99067326a98fba8da5c2964dbbaf3e0ec"
+    "commit": "58baf860263e14f44a2affd4b2cc21c2aa5cc88d"
   },
   "aepProtocol": {
-    "commit": "2c5b20fccc90b3759b0085d08bd9a1ac5f9412d6"
+    "commit": "8766fd59da9282600c82f4082b6638212844905e"
   },
   "aepSdk": {
     "version": "0.2.13",
