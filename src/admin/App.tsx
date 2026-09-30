@@ -90,6 +90,11 @@ const ConfigurationStatus = lazy(() =>
     default: m.ConfigurationStatusView,
   })),
 );
+const DeploymentSettings = lazy(() =>
+  import("./Operations.js").then((m) => ({
+    default: m.DeploymentSettingsView,
+  })),
+);
 const Events = lazy(() =>
   import("./Events.js").then((m) => ({ default: m.Events })),
 );
@@ -140,6 +145,7 @@ const modules = [
       P.CredentialsRead,
       P.LicensesRead,
       P.DataPlaneWrite,
+      P.DeploymentRead,
     ],
   },
 ] as const;
@@ -463,14 +469,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         {
           key: "settings",
           label: c.settings,
-          children: (
-            <Card title={c.settings}>
-              <Typography.Paragraph>{c.settingsHint}</Typography.Paragraph>
-              <Typography.Text type="secondary">
-                {c.enterprise}: {enterprise}
-              </Typography.Text>
-            </Card>
-          ),
+          children: <DeploymentSettings {...props} />,
         },
         {
           key: "licenses",

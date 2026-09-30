@@ -43,11 +43,16 @@ import type {
 
 import {
   AdminConsoleClient,
+  AdminModelGatewayUrlProblem,
   AdminPermission,
+  AdminRequestError,
   AdminSubjectType,
   hasAdminPermission,
+  modelGatewayBaseUrlProblem,
   type AdminCredentials,
   type AdminDataPlane,
+  type AdminDeploymentSettings,
+  type AdminDeploymentSettingValue,
   type AdminIdentity,
   type AdminUserSession,
 } from './client.js';
@@ -101,6 +106,14 @@ export function ConfigurationStatusView({ client, identity }: {
   readonly identity?: AdminIdentity | undefined;
 }) {
   return <ConfigurationStatusPanel client={client} identity={identity} />;
+}
+
+/** Deployment runtime settings (部署运行时设置): model gateway override. */
+export function DeploymentSettingsView({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  return <DeploymentSettingsPanel client={client} identity={identity} />;
 }
 
 function ModuleHeading({ title, description, children }: {
@@ -1514,5 +1527,221 @@ function ConfigurationStatusPanel({ client, identity }: {
         />
       </div>
     </div>
+  );
+}
+
+/* --------------------------- deployment settings --------------------------- */
+
+function deploymentSourceTag(source: AdminDeploymentSettingValue['source']) {
+  if (source === 'override') return <Tag color="processing">{copy.sourceOverride}</Tag>;
+  if (source === 'env') return <Tag>{copy.sourceEnv}</Tag>;
+  return <Tag color="warning">{copy.sourceUnset}</Tag>;
+}
+
+function DeploymentSettingsPanel({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  const canRead = hasAdminPermission(identity, AdminPermission.DeploymentRead);
+  const canWrite = hasAdminPermission(identity, AdminPermission.DeploymentWrite);
+  const [settings, setSettings] = useState<AdminDeploymentSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [saveError, setSaveError] = useState<{ readonly title: string; readonly detail: string | null } | null>(null);
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    if (!canRead) return;
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    setForbidden(false);
+    void client.deploymentSettings()
+      .then(next => { if (live) setSettings(next); })
+      .catch((error: unknown) => {
+        if (!live) return;
+        // A 403 here means the role check passed locally but the server
+        // denied the read; surface the same no-permission state instead of a
+        // generic load failure.
+        if (error instanceof AdminRequestError && error.status === 403) setForbidden(true);
+        else setFailed(true);
+        setSettings(null);
+      })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [client, canRead, revision]);
+
+  const save = async (value: string) => {
+    setPending(true);
+    setSaveError(null);
+    try {
+      await client.updateDeploymentSettings({ modelGatewayBaseUrl: value.trim() });
+      notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
+      setEditing(false);
+      refresh(current => current + 1);
+    } catch (error) {
+      // A 422 carries the server-side validation detail; keep the draft open
+      // so the operator can fix the value instead of retyping it.
+      setSaveError({
+        title: error instanceof AdminRequestError && error.status === 422
+          ? copy.deploymentSettingsRejected
+          : copy.deploymentSettingsSaveFailed,
+        detail: error instanceof AdminRequestError ? error.detail : null,
+      });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const clear = async () => {
+    setPending(true);
+    setSaveError(null);
+    try {
+      await client.updateDeploymentSettings({ modelGatewayBaseUrl: null });
+      notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
+      refresh(current => current + 1);
+    } catch (error) {
+      setSaveError({
+        title: copy.deploymentSettingsSaveFailed,
+        detail: error instanceof AdminRequestError ? error.detail : null,
+      });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  if (!canRead || forbidden) {
+    return <Result status="403" title={copy.deploymentNoPermission} />;
+  }
+
+  const gateway = settings?.modelGatewayBaseUrl;
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <ModuleHeading title={copy.deploymentSettingsTitle} description={copy.deploymentSettingsDescription}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(current => current + 1)}>
+          {translate(language, 'refresh')}
+        </Button>
+      </ModuleHeading>
+
+      <Alert type="info" showIcon title={copy.effectTimingHint} />
+
+      {failed ? (
+        <Alert
+          type="error"
+          showIcon
+          title={copy.deploymentSettingsLoadFailed}
+          action={<Button size="small" onClick={() => refresh(current => current + 1)}>{copy.retry}</Button>}
+        />
+      ) : null}
+
+      {loading && settings === null ? (
+        <Skeleton active paragraph={{ rows: 3 }} />
+      ) : settings && gateway ? (
+        <>
+          <Descriptions bordered column={1} size="small" title={copy.modelGatewayLabel}>
+            <Descriptions.Item label={copy.currentEffectiveValue}>
+              {gateway.effectiveValue
+                ? <Typography.Text code style={{ wordBreak: 'break-all' }}>{gateway.effectiveValue}</Typography.Text>
+                : <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label={copy.valueSource}>{deploymentSourceTag(gateway.source)}</Descriptions.Item>
+            <Descriptions.Item label={copy.overrideValue}>
+              {gateway.override
+                ? <Typography.Text code style={{ wordBreak: 'break-all' }}>{gateway.override}</Typography.Text>
+                : <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>}
+            </Descriptions.Item>
+          </Descriptions>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{copy.modelGatewayDescription}</Typography.Text>
+
+          {saveError && !editing ? (
+            <Alert type="error" showIcon title={saveError.title} description={saveError.detail ?? undefined} />
+          ) : null}
+
+          {canWrite ? (
+            editing ? (
+              <DeploymentSettingsEditor
+                initial={gateway.override ?? gateway.effectiveValue ?? ''}
+                pending={pending}
+                error={saveError}
+                onSubmit={save}
+                onCancel={() => { if (!pending) { setEditing(false); setSaveError(null); } }}
+              />
+            ) : (
+              <Space wrap>
+                <Button type="primary" onClick={() => { setEditing(true); setSaveError(null); }}>
+                  {copy.editOverride}
+                </Button>
+                {gateway.override ? (
+                  <Popconfirm
+                    title={copy.clearOverride}
+                    description={copy.clearOverrideConfirm}
+                    okText={copy.clearOverride}
+                    okButtonProps={{ danger: true }}
+                    cancelText={translate(language, 'cancel')}
+                    onConfirm={() => void clear()}
+                  >
+                    <Button danger disabled={pending}>{copy.clearOverride}</Button>
+                  </Popconfirm>
+                ) : null}
+              </Space>
+            )
+          ) : (
+            <Alert type="info" showIcon title={copy.deploymentReadonlyHint} />
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function DeploymentSettingsEditor({ initial, pending, error, onSubmit, onCancel }: {
+  readonly initial: string;
+  readonly pending: boolean;
+  readonly error: { readonly title: string; readonly detail: string | null } | null;
+  readonly onSubmit: (value: string) => Promise<void>;
+  readonly onCancel: () => void;
+}) {
+  const [form] = Form.useForm<{ gateway: string }>();
+  return (
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={{ gateway: initial }}
+      disabled={pending}
+      onFinish={values => void onSubmit(values.gateway)}
+      style={{ maxWidth: 560 }}
+    >
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={error.title}
+          description={error.detail ?? undefined}
+        />
+      ) : null}
+      <Form.Item
+        name="gateway"
+        label={copy.modelGatewayLabel}
+        rules={[{
+          validator: (_, value: unknown) => {
+            const problem = modelGatewayBaseUrlProblem(typeof value === 'string' ? value : '');
+            if (problem === AdminModelGatewayUrlProblem.ClusterInternal) {
+              return Promise.reject(new Error(copy.clusterInternalGatewayUrl));
+            }
+            if (problem) return Promise.reject(new Error(copy.invalidGatewayUrl));
+            return Promise.resolve();
+          },
+        }]}
+      >
+        <Input placeholder={copy.overridePlaceholder} allowClear />
+      </Form.Item>
+      <Space>
+        <Button type="primary" htmlType="submit" loading={pending}>{copy.saveOverride}</Button>
+        <Button onClick={onCancel}>{translate(language, 'cancel')}</Button>
+      </Space>
+    </Form>
   );
 }

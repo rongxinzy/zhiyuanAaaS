@@ -65,6 +65,10 @@ export const state = {
       resourceCount: 0,
     },
   },
+  deploymentSettings: {
+    modelGatewayOverride: null,
+    envGatewayBaseUrl: "https://gateway.example.test/v1",
+  },
   requests: [],
   failNext: null,
   nextId: 1,
@@ -554,7 +558,36 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === "GET" && pathname === "/aep/v1/admin/data-plane/status")
     return writeJson(response, 200, state.dataPlane.status);
+  if (pathname === "/aep/v1/admin/deployment/settings") {
+    if (method === "GET")
+      return writeJson(response, 200, deploymentSettingsPayload());
+    if (method === "PUT") {
+      const input = jsonBody(rawBody);
+      if (Object.hasOwn(input, "modelGatewayBaseUrl")) {
+        const value = input.modelGatewayBaseUrl;
+        if (value !== null && (typeof value !== "string" || !/^https?:\/\//.test(value)))
+          return writeJson(response, 422, {
+            code: "INVALID_DEPLOYMENT_SETTINGS",
+            detail: "The model gateway base URL must be an absolute http or https URL.",
+          });
+        state.deploymentSettings.modelGatewayOverride = value;
+      }
+      return writeJson(response, 200, deploymentSettingsPayload());
+    }
+  }
   return writeJson(response, 404, { code: "NOT_FOUND", path: pathname });
+}
+
+function deploymentSettingsPayload() {
+  const override = state.deploymentSettings.modelGatewayOverride;
+  const env = state.deploymentSettings.envGatewayBaseUrl;
+  return {
+    modelGatewayBaseUrl: {
+      override,
+      effectiveValue: override ?? env ?? null,
+      source: override ? "override" : env ? "env" : "unset",
+    },
+  };
 }
 
 function createRecord(response, collection, input) {
