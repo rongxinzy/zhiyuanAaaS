@@ -671,6 +671,82 @@ describe('admin resources', () => {
     expect(screen.queryByText(/已撤销有效会话/)).not.toBeInTheDocument();
   }, TIMEOUT);
 
+  test('marks the console session in the login sessions tab and disables its revocation', async () => {
+    const client = {
+      sessionId: 'sess-self',
+      resources: vi.fn().mockResolvedValue({
+        ...emptyResources,
+        users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+      }),
+      sessions: vi.fn().mockResolvedValue([
+        { ...activeSession('sess-self'), client: { name: 'zhiyuan-enterprise', version: '0.8.0', deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d' } },
+        { ...activeSession('sess-other'), client: { name: 'curl' } },
+      ]),
+      revokeUserSession: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '查看' })[0]!);
+    fireEvent.click(await screen.findByRole('tab', { name: '登录会话' }));
+
+    // testing-library waitFor (MutationObserver) wedges on this drawer/tab/table
+    // combination in jsdom, so the async settle uses vi.waitFor instead.
+    await vi.waitFor(() => {
+      expect(screen.getByText('zhiyuan-enterprise 0.8.0')).toBeInTheDocument();
+    });
+    expect(screen.getByText('7b7d02c4…')).toBeInTheDocument();
+    expect(screen.getByText('当前会话')).toBeInTheDocument();
+    expect(screen.getByText('curl')).toBeInTheDocument();
+
+    // getByRole accessible-name computation crashes the jsdom worker on this
+    // drawer table; match the button label text and step up to the button.
+    const selfRow = screen.getByText('zhiyuan-enterprise 0.8.0').closest('tr')!;
+    const selfRevoke = within(selfRow).getByText('撤销登录').closest('button')!;
+    expect(selfRevoke).toBeDisabled();
+    fireEvent.click(selfRevoke);
+    expect(client.revokeUserSession).not.toHaveBeenCalled();
+
+    const otherRow = screen.getByText('curl').closest('tr')!;
+    expect(within(otherRow).getByText('撤销登录').closest('button')).toBeEnabled();
+  }, TIMEOUT);
+
+  test('warns when disabling the account backing the current console session', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        ...emptyResources,
+        users: [{ id: 'admin-1', displayName: '管理员', username: 'admin', status: 'active' }],
+      }),
+      updateUser: vi.fn(),
+      sessions: vi.fn().mockResolvedValue([]),
+      revokeUserSession: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    expect(await screen.findByText('管理员')).toBeInTheDocument();
+    openRowMenu('更多');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /停用/ }));
+    expect(await screen.findByText('停用用户：管理员')).toBeInTheDocument();
+    expect(screen.getByText('该账号正用于当前控制台，停用后你将同时被注销。')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '取消' }).at(-1)!);
+  }, TIMEOUT);
+
+  test('omits the self-disable warning for a different account', async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        ...emptyResources,
+        users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+      }),
+      updateUser: vi.fn(),
+      sessions: vi.fn().mockResolvedValue([]),
+      revokeUserSession: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+    openRowMenu('更多');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /停用/ }));
+    expect(await screen.findByText('停用用户：张三')).toBeInTheDocument();
+    expect(screen.queryByText('该账号正用于当前控制台，停用后你将同时被注销。')).not.toBeInTheDocument();
+  }, TIMEOUT);
+
   test('row edit and disable entries do not open the detail drawer', async () => {
     const client = {
       resources: vi.fn().mockResolvedValue({

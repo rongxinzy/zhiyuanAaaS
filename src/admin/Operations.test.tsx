@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cloneElement, type ReactElement } from 'react';
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -25,6 +25,10 @@ function render(ui: ReactElement<{ readonly identity?: typeof administratorIdent
 function modalButton(name: RegExp | string) {
   return screen.getAllByRole('button', { name }).at(-1)!;
 }
+
+// antd tables and drawers render slowly under jsdom on shared CI workers; the
+// default 5s budget is not enough headroom for the heavier session flows.
+const TIMEOUT = 15000;
 
 const license = {
   licenseId: 'license-1', customerId: 'customer-1', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'license-prod-1',
@@ -127,6 +131,60 @@ describe('admin operations: login sessions', () => {
     await waitFor(() => expect(client.sessions).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('button', { name: '撤销登录' })).not.toBeInTheDocument());
   });
+
+  test('shows the recorded client identity and disables revoking the current session', async () => {
+    const currentSession = {
+      sessionId: 'session-current', userId: 'user-1', topic: 'user:user-1',
+      createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+      client: { name: 'zhiyuan-enterprise', version: '0.8.0', deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d' },
+    };
+    const browserSession = {
+      sessionId: 'session-browser', userId: 'user-1', topic: 'user:user-1',
+      createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+      client: { name: 'browser' },
+    };
+    const unknownSession = {
+      sessionId: 'session-unknown', userId: 'user-1', topic: 'user:user-1',
+      createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+      client: null,
+    };
+    const client = {
+      sessionId: 'session-current',
+      sessions: vi.fn().mockResolvedValue([currentSession, browserSession, unknownSession]),
+      users: vi.fn().mockResolvedValue([adminUser]),
+      revokeUserSession: vi.fn(),
+    };
+    render(<SessionsView client={client as never} identity={{ roles: [], permissions: ['users.read', 'sessions.write'] } as never} />);
+
+    // Self-reported identity keeps name and version; the device id is truncated.
+    expect(await screen.findByText('zhiyuan-enterprise 0.8.0')).toBeInTheDocument();
+    expect(screen.getByText('7b7d02c4…')).toBeInTheDocument();
+    // The User-Agent fallback label is rendered readably.
+    expect(screen.getByText('浏览器')).toBeInTheDocument();
+    expect(screen.getByText('未知')).toBeInTheDocument();
+
+    // The console's own session is badged and its revoke action is disabled.
+    expect(screen.getByText('当前会话')).toBeInTheDocument();
+    const currentRow = screen.getByText('zhiyuan-enterprise 0.8.0').closest('tr')!;
+    const currentRevoke = within(currentRow).getByRole('button', { name: '撤销登录' });
+    expect(currentRevoke).toBeDisabled();
+    fireEvent.click(currentRevoke);
+    expect(client.revokeUserSession).not.toHaveBeenCalled();
+    fireEvent.mouseEnter(currentRevoke);
+    expect(await screen.findByText('当前控制台正在使用该会话，不能撤销。')).toBeInTheDocument();
+
+    const browserRow = screen.getByText('浏览器').closest('tr')!;
+    expect(within(browserRow).getByRole('button', { name: '撤销登录' })).toBeEnabled();
+    const unknownRow = screen.getByText('未知').closest('tr')!;
+    expect(within(unknownRow).getByRole('button', { name: '撤销登录' })).toBeEnabled();
+
+    // The detail drawer shows the full identity and also guards the current session.
+    fireEvent.click(within(currentRow).getByRole('button', { name: /查看/ }));
+    expect(await screen.findByText('会话详情')).toBeInTheDocument();
+    expect(screen.getByText('设备 ID 7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d')).toBeInTheDocument();
+    const drawerRevoke = screen.getAllByRole('button', { name: '撤销登录' }).at(-1)!;
+    expect(drawerRevoke).toBeDisabled();
+  }, TIMEOUT);
 
   test('hides revocation without sessions.write while the list stays visible', async () => {
     const client = {
