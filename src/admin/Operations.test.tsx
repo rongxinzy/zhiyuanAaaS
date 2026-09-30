@@ -7,7 +7,8 @@ import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { ConfigurationStatusView, CredentialsView, Operations, SessionsView } from './Operations.js';
+import { ConfigurationStatusView, CredentialsView, DeploymentSettingsView, Operations, SessionsView } from './Operations.js';
+import { AdminRequestError } from './client.js';
 import { administratorIdentity } from './test-fixtures.js';
 
 // antd icon buttons expose "<icon-name> <text>" as their accessible name, so
@@ -393,5 +394,128 @@ describe('admin operations: configuration status', () => {
     render(<Operations client={licensesClient as never} />);
     expect(await screen.findByText('产品授权')).toBeInTheDocument();
     expect(licensesClient.licenses).toHaveBeenCalled();
+  });
+});
+
+describe('admin operations: deployment settings', () => {
+  afterEach(() => cleanup());
+
+  const envSettings = {
+    modelGatewayBaseUrl: { override: null, effectiveValue: 'https://gateway.example.test/v1', source: 'env' },
+  };
+  const overrideSettings = {
+    modelGatewayBaseUrl: { override: 'https://gw.example.test/v2', effectiveValue: 'https://gw.example.test/v2', source: 'override' },
+  };
+
+  test('shows the effective value and source, then saves a new override', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockResolvedValue(envSettings),
+      updateDeploymentSettings: vi.fn().mockResolvedValue(overrideSettings),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+
+    expect(await screen.findByText('部署运行时设置')).toBeInTheDocument();
+    expect(screen.getAllByText('https://gateway.example.test/v1').length).toBeGreaterThan(0);
+    expect(screen.getByText('环境默认')).toBeInTheDocument();
+    expect(screen.getByText(/约 30 秒内自动生效/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '设置覆盖' }));
+    const input = await screen.findByLabelText('模型网关地址');
+    expect(input).toHaveValue('https://gateway.example.test/v1');
+    fireEvent.change(input, { target: { value: 'https://gw.example.test/v2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存覆盖' }));
+    await waitFor(() => expect(client.updateDeploymentSettings).toHaveBeenCalledWith({ modelGatewayBaseUrl: 'https://gw.example.test/v2' }));
+    await waitFor(() => expect(client.deploymentSettings).toHaveBeenCalledTimes(2));
+  });
+
+  test('clears the override with an explicit null after confirmation', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockResolvedValue(overrideSettings),
+      updateDeploymentSettings: vi.fn().mockResolvedValue(envSettings),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+
+    expect((await screen.findAllByText('运行时覆盖')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '清除覆盖' }));
+    fireEvent.click(modalButton('清除覆盖'));
+    await waitFor(() => expect(client.updateDeploymentSettings).toHaveBeenCalledWith({ modelGatewayBaseUrl: null }));
+  });
+
+  test('pre-validates the gateway URL and never calls the server on failure', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockResolvedValue(envSettings),
+      updateDeploymentSettings: vi.fn(),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '设置覆盖' }));
+    const input = await screen.findByLabelText('模型网关地址');
+    fireEvent.change(input, { target: { value: 'http://gateway.svc.cluster.local/v1' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存覆盖' }));
+    expect(await screen.findByText(/集群内域名/)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'not-a-url' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存覆盖' }));
+    expect(await screen.findByText(/http\/https 绝对地址/)).toBeInTheDocument();
+    expect(client.updateDeploymentSettings).not.toHaveBeenCalled();
+  });
+
+  test('shows the server 422 problem detail and keeps the draft open', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockResolvedValue(envSettings),
+      updateDeploymentSettings: vi.fn().mockRejectedValue(
+        new AdminRequestError(422, 'INVALID_DEPLOYMENT_SETTINGS', 'The model gateway base URL must not use a cluster-internal hostname.'),
+      ),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '设置覆盖' }));
+    const input = await screen.findByLabelText('模型网关地址');
+    fireEvent.change(input, { target: { value: 'https://gw.example.test/v2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存覆盖' }));
+
+    expect(await screen.findByText('服务端拒绝了该网关地址')).toBeInTheDocument();
+    expect(screen.getByText(/cluster-internal hostname/)).toBeInTheDocument();
+    expect(input).toHaveValue('https://gw.example.test/v2');
+    expect(client.deploymentSettings).toHaveBeenCalledTimes(1);
+  });
+
+  test('read-only without deployment.write, blocked without deployment.read', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockResolvedValue(envSettings),
+      updateDeploymentSettings: vi.fn(),
+    };
+    render(<DeploymentSettingsView client={client as never} identity={{ roles: [], permissions: ['deployment.read'] } as never} />);
+
+    expect(await screen.findByText('https://gateway.example.test/v1')).toBeInTheDocument();
+    expect(screen.getByText(/仅可查看部署设置/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '设置覆盖' })).not.toBeInTheDocument();
+    cleanup();
+
+    const deniedClient = { deploymentSettings: vi.fn(), updateDeploymentSettings: vi.fn() };
+    render(<DeploymentSettingsView client={deniedClient as never} identity={{ roles: [], permissions: ['models.read'] } as never} />);
+    expect(await screen.findByText('当前账号无权限查看部署运行时设置。')).toBeInTheDocument();
+    expect(deniedClient.deploymentSettings).not.toHaveBeenCalled();
+  });
+
+  test('a server 403 degrades to the no-permission state', async () => {
+    const client = {
+      deploymentSettings: vi.fn().mockRejectedValue(new AdminRequestError(403, 'FORBIDDEN', 'deployment.read required')),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+    expect(await screen.findByText('当前账号无权限查看部署运行时设置。')).toBeInTheDocument();
+  });
+
+  test('reports a load failure and retries', async () => {
+    const client = {
+      deploymentSettings: vi.fn()
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValueOnce(envSettings),
+    };
+    render(<DeploymentSettingsView client={client as never} />);
+
+    expect(await screen.findByText('部署设置加载失败，请稍后重试。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('https://gateway.example.test/v1')).toBeInTheDocument();
   });
 });

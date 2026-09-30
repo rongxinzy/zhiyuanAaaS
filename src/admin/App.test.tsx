@@ -34,6 +34,7 @@ vi.mock("./Operations.js", () => ({
   SessionsView: () => <div>session-content</div>,
   CredentialsView: () => <div>credentials-content</div>,
   ConfigurationStatusView: () => <div>configuration-content</div>,
+  DeploymentSettingsView: () => <div>deployment-settings-content</div>,
 }));
 vi.mock("./Identity.js", () => ({
   Identity: () => <div>mapping-content</div>,
@@ -183,6 +184,15 @@ describe("Ant Design admin shell", () => {
     fireEvent.click(screen.getByRole("tab", { name: "登录会话" }));
     expect(await screen.findByText("session-content")).toBeInTheDocument();
     expect(window.location.hash).toBe("#users/sessions");
+  });
+  test("renders the deployment settings surface under system settings", async () => {
+    authenticated();
+    window.location.hash = "system/settings";
+    render(<AdminApp />);
+    expect(
+      await screen.findByText("deployment-settings-content"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "基本设置" })).toBeInTheDocument();
   });
   test("keeps unknown counts distinct from zero and refreshes failures", async () => {
     authenticated();

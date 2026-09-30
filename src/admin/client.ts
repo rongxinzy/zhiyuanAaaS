@@ -79,6 +79,7 @@ export const AdminPermission = {
   SessionsWrite: 'sessions.write',
   EventsRead: 'events.read', EventsWrite: 'events.write',
   DataPlaneWrite: 'data_plane.write',
+  DeploymentRead: 'deployment.read', DeploymentWrite: 'deployment.write',
 } as const;
 export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermission];
 
@@ -177,6 +178,62 @@ export interface AdminCredentials {
 export interface AdminDataPlane {
   readonly desired: DataPlaneDesiredState;
   readonly status: DataPlaneStatus;
+}
+
+export const AdminDeploymentSettingSource = {
+  Override: 'override',
+  Env: 'env',
+  Unset: 'unset',
+} as const;
+export type AdminDeploymentSettingSource =
+  (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
+
+export interface AdminDeploymentSettingValue {
+  readonly override: string | null;
+  readonly effectiveValue: string | null;
+  readonly source: AdminDeploymentSettingSource;
+}
+
+export interface AdminDeploymentSettings {
+  readonly modelGatewayBaseUrl: AdminDeploymentSettingValue;
+}
+
+// Omitted fields stay unchanged; an explicit null clears the runtime override
+// so the environment-configured value applies again.
+export interface AdminDeploymentSettingsUpdate {
+  readonly modelGatewayBaseUrl?: string | null;
+}
+
+export const AdminModelGatewayUrlProblem = {
+  Invalid: 'invalid',
+  ClusterInternal: 'cluster-internal',
+} as const;
+export type AdminModelGatewayUrlProblem =
+  (typeof AdminModelGatewayUrlProblem)[keyof typeof AdminModelGatewayUrlProblem];
+
+// Client-side pre-check for the model gateway override, mirroring the
+// write-time server rule family: an absolute http/https URL whose hostname is
+// neither cluster-internal nor a single-label bare hostname. Loopback depends
+// on the deployment environment and stays a server-side judgment.
+export function modelGatewayBaseUrlProblem(value: string): AdminModelGatewayUrlProblem | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 2048) return AdminModelGatewayUrlProblem.Invalid;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return AdminModelGatewayUrlProblem.Invalid;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return AdminModelGatewayUrlProblem.Invalid;
+  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
+  if (!host) return AdminModelGatewayUrlProblem.Invalid;
+  // IP literals (IPv4, or bracketed IPv6 per URL hostname) skip the
+  // hostname rules, as the server does.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return null;
+  if (!host.includes('.') || host === 'svc.cluster.local' || host.endsWith('.svc.cluster.local')) {
+    return AdminModelGatewayUrlProblem.ClusterInternal;
+  }
+  return null;
 }
 
 export const AdminIdentitySourceKind = {
@@ -284,6 +341,27 @@ export class AdminMetadataError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'AdminMetadataError';
+  }
+}
+
+// RFC 9457 problem details carried by the handwritten endpoints so pages can
+// react to the status and show the server-provided detail instead of parsing
+// the message string.
+export class AdminRequestError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly detail: string | null;
+
+  constructor(status: number, code: string | null, detail: string | null) {
+    super(
+      code
+        ? `AEP ${status} ${code}${detail ? `: ${detail}` : ''}`
+        : `AEP request failed with status ${status}.`,
+    );
+    this.name = 'AdminRequestError';
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -598,6 +676,28 @@ export class AdminConsoleClient {
 
   async putDataPlane(input: DataPlaneDesiredStateWrite): Promise<DataPlaneDesiredState> {
     return this.#requireClient().putDataPlaneDesiredState(input);
+  }
+
+  // The pinned SDK release predates the deployment-settings admin endpoints,
+  // so these calls go through the same handwritten transport path as the
+  // identity-sources endpoints above (see #request).
+  async deploymentSettings(): Promise<AdminDeploymentSettings> {
+    const settings = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/deployment/settings',
+    });
+    return parseDeploymentSettings(settings);
+  }
+
+  async updateDeploymentSettings(input: AdminDeploymentSettingsUpdate): Promise<AdminDeploymentSettings> {
+    const body: JsonObject = {};
+    if ('modelGatewayBaseUrl' in input) body.modelGatewayBaseUrl = input.modelGatewayBaseUrl ?? null;
+    const settings = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: '/aep/v1/admin/deployment/settings',
+      body,
+    });
+    return parseDeploymentSettings(settings);
   }
 
   async identitySources(): Promise<AdminIdentitySourcePage> {
@@ -952,14 +1052,38 @@ function parseIdentityMappings(value: unknown, sourceId: string): AdminIdentityM
   });
 }
 
+function parseDeploymentSettingValue(value: unknown): AdminDeploymentSettingValue {
+  const record = isRecord(value) ? value : {};
+  const source = record.source;
+  if (source !== AdminDeploymentSettingSource.Override
+    && source !== AdminDeploymentSettingSource.Env
+    && source !== AdminDeploymentSettingSource.Unset) {
+    throw new Error('The AEP deployment settings response is invalid.');
+  }
+  const override = record.override;
+  const effectiveValue = record.effectiveValue;
+  if ((override !== null && override !== undefined && typeof override !== 'string')
+    || (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'string')) {
+    throw new Error('The AEP deployment settings response is invalid.');
+  }
+  return {
+    override: typeof override === 'string' ? override : null,
+    effectiveValue: typeof effectiveValue === 'string' ? effectiveValue : null,
+    source,
+  };
+}
+
+function parseDeploymentSettings(value: unknown): AdminDeploymentSettings {
+  const record = isRecord(value) ? value : {};
+  return { modelGatewayBaseUrl: parseDeploymentSettingValue(record.modelGatewayBaseUrl) };
+}
+
 function problemFromResponse(status: number, data: unknown): Error {
   if (isRecord(data) && typeof data.code === 'string') {
-    const problem = data as Record<string, unknown>;
-    return new Error(
-      `AEP ${status} ${problem.code}${typeof problem.detail === 'string' ? `: ${problem.detail}` : ''}`,
-    );
+    const detail = typeof data.detail === 'string' ? data.detail : null;
+    return new AdminRequestError(status, data.code, detail);
   }
-  return new Error(`AEP request failed with status ${status}.`);
+  return new AdminRequestError(status, null, null);
 }
 
 function parseAdminIdentity(value: unknown): AdminIdentity | null {

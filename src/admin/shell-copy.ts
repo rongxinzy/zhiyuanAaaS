@@ -43,8 +43,6 @@ const copy = {
     light: "浅色",
     dark: "深色",
     accountScope: "仅展示当前账号可访问的管理入口",
-    settingsHint:
-      "企业资料由部署配置维护。当前接口尚不支持在此修改；外观设置可通过右上角切换。",
     overviewHint: "查看当前可管理的资源，进入业务页面处理工作。",
     accountCount: "平台账号",
     unknown: "暂无法获取",
@@ -113,8 +111,6 @@ const copy = {
     light: "Light",
     dark: "Dark",
     accountScope: "Only authorized destinations are shown",
-    settingsHint:
-      "Enterprise information is managed by deployment configuration. This API does not support editing it here. Change appearance at the top right.",
     overviewHint: "View manageable resources and open the relevant work area.",
     accountCount: "Platform accounts",
     unknown: "Unavailable",
