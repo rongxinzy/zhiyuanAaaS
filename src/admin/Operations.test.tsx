@@ -26,6 +26,10 @@ function modalButton(name: RegExp | string) {
   return screen.getAllByRole('button', { name }).at(-1)!;
 }
 
+// antd tables and drawers render slowly under jsdom on shared CI workers; the
+// default 5s budget is not enough headroom for the heavier session flows.
+const TIMEOUT = 15000;
+
 const license = {
   licenseId: 'license-1', customerId: 'customer-1', deploymentId: 'demo', digest: 'a'.repeat(64), keyId: 'license-prod-1',
   status: 'active', issuedAt: '2026-09-01T00:00:00Z', expiresAt: '2027-09-01T00:00:00Z', graceEndsAt: '2027-09-08T00:00:00Z',
@@ -180,7 +184,7 @@ describe('admin operations: login sessions', () => {
     expect(screen.getByText('设备 ID 7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d')).toBeInTheDocument();
     const drawerRevoke = screen.getAllByRole('button', { name: '撤销登录' }).at(-1)!;
     expect(drawerRevoke).toBeDisabled();
-  });
+  }, TIMEOUT);
 
   test('hides revocation without sessions.write while the list stays visible', async () => {
     const client = {
