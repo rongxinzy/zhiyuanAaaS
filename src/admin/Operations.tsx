@@ -112,9 +112,6 @@ export function ConfigurationStatusView({ client, identity }: {
   return <ConfigurationStatusPanel client={client} identity={identity} />;
 }
 
-<<<<<<< Updated upstream
-function ModuleHeading({ title, description, children }: {
-=======
 /** Deployment runtime settings (部署运行时设置): model gateway override. */
 export function DeploymentSettingsView({ client, identity }: {
   readonly client: AdminConsoleClient;
@@ -124,7 +121,6 @@ export function DeploymentSettingsView({ client, identity }: {
 }
 
 function ModuleHeading({ title: _title, description, children }: {
->>>>>>> Stashed changes
   readonly title: string;
   readonly description: string;
   readonly children?: ReactNode;
