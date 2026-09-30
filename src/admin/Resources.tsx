@@ -1,8 +1,18 @@
+/**
+ *
+ * description:用户管理：用户列表、团队管理、角色权限、账号关联、登陆会话
+ *
+ * 2026-09-30 LiXiang2019 列表加载改为表格 Empty/loading；筛选区接入 ListQueryActions
+ *
+ */
+
 import {
   AppstoreOutlined,
   DeleteOutlined,
   DownOutlined,
+  DownloadOutlined,
   EditOutlined,
+  InfoCircleOutlined,
   KeyOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -27,9 +37,11 @@ import {
   Select,
   Skeleton,
   Space,
+  Spin,
   Switch,
   Table,
   Tabs,
+  Tree,
   Tag,
   Tooltip,
   Typography,
@@ -67,6 +79,8 @@ import { SessionClientCell, SessionClientDetail } from "./session-client.js";
 import { formatTimestamp } from "./format.js";
 import { runBatch } from "./batch.js";
 import { AdminNotificationKind, notify } from "./notifications.js";
+/** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
+import { ListQueryActions } from "./components/ListQueryActions.js";
 
 const language: AdminLanguage = "zh";
 const t = (key: AdminTranslationKey) => translate(language, key);
@@ -76,6 +90,19 @@ const PASSWORD_MAX_LENGTH = 1024;
 const RBAC_ID_PATTERN = /^[A-Za-z0-9._\-]{1,100}$/;
 
 type AdminUser = PlatformUser & { readonly email?: string | null };
+
+/** 2026-09-30 LiXiang2019 用户列表筛选表单字段 */
+interface UserListFilters {
+  readonly query?: string;
+  readonly teamId?: string;
+  readonly roleId?: string;
+  readonly status?: "active" | "disabled";
+}
+
+/** 2026-09-30 LiXiang2019 团队/角色列表按名称筛选字段 */
+interface NameListFilters {
+  readonly query?: string;
+}
 
 export const AdminResourceTab = {
   Users: "users",
@@ -93,7 +120,17 @@ interface ResourcesProps {
   readonly identity?: AdminIdentity | undefined;
 }
 
-const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false } as const;
+const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false, align: "center" } as const;
+
+/** 2026-09-30 LiXiang2019 首屏加载占位资源，用于先渲染页面结构再等接口返回 */
+const EMPTY_RESOURCES: AdminResources = {
+  users: [],
+  teams: [],
+  roles: [],
+  permissions: [],
+  skills: [],
+  assignments: [],
+};
 
 export function Resources({ client, tab, identity }: ResourcesProps) {
   const [resources, setResources] = useState<AdminResources | null>(null);
@@ -142,6 +179,8 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
           : tab === AdminResourceTab.Skills
             ? hasAdminPermission(identity, AdminPermission.SkillsWrite)
             : hasAdminPermission(identity, AdminPermission.SkillsAssign);
+  // 2026-09-30 LiXiang2019 加载中保留页头与表格结构；无缓存且失败时不展示空成功态
+  const view = resources ?? (loading && !error ? EMPTY_RESOURCES : null);
 
   return (
     <section aria-label={sectionTitle(tab)}>
@@ -158,15 +197,14 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      {loading && !resources ? (
-        <Skeleton active paragraph={{ rows: 6 }} title />
-      ) : resources ? (
+      {view ? (
         <>
+          {/* 用户列表 */}
           {tab === AdminResourceTab.Users ? (
             <UsersSection
               client={client}
               identity={identity}
-              resources={resources}
+              resources={view}
               modelResources={modelResources}
               canWrite={canMutate}
               loading={loading}
@@ -175,10 +213,12 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
               onError={reportError}
             />
           ) : null}
+
+          {/* 团队管理 */}
           {tab === AdminResourceTab.Teams ? (
             <TeamsSection
               client={client}
-              resources={resources}
+              resources={view}
               modelResources={modelResources}
               canWrite={canMutate}
               loading={loading}
@@ -187,10 +227,12 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
               onError={reportError}
             />
           ) : null}
+
+          {/* 角色权限 */}
           {tab === AdminResourceTab.Roles ? (
             <RolesSection
               client={client}
-              resources={resources}
+              resources={view}
               modelResources={modelResources}
               canWrite={canMutate}
               loading={loading}
@@ -199,11 +241,13 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
               onError={reportError}
             />
           ) : null}
+
+          {/* 技能 */}
           {tab === AdminResourceTab.Skills ? (
             <SkillsSection
               canAssign={hasAdminPermission(identity, AdminPermission.SkillsAssign)}
               client={client}
-              resources={resources}
+              resources={view}
               canWrite={canMutate}
               loading={loading}
               onRefresh={load}
@@ -211,10 +255,12 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
               onError={reportError}
             />
           ) : null}
+
+          {/* 技能授权 */}
           {tab === AdminResourceTab.Assignments ? (
             <AssignmentsSection
               client={client}
-              resources={resources}
+              resources={view}
               canWrite={canMutate}
               loading={loading}
               onRefresh={load}
@@ -237,7 +283,7 @@ function sectionTitle(tab: AdminResourceTab): string {
 }
 
 function SectionHeader({
-  title,
+  title: _title,
   description,
   extra,
 }: {
@@ -257,10 +303,10 @@ function SectionHeader({
       }}
     >
       <div>
-        <Typography.Title level={2} style={{ marginTop: 0, marginBottom: 4 }}>
-          {title}
-        </Typography.Title>
-        <Typography.Text type="secondary">{description}</Typography.Text>
+        <Typography.Text type="secondary">
+          <InfoCircleOutlined style={{ marginInlineEnd: 6 }} />
+          {description}
+        </Typography.Text>
       </div>
       {extra ? <Space wrap>{extra}</Space> : null}
     </div>
@@ -552,10 +598,9 @@ function UsersSection({
   readonly modelResources: ModelResources;
 }) {
   const { token } = theme.useToken();
-  const [query, setQuery] = useState("");
-  const [teamFilter, setTeamFilter] = useState<string | null>(null);
-  const [roleFilter, setRoleFilter] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<"active" | "disabled" | null>(null);
+  // 2026-09-30 LiXiang2019 用户列表筛选：点查询后才应用条件
+  const [filterForm] = Form.useForm<UserListFilters>();
+  const [filters, setFilters] = useState<UserListFilters>({});
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const [resetUser, setResetUser] = useState<PlatformUser | null>(null);
@@ -571,15 +616,15 @@ function UsersSection({
   const teamNames = useMemo(() => new Map(resources.teams.map((team) => [team.id, team.name])), [resources.teams]);
   const roleNames = useMemo(() => new Map(resources.roles.map((role) => [role.id, role.name])), [resources.roles]);
   const rows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = (filters.query ?? "").trim().toLowerCase();
     return resources.users.filter((user) => {
       if (normalized && !`${user.displayName} ${user.username}`.toLowerCase().includes(normalized)) return false;
-      if (teamFilter && !(user.teamIds ?? []).includes(teamFilter)) return false;
-      if (roleFilter && !(user.roleIds ?? []).includes(roleFilter)) return false;
-      if (statusFilter && user.status !== statusFilter) return false;
+      if (filters.teamId && !(user.teamIds ?? []).includes(filters.teamId)) return false;
+      if (filters.roleId && !(user.roleIds ?? []).includes(filters.roleId)) return false;
+      if (filters.status && user.status !== filters.status) return false;
       return true;
     });
-  }, [resources.users, query, teamFilter, roleFilter, statusFilter]);
+  }, [resources.users, filters]);
 
   const detailUser = detailUserId ? resources.users.find((user) => user.id === detailUserId) ?? null : null;
 
@@ -692,46 +737,54 @@ function UsersSection({
           </>
         }
       />
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input.Search
-          aria-label={rc.searchUserPlaceholder}
-          placeholder={rc.searchUserPlaceholder}
-          allowClear
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          style={{ width: 220 }}
-        />
-        <Select
-          aria-label={rc.belongTeams}
-          placeholder={rc.allTeams}
-          allowClear
-          value={teamFilter}
-          onChange={(value: string | undefined) => setTeamFilter(value ?? null)}
-          options={resources.teams.map((team) => ({ value: team.id, label: team.name }))}
-          style={{ minWidth: 160 }}
-        />
-        <Select
-          aria-label={rc.accountRoles}
-          placeholder={rc.allRoles}
-          allowClear
-          value={roleFilter}
-          onChange={(value: string | undefined) => setRoleFilter(value ?? null)}
-          options={resources.roles.map((role) => ({ value: role.id, label: role.name }))}
-          style={{ minWidth: 160 }}
-        />
-        <Select
-          aria-label={t("status")}
-          placeholder={rc.allStatus}
-          allowClear
-          value={statusFilter}
-          onChange={(value: "active" | "disabled" | undefined) => setStatusFilter(value ?? null)}
-          options={[
-            { value: "active", label: rc.statusEnabled },
-            { value: "disabled", label: rc.statusDisabled },
-          ]}
-          style={{ minWidth: 140 }}
-        />
-      </Space>
+      {/* 2026-09-30 LiXiang2019 用户列表筛选条件 + 查询/重置按钮组 */}
+      <Form form={filterForm} layout="inline" style={{ gap: 12, marginBottom: 16 }}>
+        <Form.Item name="query" style={{ marginInlineEnd: 0 }}>
+          <Input
+            aria-label={rc.searchUserPlaceholder}
+            placeholder={rc.searchUserPlaceholder}
+            allowClear
+            style={{ width: 220 }}
+          />
+        </Form.Item>
+        <Form.Item name="teamId" style={{ marginInlineEnd: 0 }}>
+          <Select
+            aria-label={rc.belongTeams}
+            placeholder={rc.allTeams}
+            allowClear
+            options={resources.teams.map((team) => ({ value: team.id, label: team.name }))}
+            style={{ minWidth: 160 }}
+          />
+        </Form.Item>
+        <Form.Item name="roleId" style={{ marginInlineEnd: 0 }}>
+          <Select
+            aria-label={rc.accountRoles}
+            placeholder={rc.allRoles}
+            allowClear
+            options={resources.roles.map((role) => ({ value: role.id, label: role.name }))}
+            style={{ minWidth: 160 }}
+          />
+        </Form.Item>
+        <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
+          <Select
+            aria-label={t("status")}
+            placeholder={rc.allStatus}
+            allowClear
+            options={[
+              { value: "active", label: rc.statusEnabled },
+              { value: "disabled", label: rc.statusDisabled },
+            ]}
+            style={{ minWidth: 140 }}
+          />
+        </Form.Item>
+        <Form.Item style={{ marginInlineEnd: 0 }}>
+          <ListQueryActions
+            form={filterForm}
+            search={{ run: (values) => setFilters(values) }}
+            onReset={() => setFilters({})}
+          />
+        </Form.Item>
+      </Form>
       {importResult ? (
         <Alert
           type={importResult.rejected > 0 ? "warning" : "success"}
@@ -753,19 +806,21 @@ function UsersSection({
           closable={{ onClose: () => setImportResult(null) }}
         />
       ) : null}
-      {rows.length === 0 ? (
-        <Empty description={t("usersEmpty")}>
-          <Typography.Text type="secondary">{t("usersEmptyHint")}</Typography.Text>
-        </Empty>
-      ) : (
-        <Table<PlatformUser>
-          rowKey="id"
-          columns={columns}
-          dataSource={[...rows]}
-          pagination={PAGINATION}
-          loading={loading && rows.length > 0}
-        />
-      )}
+      {/* 2026-09-30 LiXiang2019 加载态用表格 loading，空数据用 Empty（对齐账号关联） */}
+      <Table<PlatformUser>
+        rowKey="id"
+        columns={columns}
+        dataSource={[...rows]}
+        pagination={PAGINATION}
+        loading={loading}
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("usersEmpty")}>
+              <Typography.Text type="secondary">{t("usersEmptyHint")}</Typography.Text>
+            </Empty>
+          ),
+        }}
+      />
       {detailUser ? (
         <UserDetailDrawer
           client={client}
@@ -1012,12 +1067,12 @@ function AdjustOrgModal({
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const [form] = Form.useForm<{ roles: string[]; teams: string[] }>();
+  const [form] = Form.useForm<{ roles: string[]; teams: string }>();
   const [pending, setPending] = useState(false);
-  const submit = async (values: { roles: string[]; teams: string[] }) => {
+  const submit = async (values: { roles: string[]; teams: string }) => {
     setPending(true);
     try {
-      await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams });
+      await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams ? [values.teams] : [] });
       onOpenChange(false);
       await onChanged();
       notify(AdminNotificationKind.Success, t("changesSaved"));
@@ -1030,6 +1085,7 @@ function AdjustOrgModal({
   return (
     <Modal
       open={open}
+      width={600}
       title={rc.adjustOrgTitle}
       okText={t("save")}
       cancelText={t("cancel")}
@@ -1045,7 +1101,7 @@ function AdjustOrgModal({
         form={form}
         layout="vertical"
         preserve={false}
-        initialValues={{ roles: [...(user.roleIds ?? [])], teams: [...(user.teamIds ?? [])] }}
+        initialValues={{ roles: [...(user.roleIds ?? [])], teams: user.teamIds?.[0] ?? undefined }}
         onFinish={submit}
       >
         <Form.Item
@@ -1053,16 +1109,25 @@ function AdjustOrgModal({
           label={t("selectRoles")}
           rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
         >
-          <Checkbox.Group
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t("selectRoles")}
             options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
           />
         </Form.Item>
         <Form.Item
           name="teams"
           label={t("selectTeams")}
-          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("teamRequired")))) }]}
+          rules={[{ required: true, message: t("teamRequired") }]}
         >
-          <Checkbox.Group
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t("selectTeams")}
             options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
           />
         </Form.Item>
@@ -1128,7 +1193,7 @@ function UserAccountLinks({
         }
       />
     );
-  if (loading && !rows) return <Skeleton active paragraph={{ rows: 2 }} />;
+  if (loading && !rows) return <Spin spinning size="large" style={{ display: "block", padding: 24, textAlign: "center", width: "100%" }} />;
   if (!rows || rows.length === 0)
     return (
       <Empty description={rc.linksEmpty}>
@@ -1230,7 +1295,7 @@ function UserLoginSessions({
         }
       />
     );
-  if (loading && !sessions) return <Skeleton active paragraph={{ rows: 2 }} />;
+  if (loading && !sessions) return <Spin spinning size="large" style={{ display: "block", padding: 24, textAlign: "center", width: "100%" }} />;
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Typography.Text type="secondary">{rc.sessionsNote}</Typography.Text>
@@ -1460,7 +1525,7 @@ function DisableUserModal({
                   ) : sessionsUnknown ? (
                     <UnknownText>{rc.disableUserSessionsUnknown}</UnknownText>
                   ) : (
-                    <Skeleton active paragraph={false} title={{ width: 60 }} />
+                    <Spin spinning size="small" />
                   ),
               },
             ]}
@@ -1506,7 +1571,7 @@ function UserEditorModal({
     email?: string;
     temporaryPassword?: string;
     roles: string[];
-    teams: string[];
+    teams: string;
     requirePasswordChange?: boolean;
   }) => {
     const normalizedUsername = (values.username ?? "").trim();
@@ -1521,7 +1586,7 @@ function UserEditorModal({
           displayName: values.displayName.trim(),
           email: values.email?.trim() || null,
         });
-        await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams });
+        await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams ? [values.teams] : [] });
       } else {
         await client.createUser({
           username: normalizedUsername,
@@ -1529,7 +1594,7 @@ function UserEditorModal({
           email: values.email?.trim() || null,
           temporaryPassword: values.temporaryPassword ?? "",
           roleIds: values.roles,
-          teamIds: values.teams,
+          teamIds: values.teams ? [values.teams] : [],
           requirePasswordChange: values.requirePasswordChange !== false,
         });
       }
@@ -1545,6 +1610,7 @@ function UserEditorModal({
   return (
     <Modal
       open={open}
+      width={600}
       title={t(editing ? "userEditTitle" : "userEditorTitle")}
       okText={t("save")}
       cancelText={t("cancel")}
@@ -1569,7 +1635,7 @@ function UserEditorModal({
           email: user?.email ?? "",
           temporaryPassword: "",
           roles: [...(user?.roleIds ?? [])],
-          teams: [...(user?.teamIds ?? [])],
+          teams: user?.teamIds?.[0] ?? undefined,
           requirePasswordChange: true,
         }}
         onFinish={submit}
@@ -1615,19 +1681,28 @@ function UserEditorModal({
           label={t("selectRoles")}
           rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
         >
-          <Checkbox.Group
-            options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t("selectRoles")}
             disabled={pending}
+            options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
           />
         </Form.Item>
         <Form.Item
           name="teams"
           label={t("selectTeams")}
-          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("teamRequired")))) }]}
+          rules={[{ required: true, message: t("teamRequired") }]}
         >
-          <Checkbox.Group
-            options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t("selectTeams")}
             disabled={pending}
+            options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
           />
         </Form.Item>
         {editing ? null : (
@@ -1724,7 +1799,7 @@ type UserImportResult = {
   readonly rejected: number;
   readonly errors: readonly string[];
 };
-
+// 用户导入弹窗
 function UserImportModal({
   client,
   open,
@@ -1756,7 +1831,10 @@ function UserImportModal({
     setPending(true);
     setFailed(false);
     try {
-      const payload = normalizeUserImport(JSON.parse(await file.text()));
+      const name = file.name.toLowerCase();
+      const payload = name.endsWith(".json")
+        ? normalizeUserImport(JSON.parse(await file.text()))
+        : normalizeUserImport(parseUserImportTable(await file.text()));
       const result = await client.importUsers(payload);
       const created = typeof result.created === "number" ? result.created : 0;
       const rejected = typeof result.rejected === "number" ? result.rejected : 0;
@@ -1775,6 +1853,7 @@ function UserImportModal({
   return (
     <Modal
       open={open}
+      width={700}
       title={t("importUsersTitle")}
       okText={t("importUsers")}
       cancelText={t("cancel")}
@@ -1785,40 +1864,163 @@ function UserImportModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <Typography.Paragraph type="secondary">{t("importUsersDescription")}</Typography.Paragraph>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0, flex: 1 }}>{t("importUsersDescription")}</Typography.Paragraph>
+       
+      </div>
       {failed ? (
         <Alert type="error" showIcon title={t("importUsersFailed")} style={{ marginBottom: 16 }} />
       ) : null}
-      <Upload
-        accept="application/json,.json"
-        maxCount={1}
-        disabled={pending}
-        fileList={
-          file
-            ? [{ uid: "users-import", name: file.name, size: file.size }]
-            : []
-        }
-        beforeUpload={(candidate) => {
-          setFile(candidate);
-          setFailed(false);
-          return false;
-        }}
-        onChange={({ fileList }) => setFile(fileList[0]?.originFileObj ?? null)}
-        onRemove={() => setFile(null)}
-      >
-        <Button icon={<UploadOutlined />} aria-label={t("importUsersFile")} disabled={pending}>
-          {t("importUsersFile")}
-        </Button>
-      </Upload>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "24px 0px" }}>
+        <Upload
+          accept=".csv,.xlsx,.xls,.json,application/json,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          maxCount={1}
+          disabled={pending}
+          style={{ textAlign: "center" }}
+          fileList={
+            file
+              ? [{ uid: "users-import", name: file.name, size: file.size }]
+              : []
+          }
+          beforeUpload={(candidate) => {
+            setFile(candidate);
+            setFailed(false);
+            return false;
+          }}
+          onChange={({ fileList }) => setFile(fileList[0]?.originFileObj ?? null)}
+          onRemove={() => setFile(null)}
+        >
+          <Button icon={<UploadOutlined />} aria-label={t("importUsersFile")} disabled={pending}>
+            {t("importUsersFile")}
+          </Button>
+        </Upload>
+      </div>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
         {t("importUsersHint")}
+        <Button type="link" icon={<DownloadOutlined />} disabled={pending} onClick={downloadUserImportTemplate} style={{ flexShrink: 0, paddingInlineEnd: 0 }}>
+          {t("downloadTemplate")}
+        </Button>
       </Typography.Paragraph>
     </Modal>
   );
 }
 
-function normalizeUserImport(value: unknown): JsonObject {
-  const users = Array.isArray(value)
+function downloadUserImportTemplate(): void {
+  const columns: ReadonlyArray<{ readonly label: string; readonly required: boolean }> = [
+    { label: "用户名", required: true },
+    { label: "显示名称", required: true },
+    { label: "邮箱", required: false },
+    { label: "临时密码", required: true },
+    { label: "选择角色", required: true },
+    { label: "选择团队", required: true },
+    { label: "首次登录要求修改密码", required: false },
+  ];
+  const example = ["zhangsan", "张三", "zhangsan@example.com", "TempPass123456", "role-admin;role-viewer", "team-a", "是"];
+  const escapeHtml = (cell: string): string =>
+    cell.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const headerCells = columns
+    .map((column) =>
+      column.required
+        ? `<th style="color:#ff0000;border:1px solid #000000;padding:4px 8px;">${escapeHtml(`*${column.label}`)}</th>`
+        : `<th style="border:1px solid #000000;padding:4px 8px;">${escapeHtml(column.label)}</th>`,
+    )
+    .join("");
+  const exampleCells = example.map((cell) => `<td style="border:1px solid #000000;padding:4px 8px;">${escapeHtml(cell)}</td>`).join("");
+  const html =
+    `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">` +
+    `<head><meta charset="UTF-8" /><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;"><tr>${headerCells}</tr><tr>${exampleCells}</tr></table></body></html>`;
+  const blob = new Blob([`﻿${html}`], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "用户导入模板.xls";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function splitIds(cell: string): string[] {
+  return cell.split(/[;；，,、\s|]+/).map((part) => part.trim()).filter(Boolean);
+}
+
+function parseUserImportTable(text: string): { readonly users: readonly Record<string, unknown>[] } {
+  const content = text.replace(/^\uFEFF/, "");
+  if (/<table[\s>]/i.test(content)) {
+    const doc = new DOMParser().parseFromString(content, "text/html");
+    const rows = [...doc.querySelectorAll("table tr")].map((row) =>
+      [...row.querySelectorAll("th, td")].map((cell) => cell.textContent?.trim() ?? ""),
+    );
+    return buildUserImportUsers(rows.filter((row) => row.some((cell) => cell !== "")));
+  }
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (quoted) {
+      if (char === '"') {
+        if (content[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else quoted = false;
+      } else field += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ",") {
+      current.push(field);
+      field = "";
+    } else if (char === "\n" || char === "\r") {
+      if (char === "\r" && content[i + 1] === "\n") i += 1;
+      current.push(field);
+      field = "";
+      if (current.some((cell) => cell.trim() !== "")) rows.push(current);
+      current = [];
+    } else field += char;
+  }
+  current.push(field);
+  if (current.some((cell) => cell.trim() !== "")) rows.push(current);
+  return buildUserImportUsers(rows);
+}
+
+function buildUserImportUsers(rows: readonly string[][]): { readonly users: readonly Record<string, unknown>[] } {
+  if (rows.length < 2) throw new Error("Empty user import table.");
+  const header = rows[0].map((cell) => cell.trim().replace(/^[*＊]+\s*/, ""));
+  const indexOf = (...names: readonly string[]): number => {
+    for (const name of names) {
+      const index = header.indexOf(name);
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+  const usernameIdx = indexOf("用户名", "username");
+  const displayNameIdx = indexOf("显示名称", "displayName");
+  const emailIdx = indexOf("邮箱", "email");
+  const passwordIdx = indexOf("临时密码", "temporaryPassword");
+  const rolesIdx = indexOf("选择角色", "角色ID", "角色", "roleIds", "roles");
+  const teamsIdx = indexOf("选择团队", "团队ID", "团队", "teamIds", "teams");
+  const requireChangeIdx = indexOf("首次登录要求修改密码", "requirePasswordChange");
+  if (usernameIdx < 0 || displayNameIdx < 0 || passwordIdx < 0 || rolesIdx < 0 || teamsIdx < 0)
+    throw new Error("Invalid user import header.");
+  return {
+    users: rows.slice(1).map((cells, rowIndex) => {
+      const at = (index: number): string => (cells[index] ?? "").trim();
+      const requireText = requireChangeIdx >= 0 ? at(requireChangeIdx).trim().toLowerCase() : "";
+      return {
+        externalRowId: `row-${rowIndex + 2}`,
+        username: at(usernameIdx),
+        displayName: at(displayNameIdx),
+        email: emailIdx >= 0 ? at(emailIdx) || null : null,
+        temporaryPassword: at(passwordIdx),
+        roleIds: splitIds(at(rolesIdx)),
+        teamIds: splitIds(at(teamsIdx)),
+        requirePasswordChange: ["", "是", "yes", "true", "1", "y"].includes(requireText),
+      };
+    }),
+  };
+}
+
+function normalizeUserImport(value: unknown): JsonObject {  const users = Array.isArray(value)
     ? value
     : value &&
         typeof value === "object" &&
@@ -1864,16 +2066,20 @@ function TeamsSection({
   onChanged,
   onError,
 }: SectionProps & { readonly modelResources: ModelResources }) {
-  const [query, setQuery] = useState("");
+  // 2026-09-30 LiXiang2019 团队列表筛选：点查询后才应用条件
+  const [filterForm] = Form.useForm<NameListFilters>();
+  const [filters, setFilters] = useState<NameListFilters>({});
   const [detailTeamId, setDetailTeamId] = useState<string | null>(null);
+  const [employeesTeamId, setEmployeesTeamId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const { pending, run } = useMutationRunner(onChanged, onError);
+  const [teamOwners, setTeamOwners] = useState<Record<string, string>>(() => loadTeamOwners());
   const rows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = (filters.query ?? "").trim().toLowerCase();
     return normalized
       ? resources.teams.filter((team) => `${team.name} ${team.id}`.toLowerCase().includes(normalized))
       : resources.teams;
-  }, [resources.teams, query]);
+  }, [resources.teams, filters]);
   const detailTeam = detailTeamId ? resources.teams.find((team) => team.id === detailTeamId) ?? null : null;
   const columns: TableProps<Team>["columns"] = [
     {
@@ -1886,7 +2092,21 @@ function TeamsSection({
         </Space>
       ),
     },
+    { title: t("teamOwner"), key: "owner", width: 120, render: (_, team) => {
+      const owner = (teamOwners[team.id] ?? "").trim();
+      return owner ? owner : <UnknownText>{t("teamOwnerUnset")}</UnknownText>;
+    } },
     { title: rc.memberCount, dataIndex: "memberCount", key: "memberCount", width: 100 },
+    {
+      title: t("teamEmployees"),
+      key: "employees",
+      width: 140,
+      render: (_, team) => (
+        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setEmployeesTeamId(team.id)}>
+          {teamEmployeesCount(team.id, resources)}
+        </Button>
+      ),
+    },
     {
       title: t("effectiveResources"),
       key: "access",
@@ -1969,26 +2189,39 @@ function TeamsSection({
           </>
         }
       />
-      <Input.Search
-        aria-label={rc.searchTeamPlaceholder}
-        placeholder={rc.searchTeamPlaceholder}
-        allowClear
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        style={{ width: 240, marginBottom: 16 }}
+      {/* 2026-09-30 LiXiang2019 团队列表筛选条件 + 查询/重置按钮组 */}
+      <Form form={filterForm} layout="inline" style={{ gap: 12, marginBottom: 16 }}>
+        <Form.Item name="query" style={{ marginInlineEnd: 0 }}>
+          <Input
+            aria-label={rc.searchTeamPlaceholder}
+            placeholder={rc.searchTeamPlaceholder}
+            allowClear
+            style={{ width: 240 }}
+          />
+        </Form.Item>
+        <Form.Item style={{ marginInlineEnd: 0 }}>
+          <ListQueryActions
+            form={filterForm}
+            search={{ run: (values) => setFilters(values) }}
+            onReset={() => setFilters({})}
+          />
+        </Form.Item>
+      </Form>
+      {/* 2026-09-30 LiXiang2019 加载态用表格 loading，空数据用 Empty（对齐账号关联） */}
+      <Table<Team>
+        rowKey="id"
+        columns={columns}
+        dataSource={[...rows]}
+        pagination={PAGINATION}
+        loading={loading}
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("teamsEmpty")}>
+              <Typography.Text type="secondary">{t("teamsEmptyHint")}</Typography.Text>
+            </Empty>
+          ),
+        }}
       />
-      {rows.length === 0 ? (
-        <Empty description={t("teamsEmpty")}>
-          <Typography.Text type="secondary">{t("teamsEmptyHint")}</Typography.Text>
-        </Empty>
-      ) : (
-        <Table<Team>
-          rowKey="id"
-          columns={columns}
-          dataSource={[...rows]}
-          pagination={PAGINATION}
-        />
-      )}
       {detailTeam ? (
         <TeamDetailDrawer
           team={detailTeam}
@@ -2014,6 +2247,24 @@ function TeamsSection({
           }}
           onChanged={onChanged}
           onError={onError}
+          onOwnerChange={(teamId, ownerId) => {
+            setTeamOwners((current) => {
+              const next = { ...current };
+              if (ownerId) next[teamId] = ownerId;
+              else delete next[teamId];
+              saveTeamOwners(next);
+              return next;
+            });
+          }}
+          initialOwnerId={editor.id ? teamOwners[editor.id] : undefined}
+        />
+      ) : null}
+      {employeesTeamId ? (
+        <TeamEmployeesModal
+          team={resources.teams.find((team) => team.id === employeesTeamId) ?? null}
+          resources={resources}
+          open
+          onClose={() => setEmployeesTeamId(null)}
         />
       ) : null}
     </div>
@@ -2049,7 +2300,7 @@ function TeamDetailDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      size={640}
+      size={700}
       title={
         <Space size={8}>
           <span>{team.name}</span>
@@ -2123,6 +2374,73 @@ function TeamDetailDrawer({
   );
 }
 
+function loadTeamOwners(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem("admin-team-owners");
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveTeamOwners(owners: Record<string, string>): void {
+  try {
+    localStorage.setItem("admin-team-owners", JSON.stringify(owners));
+  } catch {
+    // 忽略本地存储失败，不阻塞主流程
+  }
+}
+
+function teamEmployeesCount(teamId: string, resources: AdminResources): number {
+  return resources.users.filter((user) => (user.teamIds ?? []).includes(teamId)).length;
+}
+
+function TeamEmployeesModal({
+  team,
+  resources,
+  open,
+  onClose,
+}: {
+  readonly team: Team | null;
+  readonly resources: AdminResources;
+  readonly open: boolean;
+  readonly onClose: () => void;
+}) {
+  const members = team ? resources.users.filter((user) => (user.teamIds ?? []).includes(team.id)) : [];
+  return (
+    <Modal
+      open={open}
+      width={600}
+      title={team ? `${t("teamEmployeesTitle")}：${team.name}` : t("teamEmployeesTitle")}
+      cancelText={t("close")}
+      okButtonProps={{ style: { display: "none" } }}
+      onCancel={onClose}
+      onOk={onClose}
+    >
+      <Typography.Paragraph type="secondary">{t("teamEmployeesEmptyHint")}</Typography.Paragraph>
+      {members.length === 0 ? (
+        <Empty description={t("teamEmployeesEmpty")} />
+      ) : (
+        <Table<PlatformUser>
+          rowKey="id"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...members]}
+          columns={[
+            { title: t("displayName"), key: "name", render: (_, user) => <NameCell name={user.displayName} detail={user.username} /> },
+            { title: t("status"), key: "status", width: 100, render: (_, user) => <EnabledBadge enabled={user.status === "active"} /> },
+          ]}
+        />
+      )}
+    </Modal>
+  );
+}
+
 function TeamEditorModal({
   client,
   existingTeams,
@@ -2131,19 +2449,24 @@ function TeamEditorModal({
   onOpenChange,
   onChanged,
   onError,
+  onOwnerChange,
+  initialOwnerId,
 }: {
   readonly client: AdminConsoleClient;
   readonly existingTeams: readonly Team[];
+  readonly users: readonly PlatformUser[];
   readonly team: Team | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
+  readonly onOwnerChange: (teamId: string, ownerId: string | undefined) => void;
+  readonly initialOwnerId: string | undefined;
 }) {
   const editing = Boolean(team);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean }) => {
+  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean; ownerId?: string }) => {
     const normalizedId = (values.id ?? "").trim();
     if (!team && existingTeams.some((item) => item.id === normalizedId)) {
       form.setFields([{ name: "id", errors: [t("teamIdAlreadyExists")] }]);
@@ -2151,18 +2474,22 @@ function TeamEditorModal({
     }
     setPending(true);
     try {
+      let teamId = team?.id ?? "";
       if (team)
         await client.updateTeam(team.id, {
           name: values.name.trim(),
           description: (values.description ?? "").trim(),
           enabled: values.enabled !== false,
         });
-      else
-        await client.createTeam({
+      else {
+        const created = await client.createTeam({
           id: normalizedId,
           name: values.name.trim(),
           description: (values.description ?? "").trim(),
         });
+        teamId = created.id;
+      }
+      onOwnerChange(teamId, values.ownerId || undefined);
       onOpenChange(false);
       await onChanged();
       notify(AdminNotificationKind.Success, t("changesSaved"));
@@ -2175,6 +2502,7 @@ function TeamEditorModal({
   return (
     <Modal
       open={open}
+      width={600}
       title={t(editing ? "teamEditTitle" : "teamEditorTitle")}
       okText={t("save")}
       cancelText={t("cancel")}
@@ -2195,6 +2523,7 @@ function TeamEditorModal({
           name: team?.name ?? "",
           description: team?.description ?? "",
           enabled: team?.enabled !== false,
+          ownerId: initialOwnerId ?? undefined,
         }}
         onFinish={submit}
       >
@@ -2213,6 +2542,9 @@ function TeamEditorModal({
         )}
         <Form.Item name="name" label={t("teamName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
           <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="ownerId" label={t("teamOwner")}>
+          <Input autoComplete="off" placeholder={t("teamOwnerPlaceholder")} disabled={pending} />
         </Form.Item>
         <Form.Item name="description" label={t("description")}>
           <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
@@ -2241,16 +2573,19 @@ function RolesSection({
   onChanged,
   onError,
 }: SectionProps & { readonly modelResources: ModelResources }) {
-  const [query, setQuery] = useState("");
+  // 2026-09-30 LiXiang2019 角色列表筛选：点查询后才应用条件
+  const [filterForm] = Form.useForm<NameListFilters>();
+  const [filters, setFilters] = useState<NameListFilters>({});
   const [detailRoleId, setDetailRoleId] = useState<string | null>(null);
+  const [membersRoleId, setMembersRoleId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const { pending, run } = useMutationRunner(onChanged, onError);
   const rows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = (filters.query ?? "").trim().toLowerCase();
     return normalized
       ? resources.roles.filter((role) => `${role.name} ${role.id}`.toLowerCase().includes(normalized))
       : resources.roles;
-  }, [resources.roles, query]);
+  }, [resources.roles, filters]);
   const detailRole = detailRoleId ? resources.roles.find((role) => role.id === detailRoleId) ?? null : null;
   const memberCount = (roleId: string) =>
     resources.users.filter((user) => (user.roleIds ?? []).includes(roleId)).length;
@@ -2275,7 +2610,11 @@ function RolesSection({
       title: rc.roleMemberCount,
       key: "members",
       width: 100,
-      render: (_, role) => memberCount(role.id),
+      render: (_, role) => (
+        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setMembersRoleId(role.id)}>
+          {memberCount(role.id)}
+        </Button>
+      ),
     },
     {
       title: t("effectiveResources"),
@@ -2359,26 +2698,47 @@ function RolesSection({
           </>
         }
       />
-      <Input.Search
-        aria-label={rc.searchRolePlaceholder}
-        placeholder={rc.searchRolePlaceholder}
-        allowClear
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        style={{ width: 240, marginBottom: 16 }}
+      {/* 2026-09-30 LiXiang2019 角色列表筛选条件 + 查询/重置按钮组 */}
+      <Form form={filterForm} layout="inline" style={{ gap: 12, marginBottom: 16 }}>
+        <Form.Item name="query" style={{ marginInlineEnd: 0 }}>
+          <Input
+            aria-label={rc.searchRolePlaceholder}
+            placeholder={rc.searchRolePlaceholder}
+            allowClear
+            style={{ width: 240 }}
+          />
+        </Form.Item>
+        <Form.Item style={{ marginInlineEnd: 0 }}>
+          <ListQueryActions
+            form={filterForm}
+            search={{ run: (values) => setFilters(values) }}
+            onReset={() => setFilters({})}
+          />
+        </Form.Item>
+      </Form>
+      {/* 2026-09-30 LiXiang2019 加载态用表格 loading，空数据用 Empty（对齐账号关联） */}
+      <Table<Role>
+        rowKey="id"
+        columns={columns}
+        dataSource={[...rows]}
+        pagination={PAGINATION}
+        loading={loading}
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("rolesEmpty")}>
+              <Typography.Text type="secondary">{t("rolesEmptyHint")}</Typography.Text>
+            </Empty>
+          ),
+        }}
       />
-      {rows.length === 0 ? (
-        <Empty description={t("rolesEmpty")}>
-          <Typography.Text type="secondary">{t("rolesEmptyHint")}</Typography.Text>
-        </Empty>
-      ) : (
-        <Table<Role>
-          rowKey="id"
-          columns={columns}
-          dataSource={[...rows]}
-          pagination={PAGINATION}
+      {membersRoleId ? (
+        <RoleMembersModal
+          role={resources.roles.find((role) => role.id === membersRoleId) ?? null}
+          resources={resources}
+          open
+          onClose={() => setMembersRoleId(null)}
         />
-      )}
+      ) : null}
       {detailRole ? (
         <RoleDetailDrawer
           role={detailRole}
@@ -2410,6 +2770,46 @@ function RolesSection({
   );
 }
 
+function RoleMembersModal({
+  role,
+  resources,
+  open,
+  onClose,
+}: {
+  readonly role: Role | null;
+  readonly resources: AdminResources;
+  readonly open: boolean;
+  readonly onClose: () => void;
+}) {
+  const members = role ? resources.users.filter((user) => (user.roleIds ?? []).includes(role.id)) : [];
+  return (
+    <Modal
+      open={open}
+      width={600}
+      title={role ? `${rc.roleSubjectsTab}：${role.name}` : rc.roleSubjectsTab}
+      cancelText={t("close")}
+      okButtonProps={{ style: { display: "none" } }}
+      onCancel={onClose}
+      onOk={onClose}
+    >
+      {members.length === 0 ? (
+        <Empty description={rc.roleSubjectsEmpty} />
+      ) : (
+        <Table<PlatformUser>
+          rowKey="id"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...members]}
+          columns={[
+            { title: t("user"), key: "user", render: (_, user) => <NameCell name={user.displayName} detail={user.username} /> },
+            { title: t("status"), key: "status", width: 100, render: (_, user) => <EnabledBadge enabled={user.status === "active"} /> },
+          ]}
+        />
+      )}
+    </Modal>
+  );
+}
+
 function RoleDetailDrawer({
   role,
   resources,
@@ -2431,7 +2831,7 @@ function RoleDetailDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      size={640}
+      size={800}
       title={
         <Space size={8}>
           <span>{role.name}</span>
@@ -2572,6 +2972,7 @@ function RoleEditorModal({
   return (
     <Modal
       open={open}
+      width={1000}
       title={t(editing ? "roleEditTitle" : "roleEditorTitle")}
       okText={t("save")}
       cancelText={t("cancel")}
@@ -2615,12 +3016,21 @@ function RoleEditorModal({
         <Form.Item name="description" label={t("description")}>
           <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
         </Form.Item>
-        <Form.Item name="permissions" label={t("permissions")}>
-          <Checkbox.Group
+        <Form.Item
+          name="permissions"
+          label={t("permissions")}
+          valuePropName="checkedKeys"
+          trigger="onCheck"
+          getValueFromEvent={(checked: readonly string[] | { readonly checked: readonly string[] }) =>
+            (Array.isArray(checked) ? checked : checked.checked) as string[]
+          }
+        >
+          <Tree
+            checkable
             disabled={pending}
-            options={permissions.map((permission) => ({
-              value: permission.id,
-              label: permission.description ? `${permission.id} — ${permission.description}` : permission.id,
+            treeData={permissions.map((permission) => ({
+              key: permission.id,
+              title: permission.description ? `${permission.id} — ${permission.description}` : permission.id,
             }))}
           />
         </Form.Item>

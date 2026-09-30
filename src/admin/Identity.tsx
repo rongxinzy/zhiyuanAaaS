@@ -1,4 +1,5 @@
 import {
+  InfoCircleOutlined,
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -22,8 +23,17 @@ import {
 import { identityCopy as copy } from './identity-copy.js';
 import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
+/** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
+import { ListQueryActions } from './components/ListQueryActions.js';
 
 const language: AdminLanguage = 'zh';
+
+/** 2026-09-30 LiXiang2019 账号关联列表筛选表单字段 */
+interface IdentityListFilters {
+  readonly query?: string;
+  readonly sourceId?: string;
+  readonly status?: string;
+}
 
 const IdentitySourceKindOrder = [
   AdminIdentitySourceKind.Directory,
@@ -65,9 +75,9 @@ export function Identity({ client, identity }: {
   const [creatingSource, setCreatingSource] = useState(false);
   const [editing, setEditing] = useState<MappingRow | 'new' | null>(null);
   const [unlinking, setUnlinking] = useState<MappingRow | null>(null);
-  const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  // 2026-09-30 LiXiang2019 账号关联筛选：点查询后才应用条件
+  const [filterForm] = Form.useForm<IdentityListFilters>();
+  const [filters, setFilters] = useState<IdentityListFilters>({});
   const [revision, refresh] = useState(0);
 
   useEffect(() => {
@@ -126,10 +136,10 @@ export function Identity({ client, identity }: {
 
   const filtered = useMemo(() => {
     if (!rows) return [];
-    const keyword = search.trim().toLowerCase();
+    const keyword = (filters.query ?? '').trim().toLowerCase();
     return rows.filter(row => {
-      if (sourceFilter && row.sourceId !== sourceFilter) return false;
-      if (statusFilter && row.status !== statusFilter) return false;
+      if (filters.sourceId && row.sourceId !== filters.sourceId) return false;
+      if (filters.status && row.status !== filters.status) return false;
       if (!keyword) return true;
       const label = userLabel(row.localSubjectId);
       return (
@@ -138,7 +148,7 @@ export function Identity({ client, identity }: {
         label.secondary.toLowerCase().includes(keyword)
       );
     });
-  }, [rows, search, sourceFilter, statusFilter, userLabel]);
+  }, [rows, filters, userLabel]);
 
   const columns = useMemo(() => [
     {
@@ -199,18 +209,17 @@ export function Identity({ client, identity }: {
     <div className="flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Typography.Title level={4} style={{ marginBottom: 4 }}>{copy.pageTitle}</Typography.Title>
-          <Typography.Text type="secondary">{copy.pageDescription}</Typography.Text>
+          <Typography.Text type="secondary"><InfoCircleOutlined style={{ marginInlineEnd: 6 }} />{copy.pageDescription}</Typography.Text>
         </div>
         <Space wrap>
           {canWrite ? (
             <>
-              <Button icon={<PlusOutlined />} onClick={() => setCreatingSource(true)}>{copy.addSource}</Button>
+              {/* <Button icon={<PlusOutlined />} onClick={() => setCreatingSource(true)}>{copy.addSource}</Button> */}
               <Button type="primary" icon={<LinkOutlined />} onClick={() => setEditing('new')}>{copy.addLink}</Button>
             </>
           ) : null}
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
-            {translate(language, 'refresh')}
+            {/* {translate(language, 'refresh')} */}
           </Button>
         </Space>
       </div>
@@ -235,33 +244,43 @@ export function Identity({ client, identity }: {
         />
       ) : null}
 
-      <Space wrap>
-        <Input.Search
-          allowClear
-          placeholder={copy.searchPlaceholder}
-          onSearch={value => setSearch(value)}
-          style={{ width: 240 }}
-        />
-        <Select
-          allowClear
-          placeholder={copy.sourceListTitle}
-          value={sourceFilter}
-          onChange={value => setSourceFilter(value)}
-          style={{ minWidth: 180 }}
-          options={(sources ?? NO_SOURCES).map(source => ({ value: source.id, label: source.displayName }))}
-        />
-        <Select
-          allowClear
-          placeholder={translate(language, 'status')}
-          value={statusFilter}
-          onChange={value => setStatusFilter(value)}
-          style={{ minWidth: 140 }}
-          options={[
-            { value: AdminIdentityMappingStatus.Active, label: copy.linkActive },
-            { value: AdminIdentityMappingStatus.Disabled, label: copy.linkDisabled },
-          ]}
-        />
-      </Space>
+      {/* 2026-09-30 LiXiang2019 账号关联筛选条件 + 查询/重置按钮组 */}
+      <Form form={filterForm} layout="inline" style={{ gap: 12 }}>
+        <Form.Item name="query" style={{ marginInlineEnd: 0 }}>
+          <Input
+            allowClear
+            placeholder={copy.searchPlaceholder}
+            style={{ width: 240 }}
+          />
+        </Form.Item>
+        <Form.Item name="sourceId" style={{ marginInlineEnd: 0 }}>
+          <Select
+            allowClear
+            placeholder={copy.sourceListTitle}
+            style={{ minWidth: 180 }}
+            options={(sources ?? NO_SOURCES).map(source => ({ value: source.id, label: source.displayName }))}
+          />
+        </Form.Item>
+        <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
+          <Select
+            allowClear
+            placeholder={translate(language, 'status')}
+            style={{ minWidth: 140 }}
+            options={[
+              { value: AdminIdentityMappingStatus.Active, label: copy.linkActive },
+              { value: AdminIdentityMappingStatus.Disabled, label: copy.linkDisabled },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item style={{ marginInlineEnd: 0 }}>
+          <ListQueryActions
+            form={filterForm}
+            searching={loading}
+            search={{ run: (values) => setFilters(values) }}
+            onReset={() => setFilters({})}
+          />
+        </Form.Item>
+      </Form>
 
       {failed && rows === null ? null : (
         <Table
