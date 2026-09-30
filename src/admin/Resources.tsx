@@ -31,6 +31,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   theme,
@@ -62,6 +63,7 @@ import {
 } from "./client.js";
 import { translate, type AdminLanguage, type AdminTranslationKey } from "./i18n.js";
 import { resourcesCopy as rc } from "./resources-copy.js";
+import { SessionClientCell, SessionClientDetail } from "./session-client.js";
 import { formatTimestamp } from "./format.js";
 import { runBatch } from "./batch.js";
 import { AdminNotificationKind, notify } from "./notifications.js";
@@ -1243,7 +1245,13 @@ function UserLoginSessions({
           pagination={PAGINATION}
           dataSource={[...sessions]}
           columns={[
-            { title: rc.sessionClient, key: "client", render: () => <UnknownText /> },
+            {
+              title: rc.sessionClient,
+              key: "client",
+              render: (_, session) => (
+                <SessionClientCell client={session.client} current={session.sessionId === client.sessionId} />
+              ),
+            },
             {
               title: rc.sessionLastActive,
               key: "lastSeenAt",
@@ -1269,22 +1277,32 @@ function UserLoginSessions({
                     {rc.view}
                   </Button>
                   {canRevoke && !session.revokedAt ? (
-                    <Popconfirm
-                      title={rc.revokeLoginTitle}
-                      description={rc.revokeLoginImpact}
-                      okText={rc.confirmRevokeLogin}
-                      cancelText={t("cancel")}
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() =>
-                        void run(async () => {
-                          await client.revokeUserSession(session.sessionId);
-                        })
-                      }
-                    >
-                      <Button type="link" size="small" danger disabled={pending}>
-                        {rc.revokeLogin}
-                      </Button>
-                    </Popconfirm>
+                    session.sessionId === client.sessionId ? (
+                      <Tooltip title={t("sessionCurrentRevokeDisabled")}>
+                        <span>
+                          <Button type="link" size="small" danger disabled>
+                            {rc.revokeLogin}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      <Popconfirm
+                        title={rc.revokeLoginTitle}
+                        description={rc.revokeLoginImpact}
+                        okText={rc.confirmRevokeLogin}
+                        cancelText={t("cancel")}
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() =>
+                          void run(async () => {
+                            await client.revokeUserSession(session.sessionId);
+                          })
+                        }
+                      >
+                        <Button type="link" size="small" danger disabled={pending}>
+                          {rc.revokeLogin}
+                        </Button>
+                      </Popconfirm>
+                    )
                   ) : null}
                 </Space>
               ),
@@ -1309,6 +1327,7 @@ function UserLoginSessions({
             items={[
               { key: "sessionId", label: t("sessionId"), children: <Typography.Text copyable>{detail.sessionId}</Typography.Text> },
               { key: "userId", label: t("userId"), children: detail.userId },
+              { key: "client", label: rc.sessionClient, children: <SessionClientDetail client={detail.client} /> },
               { key: "topic", label: rc.sessionSubject, children: detail.topic },
               { key: "createdAt", label: rc.sessionCreatedAt, children: formatTimestamp(detail.createdAt) || <UnknownText /> },
               { key: "lastSeenAt", label: rc.sessionLastActive, children: formatTimestamp(detail.lastSeenAt) || <UnknownText /> },
@@ -1341,6 +1360,9 @@ function DisableUserModal({
   readonly onError: () => void;
 }) {
   const canRevokeSessions = hasAdminPermission(identity, AdminPermission.SessionsWrite);
+  // Disabling the account that backs this console session signs the operator
+  // out together with the target, so the confirmation must say so explicitly.
+  const isSelf = identity?.user.id === user.id;
   const [activeSessions, setActiveSessions] = useState<number | null>(null);
   const [sessionsUnknown, setSessionsUnknown] = useState(false);
   const [pending, setPending] = useState(false);
@@ -1424,6 +1446,7 @@ function DisableUserModal({
       ) : (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Alert type="warning" showIcon title={rc.disableUserImpact} />
+          {isSelf ? <Alert type="error" showIcon title={rc.disableSelfWarning} /> : null}
           <Descriptions
             column={1}
             size="small"

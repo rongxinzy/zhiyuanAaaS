@@ -360,6 +360,14 @@ const translations = {
     revokeSessionTitle: "撤销这个会话？",
     revokeSessionDescription: "撤销后该终端会话将立即失效，用户需要重新登录。",
     confirmRevokeSession: "确认撤销会话",
+    sessionClientUnknown: "未知",
+    sessionClientBrowser: "浏览器",
+    sessionClientElectron: "Electron 客户端",
+    sessionClientNode: "Node 客户端",
+    sessionClientCurl: "curl",
+    sessionDeviceId: "设备 ID",
+    sessionCurrentBadge: "当前会话",
+    sessionCurrentRevokeDisabled: "当前控制台正在使用该会话，不能撤销。",
     credentials: "凭证",
     credentialsDescription:
       "管理服务凭证及其交付范围。明文值不会在列表中显示。",
@@ -960,6 +968,15 @@ const translations = {
     revokeSessionDescription:
       "This terminal session will become invalid immediately and require the user to sign in again.",
     confirmRevokeSession: "Confirm session revocation",
+    sessionClientUnknown: "Unknown",
+    sessionClientBrowser: "Browser",
+    sessionClientElectron: "Electron app",
+    sessionClientNode: "Node.js client",
+    sessionClientCurl: "curl",
+    sessionDeviceId: "Device ID",
+    sessionCurrentBadge: "Current session",
+    sessionCurrentRevokeDisabled:
+      "This session is in use by the current console and cannot be revoked.",
     credentials: "Credentials",
     credentialsDescription:
       "Manage service credentials and their delivery scope. Secret values are never shown in lists.",

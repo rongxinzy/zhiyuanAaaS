@@ -8,6 +8,7 @@ import {
 } from '@aep/sdk-node';
 
 import { ZhiyuanPasswordSession } from './password-session.js';
+import { ZhiyuanSessionAepClient, zhiyuanSessionClientIdentity } from './client-identity.js';
 
 export interface ZhiyuanPasswordSessionOptions {
   readonly baseUrl: string;
@@ -29,14 +30,17 @@ export function createZhiyuanAepClient(options: ZhiyuanPasswordSessionOptions): 
     options.protectedStorage,
     refreshTokenStorageKey(options.agentId),
   );
-  return new AepClient({
-    baseUrl: options.baseUrl,
-    agentId: options.agentId,
-    agentVersion: options.agentVersion,
-    platform: options.platform,
-    tokenStore,
-    ...(options.transport ? { transport: options.transport } : {}),
-  });
+  return new ZhiyuanSessionAepClient(
+    {
+      baseUrl: options.baseUrl,
+      agentId: options.agentId,
+      agentVersion: options.agentVersion,
+      platform: options.platform,
+      tokenStore,
+      ...(options.transport ? { transport: options.transport } : {}),
+    },
+    zhiyuanSessionClientIdentity(options.agentId),
+  );
 }
 
 function refreshTokenStorageKey(agentId: string): string {

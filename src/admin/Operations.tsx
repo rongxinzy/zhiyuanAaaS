@@ -26,6 +26,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import type {
@@ -60,6 +61,7 @@ import {
 import { runBatch } from './batch.js';
 import { formatTimestamp } from './format.js';
 import { operationsCopy as copy } from './operations-copy.js';
+import { SessionClientCell, SessionClientDetail } from './session-client.js';
 import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
@@ -407,6 +409,8 @@ function SessionPanel({ client, identity }: {
 }) {
   const canRevoke = hasAdminPermission(identity, AdminPermission.SessionsWrite);
   const canReadUsers = hasAdminPermission(identity, AdminPermission.UsersRead);
+  // The console's own session never changes while it stays signed in.
+  const currentSessionId = client.sessionId;
   const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -464,7 +468,9 @@ function SessionPanel({ client, identity }: {
     {
       title: copy.clientColumn,
       key: 'client',
-      render: () => <Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text>,
+      render: (_: unknown, session: AdminUserSession) => (
+        <SessionClientCell client={session.client} current={session.sessionId === currentSessionId} />
+      ),
     },
     {
       title: copy.lastActive,
@@ -485,12 +491,20 @@ function SessionPanel({ client, identity }: {
         <Space size={0}>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(session)}>{copy.view}</Button>
           {canRevoke && !session.revokedAt ? (
-            <Button type="link" size="small" danger onClick={() => setRevoking(session)}>{copy.revokeLogin}</Button>
+            session.sessionId === currentSessionId ? (
+              <Tooltip title={translate(language, 'sessionCurrentRevokeDisabled')}>
+                <span>
+                  <Button type="link" size="small" danger disabled>{copy.revokeLogin}</Button>
+                </span>
+              </Tooltip>
+            ) : (
+              <Button type="link" size="small" danger onClick={() => setRevoking(session)}>{copy.revokeLogin}</Button>
+            )
           ) : null}
         </Space>
       ),
     },
-  ], [canRevoke, userCell]);
+  ], [canRevoke, userCell, currentSessionId]);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -556,7 +570,7 @@ function SessionPanel({ client, identity }: {
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={copy.userColumn}>{userCell(detail.userId)}</Descriptions.Item>
               <Descriptions.Item label={copy.clientColumn}>
-                <Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text>
+                <SessionClientDetail client={detail.client} />
               </Descriptions.Item>
               <Descriptions.Item label={translate(language, 'status')}>
                 {detail.revokedAt ? <Tag>{copy.sessionStateRevoked}</Tag> : <Tag color="success">{copy.sessionStateActive}</Tag>}
@@ -569,9 +583,17 @@ function SessionPanel({ client, identity }: {
             </Descriptions>
             <Alert type="info" showIcon title={copy.sessionsDescription} />
             {canRevoke && !detail.revokedAt ? (
-              <Button danger type="primary" onClick={() => { setRevoking(detail); setDetail(null); }}>
-                {copy.revokeLogin}
-              </Button>
+              detail.sessionId === currentSessionId ? (
+                <Tooltip title={translate(language, 'sessionCurrentRevokeDisabled')}>
+                  <span>
+                    <Button danger type="primary" disabled>{copy.revokeLogin}</Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Button danger type="primary" onClick={() => { setRevoking(detail); setDetail(null); }}>
+                  {copy.revokeLogin}
+                </Button>
+              )
             ) : null}
           </Space>
         ) : null}
@@ -628,7 +650,7 @@ function RevokeSessionModal({ client, session, userLabel, onClose, onChanged }: 
         {failed ? <Alert type="error" showIcon title={copy.revokeFailed} /> : null}
         <Space orientation="vertical" size={2}>
           <span>{copy.userColumn}：<strong>{userLabel}</strong></span>
-          <span>{copy.clientColumn}：<Typography.Text type="secondary">{copy.clientUnknown}</Typography.Text></span>
+          <span>{copy.clientColumn}：<SessionClientDetail client={session.client} /></span>
         </Space>
         <Alert type="warning" showIcon title={copy.revokeLoginImpact} />
       </Space>

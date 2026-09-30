@@ -180,6 +180,102 @@ describe('admin console login', () => {
   });
 });
 
+describe('admin session client identity', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('parses the recorded client identity on session list items', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/sessions': {
+        body: {
+          items: [
+            {
+              sessionId: 's-agent', userId: 'u1', topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              client: { name: 'zhiyuan-enterprise', version: '0.8.0', deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d' },
+            },
+            {
+              sessionId: 's-ua', userId: 'u1', topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              client: { name: 'browser' },
+            },
+            {
+              sessionId: 's-unknown', userId: 'u1', topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              client: null,
+            },
+            {
+              sessionId: 's-legacy', userId: 'u1', topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+            },
+          ],
+        },
+      },
+    });
+    const sessions = await client.sessions();
+    expect(sessions).toHaveLength(4);
+    expect(sessions[0]?.client).toEqual({
+      name: 'zhiyuan-enterprise',
+      version: '0.8.0',
+      deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d',
+    });
+    expect(sessions[1]?.client).toEqual({ name: 'browser' });
+    expect(sessions[2]?.client).toBeNull();
+    expect(sessions[3]?.client).toBeUndefined();
+  });
+
+  test('tracks the console session id from login and clears it on logout', async () => {
+    const { client } = await signedInClient({
+      'POST /aep/v1/auth/logout': { status: 204, body: null },
+    });
+    expect(client.sessionId).toBe('test-session');
+    await client.logout();
+    expect(client.sessionId).toBeNull();
+  });
+
+  test('captures the session id from restored tokens', async () => {
+    stubAepServer({ 'GET /aep/v1/user/me': { body: adminMe } });
+    const store = new MemoryTokenStore({
+      ...loginTokens,
+      tokenType: 'Bearer' as const,
+      sessionId: 'restored-session',
+    });
+    const client = new AdminConsoleClient('http://aep.test', store);
+    const session = await client.restore();
+    expect(session.status).toBe('authenticated');
+    expect(client.sessionId).toBe('restored-session');
+  });
+
+  test('keeps the same session id across an access-token refresh', async () => {
+    let sessionReads = 0;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      const method = init?.method ?? 'GET';
+      const key = `${method} ${url.pathname}`;
+      const respond = (status: number, body: unknown) =>
+        new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+      if (key === 'GET /aep/v1/metadata') return respond(200, serverMetadata);
+      if (key === 'POST /aep/v1/auth/password/login') return respond(200, loginTokens);
+      if (key === 'GET /aep/v1/user/me') return respond(200, adminMe);
+      if (key === 'POST /aep/v1/auth/refresh') {
+        return respond(200, { ...loginTokens, accessToken: 'test-access-refreshed' });
+      }
+      if (key === 'GET /aep/v1/admin/sessions') {
+        sessionReads += 1;
+        return sessionReads === 1 ? respond(401, { code: 'TOKEN_EXPIRED' }) : respond(200, { items: [] });
+      }
+      return respond(404, { code: 'NOT_FOUND' });
+    });
+    const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+    await client.login({ username: 'admin', password: 'test-password' });
+    expect(client.sessionId).toBe('test-session');
+    await client.sessions();
+    expect(sessionReads).toBe(2);
+    expect(client.sessionId).toBe('test-session');
+  });
+});
+
 describe('admin deployment settings', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

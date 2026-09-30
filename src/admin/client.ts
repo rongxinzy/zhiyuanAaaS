@@ -162,6 +162,12 @@ export interface AdminModels {
   readonly assignments: readonly ModelAssignment[];
 }
 
+export interface AdminSessionClient {
+  readonly name: string;
+  readonly version?: string;
+  readonly deviceId?: string;
+}
+
 export interface AdminUserSession {
   readonly sessionId: string;
   readonly userId: string;
@@ -169,6 +175,9 @@ export interface AdminUserSession {
   readonly createdAt: string;
   readonly lastSeenAt: string;
   readonly revokedAt?: string | null;
+  // Self-reported or User-Agent-derived client identity recorded at login;
+  // absent entirely on servers predating the field, null when unknown.
+  readonly client?: AdminSessionClient | null;
 }
 
 export interface AdminCredentials {
@@ -189,8 +198,10 @@ export interface AdminDataPlaneCatalogComparison {
   readonly mismatched: readonly AdminDataPlaneRouteMismatch[];
 }
 
-export type AdminDataPlaneStatus = DataPlaneStatus & {
-  // Absent only in responses predating the catalogComparison field.
+// The SDK now carries catalogComparison on DataPlaneStatus; Omit keeps the
+// local readonly collection shape instead of intersecting with it. The field
+// is absent only in responses predating catalogComparison.
+export type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
   readonly catalogComparison?: AdminDataPlaneCatalogComparison;
 };
 
@@ -390,6 +401,7 @@ export class AdminConsoleClient {
   readonly #transport: AepTransportLike;
   #client: AepClient | null = null;
   #deploymentId: string | null = null;
+  #sessionId: string | null = null;
 
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
     this.#baseUrl = baseUrl.replace(/\/$/, '');
@@ -397,10 +409,18 @@ export class AdminConsoleClient {
     this.#transport = new FetchTransport({fetch: runtimeFetch()}) as unknown as AepTransportLike;
   }
 
+  // The session the console itself is signed in with, captured from the login
+  // or restore token response. It survives access-token refreshes unchanged,
+  // so pages can compare it against the admin session list.
+  get sessionId(): string | null {
+    return this.#sessionId;
+  }
+
   async restore(): Promise<AdminSession> {
     const client = this.#getClient();
     const tokens = await client.restoreSession();
     if (!tokens) return { status: AdminConsoleStatus.SignedOut };
+    this.#sessionId = tokens.sessionId ?? null;
     return this.#identitySession(client);
   }
 
@@ -411,7 +431,8 @@ export class AdminConsoleClient {
     const client = this.#getClient();
     const deploymentId = await this.#resolveDeploymentId(client);
     this.#deploymentId = deploymentId;
-    await client.loginWithPassword({ ...input, deploymentId });
+    const tokens = await client.loginWithPassword({ ...input, deploymentId });
+    this.#sessionId = tokens.sessionId ?? null;
     return this.#identitySession(client);
   }
 
@@ -419,6 +440,7 @@ export class AdminConsoleClient {
     if (this.#client) await this.#client.logout().catch(() => undefined);
     await this.#tokenStore.clear();
     this.#client = null;
+    this.#sessionId = null;
   }
 
   // Digital-employee portal calls carry the same bearer, and the portal
@@ -1004,6 +1026,7 @@ export class AdminConsoleClient {
       await this.#tokenStore.clear();
       this.#client = null;
       this.#deploymentId = null;
+      this.#sessionId = null;
       throw new Error('The AEP current identity response is invalid.');
     }
     this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
@@ -1376,8 +1399,23 @@ function parseSessions(items: unknown[]): AdminUserSession[] {
       createdAt: record.createdAt,
       lastSeenAt: record.lastSeenAt,
       ...(typeof record.revokedAt === 'string' || record.revokedAt === null ? { revokedAt: record.revokedAt } : {}),
+      ...('client' in record ? { client: parseSessionClient(record.client) } : {}),
     }];
   });
+}
+
+function parseSessionClient(value: unknown): AdminSessionClient | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) return null;
+  const name = nonEmptyString(value.name);
+  if (!name) return null;
+  const version = nonEmptyString(value.version);
+  const deviceId = nonEmptyString(value.deviceId);
+  return {
+    name,
+    ...(version ? { version } : {}),
+    ...(deviceId ? { deviceId } : {}),
+  };
 }
 
 function pendingEventCount(value: unknown): number {
