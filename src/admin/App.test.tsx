@@ -11,7 +11,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AdminConsoleClient } from "./client.js";
+import { AdminConsoleClient, AdminMetadataError } from "./client.js";
 import { administratorIdentity } from "./test-fixtures.js";
 import { AdminApp } from "./App.js";
 import { PortalClient } from "./portal.js";
@@ -75,14 +75,14 @@ describe("Ant Design admin shell", () => {
       identity: administratorIdentity,
     });
   }
-  test("requires explicit enterprise credentials and submits them", async () => {
+  test("requires administrator credentials and submits them without an enterprise ID", async () => {
     render(<AdminApp />);
-    const deployment = await screen.findByLabelText("部署 ID");
-    expect(deployment).toHaveValue("");
+    expect(await screen.findByLabelText("用户名")).toHaveValue("");
+    expect(screen.queryByLabelText("部署 ID")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("企业 ID")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    await screen.findAllByText("请填写企业 ID、用户名和密码。");
+    await screen.findAllByText("请填写用户名和密码。");
     expect(AdminConsoleClient.prototype.login).not.toHaveBeenCalled();
-    fireEvent.change(deployment, { target: { value: " enterprise-a " } });
     fireEvent.change(screen.getByLabelText("用户名"), {
       target: { value: " alice " },
     });
@@ -92,7 +92,6 @@ describe("Ant Design admin shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
     await waitFor(() =>
       expect(AdminConsoleClient.prototype.login).toHaveBeenCalledWith({
-        deploymentId: "enterprise-a",
         username: "alice",
         password: "test-password",
       }),
@@ -106,17 +105,33 @@ describe("Ant Design admin shell", () => {
       new Error("denied"),
     );
     render(<AdminApp />);
-    fireEvent.change(await screen.findByLabelText("部署 ID"), {
-      target: { value: "demo" },
-    });
-    fireEvent.change(screen.getByLabelText("用户名"), {
+    fireEvent.change(await screen.findByLabelText("用户名"), {
       target: { value: "admin" },
     });
     fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "wrong" },
     });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("登录失败，请检查账号信息或稍后重试。");
+    expect(screen.getByRole("button", { name: "登录" })).not.toBeDisabled();
+  });
+  test("explains when the server metadata does not name a deployment", async () => {
+    vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(
+      new AdminMetadataError("AEP server metadata could not be retrieved."),
+    );
+    render(<AdminApp />);
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "test-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "无法获取部署信息，请确认企业管控服务可用后重试。",
+    );
     expect(screen.getByRole("button", { name: "登录" })).not.toBeDisabled();
   });
   test("renders seven business entries without legacy navigation", async () => {

@@ -60,8 +60,8 @@ try {
     path: path.join(screenshots, "login.png"),
     fullPage: true, animations: "disabled",
   });
-  assert.equal(await page.getByLabel("部署 ID").inputValue(), "");
-  await page.getByLabel("部署 ID").fill("demo");
+  // Login derives the deployment from server metadata; no ID input exists.
+  assert.equal(await page.getByLabel("部署 ID").count(), 0);
   await page.getByLabel("用户名", { exact: true }).fill("admin");
   await page.getByLabel("密码", { exact: true }).fill("e2e-test-password");
   await page.getByRole("button", { name: "登录", exact: true }).click();

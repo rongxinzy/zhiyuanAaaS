@@ -36,6 +36,7 @@ import {
 import {
   AdminConsoleClient,
   AdminConsoleStatus,
+  AdminMetadataError,
   AdminPermission as P,
   hasAdminPermission,
   type AdminIdentity,
@@ -217,7 +218,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [session, setSession] = useState<AdminSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"signInFailed" | "signInMetadataFailed" | null>(null);
   const [route, setRoute] = useState(readRoute);
   useEffect(() => {
     let live = true;
@@ -273,7 +274,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             <Alert
               type="error"
               showIcon
-              title={t("signInFailed")}
+              title={t(error)}
               style={{ marginBottom: 20 }}
             />
           )}
@@ -282,40 +283,29 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             requiredMark={false}
             disabled={pending}
             onFinish={async (values: {
-              deploymentId: string;
               username: string;
               password: string;
             }) => {
               setPending(true);
-              setError(false);
+              setError(null);
               try {
                 setSession(
                   await client.login({
-                    ...values,
-                    deploymentId: values.deploymentId.trim(),
                     username: values.username.trim(),
+                    password: values.password,
                   }),
                 );
-              } catch {
-                setError(true);
+              } catch (cause) {
+                setError(
+                  cause instanceof AdminMetadataError
+                    ? "signInMetadataFailed"
+                    : "signInFailed",
+                );
               } finally {
                 setPending(false);
               }
             }}
           >
-            <Form.Item
-              label={t("deploymentId")}
-              name="deploymentId"
-              rules={[
-                {
-                  required: true,
-                  whitespace: true,
-                  message: t("requiredFields"),
-                },
-              ]}
-            >
-              <Input autoComplete="organization" />
-            </Form.Item>
             <Form.Item
               label={t("username")}
               name="username"
