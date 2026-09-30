@@ -24,6 +24,8 @@ import {
   type AdminDeliveryRecord,
 } from "./client.js";
 import { auditCopy as c } from "./audit-copy.js";
+/** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
+import { ListQueryActions } from "./components/ListQueryActions.js";
 import { shellCopy } from "./shell-copy.js";
 
 type Filters = { type?: string; userId?: string; result?: string };
@@ -134,13 +136,6 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
         form={form}
         layout="inline"
         style={{ gap: 12, marginBottom: 20 }}
-        onFinish={(values) => {
-          const next: Filters = {};
-          if (values.type?.trim()) next.type = values.type.trim();
-          if (values.userId?.trim()) next.userId = values.userId.trim();
-          if (values.result) next.result = values.result;
-          setFilters(next);
-        }}
       >
         <Form.Item name="type" label={c.type}>
           <Input allowClear />
@@ -160,20 +155,24 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
             ]}
           />
         </Form.Item>
-        <Space>
-          <Button type="primary" htmlType="submit" loading={loading}>
-            {c.search}
-          </Button>
-          <Button
-            onClick={() => {
-              form.resetFields();
-              setFilters({});
-            }}
-          >
-            {c.reset}
-          </Button>
-          <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
-        </Space>
+        {/* 2026-09-30 LiXiang2019 审计筛选区接入查询/重置按钮组 */}
+        <ListQueryActions
+          form={form}
+          searching={loading}
+          search={{
+            run: (values) => {
+              const next: Filters = {};
+              if (values.type?.trim()) next.type = values.type.trim();
+              if (values.userId?.trim()) next.userId = values.userId.trim();
+              if (values.result) next.result = values.result;
+              setFilters(next);
+            },
+          }}
+          onReset={() => {
+            setFilters({});
+          }}
+        />
+        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
       </Form>
       {error && (
         <Alert

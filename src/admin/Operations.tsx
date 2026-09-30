@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   EyeOutlined,
+  InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   StopOutlined,
@@ -56,8 +57,16 @@ import { formatTimestamp } from './format.js';
 import { operationsCopy as copy } from './operations-copy.js';
 import { translate, type AdminLanguage } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
+/** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
+import { ListQueryActions } from './components/ListQueryActions.js';
 
 const language: AdminLanguage = 'zh';
+
+/** 2026-09-30 LiXiang2019 登录会话列表筛选表单字段 */
+interface SessionListFilters {
+  readonly userId?: string;
+  readonly status?: string;
+}
 
 const NO_USERS: readonly PlatformUser[] = [];
 const NO_ROLES: readonly Role[] = [];
@@ -103,7 +112,19 @@ export function ConfigurationStatusView({ client, identity }: {
   return <ConfigurationStatusPanel client={client} identity={identity} />;
 }
 
+<<<<<<< Updated upstream
 function ModuleHeading({ title, description, children }: {
+=======
+/** Deployment runtime settings (部署运行时设置): model gateway override. */
+export function DeploymentSettingsView({ client, identity }: {
+  readonly client: AdminConsoleClient;
+  readonly identity?: AdminIdentity | undefined;
+}) {
+  return <DeploymentSettingsPanel client={client} identity={identity} />;
+}
+
+function ModuleHeading({ title: _title, description, children }: {
+>>>>>>> Stashed changes
   readonly title: string;
   readonly description: string;
   readonly children?: ReactNode;
@@ -111,8 +132,7 @@ function ModuleHeading({ title, description, children }: {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <Typography.Title level={4} style={{ marginBottom: 4 }}>{title}</Typography.Title>
-        <Typography.Text type="secondary">{description}</Typography.Text>
+        <Typography.Text type="secondary"><InfoCircleOutlined style={{ marginInlineEnd: 6 }} />{description}</Typography.Text>
       </div>
       {children ? <Space wrap>{children}</Space> : null}
     </div>
@@ -397,9 +417,9 @@ function SessionPanel({ client, identity }: {
   const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [appliedFilter, setAppliedFilter] = useState('');
-  const [filterInput, setFilterInput] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  // 2026-09-30 LiXiang2019 登录会话筛选：点查询后才请求/过滤
+  const [filterForm] = Form.useForm<SessionListFilters>();
+  const [filters, setFilters] = useState<SessionListFilters>({});
   const [detail, setDetail] = useState<AdminUserSession | null>(null);
   const [revoking, setRevoking] = useState<AdminUserSession | null>(null);
   const [revision, refresh] = useState(0);
@@ -408,10 +428,11 @@ function SessionPanel({ client, identity }: {
     let live = true;
     setLoading(true);
     setFailed(false);
+    const userId = filters.userId?.trim() || undefined;
     const loadUsers = canReadUsers
       ? client.users().catch(() => null)
       : Promise.resolve(null);
-    void Promise.all([client.sessions(appliedFilter || undefined), loadUsers])
+    void Promise.all([client.sessions(userId), loadUsers])
       .then(([items, knownUsers]) => {
         if (!live) return;
         setSessions(items);
@@ -422,7 +443,7 @@ function SessionPanel({ client, identity }: {
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [client, canReadUsers, appliedFilter, revision]);
+  }, [client, canReadUsers, filters.userId, revision]);
 
   const usersById = useMemo(() => new Map((users ?? NO_USERS).map(user => [user.id, user])), [users]);
 
@@ -441,9 +462,9 @@ function SessionPanel({ client, identity }: {
 
   const rows = useMemo(() => {
     if (!sessions) return [];
-    if (!statusFilter) return [...sessions];
-    return [...sessions].filter(session => (statusFilter === 'revoked' ? Boolean(session.revokedAt) : !session.revokedAt));
-  }, [sessions, statusFilter]);
+    if (!filters.status) return [...sessions];
+    return [...sessions].filter(session => (filters.status === 'revoked' ? Boolean(session.revokedAt) : !session.revokedAt));
+  }, [sessions, filters.status]);
 
   const columns = useMemo(() => [
     { title: copy.userColumn, key: 'user', render: (_: unknown, session: AdminUserSession) => userCell(session.userId) },
@@ -486,28 +507,40 @@ function SessionPanel({ client, identity }: {
         </Button>
       </ModuleHeading>
 
-      <Space wrap>
-        <Input.Search
-          allowClear
-          placeholder={translate(language, 'filterUserId')}
-          value={filterInput}
-          onChange={event => setFilterInput(event.target.value)}
-          onSearch={value => setAppliedFilter(value.trim())}
-          enterButton={translate(language, 'search')}
-          style={{ width: 280 }}
-        />
-        <Select
-          allowClear
-          placeholder={translate(language, 'status')}
-          value={statusFilter}
-          onChange={value => setStatusFilter(value)}
-          style={{ minWidth: 140 }}
-          options={[
-            { value: 'active', label: copy.sessionStateActive },
-            { value: 'revoked', label: copy.sessionStateRevoked },
-          ]}
-        />
-      </Space>
+      {/* 2026-09-30 LiXiang2019 登录会话筛选条件 + 查询/重置按钮组 */}
+      <Form form={filterForm} layout="inline" style={{ gap: 12 }}>
+        <Form.Item name="userId" style={{ marginInlineEnd: 0 }}>
+          <Input
+            allowClear
+            placeholder={translate(language, 'filterUserId')}
+            style={{ width: 280 }}
+          />
+        </Form.Item>
+        <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
+          <Select
+            allowClear
+            placeholder={translate(language, 'status')}
+            style={{ minWidth: 140 }}
+            options={[
+              { value: 'active', label: copy.sessionStateActive },
+              { value: 'revoked', label: copy.sessionStateRevoked },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item style={{ marginInlineEnd: 0 }}>
+          <ListQueryActions
+            form={filterForm}
+            searching={loading}
+            search={{
+              run: (values) => setFilters({
+                userId: values.userId?.trim() || undefined,
+                status: values.status,
+              }),
+            }}
+            onReset={() => setFilters({})}
+          />
+        </Form.Item>
+      </Form>
 
       {failed ? (
         <Alert
