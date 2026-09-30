@@ -51,6 +51,7 @@ import {
   modelGatewayBaseUrlProblem,
   type AdminCredentials,
   type AdminDataPlane,
+  type AdminDataPlaneCatalogComparison,
   type AdminDeploymentSettings,
   type AdminDeploymentSettingValue,
   type AdminIdentity,
@@ -1391,6 +1392,50 @@ function dataPlaneStateTag(state: DataPlaneStatus['state']) {
   return <Tag>{copy.stateUnknown}</Tag>;
 }
 
+function driftFieldLabel(field: string): string {
+  switch (field) {
+    case 'enabled': return copy.driftFieldEnabled;
+    case 'endpoint': return copy.driftFieldEndpoint;
+    case 'upstreamModel': return copy.driftFieldUpstreamModel;
+    case 'providerType': return copy.driftFieldProviderType;
+    case 'credentialRef': return copy.driftFieldCredentialRef;
+    default: return field;
+  }
+}
+
+function CatalogComparisonAlert({ comparison }: {
+  readonly comparison: AdminDataPlaneCatalogComparison;
+}) {
+  const hasDrift = comparison.missing.length > 0
+    || comparison.extra.length > 0
+    || comparison.mismatched.length > 0;
+  return (
+    <Alert
+      type={hasDrift ? 'warning' : 'success'}
+      showIcon
+      title={hasDrift ? copy.catalogDrift : copy.catalogInSync}
+      description={
+        <Space orientation="vertical" size={2}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {copy.catalogComparisonNote}
+          </Typography.Text>
+          {comparison.missing.length > 0 ? (
+            <span>{copy.catalogMissing}：{comparison.missing.join('、')}</span>
+          ) : null}
+          {comparison.extra.length > 0 ? (
+            <span>{copy.catalogExtra}：{comparison.extra.join('、')}</span>
+          ) : null}
+          {comparison.mismatched.map(item => (
+            <span key={item.modelId}>
+              {copy.catalogMismatched}：{item.modelId}（{item.fields.map(driftFieldLabel).join('、')}）
+            </span>
+          ))}
+        </Space>
+      }
+    />
+  );
+}
+
 function ConfigurationStatusPanel({ client, identity }: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
@@ -1511,6 +1556,10 @@ function ConfigurationStatusPanel({ client, identity }: {
           title={copy.errorMessage}
           description={status.message}
         />
+      ) : null}
+
+      {status?.catalogComparison ? (
+        <CatalogComparisonAlert comparison={status.catalogComparison} />
       ) : null}
 
       <div>

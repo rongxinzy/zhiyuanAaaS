@@ -379,6 +379,43 @@ describe('admin operations: configuration status', () => {
     expect(client.dataPlane).not.toHaveBeenCalled();
   });
 
+  test('shows catalog drift from the status comparison and links the publish path', async () => {
+    const drifted = dataPlaneFixture('rev-1');
+    const client = {
+      dataPlane: vi.fn().mockResolvedValue({
+        ...drifted,
+        status: {
+          ...drifted.status,
+          catalogComparison: {
+            missing: ['vision'],
+            extra: ['retired'],
+            mismatched: [{ modelId: 'chat', fields: ['endpoint'] }],
+          },
+        },
+      }),
+    };
+    render(<ConfigurationStatusView client={client as never} identity={{ roles: [], permissions: ['data_plane.write'] } as never} />);
+
+    expect(await screen.findByText(/期望路由与模型目录存在差异/)).toBeInTheDocument();
+    expect(screen.getByText(/目录有、路由缺失/)).toHaveTextContent('vision');
+    expect(screen.getByText(/路由有、目录不收录/)).toHaveTextContent('retired');
+    expect(screen.getByText(/字段不一致/)).toHaveTextContent('chat（网关地址）');
+    // The comparison stays read-only here; publishing happens on the model page.
+    expect(screen.queryByRole('button', { name: /发布/ })).not.toBeInTheDocument();
+  });
+
+  test('reports in-sync when the catalog comparison is empty', async () => {
+    const synced = dataPlaneFixture('rev-1');
+    const client = {
+      dataPlane: vi.fn().mockResolvedValue({
+        ...synced,
+        status: { ...synced.status, catalogComparison: { missing: [], extra: [], mismatched: [] } },
+      }),
+    };
+    render(<ConfigurationStatusView client={client as never} identity={{ roles: [], permissions: ['data_plane.write'] } as never} />);
+    expect(await screen.findByText('期望路由与模型目录一致')).toBeInTheDocument();
+  });
+
   test('routes Operations sections: credentials and the license default', async () => {
     const credentialsClient = {
       credentials: vi.fn().mockResolvedValue({ credentials: [], assignments: [] }),
