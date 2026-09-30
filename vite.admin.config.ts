@@ -33,6 +33,8 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
   build: { outDir: path.resolve(repositoryRoot, 'dist/admin'), emptyOutDir: true, sourcemap: false, target: 'chrome130' },
   server: {
+    hmr: true,
+    open: true,
     headers: securityHeaders,
     proxy: {
       '/aep': {
