@@ -26,6 +26,7 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RocketOutlined,
   SearchOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -44,6 +45,7 @@ import {
   AdminPermission,
   hasAdminPermission,
   type AdminDataPlane,
+  type AdminDataPlaneRouteMismatch,
   type AdminIdentity,
   type AdminModels,
 } from './client.js';
@@ -115,6 +117,37 @@ function routeIncluded(dataPlane: AdminDataPlane, modelId: string): boolean {
   return dataPlane.desired.routes.some((route) => route.modelId === modelId);
 }
 
+// A model is catalog-publishable when it is enabled and its gateway mapping
+// is complete; the publish endpoint derives routes from exactly this set.
+function catalogPublishable(model: AdminModel): boolean {
+  return Boolean(
+    model.enabled
+    && model.sourceType === ModelSourceType.Gateway
+    && model.protocol === ModelProtocol.OpenAiCompatible
+    && model.endpoint?.trim()
+    && model.upstreamModel?.trim(),
+  );
+}
+
+function catalogMismatch(dataPlane: AdminDataPlane, modelId: string): AdminDataPlaneRouteMismatch | null {
+  return dataPlane.status.catalogComparison?.mismatched.find((item) => item.modelId === modelId) ?? null;
+}
+
+function catalogMissing(dataPlane: AdminDataPlane, modelId: string): boolean {
+  return dataPlane.status.catalogComparison?.missing.includes(modelId) ?? false;
+}
+
+function driftFieldLabel(field: string): string {
+  switch (field) {
+    case 'enabled': return t('fieldEnabled');
+    case 'endpoint': return t('fieldEndpoint');
+    case 'upstreamModel': return t('fieldUpstreamModel');
+    case 'providerType': return t('fieldProviderType');
+    case 'credentialRef': return t('fieldCredentialRef');
+    default: return field;
+  }
+}
+
 export function Models({
   client,
   identity,
@@ -144,6 +177,8 @@ export function Models({
   const [dataPlane, setDataPlane] = useState<AdminDataPlane | null>(null);
   const [dataPlaneError, setDataPlaneError] = useState<string | null>(null);
   const [dataPlaneLoading, setDataPlaneLoading] = useState(canDataPlane);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const reportMutationError = useCallback(() => {
     notify(AdminNotificationKind.Error, translate(language, 'modelFormFailed'));
@@ -186,6 +221,33 @@ export function Models({
     void load();
     if (canDataPlane) void loadDataPlane();
   }, [load, loadDataPlane, canDataPlane]);
+
+  // Catalog-derived publish: the server replaces the desired routes with the
+  // routes derived from the current catalog, then the gateway applies them.
+  const publishRoutes = async () => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      await client.publishDataPlaneRoutes();
+      notify(AdminNotificationKind.Success, t('publishSucceeded'));
+      await loadDataPlane();
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : String(err));
+      notify(AdminNotificationKind.Error, t('publishFailed'));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // Catalog mutations change what publish would derive, so the drift badges
+  // reload alongside the catalog itself.
+  const reloadAll = useCallback(async () => {
+    await load();
+    if (canDataPlane) await loadDataPlane();
+  }, [load, loadDataPlane, canDataPlane]);
+
+  // Models the publish would skip: disabled or incomplete gateway mapping.
+  const publishExcluded = (state?.models ?? []).filter((model) => !catalogPublishable(model));
 
   if (granting) {
     return (
@@ -305,7 +367,7 @@ export function Models({
               assignmentCount={(state?.assignments ?? []).filter(
                 (item) => item.resourceId === model.id,
               ).length}
-              onChanged={load}
+              onChanged={reloadAll}
               onError={reportMutationError}
               onDelete={() => setDeleting(model)}
             />
@@ -326,6 +388,31 @@ export function Models({
           <Typography.Text type="secondary">{t('modelsListDescription')}</Typography.Text>
         </div>
         <Space>
+          {canDataPlane ? (
+            <Popconfirm
+              title={t('publishConfirmTitle')}
+              description={
+                <div style={{ maxWidth: 360 }}>
+                  <div>{t('publishConfirmDescription')}</div>
+                  {publishExcluded.length > 0 ? (
+                    <div style={{ marginTop: 8 }}>
+                      {t('publishExcluded')}：
+                      {publishExcluded
+                        .map((model) => `${model.displayName}（${model.enabled ? t('publishExcludedIncomplete') : t('publishExcludedDisabled')}）`)
+                        .join('、')}
+                    </div>
+                  ) : null}
+                </div>
+              }
+              okText={t('publishAction')}
+              cancelText={translate(language, 'cancel')}
+              onConfirm={() => void publishRoutes()}
+            >
+              <Button icon={<RocketOutlined />} loading={publishing} disabled={Boolean(error)}>
+                {t('publishAction')}
+              </Button>
+            </Popconfirm>
+          ) : null}
           {canWrite ? (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
               {translate(language, 'addModel')}
@@ -349,6 +436,14 @@ export function Models({
           type="error"
           showIcon
           title={`${translate(language, 'modelsLoadFailed')}：${error}`}
+        />
+      ) : null}
+      {publishError ? (
+        <Alert
+          type="error"
+          showIcon
+          closable={{ onClose: () => setPublishError(null) }}
+          title={`${t('publishFailed')}：${publishError}`}
         />
       ) : null}
       {state && canDataPlane && dataPlaneError && !error ? (
@@ -391,14 +486,14 @@ export function Models({
         identity={identity}
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={load}
+        onCreated={reloadAll}
       />
       <ModelEditorModal
         client={client}
         identity={identity}
         model={editing}
         onClose={() => setEditing(null)}
-        onChanged={load}
+        onChanged={reloadAll}
       />
       <ModelDeleteModal
         client={client}
@@ -409,7 +504,7 @@ export function Models({
             : 0
         }
         onClose={() => setDeleting(null)}
-        onChanged={load}
+        onChanged={reloadAll}
         onError={reportMutationError}
       />
       <ModelDetailDrawer
@@ -472,16 +567,22 @@ function ConfigStateCell({
   }
   const state = gatewayStateLabel(dataPlane);
   const included = routeIncluded(dataPlane, modelId);
+  const missing = catalogMissing(dataPlane, modelId);
+  const mismatch = catalogMismatch(dataPlane, modelId);
   const tooltip = [
     `${t('configTargetRevision')}：${dataPlane.desired.revision}`,
     `${t('configAppliedRevision')}：${dataPlane.status.observedRevision ?? '—'}`,
     included ? t('configRouteIncluded') : t('configRouteMissingHint'),
+    ...(mismatch ? [`${t('driftMismatched')}：${mismatch.fields.map(driftFieldLabel).join('、')}`] : []),
+    ...(missing ? [t('driftMissingHint')] : []),
   ].join('\n');
   return (
     <Tooltip title={<div style={{ whiteSpace: 'pre-line' }}>{tooltip}</div>}>
       <Space orientation="vertical" size={0}>
         <Tag color={state.color}>{state.label}</Tag>
-        {included ? null : (
+        {mismatch ? <Tag color="warning">{t('driftMismatched')}</Tag> : null}
+        {!mismatch && missing ? <Tag color="warning">{t('driftMissing')}</Tag> : null}
+        {included || missing ? null : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t('configRouteMissing')}
           </Typography.Text>
@@ -1156,6 +1257,14 @@ function ConfigStatusPanel({
   const state = gatewayStateLabel(dataPlane);
   const included = routeIncluded(dataPlane, model.id);
   const observed = dataPlane.status.observedRevision;
+  const comparison = dataPlane.status.catalogComparison;
+  const mismatch = catalogMismatch(dataPlane, model.id);
+  const missing = catalogMissing(dataPlane, model.id);
+  const publishState = !comparison ? null
+    : mismatch ? <Tag color="warning">{t('driftMismatched')}</Tag>
+    : missing ? <Tag color="warning">{t('driftMissing')}</Tag>
+    : included ? <Tag color="success">{t('catalogPublishIncluded')}</Tag>
+    : <Tag>{t('catalogPublishSkipped')}</Tag>;
   return (
     <div className="flex flex-col gap-4">
       <Alert
@@ -1205,6 +1314,16 @@ function ConfigStatusPanel({
               </Tooltip>
             ),
           },
+          ...(publishState
+            ? [{ key: 'catalog', label: t('catalogPublishState'), children: publishState }]
+            : []),
+          ...(mismatch
+            ? [{
+                key: 'drift',
+                label: t('driftFields'),
+                children: mismatch.fields.map(driftFieldLabel).join('、'),
+              }]
+            : []),
           {
             key: 'executor',
             label: t('labelExecutionService'),

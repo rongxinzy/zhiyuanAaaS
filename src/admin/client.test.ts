@@ -302,3 +302,87 @@ describe('model gateway URL pre-validation', () => {
     expect(modelGatewayBaseUrlProblem(`https://${'a'.repeat(2100)}.com`)).toBe('invalid');
   });
 });
+
+describe('admin data-plane publish', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const desiredState = {
+    deploymentId: 'demo',
+    revision: 'catalog-abc',
+    routes: [{ modelId: 'chat', enabled: true, endpoint: '/v1/chat', upstreamModel: 'deepseek-chat', protocol: 'openai-compatible' }],
+    publishedAt: '2026-09-30T00:00:00Z',
+    contentHash: 'a'.repeat(64),
+  };
+
+  test('publishes the catalog-derived routes with an empty body by default', async () => {
+    const { client, requests } = await signedInClient({
+      'POST /aep/v1/admin/data-plane/publish': { body: desiredState },
+    });
+    const desired = await client.publishDataPlaneRoutes();
+    expect(desired.revision).toBe('catalog-abc');
+    expect(desired.routes).toHaveLength(1);
+    const publish = requests.find(request => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish');
+    expect(publish?.body).toEqual({});
+  });
+
+  test('forwards an explicit revision', async () => {
+    const { client, requests } = await signedInClient({
+      'POST /aep/v1/admin/data-plane/publish': { body: { ...desiredState, revision: 'release-7' } },
+    });
+    const desired = await client.publishDataPlaneRoutes({ revision: 'release-7' });
+    expect(desired.revision).toBe('release-7');
+    const publish = requests.find(request => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish');
+    expect(publish?.body).toEqual({ revision: 'release-7' });
+  });
+
+  test('surfaces publish failures as AdminRequestError', async () => {
+    const { client } = await signedInClient({
+      'POST /aep/v1/admin/data-plane/publish': { status: 400, body: { code: 'INVALID_DATA_PLANE_STATE', detail: 'The revision is too long.' } },
+    });
+    const error = await client.publishDataPlaneRoutes({ revision: 'x'.repeat(300) }).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(AdminRequestError);
+    expect((error as AdminRequestError).status).toBe(400);
+    expect((error as AdminRequestError).code).toBe('INVALID_DATA_PLANE_STATE');
+  });
+
+  test('dataPlane() parses the catalog comparison from the status response', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/data-plane/desired-state': { body: desiredState },
+      'GET /aep/v1/admin/data-plane/status': {
+        body: {
+          state: 'ready',
+          observedRevision: 'catalog-abc',
+          contentHash: 'a'.repeat(64),
+          lastAppliedAt: '2026-09-30T00:01:00Z',
+          resourceCount: 1,
+          catalogComparison: {
+            missing: ['vision'],
+            extra: ['retired'],
+            mismatched: [{ modelId: 'chat', fields: ['endpoint'] }],
+          },
+        },
+      },
+    });
+    const dataPlane = await client.dataPlane();
+    expect(dataPlane.status.state).toBe('ready');
+    expect(dataPlane.status.catalogComparison).toEqual({
+      missing: ['vision'],
+      extra: ['retired'],
+      mismatched: [{ modelId: 'chat', fields: ['endpoint'] }],
+    });
+  });
+
+  test('dataPlane() tolerates a status response without the comparison field', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/data-plane/desired-state': { body: desiredState },
+      'GET /aep/v1/admin/data-plane/status': {
+        body: { state: 'pending', observedRevision: null, contentHash: null },
+      },
+    });
+    const dataPlane = await client.dataPlane();
+    expect(dataPlane.status.state).toBe('pending');
+    expect(dataPlane.status.catalogComparison).toBeUndefined();
+  });
+});

@@ -61,6 +61,7 @@ describe('admin models', () => {
     resources: vi.fn().mockResolvedValue(emptyResources),
     credentials: vi.fn().mockResolvedValue(credentials),
     dataPlane: vi.fn().mockResolvedValue(dataPlaneApplied),
+    publishDataPlaneRoutes: vi.fn().mockResolvedValue(dataPlaneApplied.desired),
     createModel: vi.fn().mockResolvedValue(undefined),
     updateModel: vi.fn().mockResolvedValue(undefined),
     deleteModel: vi.fn().mockResolvedValue(undefined),
@@ -428,6 +429,106 @@ describe('admin models', () => {
       expect(await screen.findByText('无匹配主体')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /返回模型列表/ }));
       expect(await screen.findByRole('heading', { name: '模型列表' })).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  const publishableModel = {
+    id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat',
+    enabled: true, isDefault: false, sourceType: 'gateway', protocol: 'openai-compatible',
+  };
+
+  test(
+    'marks catalog drift on models missing from or mismatched with the desired routes',
+    async () => {
+      const client = {
+        ...makeBaseClient(),
+        models: vi.fn().mockResolvedValue({
+          models: [
+            publishableModel,
+            { ...publishableModel, id: 'vision', displayName: '图像理解', upstreamModel: 'vision-v2' },
+          ],
+          assignments: [],
+        }),
+        dataPlane: vi.fn().mockResolvedValue({
+          desired: dataPlaneApplied.desired,
+          status: {
+            ...dataPlaneApplied.status,
+            catalogComparison: { missing: ['vision'], extra: [], mismatched: [{ modelId: 'chat', fields: ['endpoint'] }] },
+          },
+        }),
+      };
+      render(<Models client={client as never} identity={administratorIdentity} />);
+
+      expect(await screen.findByText('待发布')).toBeInTheDocument();
+      expect(screen.getByText('配置不一致')).toBeInTheDocument();
+      // The drift detail follows into the per-model config tab.
+      fireEvent.click(screen.getAllByRole('button', { name: /查看详情/ })[0]!);
+      fireEvent.click(await screen.findByRole('tab', { name: '配置生效详情' }));
+      expect(await screen.findByText('目录发布状态')).toBeInTheDocument();
+      expect(screen.getByText('不一致字段')).toBeInTheDocument();
+      // "endpoint" drift is labelled 网关地址 (also used by the basics tab).
+      expect(screen.getAllByText('网关地址').length).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'publishes catalog-derived routes after confirmation and refreshes the gateway state',
+    async () => {
+      const client = {
+        ...makeBaseClient(),
+        models: vi.fn().mockResolvedValue({ models: [publishableModel], assignments: [] }),
+      };
+      render(<Models client={client as never} identity={administratorIdentity} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /发布生效/ }));
+      const confirm = await screen.findByText('从模型目录发布网关路由');
+      expect(confirm).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '发布生效' }));
+      await waitFor(() => expect(client.publishDataPlaneRoutes).toHaveBeenCalledWith());
+      await waitFor(() => expect(client.dataPlane).toHaveBeenCalledTimes(2));
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'names the models a publish would skip and reports publish failures locally',
+    async () => {
+      const client = {
+        ...makeBaseClient(),
+        models: vi.fn().mockResolvedValue({
+          models: [
+            publishableModel,
+            { ...publishableModel, id: 'draft', displayName: '草稿模型', enabled: false },
+            { ...publishableModel, id: 'bare', displayName: '残缺模型', upstreamModel: '' },
+          ],
+          assignments: [],
+        }),
+        publishDataPlaneRoutes: vi.fn().mockRejectedValue(new Error('AEP 503 UNAVAILABLE')),
+      };
+      render(<Models client={client as never} identity={administratorIdentity} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /发布生效/ }));
+      const popover = await screen.findByText('从模型目录发布网关路由');
+      expect(popover).toBeInTheDocument();
+      expect(screen.getByText(/草稿模型（未启用）/)).toBeInTheDocument();
+      expect(screen.getByText(/残缺模型（映射不完整）/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: '发布生效' }));
+      expect(await screen.findByText(/发布失败：AEP 503 UNAVAILABLE/)).toBeInTheDocument();
+      expect(client.dataPlane).toHaveBeenCalledTimes(1);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'hides the publish action without data-plane permission',
+    async () => {
+      const client = makeBaseClient();
+      render(<Models client={client as never} identity={operatorIdentity} />);
+      await screen.findByRole('heading', { name: '模型列表' });
+      expect(screen.queryByRole('button', { name: /发布生效/ })).not.toBeInTheDocument();
     },
     TIMEOUT,
   );

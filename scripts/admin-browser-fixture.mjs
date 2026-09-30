@@ -557,7 +557,47 @@ async function route(method, pathname, rawBody, response, query) {
     return writeJson(response, 200, state.dataPlane.desired);
   }
   if (method === "GET" && pathname === "/aep/v1/admin/data-plane/status")
-    return writeJson(response, 200, state.dataPlane.status);
+    return writeJson(response, 200, {
+      ...state.dataPlane.status,
+      catalogComparison: computeCatalogComparison(),
+    });
+  if (method === "POST" && pathname === "/aep/v1/admin/data-plane/publish") {
+    // Mirror the server contract: derive routes from the model catalog
+    // (enabled models with a complete gateway mapping) and atomically
+    // replace the desired state; unchanged catalogs are a no-op.
+    const routes = state.models
+      .filter(
+        (model) =>
+          model.enabled !== false &&
+          model.endpoint &&
+          model.upstreamModel,
+      )
+      .map((model) => ({
+        modelId: model.id,
+        enabled: true,
+        endpoint: model.endpoint,
+        upstreamModel: model.upstreamModel,
+        protocol: "openai-compatible",
+      }));
+    const derived = JSON.stringify(routes);
+    const current = JSON.stringify(state.dataPlane.desired.routes);
+    if (derived !== current || !state.dataPlane.desired.revision.startsWith("catalog-")) {
+      state.dataPlane.desired = {
+        deploymentId: "demo",
+        revision: `catalog-${state.nextId++}`,
+        routes,
+        publishedAt: new Date().toISOString(),
+        contentHash: "",
+      };
+      state.dataPlane.status = {
+        ...state.dataPlane.status,
+        state: "pending",
+        observedRevision: null,
+        resourceCount: routes.length,
+      };
+    }
+    return writeJson(response, 200, state.dataPlane.desired);
+  }
   if (pathname === "/aep/v1/admin/deployment/settings") {
     if (method === "GET")
       return writeJson(response, 200, deploymentSettingsPayload());
@@ -587,6 +627,25 @@ function deploymentSettingsPayload() {
       effectiveValue: override ?? env ?? null,
       source: override ? "override" : env ? "env" : "unset",
     },
+  };
+}
+
+function computeCatalogComparison() {
+  const publishable = state.models.filter(
+    (model) => model.enabled !== false && model.endpoint && model.upstreamModel,
+  );
+  const desiredIds = new Set(
+    state.dataPlane.desired.routes.map((route) => route.modelId),
+  );
+  const publishableIds = new Set(publishable.map((model) => model.id));
+  return {
+    missing: publishable
+      .filter((model) => !desiredIds.has(model.id))
+      .map((model) => model.id),
+    extra: state.dataPlane.desired.routes
+      .filter((route) => !publishableIds.has(route.modelId))
+      .map((route) => route.modelId),
+    mismatched: [],
   };
 }
 

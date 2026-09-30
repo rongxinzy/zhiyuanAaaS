@@ -19,6 +19,7 @@ import {
   type CredentialRotate,
   type DataPlaneDesiredState,
   type DataPlaneDesiredStateWrite,
+  type DataPlaneRoute,
   type DataPlaneStatus,
   type JsonObject,
   type JsonValue,
@@ -175,9 +176,27 @@ export interface AdminCredentials {
   readonly assignments: readonly CredentialAssignment[];
 }
 
+export interface AdminDataPlaneRouteMismatch {
+  readonly modelId: string;
+  readonly fields: readonly string[];
+}
+
+// Drift between the route set the model catalog would publish and the routes
+// currently stored as desired state.
+export interface AdminDataPlaneCatalogComparison {
+  readonly missing: readonly string[];
+  readonly extra: readonly string[];
+  readonly mismatched: readonly AdminDataPlaneRouteMismatch[];
+}
+
+export type AdminDataPlaneStatus = DataPlaneStatus & {
+  // Absent only in responses predating the catalogComparison field.
+  readonly catalogComparison?: AdminDataPlaneCatalogComparison;
+};
+
 export interface AdminDataPlane {
   readonly desired: DataPlaneDesiredState;
-  readonly status: DataPlaneStatus;
+  readonly status: AdminDataPlaneStatus;
 }
 
 export const AdminDeploymentSettingSource = {
@@ -669,9 +688,28 @@ export class AdminConsoleClient {
     const client = this.#requireClient();
     const [desired, status] = await Promise.all([
       client.getDataPlaneDesiredState(),
-      client.getDataPlaneStatus(),
+      // The pinned SDK release predates the catalogComparison field on the
+      // data-plane status, so the status read goes through the same
+      // handwritten transport path as the publish endpoint (see #request).
+      this.#request<JsonObject>(client, {
+        method: HttpMethod.Get,
+        path: '/aep/v1/admin/data-plane/status',
+      }).then(parseDataPlaneStatus),
     ]);
     return { desired, status };
+  }
+
+  // The pinned SDK release predates the catalog-derived publish endpoint:
+  // the server derives gateway routes from the model catalog and atomically
+  // replaces the desired state (see #request for the handwritten precedent).
+  async publishDataPlaneRoutes(input?: { readonly revision?: string }): Promise<DataPlaneDesiredState> {
+    const revision = input?.revision?.trim();
+    const desired = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: '/aep/v1/admin/data-plane/publish',
+      body: revision ? { revision } : {},
+    });
+    return parseDataPlaneDesiredState(desired);
   }
 
   async putDataPlane(input: DataPlaneDesiredStateWrite): Promise<DataPlaneDesiredState> {
@@ -1076,6 +1114,58 @@ function parseDeploymentSettingValue(value: unknown): AdminDeploymentSettingValu
 function parseDeploymentSettings(value: unknown): AdminDeploymentSettings {
   const record = isRecord(value) ? value : {};
   return { modelGatewayBaseUrl: parseDeploymentSettingValue(record.modelGatewayBaseUrl) };
+}
+
+const DATA_PLANE_STATES: readonly string[] = ['pending', 'applying', 'ready', 'degraded', 'error'];
+
+function parseDataPlaneStatus(value: unknown): AdminDataPlaneStatus {
+  const record = isRecord(value) ? value : {};
+  const state = typeof record.state === 'string' && DATA_PLANE_STATES.includes(record.state)
+    ? record.state as DataPlaneStatus['state']
+    : 'pending';
+  return {
+    state,
+    observedRevision: typeof record.observedRevision === 'string' ? record.observedRevision : null,
+    contentHash: typeof record.contentHash === 'string' ? record.contentHash : null,
+    ...(typeof record.lastAppliedAt === 'string' || record.lastAppliedAt === null ? { lastAppliedAt: record.lastAppliedAt } : {}),
+    ...(typeof record.errorCode === 'string' || record.errorCode === null ? { errorCode: record.errorCode } : {}),
+    ...(typeof record.message === 'string' || record.message === null ? { message: record.message } : {}),
+    ...(typeof record.resourceCount === 'number' ? { resourceCount: record.resourceCount } : {}),
+    ...(record.catalogComparison !== undefined
+      ? { catalogComparison: parseCatalogComparison(record.catalogComparison) }
+      : {}),
+  };
+}
+
+function parseCatalogComparison(value: unknown): AdminDataPlaneCatalogComparison {
+  const record = isRecord(value) ? value : {};
+  const mismatched = Array.isArray(record.mismatched) ? record.mismatched : [];
+  return {
+    missing: stringList(record.missing),
+    extra: stringList(record.extra),
+    mismatched: mismatched.flatMap(item => {
+      if (!isRecord(item) || typeof item.modelId !== 'string') return [];
+      return [{ modelId: item.modelId, fields: stringList(item.fields) }];
+    }),
+  };
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : [];
+}
+
+function parseDataPlaneDesiredState(value: unknown): DataPlaneDesiredState {
+  const record = isRecord(value) ? value : {};
+  if (typeof record.revision !== 'string' || !Array.isArray(record.routes)) {
+    throw new Error('The AEP data-plane publish response is invalid.');
+  }
+  return {
+    revision: record.revision,
+    routes: record.routes as DataPlaneRoute[],
+    deploymentId: typeof record.deploymentId === 'string' ? record.deploymentId : '',
+    publishedAt: typeof record.publishedAt === 'string' ? record.publishedAt : '',
+    contentHash: typeof record.contentHash === 'string' ? record.contentHash : '',
+  };
 }
 
 function problemFromResponse(status: number, data: unknown): Error {

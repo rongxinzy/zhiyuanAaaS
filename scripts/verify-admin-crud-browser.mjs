@@ -226,7 +226,29 @@ try {
   await page.getByText('E2E 企业模型', { exact: true }).first().waitFor();
   assert.equal(state.models[0].credentialId, state.credentials[0].id);
   checks.push('model registration reuses a server-only connection');
+  // A freshly created model is catalog-publishable but not yet in the
+  // desired routes: the drift badge shows, then publish replaces the state.
+  await page.getByText("待发布", { exact: true }).first().waitFor();
+  await page
+    .getByRole("button", { name: /发布生效/ })
+    .first()
+    .click();
+  await page
+    .locator(".ant-popconfirm")
+    .getByRole("button", { name: /发布生效/ })
+    .click();
+  await page.getByText("已发布，等待网关应用", { exact: true }).waitFor();
+  assert.ok(
+    state.requests.some(
+      (item) =>
+        item.method === "POST" &&
+        item.path === "/aep/v1/admin/data-plane/publish",
+    ),
+  );
+  assert.equal(state.dataPlane.desired.routes[0]?.modelId, "e2e-model");
+  checks.push("catalog drift badge and publish");
   await visit("system/models/configuration", "配置生效详情");
+  await page.getByText("期望路由与模型目录一致", { exact: true }).waitFor();
   await visit("system/channels", "E2E 企业微信");
   await visit("system/services", "服务状态");
   await page.screenshot({
