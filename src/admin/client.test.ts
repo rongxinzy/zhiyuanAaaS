@@ -601,7 +601,7 @@ describe('admin console passthrough endpoints', () => {
     },
     {
       name: 'resetUserPassword',
-      call: (c: AdminConsoleClient) => c.resetUserPassword('u1', { temporaryPassword: 'x1234567' }),
+      call: (c: AdminConsoleClient) => c.resetUserPassword('u1', { temporaryPassword: 'x1234567', requirePasswordChange: true }),
       route: 'POST /aep/v1/admin/users/u1/reset-password',
       response: {},
     },
