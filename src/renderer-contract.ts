@@ -32,22 +32,19 @@ export const EnterpriseRendererSurface = {
   SessionGate: 'session-gate',
   Settings: 'settings',
 } as const;
-export type EnterpriseRendererSurface =
-  (typeof EnterpriseRendererSurface)[keyof typeof EnterpriseRendererSurface];
+export type EnterpriseRendererSurface = (typeof EnterpriseRendererSurface)[keyof typeof EnterpriseRendererSurface];
 
 export const EnterpriseRendererLanguage = {
   Chinese: 'zh',
   English: 'en',
 } as const;
-export type EnterpriseRendererLanguage =
-  (typeof EnterpriseRendererLanguage)[keyof typeof EnterpriseRendererLanguage];
+export type EnterpriseRendererLanguage = (typeof EnterpriseRendererLanguage)[keyof typeof EnterpriseRendererLanguage];
 
 export const EnterpriseRendererTheme = {
   Light: 'light',
   Dark: 'dark',
 } as const;
-export type EnterpriseRendererTheme =
-  (typeof EnterpriseRendererTheme)[keyof typeof EnterpriseRendererTheme];
+export type EnterpriseRendererTheme = (typeof EnterpriseRendererTheme)[keyof typeof EnterpriseRendererTheme];
 
 // Optional v1 appearance capability. Only theme data crosses the sandbox.
 export const EnterpriseRendererThemeVariables = [

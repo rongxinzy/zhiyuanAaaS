@@ -9,9 +9,7 @@ export interface ZhiyuanEnterpriseConfig {
   readonly allowInsecureHttp: boolean;
 }
 
-export async function loadZhiyuanEnterpriseConfig(
-  resourcesPath: string,
-): Promise<ZhiyuanEnterpriseConfig> {
+export async function loadZhiyuanEnterpriseConfig(resourcesPath: string): Promise<ZhiyuanEnterpriseConfig> {
   const configPath = path.join(path.resolve(resourcesPath), 'zhiyuan-enterprise', 'config.json');
   const file = await fs.readFile(configPath);
   if (file.byteLength === 0 || file.byteLength > MAX_CONFIG_BYTES) {

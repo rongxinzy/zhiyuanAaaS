@@ -1,3 +1,4 @@
+import { createZhiyuanExtensionRuntime, type ZhiyuanExtensionRuntime } from './extension-runtime.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
   ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION,
@@ -8,14 +9,10 @@ import {
   type ZhiyuanEnterpriseExtension,
   type ZhiyuanEnterpriseHostContext,
 } from './host-contract.js';
-import {
-  createZhiyuanExtensionRuntime,
-  type ZhiyuanExtensionRuntime,
-} from './extension-runtime.js';
+import { ZhiyuanModelProvider } from './models/provider.js';
+import type { ZhiyuanPasswordSession } from './session/password-session.js';
 import { ZhiyuanPasswordSessionProvider } from './session/provider.js';
 import { createZhiyuanSessionRuntime } from './session/runtime.js';
-import type { ZhiyuanPasswordSession } from './session/password-session.js';
-import { ZhiyuanModelProvider } from './models/provider.js';
 
 export const ZHIYUAN_ENTERPRISE_EXTENSION_ID = 'zhiyuan.aaas';
 export const ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT = 'ui/index.html';
@@ -39,18 +36,14 @@ type ExtensionState =
   | { readonly status: 'disposed' };
 
 export interface ZhiyuanExtensionDependencies {
-  readonly createRuntime?: (
-    context: ZhiyuanEnterpriseHostContext,
-  ) => Promise<ZhiyuanExtensionRuntime>;
-  readonly createSession?: (
-    context: ZhiyuanEnterpriseHostContext,
-  ) => Promise<ZhiyuanPasswordSession>;
+  readonly createRuntime?: (context: ZhiyuanEnterpriseHostContext) => Promise<ZhiyuanExtensionRuntime>;
+  readonly createSession?: (context: ZhiyuanEnterpriseHostContext) => Promise<ZhiyuanPasswordSession>;
   readonly warn: (message: string) => void;
 }
 
 const defaultDependencies: ZhiyuanExtensionDependencies = {
   createRuntime: createZhiyuanExtensionRuntime,
-  warn: message => console.warn(message),
+  warn: (message) => console.warn(message),
 };
 
 export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
@@ -80,22 +73,13 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     const settingsCapability = context.capabilities.settings;
     const managedProviderCapability = context.capabilities.managedProvider;
     const skillCapability = context.capabilities.skills;
-    if (
-      sessionCapability &&
-      sessionCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION
-    ) {
+    if (sessionCapability && sessionCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SESSION_CAPABILITY_API_VERSION) {
       throw new Error('Zhiyuan enterprise session capability API version is not supported.');
     }
-    if (
-      rendererCapability &&
-      rendererCapability.apiVersion !== ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION
-    ) {
+    if (rendererCapability && rendererCapability.apiVersion !== ZHIYUAN_ENTERPRISE_RENDERER_CAPABILITY_API_VERSION) {
       throw new Error('Zhiyuan enterprise renderer capability API version is not supported.');
     }
-    if (
-      settingsCapability &&
-      settingsCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION
-    ) {
+    if (settingsCapability && settingsCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SETTINGS_CAPABILITY_API_VERSION) {
       throw new Error('Zhiyuan enterprise settings capability API version is not supported.');
     }
     if (
@@ -104,10 +88,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     ) {
       throw new Error('Zhiyuan managed provider capability API version is not supported.');
     }
-    if (
-      skillCapability &&
-      skillCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SKILL_CAPABILITY_API_VERSION
-    ) {
+    if (skillCapability && skillCapability.apiVersion !== ZHIYUAN_ENTERPRISE_SKILL_CAPABILITY_API_VERSION) {
       throw new Error('Zhiyuan enterprise Skill capability API version is not supported.');
     }
     if (sessionCapability || managedProviderCapability || skillCapability) {
@@ -134,15 +115,11 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
         );
       }
       await session.initialize().catch(() => {
-        this.#dependencies.warn(
-          '[EnterpriseSession] Session restoration could not complete and remains retryable.',
-        );
+        this.#dependencies.warn('[EnterpriseSession] Session restoration could not complete and remains retryable.');
       });
     }
     if (rendererCapability) {
-      this.#unregisterSessionGate = rendererCapability.registerSessionGate(
-        ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
-      );
+      this.#unregisterSessionGate = rendererCapability.registerSessionGate(ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT);
     }
     if (settingsCapability) {
       try {
@@ -186,7 +163,6 @@ export function createZhiyuanEnterpriseExtension(): ZhiyuanEnterpriseExtension {
   return new ZhiyuanAaaSExtension();
 }
 
-export { createZhiyuanPasswordSession } from './session/factory.js';
 export {
   createZhiyuanAgentControlBackend,
   ZhiyuanAgentControlBackend,
@@ -197,8 +173,9 @@ export {
   type ZhiyuanExtensionRuntime,
   type ZhiyuanExtensionRuntimeDependencies,
 } from './extension-runtime.js';
-export { ZhiyuanLicenseStateMachine } from './license/state.js';
 export { ZhiyuanLicenseActivation } from './license/activation.js';
-export { verifyLicense, parseLicenseEnvelope } from './license/verifier.js';
 export { canonicalize, sha256Digest } from './license/canonical.js';
+export { ZhiyuanLicenseStateMachine } from './license/state.js';
 export * from './license/types.js';
+export { parseLicenseEnvelope, verifyLicense } from './license/verifier.js';
+export { createZhiyuanPasswordSession } from './session/factory.js';

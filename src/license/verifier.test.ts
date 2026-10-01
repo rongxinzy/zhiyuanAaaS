@@ -4,13 +4,8 @@ import { describe, expect, test } from 'vitest';
 
 import { canonicalize } from './canonical.js';
 import { ZhiyuanLicenseStateMachine } from './state.js';
+import { type LicenseClaims, type LicenseEnvelope, LicenseInvalidReason, LicenseStatus } from './types.js';
 import { verifyLicense } from './verifier.js';
-import {
-  LicenseInvalidReason,
-  LicenseStatus,
-  type LicenseClaims,
-  type LicenseEnvelope,
-} from './types.js';
 
 const keyPair = crypto.generateKeyPairSync('ed25519');
 

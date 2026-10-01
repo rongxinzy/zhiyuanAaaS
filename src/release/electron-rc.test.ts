@@ -9,10 +9,10 @@ import type {
 import { describe, expect, test, vi } from 'vitest';
 
 import {
-  ZhiyuanAaaSExtension,
   ZHIYUAN_ENTERPRISE_EXTENSION_ID,
   ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
   ZHIYUAN_ENTERPRISE_SETTINGS_PAGES,
+  ZhiyuanAaaSExtension,
 } from '../extension.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
@@ -20,10 +20,7 @@ import {
   type ZhiyuanEnterpriseSessionProvider,
   type ZhiyuanManagedProviderSource,
 } from '../host-contract.js';
-import {
-  ZhiyuanPasswordSession,
-  type PasswordSessionClient,
-} from '../session/password-session.js';
+import { type PasswordSessionClient, ZhiyuanPasswordSession } from '../session/password-session.js';
 
 describe('Electron release candidate contract', () => {
   test('registers an isolated enterprise session and exclusive managed model source', async () => {
@@ -42,28 +39,28 @@ describe('Electron release candidate contract', () => {
       hostContext({
         session: {
           apiVersion: 1,
-          registerProvider: provider => {
+          registerProvider: (provider) => {
             sessionProviders.push(provider);
             return () => undefined;
           },
         },
         renderer: {
           apiVersion: 1,
-          registerSessionGate: entrypoint => {
+          registerSessionGate: (entrypoint) => {
             registeredGates.push(entrypoint);
             return () => undefined;
           },
         },
         settings: {
           apiVersion: 1,
-          registerPage: page => {
+          registerPage: (page) => {
             registeredPages.push(page);
             return () => undefined;
           },
         },
         managedProvider: {
           apiVersion: 1,
-          registerSource: source => {
+          registerSource: (source) => {
             managedSources.push(source);
             return () => undefined;
           },
@@ -84,7 +81,12 @@ describe('Electron release candidate contract', () => {
     expect(managed).toBeDefined();
     expect(await provider!.snapshot()).toEqual({ status: 'signed-out' });
 
-    await provider!.login({ aepBaseUrl: 'https://aep.example.test', enterpriseId: 'demo', username: 'agent-user', password: 'password' });
+    await provider!.login({
+      aepBaseUrl: 'https://aep.example.test',
+      enterpriseId: 'demo',
+      username: 'agent-user',
+      password: 'password',
+    });
     const snapshot = await managed!.snapshot();
 
     expect(snapshot).toMatchObject({
@@ -129,15 +131,13 @@ describe('Electron release candidate contract', () => {
   });
 });
 
-async function sourceFrom(
-  extension: ZhiyuanAaaSExtension,
-): Promise<ZhiyuanManagedProviderSource> {
+async function sourceFrom(extension: ZhiyuanAaaSExtension): Promise<ZhiyuanManagedProviderSource> {
   let source: ZhiyuanManagedProviderSource | undefined;
   await extension.initialize(
     hostContext({
       managedProvider: {
         apiVersion: 1,
-        registerSource: value => {
+        registerSource: (value) => {
           source = value;
           return () => undefined;
         },

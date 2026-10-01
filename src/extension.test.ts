@@ -3,17 +3,17 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   createZhiyuanEnterpriseExtension,
-  ZhiyuanAaaSExtension,
   ZHIYUAN_ENTERPRISE_EXTENSION_ID,
   ZHIYUAN_ENTERPRISE_SESSION_GATE_ENTRYPOINT,
   ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
   ZHIYUAN_ENTERPRISE_SETTINGS_PAGES,
+  ZhiyuanAaaSExtension,
 } from './extension.js';
 import {
   ZHIYUAN_ENTERPRISE_EXTENSION_API_VERSION,
-  type ZhiyuanManagedProviderSource,
-  type ZhiyuanEnterpriseSessionProvider,
   type ZhiyuanEnterpriseHostContext,
+  type ZhiyuanEnterpriseSessionProvider,
+  type ZhiyuanManagedProviderSource,
 } from './host-contract.js';
 import { ZhiyuanPasswordSession } from './session/password-session.js';
 
@@ -30,9 +30,9 @@ describe('Zhiyuan enterprise extension contract', () => {
 
   test('rejects incompatible hosts and duplicate initialization', async () => {
     const incompatible = createZhiyuanEnterpriseExtension();
-    await expect(
-      incompatible.initialize({ ...hostContext(), apiVersion: 2 } as never),
-    ).rejects.toThrow('API version is not supported');
+    await expect(incompatible.initialize({ ...hostContext(), apiVersion: 2 } as never)).rejects.toThrow(
+      'API version is not supported',
+    );
 
     const extension = createZhiyuanEnterpriseExtension();
     await extension.initialize(hostContext());
@@ -74,9 +74,7 @@ describe('Zhiyuan enterprise extension contract', () => {
       warn: vi.fn(),
     });
 
-    await extension.initialize(
-      hostContext({ apiVersion: 1, registerProvider: vi.fn(() => vi.fn()) }),
-    );
+    await extension.initialize(hostContext({ apiVersion: 1, registerProvider: vi.fn(() => vi.fn()) }));
     await extension.dispose();
     await extension.dispose();
 
@@ -96,9 +94,7 @@ describe('Zhiyuan enterprise extension contract', () => {
       warn,
     });
 
-    await expect(
-      extension.initialize(hostContext({ apiVersion: 1, registerProvider })),
-    ).resolves.toBeUndefined();
+    await expect(extension.initialize(hostContext({ apiVersion: 1, registerProvider }))).resolves.toBeUndefined();
     expect(registerProvider).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       '[EnterpriseSession] Session restoration could not complete and remains retryable.',
@@ -138,9 +134,9 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(registerPage).toHaveBeenCalledTimes(2);
     expect(registerPage).toHaveBeenNthCalledWith(1, ZHIYUAN_ENTERPRISE_SETTINGS_PAGES[0]);
     expect(registerPage).toHaveBeenNthCalledWith(2, ZHIYUAN_ENTERPRISE_SETTINGS_PAGES[1]);
-    expect(ZHIYUAN_ENTERPRISE_SETTINGS_PAGES.every(page =>
-      page.entrypoint === ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT,
-    )).toBe(true);
+    expect(
+      ZHIYUAN_ENTERPRISE_SETTINGS_PAGES.every((page) => page.entrypoint === ZHIYUAN_ENTERPRISE_SETTINGS_ENTRYPOINT),
+    ).toBe(true);
     await extension.dispose();
     await extension.dispose();
     expect(unregister).toHaveBeenCalledTimes(2);
@@ -156,9 +152,9 @@ describe('Zhiyuan enterprise extension contract', () => {
       });
     const extension = createZhiyuanEnterpriseExtension();
 
-    await expect(
-      extension.initialize(hostContext(null, null, { apiVersion: 1, registerPage })),
-    ).rejects.toThrow('duplicate models page');
+    await expect(extension.initialize(hostContext(null, null, { apiVersion: 1, registerPage }))).rejects.toThrow(
+      'duplicate models page',
+    );
     expect(unregisterAccount).toHaveBeenCalledOnce();
   });
 

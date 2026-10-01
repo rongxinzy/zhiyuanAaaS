@@ -7,13 +7,13 @@ export function canonicalize(value: unknown): string {
     if (!Number.isFinite(value)) throw new TypeError('License JSON numbers must be finite.');
     return JSON.stringify(value);
   }
-  if (Array.isArray(value)) return `[${value.map(item => canonicalize(item)).join(',')}]`;
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalize(item)).join(',')}]`;
   if (typeof value !== 'object') throw new TypeError('License payload contains an unsupported value.');
 
   const record = value as Record<string, unknown>;
   const entries = Object.keys(record)
     .sort()
-    .map(key => `${JSON.stringify(key)}:${canonicalize(record[key])}`);
+    .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`);
   return `{${entries.join(',')}}`;
 }
 

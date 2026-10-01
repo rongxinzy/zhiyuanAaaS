@@ -25,9 +25,7 @@ describe('Zhiyuan Agent ID', () => {
     ]);
 
     expect(new Set(agentIds).size).toBe(1);
-    expect(agentIds[0]).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
+    expect(agentIds[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     await expect(resolveZhiyuanAgentId(userData)).resolves.toBe(agentIds[0]);
   });
 

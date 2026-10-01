@@ -8,10 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { ZhiyuanAgentControlBackendOptions } from './agent-control/factory.js';
 import { createZhiyuanExtensionRuntime } from './extension-runtime.js';
 import type { ZhiyuanEnterpriseHostContext } from './host-contract.js';
-import {
-  createZhiyuanAepClient,
-  type ZhiyuanPasswordSessionOptions,
-} from './session/factory.js';
+import { createZhiyuanAepClient, type ZhiyuanPasswordSessionOptions } from './session/factory.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -36,9 +33,7 @@ describe('Zhiyuan extension runtime', () => {
         unregister,
       })),
     });
-    const clientFactory = vi.fn((options: ZhiyuanPasswordSessionOptions) =>
-      createZhiyuanAepClient(options),
-    );
+    const clientFactory = vi.fn((options: ZhiyuanPasswordSessionOptions) => createZhiyuanAepClient(options));
     const backend = {
       start: vi.fn(),
       stop: vi.fn(async () => undefined),

@@ -2,12 +2,12 @@ import crypto from 'node:crypto';
 
 import { canonicalize, sha256Digest } from './canonical.js';
 import {
+  type LicenseClaims,
   LicenseEdition,
+  type LicenseEnvelope,
   LicenseFormat,
   LicenseInvalidReason,
   LicenseStatus,
-  type LicenseClaims,
-  type LicenseEnvelope,
   type LicenseVerificationOptions,
   type LicenseVerificationResult,
 } from './types.js';
@@ -16,10 +16,7 @@ const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 const MAX_LICENSE_BYTES = 64 * 1024;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-export function verifyLicense(
-  input: string | unknown,
-  options: LicenseVerificationOptions,
-): LicenseVerificationResult {
+export function verifyLicense(input: string | unknown, options: LicenseVerificationOptions): LicenseVerificationResult {
   const envelope = parseLicenseEnvelope(input);
   if (!envelope) return invalid(LicenseInvalidReason.Malformed);
 
@@ -30,10 +27,7 @@ export function verifyLicense(
     return invalid(LicenseInvalidReason.InvalidSignature);
   }
 
-  if (
-    options.expectedDeploymentId !== undefined &&
-    envelope.payload.deploymentId !== options.expectedDeploymentId
-  ) {
+  if (options.expectedDeploymentId !== undefined && envelope.payload.deploymentId !== options.expectedDeploymentId) {
     return invalid(LicenseInvalidReason.DeploymentMismatch);
   }
 
@@ -45,11 +39,7 @@ export function verifyLicense(
   if (nowMs < notBeforeMs) return invalid(LicenseInvalidReason.NotYetValid);
 
   const status =
-    nowMs <= expiresMs
-      ? LicenseStatus.Active
-      : nowMs <= graceEndsMs
-        ? LicenseStatus.Grace
-        : LicenseStatus.Expired;
+    nowMs <= expiresMs ? LicenseStatus.Active : nowMs <= graceEndsMs ? LicenseStatus.Grace : LicenseStatus.Expired;
   return {
     status,
     envelope,
@@ -98,7 +88,7 @@ function parseClaims(value: Record<string, unknown>): LicenseClaims | null {
     !isPositiveInteger(value.limits.agents) ||
     (value.limits.organizations !== undefined && !isPositiveInteger(value.limits.organizations)) ||
     !Array.isArray(value.features) ||
-    value.features.some(feature => typeof feature !== 'string' || !feature)
+    value.features.some((feature) => typeof feature !== 'string' || !feature)
   ) {
     return null;
   }
@@ -113,9 +103,7 @@ function parseClaims(value: Record<string, unknown>): LicenseClaims | null {
     limits: {
       users: value.limits.users,
       agents: value.limits.agents,
-      ...(value.limits.organizations === undefined
-        ? {}
-        : { organizations: value.limits.organizations }),
+      ...(value.limits.organizations === undefined ? {} : { organizations: value.limits.organizations }),
     },
     features: Object.freeze([...value.features]),
     ...(value.notBefore === undefined ? {} : { notBefore: value.notBefore }),
@@ -135,12 +123,7 @@ function verifySignature(envelope: LicenseEnvelope, encodedPublicKey: string): b
       format: 'der',
       type: 'spki',
     });
-    return crypto.verify(
-      null,
-      Buffer.from(canonicalize(envelope.payload), 'utf8'),
-      publicKey,
-      signature,
-    );
+    return crypto.verify(null, Buffer.from(canonicalize(envelope.payload), 'utf8'), publicKey, signature);
   } catch {
     return false;
   }

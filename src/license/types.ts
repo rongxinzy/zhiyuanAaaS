@@ -61,15 +61,11 @@ export const LicenseInvalidReason = {
   NotYetValid: 'not-yet-valid',
 } as const;
 
-export type LicenseInvalidReason =
-  (typeof LicenseInvalidReason)[keyof typeof LicenseInvalidReason];
+export type LicenseInvalidReason = (typeof LicenseInvalidReason)[keyof typeof LicenseInvalidReason];
 
 export type LicenseVerificationResult =
   | {
-      readonly status:
-        | typeof LicenseStatus.Active
-        | typeof LicenseStatus.Grace
-        | typeof LicenseStatus.Expired;
+      readonly status: typeof LicenseStatus.Active | typeof LicenseStatus.Grace | typeof LicenseStatus.Expired;
       readonly envelope: LicenseEnvelope;
       readonly digest: string;
       readonly graceEndsAt: string;

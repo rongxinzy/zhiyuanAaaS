@@ -54,9 +54,7 @@ describe('Zhiyuan enterprise configuration', () => {
       allowInsecureHttp: false,
     });
 
-    await expect(loadZhiyuanEnterpriseConfig(resources)).rejects.toThrow(
-      'must not contain credentials',
-    );
+    await expect(loadZhiyuanEnterpriseConfig(resources)).rejects.toThrow('must not contain credentials');
   });
 });
 

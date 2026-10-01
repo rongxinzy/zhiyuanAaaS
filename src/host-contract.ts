@@ -10,8 +10,7 @@ export const ModelCapabilityStatus = {
   Unsupported: 'unsupported',
   Unknown: 'unknown',
 } as const;
-export type ModelCapabilityStatus =
-  (typeof ModelCapabilityStatus)[keyof typeof ModelCapabilityStatus];
+export type ModelCapabilityStatus = (typeof ModelCapabilityStatus)[keyof typeof ModelCapabilityStatus];
 
 export interface ModelCapabilities {
   readonly toolCalling: ModelCapabilityStatus;
@@ -22,10 +21,7 @@ export interface ModelCapabilities {
   readonly reasoning: ModelCapabilityStatus;
 }
 
-export type ProviderModelPiApi =
-  | 'anthropic-messages'
-  | 'openai-completions'
-  | 'openai-responses';
+export type ProviderModelPiApi = 'anthropic-messages' | 'openai-completions' | 'openai-responses';
 export type ProviderModelPiThinkingFormat =
   | 'openai'
   | 'openrouter'
@@ -38,18 +34,9 @@ export type ProviderModelPiThinkingFormat =
   | 'string-thinking'
   | 'ant-ling';
 
-export type ProviderModelPiThinkingLevel =
-  | 'off'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max';
+export type ProviderModelPiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-export type ProviderModelPiThinkingLevelMap = Partial<
-  Record<ProviderModelPiThinkingLevel, string | null>
->;
+export type ProviderModelPiThinkingLevelMap = Partial<Record<ProviderModelPiThinkingLevel, string | null>>;
 
 export interface ProviderModelPiRuntimeConfig {
   readonly api?: ProviderModelPiApi;

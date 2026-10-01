@@ -1,7 +1,7 @@
 import type { AepClient, EntitlementTokenResponse } from '@aep/sdk-node';
 
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
-import { LicenseStatus, type LicenseSnapshot } from './types.js';
+import { type LicenseSnapshot, LicenseStatus } from './types.js';
 
 export const ZHIYUAN_ENTITLEMENT_REFRESH_WINDOW_MS = 60_000;
 
@@ -53,11 +53,11 @@ export class ZhiyuanLicenseActivation {
   }
 
   snapshot(): LicenseSnapshot {
-    return Object.freeze({...this.#snapshot, features: Object.freeze([...this.#snapshot.features])});
+    return Object.freeze({ ...this.#snapshot, features: Object.freeze([...this.#snapshot.features]) });
   }
 
   entitlement(): EntitlementTokenResponse | null {
-    return this.#entitlement ? {...this.#entitlement, features: [...this.#entitlement.features]} : null;
+    return this.#entitlement ? { ...this.#entitlement, features: [...this.#entitlement.features] } : null;
   }
 
   refreshIfNeeded(now = Date.now()): Promise<EntitlementTokenResponse | null> {

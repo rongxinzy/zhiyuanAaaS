@@ -1,8 +1,8 @@
 import type { AgentModel, ModelConnection } from '@aep/sdk-node';
 
 import {
-  ModelCapabilityStatus,
   type ModelCapabilities,
+  ModelCapabilityStatus,
   type ProviderConfig,
   type ProviderModelPiRuntimeConfig,
   type ProviderModelPiThinkingLevel,
@@ -46,16 +46,11 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
   #pollTimer: TimerHandle | null = null;
   #pollInFlight = false;
 
-  constructor(
-    session: ZhiyuanPasswordSession,
-    dependencies: ZhiyuanModelProviderDependencies = {},
-  ) {
+  constructor(session: ZhiyuanPasswordSession, dependencies: ZhiyuanModelProviderDependencies = {}) {
     this.#session = session;
     this.#pollIntervalMs = dependencies.pollIntervalMs ?? ZHIYUAN_MODEL_POLL_INTERVAL_MS;
-    this.#setInterval =
-      dependencies.setInterval ??
-      ((callback, milliseconds) => setInterval(callback, milliseconds));
-    this.#clearInterval = dependencies.clearInterval ?? (handle => clearInterval(handle as never));
+    this.#setInterval = dependencies.setInterval ?? ((callback, milliseconds) => setInterval(callback, milliseconds));
+    this.#clearInterval = dependencies.clearInterval ?? ((handle) => clearInterval(handle as never));
     this.#getEntitlementToken = dependencies.getEntitlementToken ?? null;
     this.#requireEntitlement = dependencies.requireEntitlement === true;
     this.#onEntitlementChange = dependencies.onEntitlementChange ?? null;
@@ -64,10 +59,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
 
   async snapshot(): Promise<ProviderConfig> {
     await this.#refreshEntitlement?.();
-    const [models, connection] = await Promise.all([
-      this.#readModels(),
-      this.#session.getModelConnection(),
-    ]);
+    const [models, connection] = await Promise.all([this.#readModels(), this.#session.getModelConnection()]);
     validateGatewayConnection(connection);
     const entitlementToken = this.#getEntitlementToken?.() ?? null;
     if (this.#requireEntitlement && !entitlementToken) {
@@ -98,9 +90,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
 
   async #readModels(): Promise<AgentModel[]> {
     const { models } = await this.#session.listAgentModels();
-    return models
-      .filter(isGatewayModel)
-      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
+    return models.filter(isGatewayModel).sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
   }
 
   #startWatching(): void {
@@ -157,9 +147,7 @@ function toProviderModel(model: AgentModel): NonNullable<ProviderConfig['models'
   return {
     id: model.id,
     name: model.displayName,
-    ...(capabilities.imageInput === ModelCapabilityStatus.Supported
-      ? { supportsImage: true }
-      : {}),
+    ...(capabilities.imageInput === ModelCapabilityStatus.Supported ? { supportsImage: true } : {}),
     ...(Object.keys(capabilities).length > 0 ? { capabilities } : {}),
     ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
     ...(piRuntime ? { piRuntime } : {}),
@@ -203,7 +191,7 @@ function normalizeThinkingLevelMap(
   const normalized: ProviderModelPiThinkingLevelMap = {};
   for (const level of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
     const mapped = value[level];
-    if (mapped === null || typeof mapped === 'string' && mapped.trim() !== '') {
+    if (mapped === null || (typeof mapped === 'string' && mapped.trim() !== '')) {
       normalized[level] = mapped;
     }
   }
@@ -211,7 +199,7 @@ function normalizeThinkingLevelMap(
 }
 
 function mapCapabilities(values: string[]): Partial<ModelCapabilities> {
-  const capabilities = new Set(values.map(value => value.trim().toLowerCase()));
+  const capabilities = new Set(values.map((value) => value.trim().toLowerCase()));
   return {
     ...(hasAny(capabilities, 'tools', 'tool-calling', 'tool_calling')
       ? { toolCalling: ModelCapabilityStatus.Supported }
@@ -228,14 +216,12 @@ function mapCapabilities(values: string[]): Partial<ModelCapabilities> {
     ...(hasAny(capabilities, 'document', 'document-input', 'document_input')
       ? { documentInput: ModelCapabilityStatus.Supported }
       : {}),
-    ...(capabilities.has('reasoning')
-      ? { reasoning: ModelCapabilityStatus.Supported }
-      : {}),
+    ...(capabilities.has('reasoning') ? { reasoning: ModelCapabilityStatus.Supported } : {}),
   };
 }
 
 function hasAny(values: ReadonlySet<string>, ...candidates: string[]): boolean {
-  return candidates.some(candidate => values.has(candidate));
+  return candidates.some((candidate) => values.has(candidate));
 }
 
 function validateGatewayConnection(connection: ModelConnection): void {

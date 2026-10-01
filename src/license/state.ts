@@ -1,8 +1,4 @@
-import {
-  LicenseStatus,
-  type LicenseSnapshot,
-  type LicenseVerificationOptions,
-} from './types.js';
+import { type LicenseSnapshot, LicenseStatus, type LicenseVerificationOptions } from './types.js';
 import { verifyLicense } from './verifier.js';
 
 export class ZhiyuanLicenseStateMachine {

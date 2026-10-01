@@ -9,15 +9,8 @@ import type {
 import { describe, expect, test, vi } from 'vitest';
 
 import { ModelCapabilityStatus } from '../host-contract.js';
-import {
-  ZhiyuanModelProvider,
-  ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME,
-  ZHIYUAN_MODEL_PROVIDER_KEY,
-} from './provider.js';
-import {
-  ZhiyuanPasswordSession,
-  type PasswordSessionClient,
-} from '../session/password-session.js';
+import { type PasswordSessionClient, ZhiyuanPasswordSession } from '../session/password-session.js';
+import { ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME, ZHIYUAN_MODEL_PROVIDER_KEY, ZhiyuanModelProvider } from './provider.js';
 
 describe('ZhiyuanModelProvider', () => {
   test('projects assigned gateway models into a managed custom provider snapshot', async () => {
@@ -31,7 +24,15 @@ describe('ZhiyuanModelProvider', () => {
               thinkingFormat: 'zai',
               supportsReasoningEffort: true,
               requiresReasoningContentOnAssistantMessages: true,
-              thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
+              thinkingLevelMap: {
+                off: null,
+                minimal: null,
+                low: 'low',
+                medium: null,
+                high: 'high',
+                xhigh: null,
+                max: 'max',
+              },
             },
             contextWindow: 128_000,
           }),
@@ -67,7 +68,15 @@ describe('ZhiyuanModelProvider', () => {
           piRuntime: {
             api: 'openai-completions',
             reasoning: true,
-            thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
+            thinkingLevelMap: {
+              off: null,
+              minimal: null,
+              low: 'low',
+              medium: null,
+              high: 'high',
+              xhigh: null,
+              max: 'max',
+            },
             compat: {
               thinkingFormat: 'zai',
               supportsReasoningEffort: true,
@@ -90,7 +99,7 @@ describe('ZhiyuanModelProvider', () => {
     const session = new ZhiyuanPasswordSession(client);
     const provider = new ZhiyuanModelProvider(session, {
       pollIntervalMs: 10,
-      setInterval: callback => {
+      setInterval: (callback) => {
         poll = callback;
         return { unref: vi.fn() };
       },
@@ -116,19 +125,19 @@ describe('ZhiyuanModelProvider', () => {
   });
 
   test('uses the activated entitlement token for enterprise inference', async () => {
-    const provider = new ZhiyuanModelProvider(
-      await authenticatedSession(mockClient()),
-      {getEntitlementToken: () => 'entitlement-token', requireEntitlement: true},
-    );
+    const provider = new ZhiyuanModelProvider(await authenticatedSession(mockClient()), {
+      getEntitlementToken: () => 'entitlement-token',
+      requireEntitlement: true,
+    });
 
-    await expect(provider.snapshot()).resolves.toMatchObject({apiKey: 'entitlement-token'});
+    await expect(provider.snapshot()).resolves.toMatchObject({ apiKey: 'entitlement-token' });
   });
 
   test('does not expose models before a required entitlement is active', async () => {
-    const provider = new ZhiyuanModelProvider(
-      await authenticatedSession(mockClient()),
-      {getEntitlementToken: () => null, requireEntitlement: true},
-    );
+    const provider = new ZhiyuanModelProvider(await authenticatedSession(mockClient()), {
+      getEntitlementToken: () => null,
+      requireEntitlement: true,
+    });
 
     await expect(provider.snapshot()).rejects.toThrow('requires an active License entitlement');
   });

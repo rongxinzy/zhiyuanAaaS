@@ -1,20 +1,11 @@
 import path from 'node:path';
 
-import {
-  createZhiyuanAgentControlBackend,
-  type ZhiyuanAgentControlBackendOptions,
-} from './agent-control/factory.js';
-import {
-  ZhiyuanAgentControlLifecycle,
-  type AgentControlLifecycleBackend,
-} from './agent-control/lifecycle.js';
+import { createZhiyuanAgentControlBackend, type ZhiyuanAgentControlBackendOptions } from './agent-control/factory.js';
+import { type AgentControlLifecycleBackend, ZhiyuanAgentControlLifecycle } from './agent-control/lifecycle.js';
 import type { ZhiyuanEnterpriseHostContext } from './host-contract.js';
-import {
-  createZhiyuanSessionRuntimeComponents,
-  type SessionRuntimeDependencies,
-} from './session/runtime.js';
-import type { ZhiyuanPasswordSession } from './session/password-session.js';
 import type { ZhiyuanLicenseActivation } from './license/activation.js';
+import type { ZhiyuanPasswordSession } from './session/password-session.js';
+import { createZhiyuanSessionRuntimeComponents, type SessionRuntimeDependencies } from './session/runtime.js';
 
 export interface ZhiyuanExtensionRuntime {
   readonly session: ZhiyuanPasswordSession;
@@ -23,9 +14,7 @@ export interface ZhiyuanExtensionRuntime {
 }
 
 export interface ZhiyuanExtensionRuntimeDependencies extends SessionRuntimeDependencies {
-  readonly createAgentControlBackend?: (
-    options: ZhiyuanAgentControlBackendOptions,
-  ) => AgentControlLifecycleBackend;
+  readonly createAgentControlBackend?: (options: ZhiyuanAgentControlBackendOptions) => AgentControlLifecycleBackend;
   readonly onControlError?: (error: unknown) => void;
 }
 
@@ -49,11 +38,7 @@ export async function createZhiyuanExtensionRuntime(
   try {
     backend = (dependencies.createAgentControlBackend ?? createZhiyuanAgentControlBackend)({
       client: components.client,
-      databasePath: path.join(
-        context.paths.userData,
-        'zhiyuan-enterprise',
-        'agent-control.sqlite',
-      ),
+      databasePath: path.join(context.paths.userData, 'zhiyuan-enterprise', 'agent-control.sqlite'),
       skillRoot: registration.directory,
       agentVersion: context.appVersion,
       platform: components.platform,
