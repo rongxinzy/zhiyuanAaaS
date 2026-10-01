@@ -45,7 +45,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage
+      - name: Measure the base commit (script may predate coverage)
+        run: |
+          if npm run | grep -q " test:coverage"; then
+            npm run test:coverage
+          else
+            mkdir -p coverage
+            echo '{"total":{"lines":{"pct":-1}}}' > coverage/coverage-summary.json
+          fi
       - name: Compare with the PR head
         uses: actions/download-artifact@v4
         with:
@@ -54,6 +61,10 @@ jobs:
           base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.pct)")
           head=$(node -e "const s=require('./coverage-head/coverage-summary.json');console.log(s.total.lines.pct)")
           echo "base(main)=$base% head(PR)=$head%"
+          if [ "$base" = "-1" ]; then
+            echo "Base commit predates coverage tooling; the 80% floor applies."
+            exit 0
+          fi
           if awk "BEGIN{exit !($head < $base)}"; then
             echo "::error::Line coverage dropped from ${base}% on main to ${head}% in this PR."
             exit 1
