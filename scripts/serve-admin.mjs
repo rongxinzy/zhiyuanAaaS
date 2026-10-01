@@ -1,5 +1,5 @@
-import http from 'node:http';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +10,13 @@ const proxyTargets = Object.freeze([
   Object.freeze({ prefix: '/api/', target: new URL(process.env.ZHIYUAN_PORTAL_BASE_URL ?? 'http://localhost:30190') }),
 ]);
 const port = Number(process.env.ZHIYUAN_ADMIN_PORT ?? 5173);
+// The WeKnora frontend cannot live under a /weknora/ subpath here: its build
+// references assets with root-absolute paths and its runtime calls /api/v1,
+// which this server already routes to the portal. Instead it gets a second
+// listener (own port, root path) that transparently proxies the WeKnora
+// nginx — assets, /api, websockets all pass through untouched.
+const weknoraPort = Number(process.env.ZHIYUAN_ADMIN_WEKNORA_PORT ?? 5174);
+const weknoraTarget = new URL(process.env.ZHIYUAN_WEKNORA_UI_URL ?? 'http://frontend.weknora.svc.cluster.local');
 const securityHeaders = Object.freeze({
   'content-security-policy': [
     "default-src 'self'",
@@ -41,7 +48,7 @@ const server = http.createServer(async (request, response) => {
   try {
     const route = proxyTargets.find((candidate) => request.url?.startsWith(candidate.prefix));
     if (route) {
-      await proxy(request, response, route.target);
+      await proxy(request, response, route.target, { policy: true });
       return;
     }
     const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
@@ -58,14 +65,28 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
+// WeKnora passthrough: no console security headers — the upstream page needs
+// its own (inline scripts would break under script-src 'self'), and the
+// upstream's own headers are forwarded verbatim.
+const weknoraServer = http.createServer(async (request, response) => {
+  try {
+    await proxy(request, response, weknoraTarget, { policy: false });
+  } catch {
+    response.writeHead(502).end('Bad gateway');
+  }
+});
+
 // Default loopback matches the local dev flow; containers set
 // ZHIYUAN_ADMIN_HOST=0.0.0.0 so the NodePort service can reach the server.
 const host = process.env.ZHIYUAN_ADMIN_HOST ?? '127.0.0.1';
 server.listen(port, host, () => {
   console.log(`Zhiyuan Admin Console: http://${host}:${port}`);
 });
+weknoraServer.listen(weknoraPort, host, () => {
+  console.log(`WeKnora console proxy: http://${host}:${weknoraPort} -> ${weknoraTarget}`);
+});
 
-async function proxy(request, response, target) {
+async function proxy(request, response, target, { policy }) {
   const upstream = new URL(request.url, target);
   const headers = { ...request.headers, host: upstream.host };
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : request;
@@ -74,8 +95,9 @@ async function proxy(request, response, target) {
   // comma-joined entry through Object.fromEntries — the browser would drop
   // every cookie after the first. Undici exposes them properly via
   // getSetCookie(); re-emit them as a real header array.
-  const forwarded = { ...Object.fromEntries(result.headers), ...securityHeaders };
+  const forwarded = { ...Object.fromEntries(result.headers) };
   delete forwarded['set-cookie'];
+  if (policy) Object.assign(forwarded, securityHeaders);
   const setCookies = result.headers.getSetCookie?.() ?? [];
   if (setCookies.length > 0) {
     response.setHeader('set-cookie', setCookies);

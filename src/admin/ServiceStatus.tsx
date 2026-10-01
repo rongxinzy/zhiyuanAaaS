@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -14,10 +14,10 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
-import { AdminConsoleClient } from './client.js';
-import { translate, type AdminLanguage } from './i18n.js';
+import type { AdminConsoleClient } from './client.js';
+import { type AdminLanguage, translate } from './i18n.js';
 import {
   PortalClient,
   PortalError,
@@ -135,11 +135,7 @@ export function ServicesView({
   }
 
   const probeResultTag = (healthy: boolean) =>
-    healthy ? (
-      <Tag color="success">{t('servicesResultOk')}</Tag>
-    ) : (
-      <Tag color="error">{t('servicesResultBad')}</Tag>
-    );
+    healthy ? <Tag color="success">{t('servicesResultOk')}</Tag> : <Tag color="error">{t('servicesResultBad')}</Tag>;
 
   const rows: readonly ServiceRow[] = [
     {
@@ -159,7 +155,11 @@ export function ServicesView({
       impact: memory.error ? (
         <Typography.Text type="secondary">{memory.error}</Typography.Text>
       ) : memory.result ? (
-        memory.result.healthy ? t('impactMemoryOk') : t('impactMemoryBad')
+        memory.result.healthy ? (
+          t('impactMemoryOk')
+        ) : (
+          t('impactMemoryBad')
+        )
       ) : (
         '—'
       ),
@@ -169,7 +169,12 @@ export function ServicesView({
           <Button type="link" size="small" loading={memory.loading} onClick={() => void checkMemory()}>
             {t('servicesRecheck')}
           </Button>
-          <Button type="link" size="small" disabled={!memory.result && !memory.error} onClick={() => setDetailKey('memory')}>
+          <Button
+            type="link"
+            size="small"
+            disabled={!memory.result && !memory.error}
+            onClick={() => setDetailKey('memory')}
+          >
             {t('servicesDetail')}
           </Button>
         </Space>
@@ -192,7 +197,11 @@ export function ServicesView({
       impact: knowledge.error ? (
         <Typography.Text type="secondary">{knowledge.error}</Typography.Text>
       ) : knowledge.result ? (
-        knowledge.result.healthy ? t('impactKnowledgeOk') : t('impactKnowledgeBad')
+        knowledge.result.healthy ? (
+          t('impactKnowledgeOk')
+        ) : (
+          t('impactKnowledgeBad')
+        )
       ) : (
         '—'
       ),
@@ -202,7 +211,12 @@ export function ServicesView({
           <Button type="link" size="small" loading={knowledge.loading} onClick={() => void checkKnowledge()}>
             {t('servicesRecheck')}
           </Button>
-          <Button type="link" size="small" disabled={!knowledge.result && !knowledge.error} onClick={() => setDetailKey('knowledge')}>
+          <Button
+            type="link"
+            size="small"
+            disabled={!knowledge.result && !knowledge.error}
+            onClick={() => setDetailKey('knowledge')}
+          >
             {t('servicesDetail')}
           </Button>
         </Space>
@@ -254,9 +268,19 @@ export function ServicesView({
         pagination={false}
         columns={[
           { title: t('servicesColService'), dataIndex: 'name', key: 'name' },
-          { title: t('servicesColResult'), key: 'result', width: 130, render: (_: unknown, row: ServiceRow) => row.result },
+          {
+            title: t('servicesColResult'),
+            key: 'result',
+            width: 130,
+            render: (_: unknown, row: ServiceRow) => row.result,
+          },
           { title: t('servicesColImpact'), key: 'impact', render: (_: unknown, row: ServiceRow) => row.impact },
-          { title: t('servicesColLastCheck'), key: 'lastCheck', width: 110, render: (_: unknown, row: ServiceRow) => row.lastCheck },
+          {
+            title: t('servicesColLastCheck'),
+            key: 'lastCheck',
+            width: 110,
+            render: (_: unknown, row: ServiceRow) => row.lastCheck,
+          },
           {
             title: t('servicesColActions'),
             key: 'actions',
@@ -266,12 +290,7 @@ export function ServicesView({
         ]}
       />
 
-      <Drawer
-        open={detailKey !== null}
-        onClose={() => setDetailKey(null)}
-        size={520}
-        title={t('memoryTechnicalTitle')}
-      >
+      <Drawer open={detailKey !== null} onClose={() => setDetailKey(null)} size={520} title={t('memoryTechnicalTitle')}>
         {detailKey === 'memory' ? (
           <Descriptions
             column={1}
@@ -294,7 +313,11 @@ export function ServicesView({
               ...(memory.error
                 ? [{ key: 'error', label: translate(language, 'statusUnhealthy'), children: memory.error }]
                 : []),
-              { key: 'checkedAt', label: t('labelCheckedAt'), children: formatDateTime(memory.checkedAt?.toISOString() ?? null) },
+              {
+                key: 'checkedAt',
+                label: t('labelCheckedAt'),
+                children: formatDateTime(memory.checkedAt?.toISOString() ?? null),
+              },
             ]}
           />
         ) : detailKey === 'knowledge' ? (
@@ -306,11 +329,12 @@ export function ServicesView({
               ...(knowledge.result
                 ? [
                     {
-                      // Internal MCP URL removed — browsers cannot resolve cluster DNS.
+                      // Browser-facing console proxy URL (cluster-internal
+                      // addresses never reach the console).
+                      key: 'url',
                       label: t('labelServiceUrl'),
-                      children: knowledge.result.configured
-                        ? knowledge.result.url
-                        : translate(language, 'knowledgeNotConfigured'),
+                      children:
+                        safeExternalURL(knowledge.result.uiURL ?? '') ?? translate(language, 'knowledgeNotConfigured'),
                     },
                     { key: 'count', label: t('labelKnowledgeCount'), children: knowledge.result.knowledgeBases.length },
                     {
@@ -323,7 +347,11 @@ export function ServicesView({
               ...(knowledge.error
                 ? [{ key: 'error', label: translate(language, 'statusUnhealthy'), children: knowledge.error }]
                 : []),
-              { key: 'checkedAt', label: t('labelCheckedAt'), children: formatDateTime(knowledge.checkedAt?.toISOString() ?? null) },
+              {
+                key: 'checkedAt',
+                label: t('labelCheckedAt'),
+                children: formatDateTime(knowledge.checkedAt?.toISOString() ?? null),
+              },
             ]}
           />
         ) : null}
@@ -373,9 +401,7 @@ export function MemoryView({
 
   const scoped = employee
     ? (status?.employees ?? []).find(
-        (item) =>
-          (employee.memoryUser && item.memoryUser === employee.memoryUser) ||
-          item.name === employee.name,
+        (item) => (employee.memoryUser && item.memoryUser === employee.memoryUser) || item.name === employee.name,
       )
     : null;
 
@@ -405,9 +431,7 @@ export function MemoryView({
   }
 
   if (!status) {
-    return (
-      <Typography.Text type="secondary">{translate(language, 'statusLoading')}</Typography.Text>
-    );
+    return <Typography.Text type="secondary">{translate(language, 'statusLoading')}</Typography.Text>;
   }
 
   if (employee) {
@@ -432,9 +456,7 @@ export function MemoryView({
             { key: 'lastWrite', label: t('memoryFactLastWrite'), children: t('memoryLastWriteUnknown') },
           ]}
         />
-        {!scoped ? (
-          <Alert type="info" showIcon title={t('memoryNotProvisioned')} />
-        ) : null}
+        {!scoped ? <Alert type="info" showIcon title={t('memoryNotProvisioned')} /> : null}
         <Alert type="info" showIcon title={t('memorySessionsNote')} />
         <MemorySearchBox portal={resolvedPortal} employees={[employee.name]} fixed />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -450,9 +472,7 @@ export function MemoryView({
         <Typography.Title level={4} style={{ marginBottom: 4 }}>
           {t('memoryTitle')}
         </Typography.Title>
-        <Typography.Text type="secondary">
-          {translate(language, 'memoryDescription')}
-        </Typography.Text>
+        <Typography.Text type="secondary">{translate(language, 'memoryDescription')}</Typography.Text>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {status.healthy ? (
@@ -464,12 +484,7 @@ export function MemoryView({
         <Typography.Text>
           {t('labelAccount')}：<Typography.Text strong>{status.account}</Typography.Text>
         </Typography.Text>
-        <Button
-          size="small"
-          icon={<ReloadOutlined />}
-          loading={loading}
-          onClick={() => void load()}
-        >
+        <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
           {translate(language, 'statusRefresh')}
         </Button>
       </div>
@@ -498,9 +513,7 @@ export function MemoryView({
             },
           ]}
           locale={{
-            emptyText: (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('memoryNoAccounts')} />
-            ),
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('memoryNoAccounts')} />,
           }}
         />
       </div>
@@ -527,14 +540,11 @@ export function MemoryView({
               title: t('memoryColLastActive'),
               dataIndex: 'lastActive',
               key: 'lastActive',
-              render: (value: string | undefined) =>
-                value ? formatDateTime(value) : t('notProvided'),
+              render: (value: string | undefined) => (value ? formatDateTime(value) : t('notProvided')),
             },
           ]}
           locale={{
-            emptyText: (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('memoryNoAccounts')} />
-            ),
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('memoryNoAccounts')} />,
           }}
         />
       </div>
@@ -612,9 +622,7 @@ function MemorySearchBox({
         {error ? <Alert type="error" showIcon title={error} /> : null}
         {results ? (
           results.length === 0 ? (
-            <Typography.Text type="secondary">
-              {translate(language, 'memorySearchNoResults')}
-            </Typography.Text>
+            <Typography.Text type="secondary">{translate(language, 'memorySearchNoResults')}</Typography.Text>
           ) : (
             // List is deprecated in antd v6; a plain stacked layout keeps
             // the same result cards without the deprecated component.
@@ -747,12 +755,10 @@ export function KnowledgeView({
   }
 
   // The handoff target must be a plain http(s) URL that the portal
-  // actually reported. Health only proves the service answered a probe —
-  // it grants nothing inside the knowledge system, so the note says the
-  // external system's own permissions apply.
-  // No external WeKnora UI URL configured; the manage-docs link is removed
-  // until an external-facing WeKnora frontend is exposed.
-  const manageDocsURL: string | null = null;
+  // actually reported — the console's WeKnora proxy port, derived from the
+  // hostname the user typed. Health only proves the service answered a
+  // probe; the knowledge system's own login still applies.
+  const manageDocsURL = safeExternalURL(status.uiURL ?? '');
   const manageDocsDisabled = !manageDocsURL || !status.healthy;
   const manageDocs = (
     <Tooltip title={manageDocsURL ? t('knowledgeDocsNote') : t('knowledgeDocsInvalid')}>
@@ -834,7 +840,7 @@ export function KnowledgeView({
           title={t('knowledgeUnhealthyTitle')}
           description={
             <Space>
-              <span>{`${t('labelServiceUrl')}：${'(internal)' || t('notProvided')}`}</span>
+              <span>{`${t('labelServiceUrl')}：${safeExternalURL(status.uiURL ?? '') ?? t('notProvided')}`}</span>
               <Button size="small" loading={loading} onClick={() => void load()}>
                 {t('knowledgeRetry')}
               </Button>
@@ -842,9 +848,7 @@ export function KnowledgeView({
           }
         />
       ) : null}
-      {status.configured && !manageDocsURL ? (
-        <Alert type="warning" showIcon title={t('knowledgeDocsInvalid')} />
-      ) : null}
+      {status.configured && !manageDocsURL ? <Alert type="warning" showIcon title={t('knowledgeDocsInvalid')} /> : null}
       <Table
         rowKey="id"
         size="middle"
@@ -853,10 +857,7 @@ export function KnowledgeView({
         pagination={{ hideOnSinglePage: true }}
         locale={{
           emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('knowledgeEmptyTitle')}
-            >
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('knowledgeEmptyTitle')}>
               <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
                 {t('knowledgeEmptyHint')}
               </Typography.Paragraph>

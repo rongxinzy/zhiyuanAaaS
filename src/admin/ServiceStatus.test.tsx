@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles). The wrapper mirrors the production shell
 // (stable button names) and disables wave/motion for jsdom speed.
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-
+import { type PortalClient, PortalError, type PortalKnowledgeStatus, type PortalMemoryStatus } from './portal.js';
 import { KnowledgeView, MemoryView, ServicesView } from './ServiceStatus.js';
-import { PortalError, type PortalClient, type PortalKnowledgeStatus, type PortalMemoryStatus } from './portal.js';
 
 const TIMEOUT = 15000;
 
@@ -41,11 +40,17 @@ describe('admin service status views', () => {
   };
 
   const knowledgeStatus: PortalKnowledgeStatus = {
-    url: 'http://kb.example.internal:8080/weknora/',
+    uiURL: 'http://kb.example.internal:30163/',
     configured: true,
     healthy: true,
     knowledgeBases: [
-      { id: 'kb-1', name: '销售产品资料', description: '产品说明', documentCount: 24, createdAt: '2026-09-20T02:00:00Z' },
+      {
+        id: 'kb-1',
+        name: '销售产品资料',
+        description: '产品说明',
+        documentCount: 24,
+        createdAt: '2026-09-20T02:00:00Z',
+      },
       { id: 'kb-2', name: '制度资料', description: '' },
     ],
   };
@@ -134,7 +139,7 @@ describe('admin service status views', () => {
       const links = screen.getAllByRole('link', { name: /管理文档/ }) as HTMLAnchorElement[];
       expect(links.length).toBeGreaterThan(0);
       for (const link of links) {
-        expect(link.href).toBe('http://kb.example.internal:8080/weknora/');
+        expect(link.href).toBe('http://kb.example.internal:30163/');
         expect(link.href).not.toContain('token');
       }
     },
@@ -145,7 +150,7 @@ describe('admin service status views', () => {
     'KnowledgeView disables the handoff and explains when the reported URL is not http(s)',
     async () => {
       const portal = makePortal({
-        knowledgeStatus: vi.fn().mockResolvedValue({ ...knowledgeStatus, url: 'javascript:alert(1)' }),
+        knowledgeStatus: vi.fn().mockResolvedValue({ ...knowledgeStatus, uiURL: 'javascript:alert(1)' }),
       });
       render(<KnowledgeView client={client as never} portal={portal} />);
 
@@ -251,11 +256,17 @@ function memoryStatusFixture(): PortalMemoryStatus {
 
 function knowledgeStatusFixture(): PortalKnowledgeStatus {
   return {
-    url: 'http://kb.example.internal:8080/weknora/',
+    uiURL: 'http://kb.example.internal:30163/',
     configured: true,
     healthy: true,
     knowledgeBases: [
-      { id: 'kb-1', name: '销售产品资料', description: '产品说明', documentCount: 24, createdAt: '2026-09-20T02:00:00Z' },
+      {
+        id: 'kb-1',
+        name: '销售产品资料',
+        description: '产品说明',
+        documentCount: 24,
+        createdAt: '2026-09-20T02:00:00Z',
+      },
     ],
   };
 }

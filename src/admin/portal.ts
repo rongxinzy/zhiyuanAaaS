@@ -43,7 +43,10 @@ export type PortalMemorySearchResult = {
 };
 
 export type PortalKnowledgeStatus = {
-  readonly url: string;
+  /** Legacy field; the portal no longer reports the cluster-internal URL. */
+  readonly url?: string | undefined;
+  /** Browser-facing WeKnora management URL (console proxy port), from the portal. */
+  readonly uiURL?: string | null | undefined;
   readonly configured: boolean;
   readonly healthy: boolean;
   readonly knowledgeBases: readonly {
@@ -167,17 +170,17 @@ export class PortalClient {
     const items = (data as { employees?: unknown[] } | null)?.employees ?? [];
     return items.map((raw) => {
       const employee = raw as Record<string, unknown>;
-      const channels = employee['channels'] as PortalEmployee['channels'];
+      const channels = employee.channels as PortalEmployee['channels'];
       return {
-        name: String(employee['name'] ?? ''),
-        displayName: String(employee['displayName'] ?? ''),
-        phase: String(employee['phase'] ?? ''),
-        runtime: String(employee['runtime'] ?? ''),
-        model: String(employee['model'] ?? ''),
-        owner: String(employee['owner'] ?? ''),
-        ownerId: String(employee['ownerId'] ?? ''),
-        memoryUser: String(employee['memoryUser'] ?? ''),
-        createdAt: String(employee['createdAt'] ?? ''),
+        name: String(employee.name ?? ''),
+        displayName: String(employee.displayName ?? ''),
+        phase: String(employee.phase ?? ''),
+        runtime: String(employee.runtime ?? ''),
+        model: String(employee.model ?? ''),
+        owner: String(employee.owner ?? ''),
+        ownerId: String(employee.ownerId ?? ''),
+        memoryUser: String(employee.memoryUser ?? ''),
+        createdAt: String(employee.createdAt ?? ''),
         ...(channels ? { channels } : {}),
       };
     });
@@ -205,11 +208,7 @@ export class PortalClient {
     return data as PortalKnowledgeStatus;
   }
 
-  async apply(
-    name: string,
-    displayName: string,
-    team?: string,
-  ): Promise<PortalApplyResult> {
+  async apply(name: string, displayName: string, team?: string): Promise<PortalApplyResult> {
     const { status, data } = await this.#request('POST', '/api/v1/employees', {
       name,
       displayName,
@@ -237,8 +236,8 @@ export class PortalClient {
     return items.map((raw) => {
       const d = raw as Record<string, unknown>;
       return {
-        id: String(d['id'] ?? ''),
-        name: String(d['name'] ?? ''),
+        id: String(d.id ?? ''),
+        name: String(d.name ?? ''),
       };
     });
   }
@@ -252,7 +251,9 @@ export class PortalClient {
   }
 
   async renameDepartment(id: string, name: string): Promise<void> {
-    const { status, data } = await this.#request('PATCH', `/api/v1/departments/${encodeURIComponent(id)}`, { body: { name } });
+    const { status, data } = await this.#request('PATCH', `/api/v1/departments/${encodeURIComponent(id)}`, {
+      body: { name },
+    });
     if (status !== 200) throw portalError(status, data);
   }
 
@@ -268,23 +269,22 @@ export class PortalClient {
     return items.map((raw) => {
       const m = raw as Record<string, unknown>;
       return {
-        userId: String(m['userId'] ?? ''),
-        username: String(m['username'] ?? ''),
-        displayName: String(m['displayName'] ?? ''),
+        userId: String(m.userId ?? ''),
+        username: String(m.username ?? ''),
+        displayName: String(m.displayName ?? ''),
       };
     });
   }
 
   async setDepartmentMembers(id: string, userIds: readonly string[]): Promise<void> {
-    const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, { body: { userIds } });
+    const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, {
+      body: { userIds },
+    });
     if (status !== 200) throw portalError(status, data);
   }
 
   async deleteEmployee(name: string): Promise<void> {
-    const { status, data } = await this.#request(
-      'DELETE',
-      `/api/v1/employees/${encodeURIComponent(name)}`,
-    );
+    const { status, data } = await this.#request('DELETE', `/api/v1/employees/${encodeURIComponent(name)}`);
     if (status !== 200) throw portalError(status, data);
   }
 
@@ -296,22 +296,18 @@ export class PortalClient {
     return items.map((raw) => {
       const request = raw as Record<string, unknown>;
       return {
-        id: String(request['id'] ?? ''),
-        employeeName: String(request['employeeName'] ?? ''),
-        owner: String(request['owner'] ?? ''),
-        displayName: String(request['displayName'] ?? ''),
-        state: String(request['state'] ?? ''),
-        reason: String(request['reason'] ?? ''),
-        createdAt: String(request['createdAt'] ?? ''),
+        id: String(request.id ?? ''),
+        employeeName: String(request.employeeName ?? ''),
+        owner: String(request.owner ?? ''),
+        displayName: String(request.displayName ?? ''),
+        state: String(request.state ?? ''),
+        reason: String(request.reason ?? ''),
+        createdAt: String(request.createdAt ?? ''),
       };
     });
   }
 
-  async decideRequest(
-    id: string,
-    decision: 'approve' | 'reject',
-    reason?: string,
-  ): Promise<void> {
+  async decideRequest(id: string, decision: 'approve' | 'reject', reason?: string): Promise<void> {
     const { status, data } = await this.#request(
       'POST',
       `/api/v1/requests/${encodeURIComponent(id)}/${decision}`,
