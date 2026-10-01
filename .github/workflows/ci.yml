@@ -64,6 +64,8 @@ jobs:
             echo "SUMMARY=coverage-head/coverage-summary.json" >> "$GITHUB_ENV"
           elif [ -f coverage-head/coverage/coverage-summary.json ]; then
             echo "SUMMARY=coverage-head/coverage/coverage-summary.json" >> "$GITHUB_ENV"
+          elif [ -f coverage-summary.json ]; then
+            echo "SUMMARY=coverage-summary.json" >> "$GITHUB_ENV"
           else
             find . -name coverage-summary.json -not -path "./coverage/*" | head -5
             exit 1
