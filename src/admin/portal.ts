@@ -100,6 +100,20 @@ export type PortalDepartmentMember = {
   readonly displayName: string;
 };
 
+export type PortalUsageStats = {
+  readonly totals: {
+    readonly conversations: number;
+    readonly runs: number;
+    readonly todayConversations: number;
+    readonly todayRuns: number;
+    readonly employees: number;
+    readonly readyEmployees: number;
+  };
+  readonly byDepartment: Record<string, { employees: number; ready: number }>;
+  readonly threadsByDepartment7d: Record<string, number>;
+  readonly modelCalls7d: Record<string, number>;
+};
+
 export class PortalClient {
   readonly #tokenProvider: () => Promise<string | null>;
 
@@ -208,6 +222,12 @@ export class PortalClient {
       return { kind: 'pending', message: policyMessage(data, 'approval required') };
     }
     return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
+  }
+
+  async usageStats(): Promise<PortalUsageStats> {
+    const { status, data } = await this.#request('GET', '/api/v1/usage/stats');
+    if (status !== 200) throw portalError(status, data);
+    return data as PortalUsageStats;
   }
 
   async listDepartments(): Promise<readonly PortalDepartment[]> {
