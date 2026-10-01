@@ -94,6 +94,12 @@ export type PortalDepartmentCreateResult = {
   readonly message: string;
 };
 
+export type PortalDepartmentMember = {
+  readonly userId: string;
+  readonly username: string;
+  readonly displayName: string;
+};
+
 export class PortalClient {
   readonly #tokenProvider: () => Promise<string | null>;
 
@@ -223,6 +229,35 @@ export class PortalClient {
     });
     if (status === 200) return { kind: 'created', message: '部门创建成功' };
     return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
+  }
+
+  async renameDepartment(id: string, name: string): Promise<void> {
+    const { status, data } = await this.#request('PATCH', `/api/v1/departments/${encodeURIComponent(id)}`, { body: { name } });
+    if (status !== 200) throw portalError(status, data);
+  }
+
+  async deleteDepartment(id: string): Promise<void> {
+    const { status, data } = await this.#request('DELETE', `/api/v1/departments/${encodeURIComponent(id)}`);
+    if (status !== 200 && status !== 204) throw portalError(status, data);
+  }
+
+  async listDepartmentMembers(id: string): Promise<readonly PortalDepartmentMember[]> {
+    const { status, data } = await this.#request('GET', `/api/v1/departments/${encodeURIComponent(id)}/members`);
+    if (status !== 200) throw portalError(status, data);
+    const items = (data as { members?: unknown[] } | null)?.members ?? [];
+    return items.map((raw) => {
+      const m = raw as Record<string, unknown>;
+      return {
+        userId: String(m['userId'] ?? ''),
+        username: String(m['username'] ?? ''),
+        displayName: String(m['displayName'] ?? ''),
+      };
+    });
+  }
+
+  async setDepartmentMembers(id: string, userIds: readonly string[]): Promise<void> {
+    const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, { body: { userIds } });
+    if (status !== 200) throw portalError(status, data);
   }
 
   async deleteEmployee(name: string): Promise<void> {
