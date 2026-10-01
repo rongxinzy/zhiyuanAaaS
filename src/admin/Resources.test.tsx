@@ -1134,3 +1134,69 @@ describe('admin resources', () => {
     TIMEOUT,
   );
 });
+
+test(
+  'imports users from a CSV table with header aliases and quoted fields',
+  async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue({
+        ...emptyResources,
+        teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+        roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+      }),
+      importUsers: vi.fn().mockResolvedValue({ created: 1, rejected: 0, errors: [] }),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click(await screen.findByRole('button', { name: /导入用户/ }));
+    const modal = await screen.findByRole('dialog');
+    const csv = [
+      '用户名,显示名称,邮箱,临时密码,选择角色,选择团队',
+      '"zhang,三",张三,zhang@example.com,temporary-password-1,role-1,team-1',
+    ].join('\n');
+    const file = new File([csv], 'users.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'text', { value: () => Promise.resolve(csv) });
+    fireEvent.change(fileInput(modal), { target: { files: [file] } });
+    fireEvent.click(within(modal).getByRole('button', { name: /导入用户/ }));
+    await waitFor(() => expect(client.importUsers).toHaveBeenCalledTimes(1));
+    const imported = client.importUsers.mock.calls[0]?.[0] as {
+      readonly users?: readonly Record<string, unknown>[];
+    };
+    expect(imported?.users).toEqual([
+      expect.objectContaining({
+        username: 'zhang,三',
+        displayName: '张三',
+        email: 'zhang@example.com',
+        temporaryPassword: 'temporary-password-1',
+        roleIds: ['role-1'],
+        teamIds: ['team-1'],
+      }),
+    ]);
+  },
+  TIMEOUT,
+);
+
+test(
+  'rejects a CSV import missing the username column',
+  async () => {
+    const client = {
+      resources: vi.fn().mockResolvedValue(emptyResources),
+      importUsers: vi.fn(),
+    };
+    render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /导入用户/ }))[0]!);
+    const modal = await screen.findByRole('dialog');
+    const csvBody = '显示名称\n张三';
+    const file = new File([csvBody], 'users.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'text', { value: () => Promise.resolve(csvBody) });
+    fireEvent.change(fileInput(modal), { target: { files: [file] } });
+    fireEvent.click(
+      within(modal)
+        .getAllByRole('button', { name: /导入用户/ })
+        .at(-1)!,
+    );
+    await waitFor(() => expect(client.importUsers).not.toHaveBeenCalled());
+    expect(modal.textContent).toMatch(/用户名|username|失败|error/i);
+    expect(client.importUsers).not.toHaveBeenCalled();
+  },
+  TIMEOUT,
+);

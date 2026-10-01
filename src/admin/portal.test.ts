@@ -84,3 +84,97 @@ describe('portal client', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('portal client departments and lifecycle', () => {
+  const client = () => new PortalClient(async () => 'aep-token');
+
+  test('createDepartment maps 200 to created and failures to rejected', async () => {
+    const ok = stubFetch(200, {});
+    expect(await client().createDepartment('rd', '研发部')).toMatchObject({ kind: 'created' });
+    expect(ok.mock.calls[0]![0]).toBe('/api/v1/departments');
+    vi.unstubAllGlobals();
+
+    stubFetch(500, { error: 'partial: weknora down' });
+    await expect(client().createDepartment('rd', '研发部')).resolves.toMatchObject({
+      kind: 'rejected',
+      message: 'partial: weknora down',
+    });
+    vi.unstubAllGlobals();
+  });
+
+  test('department rename and delete throw PortalError on failure', async () => {
+    stubFetch(200, {});
+    await expect(client().renameDepartment('rd', '研发一部')).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
+
+    stubFetch(409, { error: 'duplicate' });
+    await expect(client().renameDepartment('rd', '研发一部')).rejects.toBeInstanceOf(PortalError);
+    vi.unstubAllGlobals();
+
+    stubFetch(200, null);
+    await expect(client().deleteDepartment('rd')).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
+
+    stubFetch(500, { error: 'boom' });
+    await expect(client().deleteDepartment('rd')).rejects.toBeInstanceOf(PortalError);
+    vi.unstubAllGlobals();
+  });
+
+  test('listDepartmentMembers and setDepartmentMembers round-trip', async () => {
+    stubFetch(200, { members: [{ userId: 'u1', username: 'zhangsan', displayName: '张三' }] });
+    const members = await client().listDepartmentMembers('rd');
+    expect(members).toEqual([{ userId: 'u1', username: 'zhangsan', displayName: '张三' }]);
+    vi.unstubAllGlobals();
+
+    const put = stubFetch(200, {});
+    await client().setDepartmentMembers('rd', ['u1', 'u2']);
+    const [input, init] = put.mock.calls[0]!;
+    expect(input).toBe('/api/v1/departments/rd/members');
+    expect((init as RequestInit).method).toBe('PUT');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ userIds: ['u1', 'u2'] });
+    vi.unstubAllGlobals();
+  });
+
+  test('listDepartments parses the departments payload', async () => {
+    stubFetch(200, { departments: [{ id: 'rd', name: '研发部' }] });
+    await expect(client().listDepartments()).resolves.toEqual([{ id: 'rd', name: '研发部' }]);
+    vi.unstubAllGlobals();
+  });
+
+  test('usageStats returns the aggregate payload', async () => {
+    stubFetch(200, { totals: { employees: 5 }, byDepartment: {} });
+    await expect(client().usageStats()).resolves.toMatchObject({ totals: { employees: 5 } });
+    vi.unstubAllGlobals();
+  });
+
+  test('deleteEmployee encodes the name and surfaces errors', async () => {
+    stubFetch(200, {});
+    await expect(client().deleteEmployee('sales helper')).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
+
+    stubFetch(404, { error: 'missing' });
+    await expect(client().deleteEmployee('x')).rejects.toBeInstanceOf(PortalError);
+    vi.unstubAllGlobals();
+  });
+
+  test('listRequests passes the state filter through', async () => {
+    const fetchMock = stubFetch(200, { requests: [] });
+    await client().listRequests('approved');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/requests?state=approved');
+    vi.unstubAllGlobals();
+  });
+
+  test('memory and knowledge probes return the parsed payloads', async () => {
+    stubFetch(200, { healthy: true, account: 'zhiyuan', accounts: [], employees: [] });
+    await expect(client().memoryStatus()).resolves.toMatchObject({ healthy: true });
+    vi.unstubAllGlobals();
+
+    stubFetch(200, { memories: [{ uri: 'mem://1', score: 0.9, abstract: 'a' }] });
+    await expect(client().memorySearch('sales-helper', 'q')).resolves.toHaveProperty('memories');
+    vi.unstubAllGlobals();
+
+    stubFetch(200, { configured: true, healthy: true, knowledgeBases: [] });
+    await expect(client().knowledgeStatus()).resolves.toMatchObject({ configured: true });
+    vi.unstubAllGlobals();
+  });
+});

@@ -19,9 +19,45 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # Coverage gate: enforces the project floor (lines ≥ 80%) and produces
+      # the baseline the ratchet job compares against.
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-head
+          path: coverage/coverage-summary.json
+          retention-days: 3
       - run: npm run verify:admin:e2e
       - run: npm run verify:electron-rc
       - run: npm run verify:sdk
+
+  # Coverage ratchet: a PR may not lower the line coverage relative to main.
+  # The floor alone (80%) would allow slow erosion from e.g. 85% to 80%.
+  coverage-ratchet:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:coverage
+      - name: Compare with the PR head
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-head
+      - run: |
+          base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.pct)")
+          head=$(node -e "const s=require('./coverage-head/coverage-summary.json');console.log(s.total.lines.pct)")
+          echo "base(main)=$base% head(PR)=$head%"
+          if awk "BEGIN{exit !($head < $base)}"; then
+            echo "::error::Line coverage dropped from ${base}% on main to ${head}% in this PR."
+            exit 1
+          fi
 
       - name: Resolve immutable AEP input
         id: manifest

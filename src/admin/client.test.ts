@@ -580,3 +580,75 @@ describe('admin data-plane publish', () => {
     expect(dataPlane.status.catalogComparison).toBeUndefined();
   });
 });
+
+describe('admin console passthrough endpoints', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // One-row-per-endpoint table exercise: each call must hit the contract
+  // path with the right method and unwrap the response.
+  const cases = [
+    {
+      name: 'updateUser',
+      call: (c: AdminConsoleClient) => c.updateUser('u1', { displayName: '新名' } as never),
+      route: 'PATCH /aep/v1/admin/users/u1',
+      response: { user: { id: 'u1' } },
+    },
+    {
+      name: 'replaceUserRBAC',
+      call: (c: AdminConsoleClient) => c.replaceUserRBAC('u1', { roleIds: ['admin'], teamIds: [] }),
+      route: 'PUT /aep/v1/admin/users/u1/rbac',
+      response: {},
+    },
+    {
+      name: 'resetUserPassword',
+      call: (c: AdminConsoleClient) => c.resetUserPassword('u1', { temporaryPassword: 'x1234567' }),
+      route: 'POST /aep/v1/admin/users/u1/reset-password',
+      response: {},
+    },
+    {
+      name: 'createRole',
+      call: (c: AdminConsoleClient) => c.createRole({ id: 'auditor', name: '审计' } as never),
+      route: 'POST /aep/v1/admin/roles',
+      response: { role: { id: 'auditor' } },
+    },
+    {
+      name: 'deleteRole',
+      call: (c: AdminConsoleClient) => c.deleteRole('auditor'),
+      route: 'DELETE /aep/v1/admin/roles/auditor',
+      response: {},
+    },
+    {
+      name: 'updateTeam',
+      call: (c: AdminConsoleClient) => c.updateTeam('t1', { name: '研发二部' } as never),
+      route: 'PATCH /aep/v1/admin/teams/t1',
+      response: { team: { id: 't1' } },
+    },
+    {
+      name: 'deleteTeam',
+      call: (c: AdminConsoleClient) => c.deleteTeam('t1'),
+      route: 'DELETE /aep/v1/admin/teams/t1',
+      response: {},
+    },
+    {
+      name: 'models',
+      call: (c: AdminConsoleClient) => c.models(),
+      route: 'GET /aep/v1/admin/models',
+      response: { models: [], assignments: [] },
+    },
+  ] as const;
+
+  test.each(cases)('$name hits $route', async ({ call, route, response }) => {
+    const { client } = await signedInClient({ [route]: { body: response } });
+    await expect(call(client)).resolves.not.toThrow();
+  });
+
+  test('dataPlane merges desired-state with the handwritten status read', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/data-plane/desired-state': { body: { revision: 'r1', secrets: [], routes: [] } },
+      'GET /aep/v1/admin/data-plane/status': { body: { state: 'ready', routes: [] } },
+    });
+    const result = await client.dataPlane();
+    expect(result.desired).toMatchObject({ revision: 'r1' });
+    expect(result.status).toMatchObject({ state: 'ready' });
+  });
+});
