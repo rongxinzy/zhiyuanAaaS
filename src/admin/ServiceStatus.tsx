@@ -280,7 +280,7 @@ export function ServicesView({
             items={[
               ...(memory.result
                 ? [
-                    { key: 'server', label: t('labelServer'), children: memory.result.server || t('notProvided') },
+                    // Internal cluster URLs are not browser-reachable — show only health + account.
                     { key: 'account', label: t('labelAccount'), children: memory.result.account || t('notProvided') },
                     { key: 'accounts', label: t('labelAccountCount'), children: memory.result.accounts.length },
                     { key: 'employees', label: t('labelEmployeeCount'), children: memory.result.employees.length },
@@ -306,7 +306,7 @@ export function ServicesView({
               ...(knowledge.result
                 ? [
                     {
-                      key: 'url',
+                      // Internal MCP URL removed — browsers cannot resolve cluster DNS.
                       label: t('labelServiceUrl'),
                       children: knowledge.result.configured
                         ? knowledge.result.url
@@ -460,7 +460,7 @@ export function MemoryView({
         ) : (
           <Tag color="error">{translate(language, 'statusUnhealthy')}</Tag>
         )}
-        <Typography.Text type="secondary">{status.server}</Typography.Text>
+        <Typography.Text type="secondary">{'(internal)'}</Typography.Text>
         <Typography.Text>
           {t('labelAccount')}：<Typography.Text strong>{status.account}</Typography.Text>
         </Typography.Text>
@@ -750,7 +750,9 @@ export function KnowledgeView({
   // actually reported. Health only proves the service answered a probe —
   // it grants nothing inside the knowledge system, so the note says the
   // external system's own permissions apply.
-  const manageDocsURL = safeExternalURL(status.url);
+  // No external WeKnora UI URL configured; the manage-docs link is removed
+  // until an external-facing WeKnora frontend is exposed.
+  const manageDocsURL: string | null = null;
   const manageDocsDisabled = !manageDocsURL || !status.healthy;
   const manageDocs = (
     <Tooltip title={manageDocsURL ? t('knowledgeDocsNote') : t('knowledgeDocsInvalid')}>
@@ -832,7 +834,7 @@ export function KnowledgeView({
           title={t('knowledgeUnhealthyTitle')}
           description={
             <Space>
-              <span>{`${t('labelServiceUrl')}：${status.url || t('notProvided')}`}</span>
+              <span>{`${t('labelServiceUrl')}：${'(internal)' || t('notProvided')}`}</span>
               <Button size="small" loading={loading} onClick={() => void load()}>
                 {t('knowledgeRetry')}
               </Button>
