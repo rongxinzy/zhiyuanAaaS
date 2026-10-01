@@ -17,9 +17,11 @@
     "verify:admin:real-e2e": "npm run build:admin && node scripts/verify-admin-real-e2e.mjs",
     "build:extension": "tsup",
     "build:ui": "vite build",
-    "check": "npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest && npm run verify:admin",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest && npm run verify:admin",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.ui.json --noEmit && tsc --project tsconfig.admin.json --noEmit",
+    "lint": "biome check",
+    "format": "biome check --write",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
     "verify:electron-rc": "node scripts/verify-electron-rc.mjs",
@@ -31,7 +33,7 @@
     "verify:sdk": "node scripts/verify-sdk.mjs"
   },
   "dependencies": {
-    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.13/aep-sdk-node-0.2.13.tgz",
+    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.14/aep-sdk-node-0.2.14.tgz",
     "@ant-design/icons": "6.3.4",
     "@base-ui/react": "^1.7.0",
     "antd": "6.6.5",
@@ -45,6 +47,7 @@
     "yauzl": "^3.2.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
