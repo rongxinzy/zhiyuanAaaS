@@ -58,9 +58,19 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: coverage-head
+      - name: Locate the head summary
+        run: |
+          if [ -f coverage-head/coverage-summary.json ]; then
+            echo "SUMMARY=coverage-head/coverage-summary.json" >> "$GITHUB_ENV"
+          elif [ -f coverage-head/coverage/coverage-summary.json ]; then
+            echo "SUMMARY=coverage-head/coverage/coverage-summary.json" >> "$GITHUB_ENV"
+          else
+            find . -name coverage-summary.json -not -path "./coverage/*" | head -5
+            exit 1
+          fi
       - run: |
           base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.pct)")
-          head=$(node -e "const s=require('./coverage-head/coverage-summary.json');console.log(s.total.lines.pct)")
+          head=$(node -e "const s=require('./${SUMMARY}');console.log(s.total.lines.pct)")
           echo "base(main)=$base% head(PR)=$head%"
           if [ "$base" = "-1" ]; then
             echo "Base commit predates coverage tooling; the 80% floor applies."
