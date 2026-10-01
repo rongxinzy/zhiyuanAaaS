@@ -273,7 +273,7 @@ function sectionTitle(tab: AdminResourceTab): string {
 }
 
 function SectionHeader({
-  title: _title,
+  title,
   description,
   extra,
 }: {
@@ -293,6 +293,9 @@ function SectionHeader({
       }}
     >
       <div>
+        <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 4 }}>
+          {title}
+        </Typography.Title>
         <Typography.Text type="secondary">
           <InfoCircleOutlined style={{ marginInlineEnd: 6 }} />
           {description}

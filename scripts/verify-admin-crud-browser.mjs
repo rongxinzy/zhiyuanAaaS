@@ -124,8 +124,10 @@ try {
   await dialog.getByLabel('用户名', { exact: true }).fill('e2e-member');
   await dialog.getByLabel('显示名称', { exact: true }).fill('E2E 业务成员');
   await dialog.getByLabel('临时密码', { exact: true }).fill('e2e-temporary-password');
-  await dialog.getByRole('checkbox', { name: /企业成员/ }).check();
-  await dialog.getByRole('checkbox', { name: /E2E 业务团队/ }).check();
+  await dialog.getByRole('combobox', { name: '选择角色' }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '企业成员' }).click();
+  await dialog.getByRole('combobox', { name: '选择团队' }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'E2E 业务团队' }).click();
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.getByText('E2E 业务成员', { exact: true }).first().waitFor();
