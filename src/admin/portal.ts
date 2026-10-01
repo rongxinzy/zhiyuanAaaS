@@ -83,6 +83,17 @@ export type PortalApplyResult =
   | { readonly kind: 'pending'; readonly message: string }
   | { readonly kind: 'rejected'; readonly status: number; readonly message: string };
 
+export type PortalDepartment = {
+  readonly id: string;
+  readonly name: string;
+};
+
+export type PortalDepartmentCreateResult = {
+  readonly kind: 'created' | 'rejected';
+  readonly status?: number;
+  readonly message: string;
+};
+
 export class PortalClient {
   readonly #tokenProvider: () => Promise<string | null>;
 
@@ -177,10 +188,12 @@ export class PortalClient {
   async apply(
     name: string,
     displayName: string,
+    team?: string,
   ): Promise<PortalApplyResult> {
     const { status, data } = await this.#request('POST', '/api/v1/employees', {
       name,
       displayName,
+      ...(team ? { team } : {}),
     });
     if (status === 201) {
       return { kind: 'created', message: policyMessage(data, 'digital employee created') };
@@ -188,6 +201,27 @@ export class PortalClient {
     if (status === 202) {
       return { kind: 'pending', message: policyMessage(data, 'approval required') };
     }
+    return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
+  }
+
+  async listDepartments(): Promise<readonly PortalDepartment[]> {
+    const { status, data } = await this.#request('GET', '/api/v1/departments');
+    if (status !== 200) throw portalError(status, data);
+    const items = (data as { departments?: unknown[] } | null)?.departments ?? [];
+    return items.map((raw) => {
+      const d = raw as Record<string, unknown>;
+      return {
+        id: String(d['id'] ?? ''),
+        name: String(d['name'] ?? ''),
+      };
+    });
+  }
+
+  async createDepartment(id: string, name: string): Promise<PortalDepartmentCreateResult> {
+    const { status, data } = await this.#request('POST', '/api/v1/departments', {
+      body: { id, name },
+    });
+    if (status === 200) return { kind: 'created', message: '部门创建成功' };
     return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
   }
 

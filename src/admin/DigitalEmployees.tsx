@@ -14,6 +14,7 @@ import {
   Tabs,
   Tag,
   Tooltip,
+  Select,
   Typography,
 } from 'antd';
 import {
@@ -33,6 +34,7 @@ import {
   portalChatBaseURL,
   type PortalEmployee,
   type PortalRequest,
+  type PortalDepartment,
 } from './portal.js';
 import { MemoryView } from './ServiceStatus.js';
 import { employeesT } from './employees-copy.js';
@@ -418,9 +420,9 @@ function EmployeeList({
   );
 }
 
-// Creation dialog. The portal apply API accepts exactly name + displayName;
-// every other publish input (owner, team, model, knowledge, skills, scope)
-// has no write API and is listed as an explicit gap instead of a fake form.
+// Creation dialog: name + displayName + optional team (department scoping).
+// The portal apply API now accepts team; other inputs (owner, model,
+// knowledge, skills) remain server-side.
 function CreateEmployeeModal({
   portal,
   open,
@@ -432,21 +434,23 @@ function CreateEmployeeModal({
   readonly onClose: () => void;
   readonly onApplied: () => void;
 }) {
-  const [form] = Form.useForm<{ name: string; displayName: string }>();
+  const [form] = Form.useForm<{ name: string; displayName: string; team?: string }>();
   const [pending, setPending] = useState(false);
+  const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (open) {
       form.resetFields();
       setError(null);
+      portal.listDepartments().then(setDepartments).catch(() => setDepartments([]));
     }
-  }, [open, form]);
+  }, [open, form, portal]);
 
-  const submit = async (values: { name: string; displayName: string }) => {
+  const submit = async (values: { name: string; displayName: string; team?: string }) => {
     setPending(true);
     setError(null);
     try {
-      const result = await portal.apply(values.name.trim(), values.displayName.trim());
+      const result = await portal.apply(values.name.trim(), values.displayName.trim(), values.team?.trim() || undefined);
       if (result.kind === 'rejected') {
         setError(result.message);
         return;
@@ -498,6 +502,17 @@ function CreateEmployeeModal({
             placeholder={translate(language, 'digitalEmployeesDisplayNamePlaceholder')}
             autoComplete="off"
             disabled={pending}
+          />
+        </Form.Item>
+        <Form.Item
+          name="team"
+          label={translate(language, 'digitalEmployeesTeamLabel')}
+          tooltip={translate(language, 'digitalEmployeesTeamTooltip')}
+        >
+          <Select
+            allowClear
+            placeholder={translate(language, 'digitalEmployeesTeamPlaceholder')}
+            options={departments.map((d) => ({ value: d.id, label: d.name }))}
           />
         </Form.Item>
       </Form>
