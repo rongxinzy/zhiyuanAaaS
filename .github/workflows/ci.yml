@@ -22,7 +22,7 @@ jobs:
       # Coverage gate: enforces the project floor (lines ≥ 80%) and produces
       # the baseline the ratchet job compares against.
       - run: npm run test:coverage
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coverage-head
           path: coverage/coverage-summary.json
@@ -54,7 +54,7 @@ jobs:
             echo '{"total":{"lines":{"pct":-1}}}' > coverage/coverage-summary.json
           fi
       - name: Compare with the PR head
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: coverage-head
       - run: |
