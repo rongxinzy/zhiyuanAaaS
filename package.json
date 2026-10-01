@@ -30,7 +30,8 @@
     "verify:electron-package": "node scripts/verify-electron-package.mjs",
     "verify:release-artifacts": "node scripts/verify-release-artifacts.mjs",
     "verify:manifest": "node scripts/verify-manifest.mjs",
-    "verify:sdk": "node scripts/verify-sdk.mjs"
+    "verify:sdk": "node scripts/verify-sdk.mjs",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
     "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.14/aep-sdk-node-0.2.14.tgz",
@@ -57,6 +58,7 @@
     "@types/yauzl": "^2.10.3",
     "@types/yazl": "^3.3.0",
     "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "4.1.11",
     "js-yaml": "^4.3.1",
     "jsdom": "^30.0.1",
     "playwright-core": "^1.62.1",

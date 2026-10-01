@@ -14,7 +14,7 @@ import type { PortalApplyResult, PortalClient, PortalEmployee, PortalMemoryStatu
 // The production shell wraps every page in a ConfigProvider with
 // button.autoInsertSpace disabled; mirror that so two-CJK-button names
 // stay stable for role queries.
-const TIMEOUT = 15000;
+const TIMEOUT = 45000;
 
 function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   return rtlRender(

@@ -44,3 +44,28 @@ function createTemporaryDirectory(): string {
   temporaryDirectories.push(directory);
   return directory;
 }
+
+describe('Zhiyuan Agent ID wake convergence', () => {
+  test('waits out the create-then-write gap instead of reporting corruption', async () => {
+    const userData = createTemporaryDirectory();
+    const directory = path.join(userData, 'zhiyuan-enterprise');
+    fs.mkdirSync(directory, { recursive: true });
+    const filePath = path.join(directory, 'agent-id');
+    // Simulate KEDA-style concurrent startup: the file exists but is empty
+    // for a few milliseconds before the winner's content lands.
+    fs.writeFileSync(filePath, '');
+    setTimeout(() => fs.writeFileSync(filePath, `${'a'.repeat(8)}-0000-4000-8000-aaaaaaaaaaaa\n`), 40);
+
+    const resolved = await Promise.all([resolveZhiyuanAgentId(userData), resolveZhiyuanAgentId(userData)]);
+    expect(new Set(resolved).size).toBe(1);
+  });
+
+  test('still fails closed for genuinely corrupted content', async () => {
+    const userData = createTemporaryDirectory();
+    const directory = path.join(userData, 'zhiyuan-enterprise');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'agent-id'), 'not-an-id-at-all');
+
+    await expect(resolveZhiyuanAgentId(userData)).rejects.toThrow('Agent ID file is invalid');
+  });
+});

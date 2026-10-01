@@ -243,17 +243,13 @@ export class PortalClient {
   }
 
   async createDepartment(id: string, name: string): Promise<PortalDepartmentCreateResult> {
-    const { status, data } = await this.#request('POST', '/api/v1/departments', {
-      body: { id, name },
-    });
+    const { status, data } = await this.#request('POST', '/api/v1/departments', { id, name });
     if (status === 200) return { kind: 'created', message: '部门创建成功' };
     return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
   }
 
   async renameDepartment(id: string, name: string): Promise<void> {
-    const { status, data } = await this.#request('PATCH', `/api/v1/departments/${encodeURIComponent(id)}`, {
-      body: { name },
-    });
+    const { status, data } = await this.#request('PATCH', `/api/v1/departments/${encodeURIComponent(id)}`, { name });
     if (status !== 200) throw portalError(status, data);
   }
 
@@ -278,7 +274,7 @@ export class PortalClient {
 
   async setDepartmentMembers(id: string, userIds: readonly string[]): Promise<void> {
     const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, {
-      body: { userIds },
+      userIds,
     });
     if (status !== 200) throw portalError(status, data);
   }
