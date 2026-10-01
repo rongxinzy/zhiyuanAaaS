@@ -124,8 +124,7 @@ const translations = {
     notProvided: 'Not provided',
     noRoles: 'None',
     passwordSecurity: 'Password security',
-    passwordSecurityDescription:
-      'Your current session is updated automatically after a password change.',
+    passwordSecurityDescription: 'Your current session is updated automatically after a password change.',
     changePassword: 'Change password',
     passwordChangeSucceeded: 'Password updated.',
     accountSignOut: 'Sign out',
@@ -133,14 +132,12 @@ const translations = {
     accountUnavailableDescription:
       'Your enterprise session is no longer active. Return to the application and sign in again.',
     managedModelsTitle: 'Enterprise models',
-    managedModelsDescription:
-      'Models assigned by your administrator and served through the enterprise gateway.',
+    managedModelsDescription: 'Models assigned by your administrator and served through the enterprise gateway.',
     refreshModels: 'Refresh',
     retryModels: 'Try again',
     loadingModels: 'Loading managed models',
     modelsUnavailableTitle: 'Models are unavailable',
-    modelsUnavailableDescription:
-      'The model catalog is temporarily unavailable. Try again shortly.',
+    modelsUnavailableDescription: 'The model catalog is temporarily unavailable. Try again shortly.',
     noManagedModelsTitle: 'No models assigned',
     noManagedModelsDescription: 'Models will appear here after an administrator assigns them.',
     defaultModel: 'Default',

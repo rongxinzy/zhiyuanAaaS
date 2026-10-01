@@ -3,9 +3,9 @@ import { describe, expect, test, vi } from 'vitest';
 import { PortalClient, PortalError } from './portal.js';
 
 function stubFetch(status: number, body: unknown) {
-  const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
-  );
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -34,14 +34,20 @@ describe('portal client', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 201 })));
     expect(await portal.apply('a', 'A')).toMatchObject({ kind: 'created' });
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ policy: '需管理员审批' }), { status: 202 }),
-    ));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ policy: '需管理员审批' }), { status: 202 })),
+    );
     expect(await portal.apply('b', 'B')).toEqual({ kind: 'pending', message: '需管理员审批' });
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: 'digital employee "b" already exists' }), { status: 409 }),
-    ));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: 'digital employee "b" already exists' }), { status: 409 }),
+        ),
+    );
     expect(await portal.apply('b', 'B')).toEqual({
       kind: 'rejected',
       status: 409,

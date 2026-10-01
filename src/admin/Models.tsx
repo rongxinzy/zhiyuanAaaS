@@ -1,4 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type AdminModel,
+  AepProblem,
+  type ModelAssignment,
+  type PlatformUser,
+  type Role,
+  type Team,
+} from '@aep/sdk-node';
+import {
+  ArrowLeftOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RocketOutlined,
+  SearchOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -17,43 +33,26 @@ import {
   Table,
   Tabs,
   Tag,
-  Tooltip,
   Timeline,
+  Tooltip,
   Typography,
 } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { runBatch } from './batch.js';
 import {
-  ArrowLeftOutlined,
-  MoreOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  RocketOutlined,
-  SearchOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import {
-  AepProblem,
-  type AdminModel,
-  type ModelAssignment,
-  type PlatformUser,
-  type Role,
-  type Team,
-} from '@aep/sdk-node';
-
-import {
-  AdminConsoleClient,
-  AdminModelSubjectType,
-  AdminPermission,
-  hasAdminPermission,
+  type AdminConsoleClient,
   type AdminDataPlane,
   type AdminDataPlaneRouteMismatch,
   type AdminIdentity,
+  AdminModelSubjectType,
   type AdminModels,
+  AdminPermission,
+  hasAdminPermission,
 } from './client.js';
-import { translate, type AdminLanguage } from './i18n.js';
+import { type AdminLanguage, translate } from './i18n.js';
 import { ModelConnectionSelect } from './ModelConnectionSelect.js';
-import { runBatch } from './batch.js';
-import { AdminNotificationKind, notify } from './notifications.js';
 import { modelsT } from './models-copy.js';
+import { AdminNotificationKind, notify } from './notifications.js';
 
 const ModelSourceType = { Gateway: 'gateway' } as const;
 const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
@@ -66,10 +65,7 @@ type ModelGrantTarget = {
 };
 
 function modelSaveMessage(error: unknown): string {
-  if (
-    error instanceof AepProblem &&
-    (error.code === 'MODEL_EXISTS' || error.status === 409)
-  )
+  if (error instanceof AepProblem && (error.code === 'MODEL_EXISTS' || error.status === 409))
     return translate(language, 'modelIdExists');
   return translate(language, 'operationUnavailable');
 }
@@ -86,9 +82,7 @@ function formatDateTime(value: string | null | undefined): string {
 // "Applied" is only claimed when the gateway confirmed this exact desired
 // revision; anything else degrades to pending/failed/unknown, never a
 // blanket green.
-function gatewayStateLabel(
-  dataPlane: AdminDataPlane,
-): { label: string; color: string; confirmed: boolean } {
+function gatewayStateLabel(dataPlane: AdminDataPlane): { label: string; color: string; confirmed: boolean } {
   const { desired, status } = dataPlane;
   if (status.observedRevision === null || status.observedRevision === undefined) {
     return { label: t('configUnknown'), color: 'default', confirmed: false };
@@ -121,11 +115,11 @@ function routeIncluded(dataPlane: AdminDataPlane, modelId: string): boolean {
 // is complete; the publish endpoint derives routes from exactly this set.
 function catalogPublishable(model: AdminModel): boolean {
   return Boolean(
-    model.enabled
-    && model.sourceType === ModelSourceType.Gateway
-    && model.protocol === ModelProtocol.OpenAiCompatible
-    && model.endpoint?.trim()
-    && model.upstreamModel?.trim(),
+    model.enabled &&
+      model.sourceType === ModelSourceType.Gateway &&
+      model.protocol === ModelProtocol.OpenAiCompatible &&
+      model.endpoint?.trim() &&
+      model.upstreamModel?.trim(),
   );
 }
 
@@ -139,12 +133,18 @@ function catalogMissing(dataPlane: AdminDataPlane, modelId: string): boolean {
 
 function driftFieldLabel(field: string): string {
   switch (field) {
-    case 'enabled': return t('fieldEnabled');
-    case 'endpoint': return t('fieldEndpoint');
-    case 'upstreamModel': return t('fieldUpstreamModel');
-    case 'providerType': return t('fieldProviderType');
-    case 'credentialRef': return t('fieldCredentialRef');
-    default: return field;
+    case 'enabled':
+      return t('fieldEnabled');
+    case 'endpoint':
+      return t('fieldEndpoint');
+    case 'upstreamModel':
+      return t('fieldUpstreamModel');
+    case 'providerType':
+      return t('fieldProviderType');
+    case 'credentialRef':
+      return t('fieldCredentialRef');
+    default:
+      return field;
   }
 }
 
@@ -188,10 +188,7 @@ export function Models({
     setLoading(true);
     setError(null);
     try {
-      const [models, resources] = await Promise.all([
-        client.models(identity),
-        client.resources(identity),
-      ]);
+      const [models, resources] = await Promise.all([client.models(identity), client.resources(identity)]);
       setState(models);
       setUsers(resources.users);
       setRoles(resources.roles);
@@ -290,8 +287,7 @@ export function Models({
     {
       title: t('colUpstream'),
       key: 'upstream',
-      render: (_: unknown, model: AdminModel) =>
-        model.upstreamModel || model.localModelRef || t('notProvided'),
+      render: (_: unknown, model: AdminModel) => model.upstreamModel || model.localModelRef || t('notProvided'),
     },
     {
       title: t('colManageState'),
@@ -299,23 +295,14 @@ export function Models({
       key: 'enabled',
       width: 100,
       render: (enabled: boolean) =>
-        enabled ? (
-          <Tag color="success">{t('stateEnabled')}</Tag>
-        ) : (
-          <Tag>{t('stateDisabled')}</Tag>
-        ),
+        enabled ? <Tag color="success">{t('stateEnabled')}</Tag> : <Tag>{t('stateDisabled')}</Tag>,
     },
     {
       title: t('colConfigState'),
       key: 'config',
       width: 190,
       render: (_: unknown, model: AdminModel) => (
-        <ConfigStateCell
-          dataPlane={dataPlane}
-          error={dataPlaneError}
-          allowed={canDataPlane}
-          modelId={model.id}
-        />
+        <ConfigStateCell dataPlane={dataPlane} error={dataPlaneError} allowed={canDataPlane} modelId={model.id} />
       ),
     },
     {
@@ -333,46 +320,44 @@ export function Models({
       key: 'actions',
       align: 'right' as const,
       render: (_: unknown, model: AdminModel) => (
+        // biome-ignore lint/a11y/noStaticElementInteractions: click shield so action buttons do not open the detail row
+        // biome-ignore lint/a11y/useKeyWithClickEvents: see above — not an interactive control
         <span onClick={(event) => event.stopPropagation()}>
-        <Space size={0}>
-          <Button type="link" size="small" onClick={() => setDetail(model)}>
-            {translate(language, 'viewDetails')}
-          </Button>
-          {canWrite ? (
-            <Button type="link" size="small" onClick={() => setEditing(model)}>
-              {translate(language, 'editModel')}
+          <Space size={0}>
+            <Button type="link" size="small" onClick={() => setDetail(model)}>
+              {translate(language, 'viewDetails')}
             </Button>
-          ) : null}
-          {canAssign ? (
-            <Button
-              type="link"
-              size="small"
-              icon={<UserOutlined />}
-              onClick={() =>
-                setGranting({
-                  model,
-                  assignments: (state?.assignments ?? []).filter(
-                    (item) => item.resourceId === model.id,
-                  ),
-                })
-              }
-            >
-              {translate(language, 'grantModel')}
-            </Button>
-          ) : null}
-          {canWrite ? (
-            <ModelRowMenu
-              client={client}
-              model={model}
-              assignmentCount={(state?.assignments ?? []).filter(
-                (item) => item.resourceId === model.id,
-              ).length}
-              onChanged={reloadAll}
-              onError={reportMutationError}
-              onDelete={() => setDeleting(model)}
-            />
-          ) : null}
-        </Space>
+            {canWrite ? (
+              <Button type="link" size="small" onClick={() => setEditing(model)}>
+                {translate(language, 'editModel')}
+              </Button>
+            ) : null}
+            {canAssign ? (
+              <Button
+                type="link"
+                size="small"
+                icon={<UserOutlined />}
+                onClick={() =>
+                  setGranting({
+                    model,
+                    assignments: (state?.assignments ?? []).filter((item) => item.resourceId === model.id),
+                  })
+                }
+              >
+                {translate(language, 'grantModel')}
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <ModelRowMenu
+                client={client}
+                model={model}
+                assignmentCount={(state?.assignments ?? []).filter((item) => item.resourceId === model.id).length}
+                onChanged={reloadAll}
+                onError={reportMutationError}
+                onDelete={() => setDeleting(model)}
+              />
+            ) : null}
+          </Space>
         </span>
       ),
     },
@@ -398,7 +383,10 @@ export function Models({
                     <div style={{ marginTop: 8 }}>
                       {t('publishExcluded')}：
                       {publishExcluded
-                        .map((model) => `${model.displayName}（${model.enabled ? t('publishExcludedIncomplete') : t('publishExcludedDisabled')}）`)
+                        .map(
+                          (model) =>
+                            `${model.displayName}（${model.enabled ? t('publishExcludedIncomplete') : t('publishExcludedDisabled')}）`,
+                        )
                         .join('、')}
                     </div>
                   ) : null}
@@ -431,13 +419,7 @@ export function Models({
         </Space>
       </div>
 
-      {error ? (
-        <Alert
-          type="error"
-          showIcon
-          title={`${translate(language, 'modelsLoadFailed')}：${error}`}
-        />
-      ) : null}
+      {error ? <Alert type="error" showIcon title={`${translate(language, 'modelsLoadFailed')}：${error}`} /> : null}
       {publishError ? (
         <Alert
           type="error"
@@ -469,13 +451,8 @@ export function Models({
         onRow={(model) => ({ onClick: () => setDetail(model) })}
         locale={{
           emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={translate(language, 'modelsEmpty')}
-            >
-              <Typography.Text type="secondary">
-                {translate(language, 'modelsEmptyHint')}
-              </Typography.Text>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'modelsEmpty')}>
+              <Typography.Text type="secondary">{translate(language, 'modelsEmptyHint')}</Typography.Text>
             </Empty>
           ),
         }}
@@ -499,9 +476,7 @@ export function Models({
         client={client}
         model={deleting}
         assignmentCount={
-          deleting
-            ? (state?.assignments ?? []).filter((item) => item.resourceId === deleting.id).length
-            : 0
+          deleting ? (state?.assignments ?? []).filter((item) => item.resourceId === deleting.id).length : 0
         }
         onClose={() => setDeleting(null)}
         onChanged={reloadAll}
@@ -511,9 +486,7 @@ export function Models({
         client={client}
         model={detail}
         users={users}
-        assignments={
-          detail ? (state?.assignments ?? []).filter((item) => item.resourceId === detail.id) : []
-        }
+        assignments={detail ? (state?.assignments ?? []).filter((item) => item.resourceId === detail.id) : []}
         canWrite={canWrite}
         canAssign={canAssign}
         dataPlane={dataPlane}
@@ -595,7 +568,7 @@ function ConfigStateCell({
 function ModelRowMenu({
   client,
   model,
-  assignmentCount,
+  assignmentCount: _assignmentCount,
   onChanged,
   onError,
   onDelete,
@@ -728,9 +701,7 @@ function ModelCreateModal({
       onOk={() => void form.submit()}
       destroyOnHidden
     >
-      <Typography.Paragraph type="secondary">
-        {translate(language, 'addModelDescription')}
-      </Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{translate(language, 'addModelDescription')}</Typography.Paragraph>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         <Form.Item
           name="id"
@@ -846,9 +817,7 @@ function ModelEditorModal({
       onOk={() => void form.submit()}
       destroyOnHidden
     >
-      <Typography.Paragraph type="secondary">
-        {translate(language, 'addModelDescription')}
-      </Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{translate(language, 'addModelDescription')}</Typography.Paragraph>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         <Form.Item
           name="displayName"
@@ -872,17 +841,9 @@ function ModelEditorModal({
           <Input disabled={pending} />
         </Form.Item>
         <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
-          <Switch
-            checkedChildren={t('stateEnabled')}
-            unCheckedChildren={t('stateDisabled')}
-            disabled={pending}
-          />
+          <Switch checkedChildren={t('stateEnabled')} unCheckedChildren={t('stateDisabled')} disabled={pending} />
         </Form.Item>
-        <Form.Item
-          name="isDefault"
-          label={translate(language, 'defaultModel')}
-          valuePropName="checked"
-        >
+        <Form.Item name="isDefault" label={translate(language, 'defaultModel')} valuePropName="checked">
           <Switch disabled={pending} />
         </Form.Item>
         <Form.Item name="credentialId" label={t('labelCredential')}>
@@ -1018,9 +979,7 @@ function ModelDetailDrawer({
       title: t('accessColType'),
       key: 'type',
       width: 90,
-      render: (_: unknown, assignment: ModelAssignment) => (
-        <Tag>{subjectTypeLabel(assignment.subject.type)}</Tag>
-      ),
+      render: (_: unknown, assignment: ModelAssignment) => <Tag>{subjectTypeLabel(assignment.subject.type)}</Tag>,
     },
     {
       title: t('accessColTime'),
@@ -1060,17 +1019,18 @@ function ModelDetailDrawer({
   ];
 
   return (
-    <Drawer open size={720} onClose={onClose} title={
-      <Space size={8}>
-        <span>{model.displayName}</span>
-        {model.enabled ? (
-          <Tag color="success">{t('stateEnabled')}</Tag>
-        ) : (
-          <Tag>{t('stateDisabled')}</Tag>
-        )}
-        {model.isDefault ? <Tag color="blue">{translate(language, 'defaultModel')}</Tag> : null}
-      </Space>
-    }>
+    <Drawer
+      open
+      size={720}
+      onClose={onClose}
+      title={
+        <Space size={8}>
+          <span>{model.displayName}</span>
+          {model.enabled ? <Tag color="success">{t('stateEnabled')}</Tag> : <Tag>{t('stateDisabled')}</Tag>}
+          {model.isDefault ? <Tag color="blue">{translate(language, 'defaultModel')}</Tag> : null}
+        </Space>
+      }
+    >
       <Tabs
         defaultActiveKey="basic"
         items={[
@@ -1162,9 +1122,7 @@ function ModelDetailDrawer({
                   columns={accessColumns}
                   pagination={{ hideOnSinglePage: true }}
                   locale={{
-                    emptyText: (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('accessEmpty')} />
-                    ),
+                    emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('accessEmpty')} />,
                   }}
                 />
               </div>
@@ -1174,10 +1132,7 @@ function ModelDetailDrawer({
             key: 'employees',
             label: t('detailTabEmployees'),
             children: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t('associatedGapTitle')}
-              >
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('associatedGapTitle')}>
                 <Typography.Paragraph type="secondary" style={{ maxWidth: 480, margin: '0 auto' }}>
                   {t('associatedGapDescription')}
                 </Typography.Paragraph>
@@ -1221,12 +1176,7 @@ function ConfigStatusPanel({
 }) {
   if (!allowed) {
     return (
-      <Alert
-        type="info"
-        showIcon
-        title={t('configNoPermissionTitle')}
-        description={t('configNoPermissionHint')}
-      />
+      <Alert type="info" showIcon title={t('configNoPermissionTitle')} description={t('configNoPermissionHint')} />
     );
   }
   if (error) {
@@ -1260,19 +1210,18 @@ function ConfigStatusPanel({
   const comparison = dataPlane.status.catalogComparison;
   const mismatch = catalogMismatch(dataPlane, model.id);
   const missing = catalogMissing(dataPlane, model.id);
-  const publishState = !comparison ? null
-    : mismatch ? <Tag color="warning">{t('driftMismatched')}</Tag>
-    : missing ? <Tag color="warning">{t('driftMissing')}</Tag>
-    : included ? <Tag color="success">{t('catalogPublishIncluded')}</Tag>
-    : <Tag>{t('catalogPublishSkipped')}</Tag>;
+  const publishState = !comparison ? null : mismatch ? (
+    <Tag color="warning">{t('driftMismatched')}</Tag>
+  ) : missing ? (
+    <Tag color="warning">{t('driftMissing')}</Tag>
+  ) : included ? (
+    <Tag color="success">{t('catalogPublishIncluded')}</Tag>
+  ) : (
+    <Tag>{t('catalogPublishSkipped')}</Tag>
+  );
   return (
     <div className="flex flex-col gap-4">
-      <Alert
-        type="info"
-        showIcon
-        title={t('statusAlertTitle')}
-        description={t('statusAlertDescription')}
-      />
+      <Alert type="info" showIcon title={t('statusAlertTitle')} description={t('statusAlertDescription')} />
       <Descriptions
         bordered
         size="small"
@@ -1314,15 +1263,15 @@ function ConfigStatusPanel({
               </Tooltip>
             ),
           },
-          ...(publishState
-            ? [{ key: 'catalog', label: t('catalogPublishState'), children: publishState }]
-            : []),
+          ...(publishState ? [{ key: 'catalog', label: t('catalogPublishState'), children: publishState }] : []),
           ...(mismatch
-            ? [{
-                key: 'drift',
-                label: t('driftFields'),
-                children: mismatch.fields.map(driftFieldLabel).join('、'),
-              }]
+            ? [
+                {
+                  key: 'drift',
+                  label: t('driftFields'),
+                  children: mismatch.fields.map(driftFieldLabel).join('、'),
+                },
+              ]
             : []),
           {
             key: 'executor',
@@ -1388,10 +1337,7 @@ function ModelGrantPage({
   const [filter, setFilter] = useState<ModelGrantFilter>('all');
   const [query, setQuery] = useState('');
   const excluded = useMemo(
-    () =>
-      new Set(
-        existingAssignments.map((item) => `${item.subject.type}:${item.subject.id}`),
-      ),
+    () => new Set(existingAssignments.map((item) => `${item.subject.type}:${item.subject.id}`)),
     [existingAssignments],
   );
 
@@ -1442,8 +1388,7 @@ function ModelGrantPage({
             {translate(language, 'grantModelTitle')}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {translate(language, 'grantModelDescription')}{' '}
-            <Typography.Text strong>{model.displayName}</Typography.Text>
+            {translate(language, 'grantModelDescription')} <Typography.Text strong>{model.displayName}</Typography.Text>
           </Typography.Text>
         </div>
       </div>
@@ -1565,14 +1510,14 @@ function SubjectPicker({
     }
     const needle = query.trim().toLowerCase();
     return items.filter(
-      (item) => !excluded.has(item.key) && (!needle || item.label.toLowerCase().includes(needle) || item.key.toLowerCase().includes(needle)),
+      (item) =>
+        !excluded.has(item.key) &&
+        (!needle || item.label.toLowerCase().includes(needle) || item.key.toLowerCase().includes(needle)),
     );
   }, [users, roles, teams, filter, query, excluded]);
 
   if (options.length === 0) {
-    return (
-      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noMatchingSubjects')} />
-    );
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noMatchingSubjects')} />;
   }
   return (
     <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">

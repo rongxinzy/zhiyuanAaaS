@@ -5,13 +5,8 @@ import path from 'node:path';
 import type { SkillManifestItem } from '@aep/sdk-node';
 import yauzl from 'yauzl';
 
-import { AgentControlState } from './state.js';
-import {
-  SkillSyncStatus,
-  type AgentControlClient,
-  type ManagedSkill,
-  type SkillReconcileResult,
-} from './types.js';
+import type { AgentControlState } from './state.js';
+import { type AgentControlClient, type ManagedSkill, type SkillReconcileResult, SkillSyncStatus } from './types.js';
 
 const SKILL_ETAG_KEY = 'skill_etag';
 const SKILL_REVISION_KEY = 'skill_revision';
@@ -39,7 +34,7 @@ export class ManagedSkillReconciler {
     if (result.notModified) {
       return {
         revision: this.state.getValue(SKILL_REVISION_KEY) ?? '',
-        items: this.state.managedSkills().map(skill => ({
+        items: this.state.managedSkills().map((skill) => ({
           skillId: skill.skillId,
           version: skill.version,
           status: SkillSyncStatus.Unchanged,
@@ -59,7 +54,7 @@ export class ManagedSkillReconciler {
           throw new Error(`Skill manifest contains duplicate ID ${skill.id}.`);
         }
         desired.add(skill.id);
-        const installed = this.state.managedSkills().find(item => item.skillId === skill.id);
+        const installed = this.state.managedSkills().find((item) => item.skillId === skill.id);
         if (
           installed?.version === skill.version &&
           installed.sha256 === skill.package.sha256 &&
@@ -188,7 +183,7 @@ export function extractSkillZip(archive: Uint8Array, destination: string): Promi
         reject(error);
       };
       zip.on('error', fail);
-      zip.on('entry', entry => {
+      zip.on('entry', (entry) => {
         try {
           entryCount += 1;
           extractedBytes += entry.uncompressedSize;

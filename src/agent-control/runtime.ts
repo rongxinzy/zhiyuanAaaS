@@ -2,17 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import type { ControlEvent, JsonObject } from '@aep/sdk-node';
 
-import { AgentControlState } from './state.js';
-import {
-  ControlTaskType,
-  InboxState,
-  type AgentControlClient,
-  type InboxItem,
-  type SkillReconciler,
-} from './types.js';
+import type { AgentControlState } from './state.js';
+import { type AgentControlClient, ControlTaskType, type InboxItem, InboxState, type SkillReconciler } from './types.js';
 
 const CONTROL_CURSOR_KEY = 'control_cursor';
-const SKILL_REVISION_KEY = 'skill_revision';
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const MAX_HEARTBEAT_DELAY_MS = 5 * 60_000;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
@@ -75,10 +68,7 @@ export class AgentControlRuntime {
     if (heartbeat.controlEvents.pending) await this.#receiveControlEvents();
     await this.#resumeInbox();
     await this.flushTelemetry();
-    return Math.min(
-      MAX_HEARTBEAT_DELAY_MS,
-      Math.max(1_000, heartbeat.nextHeartbeatAfterSeconds * 1_000),
-    );
+    return Math.min(MAX_HEARTBEAT_DELAY_MS, Math.max(1_000, heartbeat.nextHeartbeatAfterSeconds * 1_000));
   }
 
   async reconcileSkills(): Promise<void> {
@@ -86,7 +76,7 @@ export class AgentControlRuntime {
     await this.#options.client.reportSkillSyncResult({
       revision: result.revision,
       status: 'succeeded',
-      items: result.items.map(item => ({ skillId: item.skillId, status: item.status })),
+      items: result.items.map((item) => ({ skillId: item.skillId, status: item.status })),
     });
   }
 
@@ -103,8 +93,8 @@ export class AgentControlRuntime {
     this.#timer = setTimeout(() => {
       this.#timer = null;
       void this.runOnce()
-        .then(nextDelay => this.#schedule(nextDelay))
-        .catch(error => {
+        .then((nextDelay) => this.#schedule(nextDelay))
+        .catch((error) => {
           this.#options.onError?.(error);
           this.#schedule(this.#options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS);
         });
@@ -118,10 +108,7 @@ export class AgentControlRuntime {
       const page = await this.#options.client.listControlEvents(cursor);
       for (const event of page.items) {
         this.#options.state.persistInbox(event);
-        await this.#options.client.acknowledgeControlEvent(
-          event.deliveryId,
-          this.#now().toISOString(),
-        );
+        await this.#options.client.acknowledgeControlEvent(event.deliveryId, this.#now().toISOString());
         cursor = event.cursor;
         this.#options.state.setValue(CONTROL_CURSOR_KEY, cursor);
       }
@@ -132,10 +119,7 @@ export class AgentControlRuntime {
 
   async #resumeInbox(): Promise<void> {
     for (const item of this.#options.state.listPendingInbox()) {
-      await this.#options.client.acknowledgeControlEvent(
-        item.deliveryId,
-        this.#now().toISOString(),
-      );
+      await this.#options.client.acknowledgeControlEvent(item.deliveryId, this.#now().toISOString());
       await this.#execute(item);
     }
   }
@@ -173,34 +157,25 @@ export class AgentControlRuntime {
         message,
         retryable,
       });
-      this.#options.state.setInboxState(
-        item.deliveryId,
-        retryable ? InboxState.Failed : InboxState.Terminal,
-      );
+      this.#options.state.setInboxState(item.deliveryId, retryable ? InboxState.Failed : InboxState.Terminal);
       this.#queueTelemetry(item.event, 'failure', message);
     }
   }
 
   async #executeTask(event: ControlEvent): Promise<string> {
     if (event.task.type !== ControlTaskType.SkillReconcile) {
-      throw new UnsupportedControlTaskError(
-        `Unsupported enterprise control task ${event.task.type}.`,
-      );
+      throw new UnsupportedControlTaskError(`Unsupported enterprise control task ${event.task.type}.`);
     }
     const result = await this.#options.reconciler.reconcile();
     await this.#options.client.reportSkillSyncResult({
       revision: result.revision,
       status: 'succeeded',
-      items: result.items.map(item => ({ skillId: item.skillId, status: item.status })),
+      items: result.items.map((item) => ({ skillId: item.skillId, status: item.status })),
     });
     return result.revision;
   }
 
-  async #reportTerminalFailure(
-    item: InboxItem,
-    errorCode: string,
-    message: string,
-  ): Promise<void> {
+  async #reportTerminalFailure(item: InboxItem, errorCode: string, message: string): Promise<void> {
     await this.#options.client.reportControlEventResult(item.deliveryId, {
       status: 'failed',
       completedAt: this.#now().toISOString(),

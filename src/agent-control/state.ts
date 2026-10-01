@@ -4,7 +4,7 @@ import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 
 import type { ControlEvent, JsonObject } from '@aep/sdk-node';
 
-import { InboxState, type InboxItem, type ManagedSkill } from './types.js';
+import { type InboxItem, InboxState, type ManagedSkill } from './types.js';
 
 const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
 
@@ -94,9 +94,9 @@ export class AgentControlState {
   }
 
   getValue(key: string): string | null {
-    const row = this.#database
-      .prepare('SELECT value FROM agent_control_kv WHERE key=?')
-      .get(key) as { value: string } | undefined;
+    const row = this.#database.prepare('SELECT value FROM agent_control_kv WHERE key=?').get(key) as
+      | { value: string }
+      | undefined;
     return row?.value ?? null;
   }
 
@@ -126,7 +126,7 @@ export class AgentControlState {
       payload: string;
       state: InboxItem['state'];
     }>;
-    return rows.map(row => ({
+    return rows.map((row) => ({
       deliveryId: row.delivery_id,
       event: JSON.parse(row.payload) as ControlEvent,
       state: row.state,
@@ -153,14 +153,12 @@ export class AgentControlState {
     const rows = this.#database
       .prepare('SELECT payload FROM agent_control_outbox ORDER BY created_at,event_id LIMIT ?')
       .all(limit) as Array<{ payload: string }>;
-    return rows.map(row => JSON.parse(row.payload) as JsonObject);
+    return rows.map((row) => JSON.parse(row.payload) as JsonObject);
   }
 
   removeTelemetry(eventIds: readonly string[]): void {
     if (eventIds.length === 0) return;
-    const remove = this.#database.prepare(
-      'DELETE FROM agent_control_outbox WHERE event_id=?',
-    );
+    const remove = this.#database.prepare('DELETE FROM agent_control_outbox WHERE event_id=?');
     this.#database.exec('BEGIN IMMEDIATE');
     try {
       for (const eventId of eventIds) remove.run(eventId);
@@ -173,9 +171,7 @@ export class AgentControlState {
 
   managedSkills(): ManagedSkill[] {
     return this.#database
-      .prepare(
-        'SELECT skill_id AS skillId,version,sha256,path FROM agent_control_skills ORDER BY skill_id',
-      )
+      .prepare('SELECT skill_id AS skillId,version,sha256,path FROM agent_control_skills ORDER BY skill_id')
       .all() as unknown as ManagedSkill[];
   }
 
@@ -188,8 +184,6 @@ export class AgentControlState {
   }
 
   removeManagedSkill(skillId: string): void {
-    this.#database
-      .prepare('DELETE FROM agent_control_skills WHERE skill_id=?')
-      .run(skillId);
+    this.#database.prepare('DELETE FROM agent_control_skills WHERE skill_id=?').run(skillId);
   }
 }

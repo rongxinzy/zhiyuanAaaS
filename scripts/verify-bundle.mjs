@@ -13,8 +13,7 @@ assert.doesNotMatch(
 );
 const bundledModule = await import(bundleUrl);
 const factory =
-  bundledModule.createZhiyuanEnterpriseExtension ??
-  bundledModule.default?.createZhiyuanEnterpriseExtension;
+  bundledModule.createZhiyuanEnterpriseExtension ?? bundledModule.default?.createZhiyuanEnterpriseExtension;
 
 assert.equal(typeof factory, 'function', 'Bundle must export createZhiyuanEnterpriseExtension.');
 const extension = await factory();
@@ -33,9 +32,7 @@ await extension.dispose();
 
 const rendererIndex = await fs.readFile(rendererIndexUrl, 'utf8');
 assert.match(rendererIndex, /<div id="root"><\/div>/, 'Renderer must contain its React root.');
-const assetReferences = [...rendererIndex.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map(
-  match => match[1],
-);
+const assetReferences = [...rendererIndex.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map((match) => match[1]);
 assert.ok(assetReferences.length >= 2, 'Renderer must reference bundled JavaScript and CSS.');
 for (const assetReference of assetReferences) {
   await fs.access(new URL(assetReference, rendererDirectory));

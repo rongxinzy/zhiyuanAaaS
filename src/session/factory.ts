@@ -1,14 +1,8 @@
 import { createHash } from 'node:crypto';
 
-import {
-  AepClient,
-  ProtectedRefreshTokenStore,
-  type AepProtectedStorage,
-  type AepTransport,
-} from '@aep/sdk-node';
-
-import { ZhiyuanPasswordSession } from './password-session.js';
+import { type AepClient, type AepProtectedStorage, type AepTransport, ProtectedRefreshTokenStore } from '@aep/sdk-node';
 import { ZhiyuanSessionAepClient, zhiyuanSessionClientIdentity } from './client-identity.js';
+import { ZhiyuanPasswordSession } from './password-session.js';
 
 export interface ZhiyuanPasswordSessionOptions {
   readonly baseUrl: string;
@@ -19,17 +13,12 @@ export interface ZhiyuanPasswordSessionOptions {
   readonly transport?: AepTransport;
 }
 
-export function createZhiyuanPasswordSession(
-  options: ZhiyuanPasswordSessionOptions,
-): ZhiyuanPasswordSession {
+export function createZhiyuanPasswordSession(options: ZhiyuanPasswordSessionOptions): ZhiyuanPasswordSession {
   return new ZhiyuanPasswordSession(createZhiyuanAepClient(options));
 }
 
 export function createZhiyuanAepClient(options: ZhiyuanPasswordSessionOptions): AepClient {
-  const tokenStore = new ProtectedRefreshTokenStore(
-    options.protectedStorage,
-    refreshTokenStorageKey(options.agentId),
-  );
+  const tokenStore = new ProtectedRefreshTokenStore(options.protectedStorage, refreshTokenStorageKey(options.agentId));
   return new ZhiyuanSessionAepClient(
     {
       baseUrl: options.baseUrl,

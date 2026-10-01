@@ -45,6 +45,7 @@ body {
   margin-top: 3px;
 }
 .admin-sidebar .ant-menu {
+  /* biome-ignore lint/complexity/noImportantStyles: required to override antd's own menu border */
   border-inline-end: none !important;
 }
 .admin-sidebar-note {

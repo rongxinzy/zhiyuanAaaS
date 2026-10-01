@@ -1,33 +1,33 @@
 import {
-  AepClient,
-  AEP_PROTOCOL_VERSION,
-  FetchTransport,
-  HttpMethod,
-  MemoryTokenStore,
-  type AepTokenStore,
+  type AdminControlEvent,
   type AdminModel,
   type AdminModelList,
-  type ModelAssignment,
-  type CurrentIdentity,
-  type AdminControlEvent,
+  AEP_PROTOCOL_VERSION,
+  AepClient,
+  type AepTokenStore,
   type CredentialAssignment,
   type CredentialAssignmentWrite,
   type CredentialCreate,
-  type CredentialMetadata,
   type CredentialList,
+  type CredentialMetadata,
   type CredentialPatch,
   type CredentialRotate,
+  type CurrentIdentity,
   type DataPlaneDesiredState,
   type DataPlaneDesiredStateWrite,
   type DataPlaneRoute,
   type DataPlaneStatus,
+  FetchTransport,
+  HttpMethod,
   type JsonObject,
   type JsonValue,
   type License,
   type LicenseImportRequest,
-  type Query,
-  type PlatformUser,
+  MemoryTokenStore,
+  type ModelAssignment,
   type Permission,
+  type PlatformUser,
+  type Query,
   type Role,
   type ServiceMetadata,
   type Team,
@@ -69,18 +69,32 @@ export interface AdminSession {
 export type AdminIdentity = CurrentIdentity & { readonly permissions?: readonly string[] };
 
 export const AdminPermission = {
-  UsersRead: 'users.read', UsersWrite: 'users.write',
-  RolesRead: 'roles.read', RolesWrite: 'roles.write',
-  TeamsRead: 'teams.read', TeamsWrite: 'teams.write',
-  SkillsRead: 'skills.read', SkillsWrite: 'skills.write', SkillsAssign: 'skills.assign',
-  ModelsRead: 'models.read', ModelsWrite: 'models.write', ModelsAssign: 'models.assign',
-  CredentialsRead: 'credentials.read', CredentialsWrite: 'credentials.write', CredentialsAssign: 'credentials.assign',
-  LicensesRead: 'licenses.read', LicensesWrite: 'licenses.write', LicensesRevoke: 'licenses.revoke',
-  IdentityRead: 'identity.read', IdentityWrite: 'identity.write',
+  UsersRead: 'users.read',
+  UsersWrite: 'users.write',
+  RolesRead: 'roles.read',
+  RolesWrite: 'roles.write',
+  TeamsRead: 'teams.read',
+  TeamsWrite: 'teams.write',
+  SkillsRead: 'skills.read',
+  SkillsWrite: 'skills.write',
+  SkillsAssign: 'skills.assign',
+  ModelsRead: 'models.read',
+  ModelsWrite: 'models.write',
+  ModelsAssign: 'models.assign',
+  CredentialsRead: 'credentials.read',
+  CredentialsWrite: 'credentials.write',
+  CredentialsAssign: 'credentials.assign',
+  LicensesRead: 'licenses.read',
+  LicensesWrite: 'licenses.write',
+  LicensesRevoke: 'licenses.revoke',
+  IdentityRead: 'identity.read',
+  IdentityWrite: 'identity.write',
   SessionsWrite: 'sessions.write',
-  EventsRead: 'events.read', EventsWrite: 'events.write',
+  EventsRead: 'events.read',
+  EventsWrite: 'events.write',
   DataPlaneWrite: 'data_plane.write',
-  DeploymentRead: 'deployment.read', DeploymentWrite: 'deployment.write',
+  DeploymentRead: 'deployment.read',
+  DeploymentWrite: 'deployment.write',
 } as const;
 export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermission];
 
@@ -88,16 +102,17 @@ const ADMIN_CONSOLE_PERMISSIONS: readonly AdminPermission[] = Object.values(Admi
 
 export function hasAdminPermission(identity: AdminIdentity | undefined, permission: AdminPermission): boolean {
   if (!identity) return false;
-  if (identity.roles.some(role => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase()))) return true;
+  if (identity.roles.some((role) => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase())))
+    return true;
   return new Set(identity.permissions ?? []).has(permission);
 }
 
 export function hasAdminConsoleAccess(identity: AdminIdentity): boolean {
-  return ADMIN_CONSOLE_PERMISSIONS.every(permission => hasAdminPermission(identity, permission));
+  return ADMIN_CONSOLE_PERMISSIONS.every((permission) => hasAdminPermission(identity, permission));
 }
 
 export function hasAnyAdminConsoleAccess(identity: AdminIdentity): boolean {
-  return ADMIN_CONSOLE_PERMISSIONS.some(permission => hasAdminPermission(identity, permission));
+  return ADMIN_CONSOLE_PERMISSIONS.some((permission) => hasAdminPermission(identity, permission));
 }
 
 export interface AdminSkill {
@@ -271,22 +286,19 @@ export const AdminIdentitySourceKind = {
   Ldap: 'ldap',
   Oidc: 'oidc',
 } as const;
-export type AdminIdentitySourceKind =
-  (typeof AdminIdentitySourceKind)[keyof typeof AdminIdentitySourceKind];
+export type AdminIdentitySourceKind = (typeof AdminIdentitySourceKind)[keyof typeof AdminIdentitySourceKind];
 
 export const AdminIdentityMappingStatus = {
   Active: 'active',
   Disabled: 'disabled',
 } as const;
-export type AdminIdentityMappingStatus =
-  (typeof AdminIdentityMappingStatus)[keyof typeof AdminIdentityMappingStatus];
+export type AdminIdentityMappingStatus = (typeof AdminIdentityMappingStatus)[keyof typeof AdminIdentityMappingStatus];
 
 export const AdminIdentitySubjectType = {
   User: 'user',
   Team: 'team',
 } as const;
-export type AdminIdentitySubjectType =
-  (typeof AdminIdentitySubjectType)[keyof typeof AdminIdentitySubjectType];
+export type AdminIdentitySubjectType = (typeof AdminIdentitySubjectType)[keyof typeof AdminIdentitySubjectType];
 
 export interface AdminIdentitySource {
   readonly id: string;
@@ -383,11 +395,7 @@ export class AdminRequestError extends Error {
   readonly detail: string | null;
 
   constructor(status: number, code: string | null, detail: string | null) {
-    super(
-      code
-        ? `AEP ${status} ${code}${detail ? `: ${detail}` : ''}`
-        : `AEP request failed with status ${status}.`,
-    );
+    super(code ? `AEP ${status} ${code}${detail ? `: ${detail}` : ''}` : `AEP request failed with status ${status}.`);
     this.name = 'AdminRequestError';
     this.status = status;
     this.code = code;
@@ -406,7 +414,7 @@ export class AdminConsoleClient {
   constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#tokenStore = tokenStore ?? new SessionTokenStore();
-    this.#transport = new FetchTransport({fetch: runtimeFetch()}) as unknown as AepTransportLike;
+    this.#transport = new FetchTransport({ fetch: runtimeFetch() }) as unknown as AepTransportLike;
   }
 
   // The session the console itself is signed in with, captured from the login
@@ -424,10 +432,7 @@ export class AdminConsoleClient {
     return this.#identitySession(client);
   }
 
-  async login(input: {
-    readonly username: string;
-    readonly password: string;
-  }): Promise<AdminSession> {
+  async login(input: { readonly username: string; readonly password: string }): Promise<AdminSession> {
     const client = this.#getClient();
     const deploymentId = await this.#resolveDeploymentId(client);
     this.#deploymentId = deploymentId;
@@ -453,13 +458,22 @@ export class AdminConsoleClient {
 
   async overview(identity?: AdminIdentity): Promise<AdminOverview> {
     const client = this.#requireClient();
-    const results = await Promise.all([
-      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : Promise.resolve(null),
-      hasAdminPermission(identity, AdminPermission.EventsRead) ? client.searchEvents({ limit: 100 }) : Promise.resolve(null),
-    ].map(request => request.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))));
+    const results = await Promise.all(
+      [
+        hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
+        hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve(null),
+        hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve(null),
+        hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : Promise.resolve(null),
+        hasAdminPermission(identity, AdminPermission.EventsRead)
+          ? client.searchEvents({ limit: 100 })
+          : Promise.resolve(null),
+      ].map((request) =>
+        request.then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error }),
+        ),
+      ),
+    );
     const failed: AdminOverviewMetric[] = [];
     const valueAt = <T>(index: number, metric: AdminOverviewMetric): T | null => {
       const result = results[index]!;
@@ -490,9 +504,15 @@ export class AdminConsoleClient {
       hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve([]),
       hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve([]),
       hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : Promise.resolve([]),
-      hasAdminPermission(identity, AdminPermission.RolesRead) ? client.listPermissions() : Promise.resolve({ permissions: [] }),
-      hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve({ skills: [] }),
-      hasAdminPermission(identity, AdminPermission.SkillsAssign) ? client.listSkillAssignments() : Promise.resolve({ items: [] }),
+      hasAdminPermission(identity, AdminPermission.RolesRead)
+        ? client.listPermissions()
+        : Promise.resolve({ permissions: [] }),
+      hasAdminPermission(identity, AdminPermission.SkillsRead)
+        ? this.#listAllSkills(client)
+        : Promise.resolve({ skills: [] }),
+      hasAdminPermission(identity, AdminPermission.SkillsAssign)
+        ? client.listSkillAssignments()
+        : Promise.resolve({ items: [] }),
     ]);
     return {
       users,
@@ -535,11 +555,17 @@ export class AdminConsoleClient {
     return this.#requireClient().updateUser(userId, input);
   }
 
-  async resetUserPassword(userId: string, input: { readonly temporaryPassword: string; readonly requirePasswordChange: boolean }): Promise<void> {
+  async resetUserPassword(
+    userId: string,
+    input: { readonly temporaryPassword: string; readonly requirePasswordChange: boolean },
+  ): Promise<void> {
     await this.#requireClient().resetUserPassword(userId, input);
   }
 
-  async replaceUserRBAC(userId: string, input: { readonly roleIds: readonly string[]; readonly teamIds: readonly string[] }): Promise<void> {
+  async replaceUserRBAC(
+    userId: string,
+    input: { readonly roleIds: readonly string[]; readonly teamIds: readonly string[] },
+  ): Promise<void> {
     await this.#requireClient().replaceUserRBAC(userId, { roleIds: [...input.roleIds], teamIds: [...input.teamIds] });
   }
 
@@ -567,15 +593,26 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteTeam(teamId);
   }
 
-  async createSkill(input: { readonly id: string; readonly name: string; readonly description: string; readonly enabled?: boolean }): Promise<void> {
+  async createSkill(input: {
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+    readonly enabled?: boolean;
+  }): Promise<void> {
     const { enabled, ...write } = input;
     await this.#requireClient().createSkill(write);
     if (enabled === false) await this.#requireClient().updateSkill(input.id, { state: 'withdrawn' });
   }
 
-  async updateSkill(skillId: string, input: { readonly name?: string; readonly description?: string; readonly enabled?: boolean }): Promise<void> {
+  async updateSkill(
+    skillId: string,
+    input: { readonly name?: string; readonly description?: string; readonly enabled?: boolean },
+  ): Promise<void> {
     const { enabled, ...patch } = input;
-    await this.#requireClient().updateSkill(skillId, { ...patch, ...(enabled === undefined ? {} : { state: enabled ? 'active' : 'withdrawn' }) });
+    await this.#requireClient().updateSkill(skillId, {
+      ...patch,
+      ...(enabled === undefined ? {} : { state: enabled ? 'active' : 'withdrawn' }),
+    });
   }
 
   async deleteSkill(skillId: string): Promise<void> {
@@ -594,8 +631,14 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteSkillVersion(skillId, version);
   }
 
-  async createSkillAssignment(input: { readonly skillId: string; readonly subject: AdminAssignmentSubject }): Promise<void> {
-    await this.#requireClient().createSkillAssignment({ skillId: input.skillId, subject: { type: input.subject.type, id: input.subject.id } });
+  async createSkillAssignment(input: {
+    readonly skillId: string;
+    readonly subject: AdminAssignmentSubject;
+  }): Promise<void> {
+    await this.#requireClient().createSkillAssignment({
+      skillId: input.skillId,
+      subject: { type: input.subject.type, id: input.subject.id },
+    });
   }
 
   async deleteSkillAssignment(assignmentId: string): Promise<void> {
@@ -606,7 +649,9 @@ export class AdminConsoleClient {
     const client = this.#requireClient();
     const [models, assignments] = await Promise.all([
       this.#listAllModels(client),
-      hasAdminPermission(identity, AdminPermission.ModelsAssign) ? client.listModelAssignments() : Promise.resolve({ assignments: [] }),
+      hasAdminPermission(identity, AdminPermission.ModelsAssign)
+        ? client.listModelAssignments()
+        : Promise.resolve({ assignments: [] }),
     ]);
     return { models: models.models, assignments: assignments.assignments };
   }
@@ -623,8 +668,14 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteModel(modelId);
   }
 
-  async createModelAssignment(input: { readonly modelId: string; readonly subject: AdminModelAssignmentSubject }): Promise<void> {
-    await this.#requireClient().createModelAssignment({ modelId: input.modelId, subject: { type: input.subject.type, id: input.subject.id } });
+  async createModelAssignment(input: {
+    readonly modelId: string;
+    readonly subject: AdminModelAssignmentSubject;
+  }): Promise<void> {
+    await this.#requireClient().createModelAssignment({
+      modelId: input.modelId,
+      subject: { type: input.subject.type, id: input.subject.id },
+    });
   }
 
   async deleteModelAssignment(assignmentId: string): Promise<void> {
@@ -661,7 +712,11 @@ export class AdminConsoleClient {
     const sessions: AdminUserSession[] = [];
     let cursor: string | undefined;
     for (;;) {
-      const result = await client.listUserSessions({ ...(userId ? { userId } : {}), ...(cursor ? { cursor } : {}), limit: 200 } satisfies Query);
+      const result = await client.listUserSessions({
+        ...(userId ? { userId } : {}),
+        ...(cursor ? { cursor } : {}),
+        limit: 200,
+      } satisfies Query);
       const items = arrayFrom(result, 'items');
       sessions.push(...parseSessions(items));
       const nextCursor = valueString(result, 'nextCursor');
@@ -674,7 +729,9 @@ export class AdminConsoleClient {
     const client = this.#requireClient();
     const [credentials, assignments] = await Promise.all([
       this.#listAllCredentials(client),
-      hasAdminPermission(identity, AdminPermission.CredentialsAssign) ? client.listCredentialAssignments() : Promise.resolve({ assignments: [] }),
+      hasAdminPermission(identity, AdminPermission.CredentialsAssign)
+        ? client.listCredentialAssignments()
+        : Promise.resolve({ assignments: [] }),
     ]);
     return {
       credentials: credentials.credentials,
@@ -846,32 +903,41 @@ export class AdminConsoleClient {
 
   async deliverySummary(eventId: string, filters?: Query): Promise<AdminDeliveryPage> {
     const result = await this.#requireClient().listControlEventDeliveries(eventId, filters);
-    const items = Array.isArray(result.items) ? result.items.flatMap(item => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-      const record = item as Record<string, unknown>;
-      if (typeof record.deliveryId !== 'string' || typeof record.eventId !== 'string' || typeof record.state !== 'string') return [];
-      return [record as unknown as AdminDeliveryRecord];
-    }) : [];
+    const items = Array.isArray(result.items)
+      ? result.items.flatMap((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+          const record = item as Record<string, unknown>;
+          if (
+            typeof record.deliveryId !== 'string' ||
+            typeof record.eventId !== 'string' ||
+            typeof record.state !== 'string'
+          )
+            return [];
+          return [record as unknown as AdminDeliveryRecord];
+        })
+      : [];
     return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
   }
 
   async searchAudit(filters?: Query): Promise<AdminEventPage> {
     const result = await this.#requireClient().searchEvents(filters);
-    const items = arrayFrom(result, 'items').flatMap(item => {
+    const items = arrayFrom(result, 'items').flatMap((item) => {
       if (!item || typeof item !== 'object') return [];
       const record = item as Record<string, unknown>;
-      return [{
-        ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
-        ...(typeof record.type === 'string' ? { type: record.type } : {}),
-        ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
-        ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
-        ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
-        ...(typeof record.result === 'string' ? { result: record.result } : {}),
-        ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
-        ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
-        ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
-        ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
-      }];
+      return [
+        {
+          ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
+          ...(typeof record.type === 'string' ? { type: record.type } : {}),
+          ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
+          ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
+          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
+          ...(typeof record.result === 'string' ? { result: record.result } : {}),
+          ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
+          ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
+          ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
+          ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
+        },
+      ];
     });
     return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
   }
@@ -912,12 +978,15 @@ export class AdminConsoleClient {
   // these calls go through the SDK transport directly. This keeps the session
   // headers, bearer auth, 401 refresh retry, and RFC 9457 problem parsing
   // identical to every other request the console makes.
-  async #request<T>(client: AepClient, request: {
-    readonly method: (typeof HttpMethod)[keyof typeof HttpMethod];
-    readonly path: string;
-    readonly body?: JsonObject;
-    readonly responseType?: 'json' | 'empty';
-  }): Promise<T> {
+  async #request<T>(
+    client: AepClient,
+    request: {
+      readonly method: (typeof HttpMethod)[keyof typeof HttpMethod];
+      readonly path: string;
+      readonly body?: JsonObject;
+      readonly responseType?: 'json' | 'empty';
+    },
+  ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-AEP-Protocol-Version': AEP_PROTOCOL_VERSION,
@@ -977,7 +1046,7 @@ export class AdminConsoleClient {
     let cursor: string | undefined;
     for (;;) {
       const page = await client.listSkills({ ...(cursor ? { cursor } : {}), limit: 200 });
-      skills.push(...arrayFrom(page, 'skills') as JsonValue[]);
+      skills.push(...(arrayFrom(page, 'skills') as JsonValue[]));
       const nextCursor = valueString(page, 'nextCursor');
       if (!nextCursor || nextCursor === cursor) return { skills };
       cursor = nextCursor;
@@ -1029,7 +1098,8 @@ export class AdminConsoleClient {
       this.#sessionId = null;
       throw new Error('The AEP current identity response is invalid.');
     }
-    this.#deploymentId = identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
+    this.#deploymentId =
+      identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
     return hasAnyAdminConsoleAccess(identity)
       ? { status: AdminConsoleStatus.Authenticated, identity }
       : { status: AdminConsoleStatus.Forbidden, identity };
@@ -1037,7 +1107,7 @@ export class AdminConsoleClient {
 }
 
 function runtimeFetch(): typeof globalThis.fetch {
-  const root = globalThis as typeof globalThis & {fetch?: typeof globalThis.fetch};
+  const root = globalThis as typeof globalThis & { fetch?: typeof globalThis.fetch };
   const candidate = root.fetch ?? (typeof window !== 'undefined' ? window.fetch : undefined);
   if (typeof candidate !== 'function') {
     throw new Error('The enterprise console runtime does not provide fetch.');
@@ -1050,13 +1120,16 @@ function segment(value: string): string {
 }
 
 interface AepTransportLike {
-  request<T>(baseUrl: string, request: {
-    readonly method: string;
-    readonly path: string;
-    readonly headers?: Record<string, string>;
-    readonly body?: unknown;
-    readonly responseType?: 'json' | 'bytes' | 'empty';
-  }): Promise<{ status: number; headers: Headers; data: T }>;
+  request<T>(
+    baseUrl: string,
+    request: {
+      readonly method: string;
+      readonly path: string;
+      readonly headers?: Record<string, string>;
+      readonly body?: unknown;
+      readonly responseType?: 'json' | 'bytes' | 'empty';
+    },
+  ): Promise<{ status: number; headers: Headers; data: T }>;
 }
 
 function identityQuery(values: { readonly [key: string]: string | number | undefined }): string {
@@ -1081,7 +1154,7 @@ function parseIdentitySource(value: unknown): AdminIdentitySource {
 }
 
 function parseIdentitySources(value: unknown): AdminIdentitySource[] {
-  return arrayFrom(value, 'identitySources').flatMap(item =>
+  return arrayFrom(value, 'identitySources').flatMap((item) =>
     item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string'
       ? [safeIdentitySource(item)]
       : [],
@@ -1092,39 +1165,46 @@ function safeIdentitySource(item: unknown): AdminIdentitySource {
   const record = item as Record<string, unknown>;
   return {
     id: record.id as string,
-    displayName: typeof record.displayName === 'string' ? record.displayName : record.id as string,
+    displayName: typeof record.displayName === 'string' ? record.displayName : (record.id as string),
     kind: typeof record.kind === 'string' ? record.kind : AdminIdentitySourceKind.Directory,
     enabled: record.enabled !== false,
   };
 }
 
 function parseIdentityMappings(value: unknown, sourceId: string): AdminIdentityMapping[] {
-  return arrayFrom(value, 'mappings').flatMap(item => {
+  return arrayFrom(value, 'mappings').flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     if (typeof record.externalId !== 'string' || typeof record.localSubjectId !== 'string') return [];
-    return [{
-      sourceId: typeof record.sourceId === 'string' ? record.sourceId : sourceId,
-      externalSubjectType: typeof record.externalSubjectType === 'string' ? record.externalSubjectType : AdminIdentitySubjectType.User,
-      externalId: record.externalId,
-      localSubjectId: record.localSubjectId,
-      status: typeof record.status === 'string' ? record.status : AdminIdentityMappingStatus.Active,
-    }];
+    return [
+      {
+        sourceId: typeof record.sourceId === 'string' ? record.sourceId : sourceId,
+        externalSubjectType:
+          typeof record.externalSubjectType === 'string' ? record.externalSubjectType : AdminIdentitySubjectType.User,
+        externalId: record.externalId,
+        localSubjectId: record.localSubjectId,
+        status: typeof record.status === 'string' ? record.status : AdminIdentityMappingStatus.Active,
+      },
+    ];
   });
 }
 
 function parseDeploymentSettingValue(value: unknown): AdminDeploymentSettingValue {
   const record = isRecord(value) ? value : {};
   const source = record.source;
-  if (source !== AdminDeploymentSettingSource.Override
-    && source !== AdminDeploymentSettingSource.Env
-    && source !== AdminDeploymentSettingSource.Unset) {
+  if (
+    source !== AdminDeploymentSettingSource.Override &&
+    source !== AdminDeploymentSettingSource.Env &&
+    source !== AdminDeploymentSettingSource.Unset
+  ) {
     throw new Error('The AEP deployment settings response is invalid.');
   }
   const override = record.override;
   const effectiveValue = record.effectiveValue;
-  if ((override !== null && override !== undefined && typeof override !== 'string')
-    || (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'string')) {
+  if (
+    (override !== null && override !== undefined && typeof override !== 'string') ||
+    (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'string')
+  ) {
     throw new Error('The AEP deployment settings response is invalid.');
   }
   return {
@@ -1143,14 +1223,17 @@ const DATA_PLANE_STATES: readonly string[] = ['pending', 'applying', 'ready', 'd
 
 function parseDataPlaneStatus(value: unknown): AdminDataPlaneStatus {
   const record = isRecord(value) ? value : {};
-  const state = typeof record.state === 'string' && DATA_PLANE_STATES.includes(record.state)
-    ? record.state as DataPlaneStatus['state']
-    : 'pending';
+  const state =
+    typeof record.state === 'string' && DATA_PLANE_STATES.includes(record.state)
+      ? (record.state as DataPlaneStatus['state'])
+      : 'pending';
   return {
     state,
     observedRevision: typeof record.observedRevision === 'string' ? record.observedRevision : null,
     contentHash: typeof record.contentHash === 'string' ? record.contentHash : null,
-    ...(typeof record.lastAppliedAt === 'string' || record.lastAppliedAt === null ? { lastAppliedAt: record.lastAppliedAt } : {}),
+    ...(typeof record.lastAppliedAt === 'string' || record.lastAppliedAt === null
+      ? { lastAppliedAt: record.lastAppliedAt }
+      : {}),
     ...(typeof record.errorCode === 'string' || record.errorCode === null ? { errorCode: record.errorCode } : {}),
     ...(typeof record.message === 'string' || record.message === null ? { message: record.message } : {}),
     ...(typeof record.resourceCount === 'number' ? { resourceCount: record.resourceCount } : {}),
@@ -1166,7 +1249,7 @@ function parseCatalogComparison(value: unknown): AdminDataPlaneCatalogComparison
   return {
     missing: stringList(record.missing),
     extra: stringList(record.extra),
-    mismatched: mismatched.flatMap(item => {
+    mismatched: mismatched.flatMap((item) => {
       if (!isRecord(item) || typeof item.modelId !== 'string') return [];
       return [{ modelId: item.modelId, fields: stringList(item.fields) }];
     }),
@@ -1221,9 +1304,9 @@ function parseAdminIdentity(value: unknown): AdminIdentity | null {
     user: {
       id: userId,
       displayName,
-      ...(value.user.email === undefined ? {} : {email: value.user.email}),
+      ...(value.user.email === undefined ? {} : { email: value.user.email }),
     },
-    ...(deployment ? {deployment} : {}),
+    ...(deployment ? { deployment } : {}),
     deploymentId,
     enterprise: legacyEnterprise,
     roles: [...value.roles],
@@ -1233,11 +1316,11 @@ function parseAdminIdentity(value: unknown): AdminIdentity | null {
   };
 }
 
-function namedIdentity(value: unknown): {id: string; name: string} | null {
+function namedIdentity(value: unknown): { id: string; name: string } | null {
   if (!isRecord(value)) return null;
   const id = nonEmptyString(value.id);
   const name = nonEmptyString(value.name);
-  return id && name ? {id, name} : null;
+  return id && name ? { id, name } : null;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -1245,7 +1328,7 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 function stringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string' && item.length > 0);
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1321,30 +1404,53 @@ function listCount(value: unknown): number {
 
 function parseSkills(value: unknown): AdminSkill[] {
   const items = arrayFrom(value, 'skills');
-  return items.flatMap(item => {
+  return items.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     if (typeof record.id !== 'string' || typeof record.name !== 'string') return [];
-    const versions = Array.isArray(record.versions) ? record.versions.flatMap(version => {
-      if (!version || typeof version !== 'object') return [];
-      const item = version as Record<string, unknown>;
-      if (typeof item.version !== 'string' || typeof item.state !== 'string' || typeof item.sha256 !== 'string' || typeof item.size !== 'number') return [];
-      return [{ version: item.version, state: item.state as AdminSkillVersion['state'], sha256: item.sha256, size: item.size, ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}) }];
-    }) : [];
-    const state = record.state === 'withdrawn' || record.state === 'active' ? record.state : record.enabled === false ? 'withdrawn' : 'active';
-    return [{
-      id: record.id,
-      name: record.name,
-      ...(typeof record.description === 'string' ? { description: record.description } : {}),
-      state,
-      enabled: state === 'active',
-      versions,
-    }];
+    const versions = Array.isArray(record.versions)
+      ? record.versions.flatMap((version) => {
+          if (!version || typeof version !== 'object') return [];
+          const item = version as Record<string, unknown>;
+          if (
+            typeof item.version !== 'string' ||
+            typeof item.state !== 'string' ||
+            typeof item.sha256 !== 'string' ||
+            typeof item.size !== 'number'
+          )
+            return [];
+          return [
+            {
+              version: item.version,
+              state: item.state as AdminSkillVersion['state'],
+              sha256: item.sha256,
+              size: item.size,
+              ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}),
+            },
+          ];
+        })
+      : [];
+    const state =
+      record.state === 'withdrawn' || record.state === 'active'
+        ? record.state
+        : record.enabled === false
+          ? 'withdrawn'
+          : 'active';
+    return [
+      {
+        id: record.id,
+        name: record.name,
+        ...(typeof record.description === 'string' ? { description: record.description } : {}),
+        state,
+        enabled: state === 'active',
+        versions,
+      },
+    ];
   });
 }
 
 function parseAssignments(value: unknown): AdminSkillAssignment[] {
-  return arrayFrom(value, 'items').flatMap(item => {
+  return arrayFrom(value, 'items').flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     const subject = record.subject;
@@ -1355,16 +1461,19 @@ function parseAssignments(value: unknown): AdminSkillAssignment[] {
       typeof subject !== 'object' ||
       typeof (subject as Record<string, unknown>).type !== 'string' ||
       typeof (subject as Record<string, unknown>).id !== 'string'
-    ) return [];
+    )
+      return [];
     const subjectType = (subject as Record<string, unknown>).type;
     const subjectId = (subject as Record<string, unknown>).id;
     if (typeof subjectType !== 'string' || typeof subjectId !== 'string') return [];
-    return [{
-      id: record.id,
-      skillId: record.skillId,
-      subjectType,
-      subjectId,
-    }];
+    return [
+      {
+        id: record.id,
+        skillId: record.skillId,
+        subjectType,
+        subjectId,
+      },
+    ];
   });
 }
 
@@ -1382,7 +1491,7 @@ function valueString(value: unknown, key: string): string | null {
 }
 
 function parseSessions(items: unknown[]): AdminUserSession[] {
-  return items.flatMap(item => {
+  return items.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     if (
@@ -1391,16 +1500,19 @@ function parseSessions(items: unknown[]): AdminUserSession[] {
       typeof record.topic !== 'string' ||
       typeof record.createdAt !== 'string' ||
       typeof record.lastSeenAt !== 'string'
-    ) return [];
-    return [{
-      sessionId: record.sessionId,
-      userId: record.userId,
-      topic: record.topic,
-      createdAt: record.createdAt,
-      lastSeenAt: record.lastSeenAt,
-      ...(typeof record.revokedAt === 'string' || record.revokedAt === null ? { revokedAt: record.revokedAt } : {}),
-      ...('client' in record ? { client: parseSessionClient(record.client) } : {}),
-    }];
+    )
+      return [];
+    return [
+      {
+        sessionId: record.sessionId,
+        userId: record.userId,
+        topic: record.topic,
+        createdAt: record.createdAt,
+        lastSeenAt: record.lastSeenAt,
+        ...(typeof record.revokedAt === 'string' || record.revokedAt === null ? { revokedAt: record.revokedAt } : {}),
+        ...('client' in record ? { client: parseSessionClient(record.client) } : {}),
+      },
+    ];
   });
 }
 
@@ -1423,7 +1535,7 @@ function pendingEventCount(value: unknown): number {
   const record = value as { items?: unknown[]; pending?: unknown };
   if (typeof record.pending === 'number') return record.pending;
   return Array.isArray(record.items)
-    ? record.items.filter(item => {
+    ? record.items.filter((item) => {
         if (!item || typeof item !== 'object') return false;
         const state = (item as { state?: unknown }).state;
         return state === 'pending' || state === 'delivered';

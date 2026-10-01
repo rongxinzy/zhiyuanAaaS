@@ -22,9 +22,7 @@ export class ZhiyuanAgentControlLifecycle {
     if (this.#disposePromise) return this.#disposePromise;
     this.#disposed = true;
     this.#unsubscribe();
-    this.#disposePromise = this.#transitionTail
-      .catch(() => undefined)
-      .then(() => this.#backend.close());
+    this.#disposePromise = this.#transitionTail.catch(() => undefined).then(() => this.#backend.close());
     return this.#disposePromise;
   }
 

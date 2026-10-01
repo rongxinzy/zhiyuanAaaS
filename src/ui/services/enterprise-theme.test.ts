@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from 'vitest';
 import {
+  type EnterpriseRendererInitializeMessage,
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
-  type EnterpriseRendererInitializeMessage,
 } from '../../renderer-contract.js';
 import { applyEnterpriseTheme } from './enterprise-theme.js';
 
@@ -35,12 +35,7 @@ test('applies only allowlisted tokens and removes stale values for older hosts',
 });
 
 test('rejects stylesheet injection and remote resource values', () => {
-  for (const value of [
-    'red; color: red',
-    'url(https://example.test)',
-    'red} body {color:red}',
-    'x'.repeat(1025),
-  ]) {
+  for (const value of ['red; color: red', 'url(https://example.test)', 'red} body {color:red}', 'x'.repeat(1025)]) {
     applyEnterpriseTheme(message({ '--zy-background': value }));
     expect(document.documentElement.style.getPropertyValue('--zy-background')).toBe('');
   }

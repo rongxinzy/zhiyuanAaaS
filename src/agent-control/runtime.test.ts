@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { AgentControlRuntime } from './runtime.js';
 import { AgentControlState } from './state.js';
-import { InboxState, type AgentControlClient, type SkillReconciler } from './types.js';
+import { type AgentControlClient, InboxState, type SkillReconciler } from './types.js';
 
 const temporaryDirectories: string[] = [];
 const now = new Date('2026-08-26T01:00:00.000Z');
@@ -24,7 +24,7 @@ describe('Agent control runtime', () => {
     const state = createState();
     const event = controlEvent();
     const acknowledge = vi.fn(async () => {
-      expect(state.listPendingInbox().map(item => item.deliveryId)).toContain(event.deliveryId);
+      expect(state.listPendingInbox().map((item) => item.deliveryId)).toContain(event.deliveryId);
       throw new Error('connection lost');
     });
     const client = clientFixture({
@@ -47,14 +47,10 @@ describe('Agent control runtime', () => {
     const state = createState();
     const event = controlEvent();
     state.persistInbox(event);
-    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(
-      async () => undefined,
-    );
-    const reportSkillSync = vi.fn<AgentControlClient['reportSkillSyncResult']>(
-      async () => undefined,
-    );
+    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(async () => undefined);
+    const reportSkillSync = vi.fn<AgentControlClient['reportSkillSyncResult']>(async () => undefined);
     const uploadTelemetry = vi.fn(async (events: JsonObject[]) => ({
-      accepted: events.map(item => String(item.eventId)),
+      accepted: events.map((item) => String(item.eventId)),
       rejected: [],
     }));
     const client = clientFixture({
@@ -66,7 +62,7 @@ describe('Agent control runtime', () => {
     const runtime = createRuntime(client, state, reconciler);
     try {
       await expect(runtime.runOnce()).resolves.toBe(30_000);
-      expect(reportResult.mock.calls.map(call => call[1])).toEqual([
+      expect(reportResult.mock.calls.map((call) => call[1])).toEqual([
         expect.objectContaining({ status: 'running' }),
         expect.objectContaining({ status: 'succeeded', appliedRevision: 'revision-1' }),
       ]);
@@ -94,20 +90,12 @@ describe('Agent control runtime', () => {
     const event = controlEvent();
     state.persistInbox(event);
     state.setInboxState(event.deliveryId, InboxState.Running);
-    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(
-      async () => undefined,
-    );
-    const runtime = createRuntime(
-      clientFixture({ reportControlEventResult: reportResult }),
-      state,
-    );
+    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(async () => undefined);
+    const runtime = createRuntime(clientFixture({ reportControlEventResult: reportResult }), state);
     try {
       await runtime.runOnce();
       expect(reportResult).toHaveBeenCalledTimes(1);
-      expect(reportResult).toHaveBeenCalledWith(
-        event.deliveryId,
-        expect.objectContaining({ status: 'succeeded' }),
-      );
+      expect(reportResult).toHaveBeenCalledWith(event.deliveryId, expect.objectContaining({ status: 'succeeded' }));
     } finally {
       state.close();
     }
@@ -127,21 +115,13 @@ describe('Agent control runtime', () => {
   ])('reports an $name once as a terminal failure', async ({ event, errorCode }) => {
     const state = createState();
     state.persistInbox(event);
-    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(
-      async () => undefined,
-    );
+    const reportResult = vi.fn<AgentControlClient['reportControlEventResult']>(async () => undefined);
     const reconciler = reconcilerFixture();
-    const runtime = createRuntime(
-      clientFixture({ reportControlEventResult: reportResult }),
-      state,
-      reconciler,
-    );
+    const runtime = createRuntime(clientFixture({ reportControlEventResult: reportResult }), state, reconciler);
     try {
       await runtime.runOnce();
       await runtime.runOnce();
-      expect(reportResult).toHaveBeenCalledTimes(
-        errorCode === 'UNSUPPORTED_TASK' ? 2 : 1,
-      );
+      expect(reportResult).toHaveBeenCalledTimes(errorCode === 'UNSUPPORTED_TASK' ? 2 : 1);
       expect(reportResult).toHaveBeenLastCalledWith(
         event.deliveryId,
         expect.objectContaining({
@@ -161,15 +141,10 @@ describe('Agent control runtime', () => {
     const state = createState();
     state.enqueueTelemetry({ eventId: 'retry-me', type: 'skill.sync.failed' });
     const uploadTelemetry = vi.fn(async () => ({ accepted: [], rejected: [] }));
-    const runtime = createRuntime(
-      clientFixture({ uploadEventBatch: uploadTelemetry }),
-      state,
-    );
+    const runtime = createRuntime(clientFixture({ uploadEventBatch: uploadTelemetry }), state);
     try {
       await runtime.flushTelemetry();
-      expect(state.listTelemetry()).toEqual([
-        { eventId: 'retry-me', type: 'skill.sync.failed' },
-      ]);
+      expect(state.listTelemetry()).toEqual([{ eventId: 'retry-me', type: 'skill.sync.failed' }]);
     } finally {
       state.close();
     }
@@ -178,17 +153,14 @@ describe('Agent control runtime', () => {
   test('coalesces concurrent cycles so control work cannot overlap', async () => {
     const state = createState();
     let releaseHeartbeat: () => void = () => {};
-    const heartbeatGate = new Promise<void>(resolve => {
+    const heartbeatGate = new Promise<void>((resolve) => {
       releaseHeartbeat = resolve;
     });
     const heartbeatRequest = vi.fn(async () => {
       await heartbeatGate;
       return heartbeat(false);
     });
-    const runtime = createRuntime(
-      clientFixture({ heartbeat: heartbeatRequest }),
-      state,
-    );
+    const runtime = createRuntime(clientFixture({ heartbeat: heartbeatRequest }), state);
     try {
       const first = runtime.runOnce();
       const second = runtime.runOnce();
@@ -239,8 +211,8 @@ function clientFixture(overrides: Partial<AgentControlClient> = {}): AgentContro
     getSkillManifest: async () => ({ notModified: true, etag: null }),
     downloadSkillPackage: async () => new Uint8Array(),
     reportSkillSyncResult: async () => undefined,
-    uploadEventBatch: async events => ({
-      accepted: events.map(item => String(item.eventId)),
+    uploadEventBatch: async (events) => ({
+      accepted: events.map((item) => String(item.eventId)),
       rejected: [],
     }),
     heartbeat: async () => heartbeat(false),
@@ -254,7 +226,7 @@ function clientFixture(overrides: Partial<AgentControlClient> = {}): AgentContro
 function heartbeat(hasPendingControlEvents: boolean) {
   return {
     serverTime: now.toISOString(),
-    controlEvents: {pending: hasPendingControlEvents, watermark: ''},
+    controlEvents: { pending: hasPendingControlEvents, watermark: '' },
     nextHeartbeatAfterSeconds: 30,
   };
 }

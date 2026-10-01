@@ -1,4 +1,4 @@
-import { Switch, Typography, theme } from "antd";
+import { Switch, Typography, theme } from 'antd';
 
 export function BooleanSwitch({
   id,
@@ -17,9 +17,9 @@ export function BooleanSwitch({
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         gap: token.margin,
         padding: `${token.paddingXXS + 2}px ${token.paddingSM}px`,
         border: `1px solid ${token.colorBorderSecondary}`,

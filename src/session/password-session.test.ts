@@ -1,32 +1,20 @@
-import type {
-  AepSessionState,
-  AepTokens,
-  CurrentIdentity,
-  ModelConnection,
-  ServiceMetadata,
-} from '@aep/sdk-node';
+import type { AepSessionState, AepTokens, CurrentIdentity, ModelConnection, ServiceMetadata } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
-import {
-  AepMetadataError,
-  ZhiyuanPasswordSession,
-  type PasswordSessionClient,
-} from './password-session.js';
+import { AepMetadataError, type PasswordSessionClient, ZhiyuanPasswordSession } from './password-session.js';
 
 describe('Zhiyuan password session', () => {
   test('coalesces concurrent restoration and returns immutable identity snapshots', async () => {
     let finishRestore: ((tokens: AepTokens) => void) | null = null;
     let signalRestoreStarted: (() => void) | null = null;
-    const restoreStarted = new Promise<void>(resolve => {
+    const restoreStarted = new Promise<void>((resolve) => {
       signalRestoreStarted = resolve;
     });
-    const restoreResult = new Promise<AepTokens>(resolve => {
+    const restoreResult = new Promise<AepTokens>((resolve) => {
       finishRestore = resolve;
     });
     const client = mockClient({
-      getSessionState: vi.fn(
-        async (): Promise<AepSessionState> => ({ status: 'recoverable' }),
-      ),
+      getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'recoverable' })),
       restoreSession: vi.fn(async () => {
         signalRestoreStarted!();
         return restoreResult;
@@ -55,9 +43,7 @@ describe('Zhiyuan password session', () => {
 
   test('keeps a recoverable state when refresh cannot complete', async () => {
     const client = mockClient({
-      getSessionState: vi.fn(
-        async (): Promise<AepSessionState> => ({ status: 'recoverable' }),
-      ),
+      getSessionState: vi.fn(async (): Promise<AepSessionState> => ({ status: 'recoverable' })),
       restoreSession: vi.fn(async () => {
         throw new Error('service unavailable');
       }),
@@ -70,7 +56,7 @@ describe('Zhiyuan password session', () => {
 
   test('serializes password login and logout without exposing credentials', async () => {
     let finishLogin: (() => void) | null = null;
-    const loginGate = new Promise<void>(resolve => {
+    const loginGate = new Promise<void>((resolve) => {
       finishLogin = resolve;
     });
     const client = mockClient({
@@ -104,7 +90,7 @@ describe('Zhiyuan password session', () => {
   test('creates the AEP client for the address supplied at login', async () => {
     const initialClient = mockClient();
     const loginClient = mockClient();
-    const session = new ZhiyuanPasswordSession(initialClient, baseUrl => {
+    const session = new ZhiyuanPasswordSession(initialClient, (baseUrl) => {
       expect(baseUrl).toBe('https://aep.customer.example');
       return loginClient;
     });
@@ -241,7 +227,7 @@ describe('Zhiyuan password session', () => {
   test('waits for asynchronous session listeners before completing a transition', async () => {
     const session = new ZhiyuanPasswordSession(mockClient());
     let releaseListener: () => void = () => {};
-    const listenerGate = new Promise<void>(resolve => {
+    const listenerGate = new Promise<void>((resolve) => {
       releaseListener = resolve;
     });
     const listener = vi.fn(async () => listenerGate);

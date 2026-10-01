@@ -1,6 +1,6 @@
 import type { EnterpriseSessionIdentity } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
-import { translate, type TranslationKey } from '../../i18n.js';
+import { type TranslationKey, translate } from '../../i18n.js';
 import { AccountSettings } from './AccountSettings.js';
 
 interface EnterpriseSettingsProps {
@@ -10,10 +10,7 @@ interface EnterpriseSettingsProps {
   readonly signingOut: boolean;
   readonly error: TranslationKey | null;
   readonly success: TranslationKey | null;
-  readonly onPasswordChange: (input: {
-    currentPassword: string;
-    newPassword: string;
-  }) => Promise<boolean>;
+  readonly onPasswordChange: (input: { currentPassword: string; newPassword: string }) => Promise<boolean>;
   readonly onSignOut: () => Promise<void>;
 }
 

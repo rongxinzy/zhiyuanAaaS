@@ -49,9 +49,8 @@ async function assertPinnedInputs() {
 
 function run(command, args, cwd) {
   const executable = process.platform === 'win32' && command === 'npm' ? 'npm.cmd' : command;
-  const spawnCommand = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : executable;
-  const spawnArgs =
-    process.platform === 'win32' ? ['/d', '/s', '/c', [executable, ...args].join(' ')] : args;
+  const spawnCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : executable;
+  const spawnArgs = process.platform === 'win32' ? ['/d', '/s', '/c', [executable, ...args].join(' ')] : args;
   return new Promise((resolve, reject) => {
     const child = spawn(spawnCommand, spawnArgs, {
       cwd,
@@ -60,7 +59,7 @@ function run(command, args, cwd) {
       shell: false,
     });
     child.once('error', reject);
-    child.once('exit', code => {
+    child.once('exit', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${executable} ${args.join(' ')} exited with ${code ?? 'unknown'}.`));
     });

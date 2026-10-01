@@ -8,7 +8,7 @@ describe('Zhiyuan Agent control lifecycle', () => {
   test('starts after login, waits for stop on logout, and closes on disposal', async () => {
     const session = new ZhiyuanPasswordSession(clientFixture());
     let releaseStop: () => void = () => {};
-    const stopGate = new Promise<void>(resolve => {
+    const stopGate = new Promise<void>((resolve) => {
       releaseStop = resolve;
     });
     const backend = {

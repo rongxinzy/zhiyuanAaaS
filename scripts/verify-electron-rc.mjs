@@ -26,9 +26,7 @@ if (packageDirectory) {
   });
   checks.push('packaged Electron enterprise assets match the build output');
 } else if (requirePackage) {
-  throw new Error(
-    'ZHIYUAN_REQUIRE_ELECTRON_PACKAGE=1 requires ZHIYUAN_ELECTRON_PACKAGE_DIR to be set.',
-  );
+  throw new Error('ZHIYUAN_REQUIRE_ELECTRON_PACKAGE=1 requires ZHIYUAN_ELECTRON_PACKAGE_DIR to be set.');
 } else {
   checks.push('packaged Electron asset check deferred (no package directory supplied)');
 }
@@ -60,9 +58,8 @@ async function assertBuildOutputs() {
 
 function run(command, args, cwd, extraEnv = {}) {
   const executable = process.platform === 'win32' && command === 'npm' ? 'npm.cmd' : command;
-  const spawnCommand = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : executable;
-  const spawnArgs =
-    process.platform === 'win32' ? ['/d', '/s', '/c', [executable, ...args].join(' ')] : args;
+  const spawnCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : executable;
+  const spawnArgs = process.platform === 'win32' ? ['/d', '/s', '/c', [executable, ...args].join(' ')] : args;
   return new Promise((resolve, reject) => {
     const child = spawn(spawnCommand, spawnArgs, {
       cwd,
@@ -71,7 +68,7 @@ function run(command, args, cwd, extraEnv = {}) {
       shell: false,
     });
     child.once('error', reject);
-    child.once('exit', code => {
+    child.once('exit', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${executable} ${args.join(' ')} exited with ${code ?? 'unknown'}.`));
     });

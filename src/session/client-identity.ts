@@ -1,7 +1,7 @@
 import {
   AepClient,
-  AepProblem,
   type AepClientOptions,
+  AepProblem,
   type AepTokens,
   type ClientIdentity,
   type HeartbeatResponse,
@@ -44,9 +44,7 @@ export class ZhiyuanSessionAepClient extends AepClient {
     this.#identity = identity;
   }
 
-  override async loginWithPassword(
-    input: Parameters<AepClient['loginWithPassword']>[0],
-  ): Promise<AepTokens> {
+  override async loginWithPassword(input: Parameters<AepClient['loginWithPassword']>[0]): Promise<AepTokens> {
     if (this.#clientIdentitySupported === false) return super.loginWithPassword(input);
     try {
       const tokens = await super.loginWithPassword({

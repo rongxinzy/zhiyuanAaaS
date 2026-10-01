@@ -1,15 +1,45 @@
+import { MemoryTokenStore } from '@aep/sdk-node';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { MemoryTokenStore } from '@aep/sdk-node';
-
-import { AdminConsoleClient, AdminMetadataError, AdminPermission, AdminRequestError, hasAdminConsoleAccess, hasAdminPermission, hasAnyAdminConsoleAccess, modelGatewayBaseUrlProblem, type AdminIdentity } from './client.js';
+import {
+  AdminConsoleClient,
+  type AdminIdentity,
+  AdminMetadataError,
+  AdminPermission,
+  AdminRequestError,
+  hasAdminConsoleAccess,
+  hasAdminPermission,
+  hasAnyAdminConsoleAccess,
+  modelGatewayBaseUrlProblem,
+} from './client.js';
 
 const fullPermissions = [
-  'users.read', 'users.write', 'roles.read', 'roles.write', 'teams.read', 'teams.write',
-  'skills.read', 'skills.write', 'skills.assign', 'models.read', 'models.write', 'models.assign',
-  'credentials.read', 'credentials.write', 'credentials.assign', 'licenses.read', 'licenses.write', 'licenses.revoke',
-  'identity.read', 'identity.write',
-  'sessions.write', 'events.read', 'events.write', 'data_plane.write', 'deployment.read', 'deployment.write',
+  'users.read',
+  'users.write',
+  'roles.read',
+  'roles.write',
+  'teams.read',
+  'teams.write',
+  'skills.read',
+  'skills.write',
+  'skills.assign',
+  'models.read',
+  'models.write',
+  'models.assign',
+  'credentials.read',
+  'credentials.write',
+  'credentials.assign',
+  'licenses.read',
+  'licenses.write',
+  'licenses.revoke',
+  'identity.read',
+  'identity.write',
+  'sessions.write',
+  'events.read',
+  'events.write',
+  'data_plane.write',
+  'deployment.read',
+  'deployment.write',
 ];
 
 function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
@@ -96,7 +126,9 @@ describe('admin console access', () => {
   });
 
   test('rejects a partial permission set instead of showing a broken full console', () => {
-    expect(hasAdminConsoleAccess(identity({ roles: ['operations-admin'], permissions: fullPermissions.slice(0, -1) }))).toBe(false);
+    expect(
+      hasAdminConsoleAccess(identity({ roles: ['operations-admin'], permissions: fullPermissions.slice(0, -1) })),
+    ).toBe(false);
   });
 
   test('allows a partial permission set into its readable console surface', () => {
@@ -115,9 +147,9 @@ describe('admin console access', () => {
 
   test('does not replace the host Web Crypto object when randomUUID is unavailable', () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-    const cryptoWithoutRandomUUID = {getRandomValues: (value: Uint8Array) => value};
+    const cryptoWithoutRandomUUID = { getRandomValues: (value: Uint8Array) => value };
     try {
-      Object.defineProperty(globalThis, 'crypto', {configurable: true, value: cryptoWithoutRandomUUID});
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: cryptoWithoutRandomUUID });
       new AdminConsoleClient();
       expect(globalThis.crypto).toBe(cryptoWithoutRandomUUID);
     } finally {
@@ -141,7 +173,7 @@ describe('admin console login', () => {
     const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
     const session = await client.login({ username: 'admin', password: 'test-password' });
     expect(session.status).toBe('authenticated');
-    expect(requests.slice(0, 2).map(request => `${request.method} ${request.path}`)).toEqual([
+    expect(requests.slice(0, 2).map((request) => `${request.method} ${request.path}`)).toEqual([
       'GET /aep/v1/metadata',
       'POST /aep/v1/auth/password/login',
     ]);
@@ -164,9 +196,10 @@ describe('admin console login', () => {
       'GET /aep/v1/metadata': { status: 500, body: { code: 'INTERNAL' } },
     });
     const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
-    await expect(client.login({ username: 'admin', password: 'test-password' }))
-      .rejects.toBeInstanceOf(AdminMetadataError);
-    expect(requests.some(request => request.path === '/aep/v1/auth/password/login')).toBe(false);
+    await expect(client.login({ username: 'admin', password: 'test-password' })).rejects.toBeInstanceOf(
+      AdminMetadataError,
+    );
+    expect(requests.some((request) => request.path === '/aep/v1/auth/password/login')).toBe(false);
   });
 
   test('rejects with a metadata error when metadata omits the deployment id', async () => {
@@ -174,9 +207,10 @@ describe('admin console login', () => {
       'GET /aep/v1/metadata': { body: { service: 'zhiyuan-aep' } },
     });
     const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
-    await expect(client.login({ username: 'admin', password: 'test-password' }))
-      .rejects.toBeInstanceOf(AdminMetadataError);
-    expect(requests.some(request => request.path === '/aep/v1/auth/password/login')).toBe(false);
+    await expect(client.login({ username: 'admin', password: 'test-password' })).rejects.toBeInstanceOf(
+      AdminMetadataError,
+    );
+    expect(requests.some((request) => request.path === '/aep/v1/auth/password/login')).toBe(false);
   });
 });
 
@@ -191,23 +225,43 @@ describe('admin session client identity', () => {
         body: {
           items: [
             {
-              sessionId: 's-agent', userId: 'u1', topic: 'user:u1',
-              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
-              client: { name: 'zhiyuan-enterprise', version: '0.8.0', deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d' },
+              sessionId: 's-agent',
+              userId: 'u1',
+              topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z',
+              lastSeenAt: '2026-09-04T00:00:00Z',
+              revokedAt: null,
+              client: {
+                name: 'zhiyuan-enterprise',
+                version: '0.8.0',
+                deviceId: '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d',
+              },
             },
             {
-              sessionId: 's-ua', userId: 'u1', topic: 'user:u1',
-              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              sessionId: 's-ua',
+              userId: 'u1',
+              topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z',
+              lastSeenAt: '2026-09-04T00:00:00Z',
+              revokedAt: null,
               client: { name: 'browser' },
             },
             {
-              sessionId: 's-unknown', userId: 'u1', topic: 'user:u1',
-              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              sessionId: 's-unknown',
+              userId: 'u1',
+              topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z',
+              lastSeenAt: '2026-09-04T00:00:00Z',
+              revokedAt: null,
               client: null,
             },
             {
-              sessionId: 's-legacy', userId: 'u1', topic: 'user:u1',
-              createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-04T00:00:00Z', revokedAt: null,
+              sessionId: 's-legacy',
+              userId: 'u1',
+              topic: 'user:u1',
+              createdAt: '2026-09-01T00:00:00Z',
+              lastSeenAt: '2026-09-04T00:00:00Z',
+              revokedAt: null,
             },
           ],
         },
@@ -295,13 +349,21 @@ describe('admin deployment settings', () => {
       effectiveValue: 'https://gateway.example.test/v1',
       source: 'env',
     });
-    expect(requests.map(request => `${request.method} ${request.path}`)).toContain('GET /aep/v1/admin/deployment/settings');
+    expect(requests.map((request) => `${request.method} ${request.path}`)).toContain(
+      'GET /aep/v1/admin/deployment/settings',
+    );
   });
 
   test('parses override and unset sources', async () => {
     const { client } = await signedInClient({
       'GET /aep/v1/admin/deployment/settings': {
-        body: { modelGatewayBaseUrl: { override: 'https://gw.internal.test/v1', effectiveValue: 'https://gw.internal.test/v1', source: 'override' } },
+        body: {
+          modelGatewayBaseUrl: {
+            override: 'https://gw.internal.test/v1',
+            effectiveValue: 'https://gw.internal.test/v1',
+            source: 'override',
+          },
+        },
       },
     });
     const overridden = await client.deploymentSettings();
@@ -312,12 +374,20 @@ describe('admin deployment settings', () => {
   test('writes an override value with PUT', async () => {
     const { client, requests } = await signedInClient({
       'PUT /aep/v1/admin/deployment/settings': {
-        body: { modelGatewayBaseUrl: { override: 'https://gateway.example.test/v2', effectiveValue: 'https://gateway.example.test/v2', source: 'override' } },
+        body: {
+          modelGatewayBaseUrl: {
+            override: 'https://gateway.example.test/v2',
+            effectiveValue: 'https://gateway.example.test/v2',
+            source: 'override',
+          },
+        },
       },
     });
     const settings = await client.updateDeploymentSettings({ modelGatewayBaseUrl: 'https://gateway.example.test/v2' });
     expect(settings.modelGatewayBaseUrl.source).toBe('override');
-    const write = requests.find(request => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings');
+    const write = requests.find(
+      (request) => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings',
+    );
     expect(write?.body).toEqual({ modelGatewayBaseUrl: 'https://gateway.example.test/v2' });
   });
 
@@ -327,7 +397,9 @@ describe('admin deployment settings', () => {
     });
     const settings = await client.updateDeploymentSettings({ modelGatewayBaseUrl: null });
     expect(settings.modelGatewayBaseUrl.source).toBe('env');
-    const write = requests.find(request => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings');
+    const write = requests.find(
+      (request) => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings',
+    );
     expect(write?.body).toEqual({ modelGatewayBaseUrl: null });
   });
 
@@ -336,7 +408,9 @@ describe('admin deployment settings', () => {
       'PUT /aep/v1/admin/deployment/settings': { body: envSettings },
     });
     await client.updateDeploymentSettings({});
-    const write = requests.find(request => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings');
+    const write = requests.find(
+      (request) => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings',
+    );
     expect(write?.body).toEqual({});
   });
 
@@ -344,20 +418,29 @@ describe('admin deployment settings', () => {
     const { client } = await signedInClient({
       'PUT /aep/v1/admin/deployment/settings': {
         status: 422,
-        body: { code: 'INVALID_DEPLOYMENT_SETTINGS', detail: 'The model gateway base URL must not use a cluster-internal hostname.' },
+        body: {
+          code: 'INVALID_DEPLOYMENT_SETTINGS',
+          detail: 'The model gateway base URL must not use a cluster-internal hostname.',
+        },
       },
     });
-    const error = await client.updateDeploymentSettings({ modelGatewayBaseUrl: 'http://gateway.svc.cluster.local/v1' })
+    const error = await client
+      .updateDeploymentSettings({ modelGatewayBaseUrl: 'http://gateway.svc.cluster.local/v1' })
       .catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(AdminRequestError);
     expect((error as AdminRequestError).status).toBe(422);
     expect((error as AdminRequestError).code).toBe('INVALID_DEPLOYMENT_SETTINGS');
-    expect((error as AdminRequestError).detail).toBe('The model gateway base URL must not use a cluster-internal hostname.');
+    expect((error as AdminRequestError).detail).toBe(
+      'The model gateway base URL must not use a cluster-internal hostname.',
+    );
   });
 
   test('surfaces a 403 as an AdminRequestError', async () => {
     const { client } = await signedInClient({
-      'GET /aep/v1/admin/deployment/settings': { status: 403, body: { code: 'FORBIDDEN', detail: 'deployment.read required' } },
+      'GET /aep/v1/admin/deployment/settings': {
+        status: 403,
+        body: { code: 'FORBIDDEN', detail: 'deployment.read required' },
+      },
     });
     const error = await client.deploymentSettings().catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(AdminRequestError);
@@ -407,7 +490,15 @@ describe('admin data-plane publish', () => {
   const desiredState = {
     deploymentId: 'demo',
     revision: 'catalog-abc',
-    routes: [{ modelId: 'chat', enabled: true, endpoint: '/v1/chat', upstreamModel: 'deepseek-chat', protocol: 'openai-compatible' }],
+    routes: [
+      {
+        modelId: 'chat',
+        enabled: true,
+        endpoint: '/v1/chat',
+        upstreamModel: 'deepseek-chat',
+        protocol: 'openai-compatible',
+      },
+    ],
     publishedAt: '2026-09-30T00:00:00Z',
     contentHash: 'a'.repeat(64),
   };
@@ -419,7 +510,9 @@ describe('admin data-plane publish', () => {
     const desired = await client.publishDataPlaneRoutes();
     expect(desired.revision).toBe('catalog-abc');
     expect(desired.routes).toHaveLength(1);
-    const publish = requests.find(request => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish');
+    const publish = requests.find(
+      (request) => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish',
+    );
     expect(publish?.body).toEqual({});
   });
 
@@ -429,13 +522,18 @@ describe('admin data-plane publish', () => {
     });
     const desired = await client.publishDataPlaneRoutes({ revision: 'release-7' });
     expect(desired.revision).toBe('release-7');
-    const publish = requests.find(request => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish');
+    const publish = requests.find(
+      (request) => `${request.method} ${request.path}` === 'POST /aep/v1/admin/data-plane/publish',
+    );
     expect(publish?.body).toEqual({ revision: 'release-7' });
   });
 
   test('surfaces publish failures as AdminRequestError', async () => {
     const { client } = await signedInClient({
-      'POST /aep/v1/admin/data-plane/publish': { status: 400, body: { code: 'INVALID_DATA_PLANE_STATE', detail: 'The revision is too long.' } },
+      'POST /aep/v1/admin/data-plane/publish': {
+        status: 400,
+        body: { code: 'INVALID_DATA_PLANE_STATE', detail: 'The revision is too long.' },
+      },
     });
     const error = await client.publishDataPlaneRoutes({ revision: 'x'.repeat(300) }).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(AdminRequestError);

@@ -1,35 +1,12 @@
-import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Drawer,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
-import {
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  TeamOutlined,
-  UserAddOutlined,
-} from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
+import { Alert, Button, Drawer, Empty, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 
-import { translate } from "./i18n.js";
-import {
-  PortalClient,
-  type PortalDepartment,
-} from "./portal.js";
-import { notify, AdminNotificationKind } from "./notifications.js";
+import { translate } from './i18n.js';
+import { AdminNotificationKind, notify } from './notifications.js';
+import { PortalClient, type PortalDepartment } from './portal.js';
 
-const language = "zh" as const;
+const language = 'zh' as const;
 
 type DepartmentMember = {
   readonly userId: string;
@@ -45,7 +22,9 @@ export function Departments({
   readonly portal?: PortalClient | undefined;
 }) {
   const [portal] = useState(
-    () => injectedPortal ?? new PortalClient(() => (client as { getAccessToken(): Promise<string | null> }).getAccessToken()),
+    () =>
+      injectedPortal ??
+      new PortalClient(() => (client as { getAccessToken(): Promise<string | null> }).getAccessToken()),
   );
   const [departments, setDepartments] = useState<readonly PortalDepartment[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +34,7 @@ export function Departments({
   const [members, setMembers] = useState<DepartmentMember[] | null>(null);
   const [membersDept, setMembersDept] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -65,18 +44,20 @@ export function Departments({
     } finally {
       setLoading(false);
     }
-  };
+  }, [portal]);
 
   useEffect(() => {
     void load();
-  }, [portal]);
+  }, [load]);
 
   const loadMembers = async (deptId: string) => {
     setMembersDept(deptId);
     try {
-      const result = await (portal as unknown as {
-        listDepartmentMembers(id: string): Promise<readonly DepartmentMember[]>;
-      }).listDepartmentMembers(deptId);
+      const result = await (
+        portal as unknown as {
+          listDepartmentMembers(id: string): Promise<readonly DepartmentMember[]>;
+        }
+      ).listDepartmentMembers(deptId);
       setMembers([...result]);
     } catch {
       setMembers([]);
@@ -87,94 +68,71 @@ export function Departments({
     <section className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
       <div className="flex w-full flex-col gap-5">
         <div>
-          <p className="text-xs text-tertiary-foreground">
-            {translate(language, "workspaceLabel")}
-          </p>
-          <h2 className="mt-1 text-lg font-semibold leading-snug">
-            {translate(language, "departmentsTitle")}
-          </h2>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {translate(language, "departmentsDescription")}
-          </p>
+          <p className="text-xs text-tertiary-foreground">{translate(language, 'workspaceLabel')}</p>
+          <h2 className="mt-1 text-lg font-semibold leading-snug">{translate(language, 'departmentsTitle')}</h2>
+          <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'departmentsDescription')}</p>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => void load()}
-            loading={loading}
-          >
-            {translate(language, "refresh")}
+          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+            {translate(language, 'refresh')}
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-            {translate(language, "departmentsCreate")}
+            {translate(language, 'departmentsCreate')}
           </Button>
         </div>
-        {error ? (
-          <Alert type="error" message={error} showIcon />
-        ) : null}
+        {error ? <Alert type="error" message={error} showIcon /> : null}
         <div className="overflow-hidden rounded-lg border border-border">
           <Table
             dataSource={departments ?? []}
             loading={loading && departments === null}
             rowKey={(record) => record.id}
             locale={{
-              emptyText: (
-                <Empty description={translate(language, "departmentsEmpty")} />
-              ),
+              emptyText: <Empty description={translate(language, 'departmentsEmpty')} />,
             }}
             pagination={false}
           >
             <Table.Column
-              title={translate(language, "departmentsColumnId")}
+              title={translate(language, 'departmentsColumnId')}
               dataIndex="id"
               key="id"
-              render={(id: string) => (
-                <Typography.Text code>{id}</Typography.Text>
-              )}
+              render={(id: string) => <Typography.Text code>{id}</Typography.Text>}
             />
-            <Table.Column
-              title={translate(language, "departmentsColumnName")}
-              dataIndex="name"
-              key="name"
-            />
+            <Table.Column title={translate(language, 'departmentsColumnName')} dataIndex="name" key="name" />
             <Table.Column
               title=""
               key="actions"
               width={200}
               render={(_: unknown, record: PortalDepartment) => (
                 <Space>
-                  <Tooltip title={translate(language, "departmentsMembers")}>
-                    <Button
-                      size="small"
-                      icon={<TeamOutlined />}
-                      onClick={() => void loadMembers(record.id)}
-                    />
+                  <Tooltip title={translate(language, 'departmentsMembers')}>
+                    <Button size="small" icon={<TeamOutlined />} onClick={() => void loadMembers(record.id)} />
                   </Tooltip>
-                  <Tooltip title={translate(language, "departmentsRename")}>
-                    <Button
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => setRenaming(record)}
-                    />
+                  <Tooltip title={translate(language, 'departmentsRename')}>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => setRenaming(record)} />
                   </Tooltip>
-                  <Tooltip title={translate(language, "departmentsDelete")}>
+                  <Tooltip title={translate(language, 'departmentsDelete')}>
                     <Button
                       size="small"
                       danger
                       icon={<DeleteOutlined />}
                       onClick={() => {
                         Modal.confirm({
-                          title: translate(language, "departmentsDeleteConfirm"),
+                          title: translate(language, 'departmentsDeleteConfirm'),
                           content: record.name,
                           onOk: async () => {
                             try {
-                              await (portal as unknown as {
-                                deleteDepartment(id: string): Promise<void>;
-                              }).deleteDepartment(record.id);
-                              notify(AdminNotificationKind.Success, translate(language, "departmentsDeleted"));
+                              await (
+                                portal as unknown as {
+                                  deleteDepartment(id: string): Promise<void>;
+                                }
+                              ).deleteDepartment(record.id);
+                              notify(AdminNotificationKind.Success, translate(language, 'departmentsDeleted'));
                               void load();
                             } catch (cause) {
-                              notify(AdminNotificationKind.Error, cause instanceof Error ? cause.message : String(cause));
+                              notify(
+                                AdminNotificationKind.Error,
+                                cause instanceof Error ? cause.message : String(cause),
+                              );
                             }
                           },
                         });
@@ -201,7 +159,7 @@ export function Departments({
         onRenamed={() => void load()}
       />
       <Drawer
-        title={`${translate(language, "departmentsMembers")}: ${membersDept ?? ""}`}
+        title={`${translate(language, 'departmentsMembers')}: ${membersDept ?? ''}`}
         open={members !== null}
         onClose={() => {
           setMembers(null);
@@ -210,20 +168,11 @@ export function Departments({
         width={400}
       >
         {members === null ? null : members.length === 0 ? (
-          <Empty description={translate(language, "departmentsNoMembers")} />
+          <Empty description={translate(language, 'departmentsNoMembers')} />
         ) : (
-          <Table
-            dataSource={members}
-            rowKey={(record) => record.userId}
-            pagination={false}
-            size="small"
-          >
+          <Table dataSource={members} rowKey={(record) => record.userId} pagination={false} size="small">
             <Table.Column title="User" dataIndex="username" key="username" />
-            <Table.Column
-              title="Name"
-              dataIndex="displayName"
-              key="displayName"
-            />
+            <Table.Column title="Name" dataIndex="displayName" key="displayName" />
           </Table>
         )}
       </Drawer>
@@ -258,7 +207,7 @@ function CreateDepartmentModal({
     setError(null);
     try {
       const result = await portal.createDepartment(values.id.trim(), values.name.trim());
-      if (result.kind === "rejected") {
+      if (result.kind === 'rejected') {
         setError(result.message);
         return;
       }
@@ -274,7 +223,7 @@ function CreateDepartmentModal({
 
   return (
     <Modal
-      title={translate(language, "departmentsCreate")}
+      title={translate(language, 'departmentsCreate')}
       open={open}
       onCancel={onClose}
       confirmLoading={pending}
@@ -284,22 +233,18 @@ function CreateDepartmentModal({
       <Form form={form} layout="vertical" onFinish={(v) => void submit(v)}>
         <Form.Item
           name="id"
-          label={translate(language, "departmentsFieldId")}
+          label={translate(language, 'departmentsFieldId')}
           rules={[
             { required: true },
             {
               pattern: /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/,
-              message: translate(language, "departmentsIdPattern"),
+              message: translate(language, 'departmentsIdPattern'),
             },
           ]}
         >
           <Input placeholder="rd-dept" />
         </Form.Item>
-        <Form.Item
-          name="name"
-          label={translate(language, "departmentsFieldName")}
-          rules={[{ required: true }]}
-        >
+        <Form.Item name="name" label={translate(language, 'departmentsFieldName')} rules={[{ required: true }]}>
           <Input placeholder="研发部" />
         </Form.Item>
         {error ? <Alert type="error" message={error} showIcon /> : null}
@@ -335,10 +280,12 @@ function RenameDepartmentModal({
     setPending(true);
     setError(null);
     try {
-      await (portal as unknown as {
-        renameDepartment(id: string, name: string): Promise<void>;
-      }).renameDepartment(department.id, values.name.trim());
-      notify(AdminNotificationKind.Success, translate(language, "departmentsRenamed"));
+      await (
+        portal as unknown as {
+          renameDepartment(id: string, name: string): Promise<void>;
+        }
+      ).renameDepartment(department.id, values.name.trim());
+      notify(AdminNotificationKind.Success, translate(language, 'departmentsRenamed'));
       onRenamed();
       onClose();
     } catch (cause) {
@@ -350,7 +297,7 @@ function RenameDepartmentModal({
 
   return (
     <Modal
-      title={translate(language, "departmentsRename")}
+      title={translate(language, 'departmentsRename')}
       open={department !== null}
       onCancel={onClose}
       confirmLoading={pending}
@@ -358,7 +305,7 @@ function RenameDepartmentModal({
       destroyOnClose
     >
       <Form form={form} layout="vertical" onFinish={(v) => void submit(v)}>
-        <Form.Item name="name" label={translate(language, "departmentsFieldName")} rules={[{ required: true }]}>
+        <Form.Item name="name" label={translate(language, 'departmentsFieldName')} rules={[{ required: true }]}>
           <Input />
         </Form.Item>
         {error ? <Alert type="error" message={error} showIcon /> : null}

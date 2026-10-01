@@ -1,7 +1,7 @@
 import type { AepTokens } from '@aep/sdk-node';
 import { describe, expect, test } from 'vitest';
 
-import {SessionTokenStore} from './client.js';
+import { SessionTokenStore } from './client.js';
 
 describe('Admin Console session token storage', () => {
   test('keeps tokens only in the current in-memory store', async () => {
@@ -16,13 +16,13 @@ describe('Admin Console session token storage', () => {
 
     try {
       await store.set(tokens());
-      await expect(store.get()).resolves.toMatchObject({refreshToken: 'refresh-token'});
+      await expect(store.get()).resolves.toMatchObject({ refreshToken: 'refresh-token' });
       await expect(new SessionTokenStore().get()).resolves.toBeNull();
       await store.clear();
       await expect(store.get()).resolves.toBeNull();
     } finally {
       if (sessionStorage) Object.defineProperty(globalThis, 'sessionStorage', sessionStorage);
-      else delete (globalThis as {sessionStorage?: Storage}).sessionStorage;
+      else delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
     }
   });
 });

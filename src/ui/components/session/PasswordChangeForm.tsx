@@ -2,7 +2,7 @@ import { CircleAlert, CircleCheck, KeyRound, LogOut } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
-import { translate, type TranslationKey } from '../../i18n.js';
+import { type TranslationKey, translate } from '../../i18n.js';
 import { cn } from '../../lib/utils.js';
 import { Alert, AlertDescription } from '../ui/alert.js';
 import { Button } from '../ui/button.js';
@@ -72,19 +72,14 @@ export function PasswordChangeForm({
         </Alert>
       ) : null}
       <FieldGroup className={cn(compact && 'grid gap-4 sm:grid-cols-2')}>
-        <Field
-          className={cn(compact && 'sm:col-span-2')}
-          data-invalid={displayedError ? true : undefined}
-        >
-          <FieldLabel htmlFor="current-password">
-            {translate(language, 'currentPassword')}
-          </FieldLabel>
+        <Field className={cn(compact && 'sm:col-span-2')} data-invalid={displayedError ? true : undefined}>
+          <FieldLabel htmlFor="current-password">{translate(language, 'currentPassword')}</FieldLabel>
           <Input
             id="current-password"
             name="currentPassword"
             type="password"
             value={currentPassword}
-            onChange={event => setCurrentPassword(event.target.value)}
+            onChange={(event) => setCurrentPassword(event.target.value)}
             placeholder={translate(language, 'currentPasswordPlaceholder')}
             autoComplete="current-password"
             maxLength={1024}
@@ -100,7 +95,7 @@ export function PasswordChangeForm({
             name="newPassword"
             type="password"
             value={newPassword}
-            onChange={event => setNewPassword(event.target.value)}
+            onChange={(event) => setNewPassword(event.target.value)}
             placeholder={translate(language, 'newPasswordPlaceholder')}
             autoComplete="new-password"
             minLength={12}
@@ -110,15 +105,13 @@ export function PasswordChangeForm({
           />
         </Field>
         <Field data-invalid={displayedError ? true : undefined}>
-          <FieldLabel htmlFor="confirm-password">
-            {translate(language, 'confirmPassword')}
-          </FieldLabel>
+          <FieldLabel htmlFor="confirm-password">{translate(language, 'confirmPassword')}</FieldLabel>
           <Input
             id="confirm-password"
             name="confirmPassword"
             type="password"
             value={confirmation}
-            onChange={event => setConfirmation(event.target.value)}
+            onChange={(event) => setConfirmation(event.target.value)}
             placeholder={translate(language, 'confirmPasswordPlaceholder')}
             autoComplete="new-password"
             minLength={12}

@@ -1,10 +1,4 @@
-import type {
-  ControlEvent,
-  ControlEventPage,
-  HeartbeatResponse,
-  JsonObject,
-  SkillManifestResult,
-} from '@aep/sdk-node';
+import type { ControlEvent, ControlEventPage, HeartbeatResponse, JsonObject, SkillManifestResult } from '@aep/sdk-node';
 
 export const ControlTaskType = {
   SkillReconcile: 'skill.reconcile',

@@ -7,7 +7,7 @@ import type { SkillManifestResult } from '@aep/sdk-node';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import yazl from 'yazl';
 
-import { ManagedSkillReconciler, extractSkillZip } from './skills.js';
+import { extractSkillZip, ManagedSkillReconciler } from './skills.js';
 import { AgentControlState } from './state.js';
 import type { AgentControlClient } from './types.js';
 
@@ -31,14 +31,12 @@ describe('Managed Skill reconciliation', () => {
     const secondArchive = await zip([['SKILL.md', '# Version 2']]);
     let response = manifest('1', '1.0.0', firstArchive);
     let archive = firstArchive;
-    const client = skillClient(() => response, () => archive);
-    const onSkillsChanged = vi.fn();
-    const reconciler = new ManagedSkillReconciler(
-      client,
-      state,
-      skillRoot,
-      onSkillsChanged,
+    const client = skillClient(
+      () => response,
+      () => archive,
     );
+    const onSkillsChanged = vi.fn();
+    const reconciler = new ManagedSkillReconciler(client, state, skillRoot, onSkillsChanged);
     fs.mkdirSync(path.join(skillRoot, 'personal'), { recursive: true });
     fs.writeFileSync(path.join(skillRoot, 'personal', 'SKILL.md'), '# Personal');
 
@@ -47,9 +45,7 @@ describe('Managed Skill reconciliation', () => {
         revision: '1',
         items: [{ skillId: 'demo', version: '1.0.0', status: 'installed' }],
       });
-      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe(
-        '# Version 1',
-      );
+      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe('# Version 1');
 
       response = manifest('2', '2.0.0', secondArchive);
       archive = secondArchive;
@@ -57,9 +53,7 @@ describe('Managed Skill reconciliation', () => {
         revision: '2',
         items: [{ skillId: 'demo', version: '2.0.0', status: 'updated' }],
       });
-      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe(
-        '# Version 2',
-      );
+      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe('# Version 2');
 
       response = emptyManifest('3');
       await expect(reconciler.reconcile()).resolves.toMatchObject({
@@ -67,9 +61,7 @@ describe('Managed Skill reconciliation', () => {
         items: [{ skillId: 'demo', version: '2.0.0', status: 'removed' }],
       });
       expect(fs.existsSync(path.join(skillRoot, 'demo'))).toBe(false);
-      expect(fs.readFileSync(path.join(skillRoot, 'personal', 'SKILL.md'), 'utf8')).toBe(
-        '# Personal',
-      );
+      expect(fs.readFileSync(path.join(skillRoot, 'personal', 'SKILL.md'), 'utf8')).toBe('# Personal');
       expect(onSkillsChanged).toHaveBeenCalledTimes(3);
     } finally {
       state.close();
@@ -123,7 +115,10 @@ describe('Managed Skill reconciliation', () => {
     try {
       await expect(
         new ManagedSkillReconciler(
-          skillClient(() => result, () => archive),
+          skillClient(
+            () => result,
+            () => archive,
+          ),
           state,
           skillRoot,
         ).reconcile(),
@@ -146,7 +141,10 @@ describe('Managed Skill reconciliation', () => {
     try {
       await expect(
         new ManagedSkillReconciler(
-          skillClient(() => manifest('1', '1.0.0', archive), () => archive),
+          skillClient(
+            () => manifest('1', '1.0.0', archive),
+            () => archive,
+          ),
           state,
           skillRoot,
         ).reconcile(),
@@ -167,7 +165,10 @@ describe('Managed Skill reconciliation', () => {
     let response = manifest('1', '1.0.0', firstArchive);
     let archive = firstArchive;
     const reconciler = new ManagedSkillReconciler(
-      skillClient(() => response, () => archive),
+      skillClient(
+        () => response,
+        () => archive,
+      ),
       state,
       skillRoot,
     );
@@ -176,9 +177,7 @@ describe('Managed Skill reconciliation', () => {
       response = manifest('2', '2.0.0', invalidArchive);
       archive = invalidArchive;
       await expect(reconciler.reconcile()).rejects.toThrow(/root SKILL\.md/);
-      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe(
-        '# Stable',
-      );
+      expect(fs.readFileSync(path.join(skillRoot, 'demo', 'SKILL.md'), 'utf8')).toBe('# Stable');
       expect(state.managedSkills()[0]?.version).toBe('1.0.0');
     } finally {
       state.close();
@@ -202,7 +201,10 @@ describe('Managed Skill reconciliation', () => {
     }
     const onSkillsChanged = vi.fn();
     const reconciler = new ManagedSkillReconciler(
-      skillClient(() => response, () => archive),
+      skillClient(
+        () => response,
+        () => archive,
+      ),
       state,
       skillRoot,
       onSkillsChanged,
@@ -222,9 +224,7 @@ describe('Managed Skill reconciliation', () => {
     const archive = Buffer.from(await zip([['aa/escaped.txt', 'bad']]));
     replaceAll(archive, Buffer.from('aa/escaped.txt'), Buffer.from('../escaped.txt'));
 
-    await expect(extractSkillZip(archive, directory)).rejects.toThrow(
-      /Unsafe Skill ZIP entry|invalid relative path/,
-    );
+    await expect(extractSkillZip(archive, directory)).rejects.toThrow(/Unsafe Skill ZIP entry|invalid relative path/);
     expect(fs.existsSync(path.join(directory, '..', 'escaped.txt'))).toBe(false);
   });
 });
@@ -240,7 +240,7 @@ function skillClient(
     uploadEventBatch: vi.fn(async () => ({})),
     heartbeat: vi.fn(async () => ({
       serverTime: '2026-08-26T00:00:00.000Z',
-      controlEvents: {pending: false, watermark: ''},
+      controlEvents: { pending: false, watermark: '' },
       nextHeartbeatAfterSeconds: 30,
     })),
     listControlEvents: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -299,7 +299,7 @@ function zip(files: Array<readonly [string, string]>): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const archive = new yazl.ZipFile();
     const chunks: Buffer[] = [];
-    archive.outputStream.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    archive.outputStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     archive.outputStream.on('error', reject);
     archive.outputStream.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
     for (const [name, content] of files) archive.addBuffer(Buffer.from(content), name);
@@ -309,8 +309,10 @@ function zip(files: Array<readonly [string, string]>): Promise<Uint8Array> {
 
 function replaceAll(buffer: Buffer, search: Buffer, replacement: Buffer): void {
   let offset = 0;
-  while ((offset = buffer.indexOf(search, offset)) >= 0) {
-    replacement.copy(buffer, offset);
-    offset += replacement.length;
+  for (;;) {
+    const match = buffer.indexOf(search, offset);
+    if (match < 0) break;
+    replacement.copy(buffer, match);
+    offset = match + replacement.length;
   }
 }

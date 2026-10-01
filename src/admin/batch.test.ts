@@ -4,7 +4,7 @@ import { runBatch } from './batch.js';
 
 describe('admin batch mutations', () => {
   test('preserves successful and failed item outcomes', async () => {
-    const results = await runBatch(['user:u1', 'user:u2'], async item => {
+    const results = await runBatch(['user:u1', 'user:u2'], async (item) => {
       if (item.endsWith('u2')) throw new Error('already assigned');
     });
 

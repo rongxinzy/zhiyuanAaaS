@@ -1,11 +1,10 @@
-import { UserOutlined } from "@ant-design/icons";
-import { Badge, Checkbox, Input, Typography, theme } from "antd";
-import { useMemo, useState } from "react";
+import type { PlatformUser } from '@aep/sdk-node';
+import { UserOutlined } from '@ant-design/icons';
+import { Badge, Checkbox, Input, Typography, theme } from 'antd';
+import { useMemo, useState } from 'react';
+import { type AdminLanguage, translate } from './i18n.js';
 
-import type { PlatformUser } from "@aep/sdk-node";
-import { translate, type AdminLanguage } from "./i18n.js";
-
-const language: AdminLanguage = "zh";
+const language: AdminLanguage = 'zh';
 
 export function UserMultiPicker({
   users,
@@ -19,57 +18,47 @@ export function UserMultiPicker({
   readonly disabled?: boolean;
 }) {
   const { token } = theme.useToken();
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState('');
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
     return query
       ? users.filter(
-          (user) =>
-            user.displayName.toLowerCase().includes(query) ||
-            user.username.toLowerCase().includes(query),
+          (user) => user.displayName.toLowerCase().includes(query) || user.username.toLowerCase().includes(query),
         )
       : users;
   }, [users, filter]);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: token.marginXXS }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: token.marginXXS }}>
       <Input
-        aria-label={translate(language, "searchUsers")}
+        aria-label={translate(language, 'searchUsers')}
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
-        placeholder={translate(language, "searchUsers")}
+        placeholder={translate(language, 'searchUsers')}
         disabled={disabled}
         allowClear
       />
-      <div
-        role="group"
-        aria-label={translate(language, "selectUsers")}
+      <fieldset
+        aria-label={translate(language, 'selectUsers')}
         style={{
           maxHeight: 240,
-          overflowY: "auto",
+          overflowY: 'auto',
           border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: token.borderRadius,
           padding: token.paddingXXS,
         }}
       >
         {filtered.length === 0 ? (
-          <Typography.Text
-            type="secondary"
-            style={{ display: "block", padding: token.paddingSM }}
-          >
-            {translate(language, "noMatchingUsers")}
+          <Typography.Text type="secondary" style={{ display: 'block', padding: token.paddingSM }}>
+            {translate(language, 'noMatchingUsers')}
           </Typography.Text>
         ) : (
           filtered.map((user) => (
             <div key={user.id} style={{ padding: `${token.paddingXXS}px ${token.paddingXS}px` }}>
-              <Checkbox
-                checked={selected.has(user.id)}
-                onChange={() => onToggle(user.id)}
-                disabled={disabled}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: token.marginXXS }}>
+              <Checkbox checked={selected.has(user.id)} onChange={() => onToggle(user.id)} disabled={disabled}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: token.marginXXS }}>
                   <UserOutlined aria-hidden="true" />
                   <span>
-                    <span style={{ display: "block" }}>{user.displayName}</span>
+                    <span style={{ display: 'block' }}>{user.displayName}</span>
                     <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
                       {user.username}
                     </Typography.Text>
@@ -79,10 +68,15 @@ export function UserMultiPicker({
             </div>
           ))
         )}
-      </div>
+      </fieldset>
       <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
-        {translate(language, "selectedUsersLabel")}
-        <Badge count={selected.size} showZero color={token.colorPrimary} style={{ marginInlineStart: token.marginXXS }} />
+        {translate(language, 'selectedUsersLabel')}
+        <Badge
+          count={selected.size}
+          showZero
+          color={token.colorPrimary}
+          style={{ marginInlineStart: token.marginXXS }}
+        />
       </Typography.Text>
     </div>
   );

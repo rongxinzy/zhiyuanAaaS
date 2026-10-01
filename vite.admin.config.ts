@@ -1,7 +1,7 @@
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const repositoryRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -31,7 +31,12 @@ export default defineConfig({
   base: './',
   plugins: [tailwindcss(), react()],
   resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
-  build: { outDir: path.resolve(repositoryRoot, 'dist/admin'), emptyOutDir: true, sourcemap: false, target: 'chrome130' },
+  build: {
+    outDir: path.resolve(repositoryRoot, 'dist/admin'),
+    emptyOutDir: true,
+    sourcemap: false,
+    target: 'chrome130',
+  },
   server: {
     hmr: true,
     open: true,

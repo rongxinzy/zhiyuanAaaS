@@ -15,9 +15,7 @@ src/enterprise-config.ts.`;
 
 export function renderEnterpriseConfig(rawBaseUrl) {
   if (typeof rawBaseUrl !== 'string' || rawBaseUrl.trim().length === 0) {
-    throw new Error(
-      'Zhiyuan AEP base URL is required. Pass --base-url or set ZHIYUAN_AEP_BASE_URL.',
-    );
+    throw new Error('Zhiyuan AEP base URL is required. Pass --base-url or set ZHIYUAN_AEP_BASE_URL.');
   }
   let url;
   try {
@@ -47,11 +45,13 @@ export function parseArguments(argv, env) {
     if (argument === '--help' || argument === '-h') {
       return { help: true };
     } else if (argument === '--base-url') {
-      baseUrl = readValue(argv, (index += 1), '--base-url');
+      index += 1;
+      baseUrl = readValue(argv, index, '--base-url');
     } else if (argument.startsWith('--base-url=')) {
       baseUrl = argument.slice('--base-url='.length);
     } else if (argument === '--output' || argument === '-o') {
-      output = readValue(argv, (index += 1), '--output');
+      index += 1;
+      output = readValue(argv, index, '--output');
     } else if (argument.startsWith('--output=')) {
       output = argument.slice('--output='.length);
     } else if (argument.startsWith('-')) {
@@ -102,9 +102,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     main();
   } catch (error) {
-    console.error(
-      `render-enterprise-config: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`render-enterprise-config: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

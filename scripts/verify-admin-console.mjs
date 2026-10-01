@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/admin');
@@ -25,10 +25,10 @@ try {
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
   const html = await response.text();
   assert.match(html, /<div id="root"><\/div>/);
-  const assets = [...html.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map(match => match[1]);
+  const assets = [...html.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map((match) => match[1]);
   assert.ok(assets.length >= 2, 'Admin entrypoint must include JavaScript and CSS assets.');
   for (const asset of assets) await fs.access(path.join(root, asset));
-  const cssAssets = assets.filter(asset => asset.endsWith('.css'));
+  const cssAssets = assets.filter((asset) => asset.endsWith('.css'));
   assert.ok(cssAssets.length > 0, 'Admin entrypoint must include a CSS asset.');
   const css = await fs.readFile(path.join(root, cssAssets[0]), 'utf8');
   assert.match(css, /\.admin-shell/, 'Admin CSS must include the application layout.');
@@ -43,7 +43,7 @@ function waitForServer(port) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + 10_000;
     const poll = () => {
-      const request = http.get(`http://127.0.0.1:${port}/`, response => {
+      const request = http.get(`http://127.0.0.1:${port}/`, (response) => {
         response.resume();
         resolve();
       });

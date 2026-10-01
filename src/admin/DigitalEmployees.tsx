@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeftOutlined, DeleteOutlined, MessageOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -9,35 +9,29 @@ import {
   Input,
   Modal,
   Segmented,
+  Select,
   Space,
   Table,
   Tabs,
   Tag,
   Tooltip,
-  Select,
   Typography,
 } from 'antd';
-import {
-  ArrowLeftOutlined,
-  DeleteOutlined,
-  MessageOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { AdminConsoleClient, AdminIdentity } from './client.js';
-import { translate, type AdminLanguage } from './i18n.js';
+import { employeesT } from './employees-copy.js';
+import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
-  PortalClient,
   chatUIBaseURL,
-  portalChatBaseURL,
+  PortalClient,
+  type PortalDepartment,
   type PortalEmployee,
   type PortalRequest,
-  type PortalDepartment,
+  portalChatBaseURL,
 } from './portal.js';
 import { MemoryView } from './ServiceStatus.js';
-import { employeesT } from './employees-copy.js';
 
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof employeesT>[0]): string => employeesT(key, language);
@@ -67,9 +61,7 @@ export function DigitalEmployees({
   /** Lets the shell deep-link straight into the approvals tab. */
   readonly initialTab?: DigitalEmployeesTab | undefined;
 }) {
-  const [resolvedPortal] = useState(
-    () => portal ?? new PortalClient(() => client.getAccessToken()),
-  );
+  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
   const [tab, setTab] = useState<DigitalEmployeesTab>(initialTab ?? DigitalEmployeesTab.Employees);
   return (
     <div className="flex w-full flex-col gap-6">
@@ -118,9 +110,7 @@ function PhaseTag({ phase }: { readonly phase: string }) {
 }
 
 function wecomTag(employee: PortalEmployee) {
-  return employee.channels?.wecom ? (
-    <Tag variant="filled">{translate(language, 'wecomBadge')}</Tag>
-  ) : null;
+  return employee.channels?.wecom ? <Tag variant="filled">{translate(language, 'wecomBadge')}</Tag> : null;
 }
 
 // Popup blockers routinely reject window.open calls made after an await,
@@ -136,13 +126,7 @@ type ChatHandoff =
 
 // The portal authorizes every call (owner or admin); the console renders
 // whatever the portal returns, surfacing failures as inline alerts.
-function EmployeePanel({
-  portal,
-  client,
-}: {
-  readonly portal: PortalClient;
-  readonly client: AdminConsoleClient;
-}) {
+function EmployeePanel({ portal, client }: { readonly portal: PortalClient; readonly client: AdminConsoleClient }) {
   const [selected, setSelected] = useState<PortalEmployee | null>(null);
   const [handoff, setHandoff] = useState<ChatHandoff | null>(null);
 
@@ -203,13 +187,7 @@ function ChatHandoffModal({
   readonly onClose: () => void;
 }) {
   return (
-    <Modal
-      open={handoff !== null}
-      title={t('chatBlockedTitle')}
-      footer={null}
-      onCancel={onClose}
-      destroyOnHidden
-    >
+    <Modal open={handoff !== null} title={t('chatBlockedTitle')} footer={null} onCancel={onClose} destroyOnHidden>
       {handoff?.kind === 'blocked' ? (
         <>
           <Alert type="info" showIcon title={t('chatBlockedMinted')} style={{ marginBottom: 16 }} />
@@ -321,6 +299,8 @@ function EmployeeList({
         key: 'actions',
         align: 'right' as const,
         render: (_: unknown, employee: PortalEmployee) => (
+          // biome-ignore lint/a11y/noStaticElementInteractions: click shield so action buttons do not select the row
+          // biome-ignore lint/a11y/useKeyWithClickEvents: see above — not an interactive control
           <span onClick={(event) => event.stopPropagation()}>
             <Space size={0}>
               <Button type="link" size="small" onClick={() => onSelected(employee)}>
@@ -329,13 +309,7 @@ function EmployeeList({
               <Button type="link" size="small" onClick={() => void onChat(employee)}>
                 {t('actionChat')}
               </Button>
-              <Button
-                type="link"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={() => setDeleting(employee)}
-              >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(employee)}>
                 {translate(language, 'delete')}
               </Button>
             </Space>
@@ -352,55 +326,38 @@ function EmployeeList({
       <div className="flex items-center justify-between gap-3">
         <Typography.Text strong>{translate(language, 'digitalEmployeesList')}</Typography.Text>
         <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            disabled={loading}
-            onClick={() => void load()}
-          >
+          <Button icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>
             {translate(language, 'refresh')}
           </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreating(true)}
-          >
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
             {t('createTitle')}
           </Button>
         </Space>
       </div>
 
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          title={`${translate(language, 'digitalEmployeesLoadFailed')}：${error}`}
-        />
+        <Alert type="error" showIcon title={`${translate(language, 'digitalEmployeesLoadFailed')}：${error}`} />
       ) : null}
 
       {error ? null : (
-      <Table
-        rowKey="name"
-        size="middle"
-        loading={loading && employees === null}
-        // A failed load never falls through to the empty state — only a
-        // successful load with zero rows shows "no digital employees".
-        dataSource={employees ?? []}
-        columns={columns}
-        pagination={{ hideOnSinglePage: true }}
-        onRow={(employee) => ({ onClick: () => onSelected(employee) })}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={translate(language, 'digitalEmployeesEmpty')}
-            >
-              <Typography.Text type="secondary">
-                {translate(language, 'digitalEmployeesEmptyHint')}
-              </Typography.Text>
-            </Empty>
-          ),
-        }}
-      />
+        <Table
+          rowKey="name"
+          size="middle"
+          loading={loading && employees === null}
+          // A failed load never falls through to the empty state — only a
+          // successful load with zero rows shows "no digital employees".
+          dataSource={employees ?? []}
+          columns={columns}
+          pagination={{ hideOnSinglePage: true }}
+          onRow={(employee) => ({ onClick: () => onSelected(employee) })}
+          locale={{
+            emptyText: (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'digitalEmployeesEmpty')}>
+                <Typography.Text type="secondary">{translate(language, 'digitalEmployeesEmptyHint')}</Typography.Text>
+              </Empty>
+            ),
+          }}
+        />
       )}
 
       <CreateEmployeeModal
@@ -412,10 +369,7 @@ function EmployeeList({
           void load();
         }}
       />
-      <DeleteBlockedModal
-        employee={deleting}
-        onClose={() => setDeleting(null)}
-      />
+      <DeleteBlockedModal employee={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }
@@ -442,7 +396,10 @@ function CreateEmployeeModal({
     if (open) {
       form.resetFields();
       setError(null);
-      portal.listDepartments().then(setDepartments).catch(() => setDepartments([]));
+      portal
+        .listDepartments()
+        .then(setDepartments)
+        .catch(() => setDepartments([]));
     }
   }, [open, form, portal]);
 
@@ -450,7 +407,11 @@ function CreateEmployeeModal({
     setPending(true);
     setError(null);
     try {
-      const result = await portal.apply(values.name.trim(), values.displayName.trim(), values.team?.trim() || undefined);
+      const result = await portal.apply(
+        values.name.trim(),
+        values.displayName.trim(),
+        values.team?.trim() || undefined,
+      );
       if (result.kind === 'rejected') {
         setError(result.message);
         return;
@@ -516,12 +477,7 @@ function CreateEmployeeModal({
           />
         </Form.Item>
       </Form>
-      <Alert
-        type="info"
-        showIcon
-        title={t('createFieldGapTitle')}
-        description={t('createFieldGap')}
-      />
+      <Alert type="info" showIcon title={t('createFieldGapTitle')} description={t('createFieldGap')} />
     </Modal>
   );
 }
@@ -601,11 +557,7 @@ function EmployeeDetail({
           <PhaseTag phase={employee.phase} />
         </Space>
         <Space>
-          <Button
-            type="primary"
-            icon={<MessageOutlined />}
-            onClick={() => void onChat(employee)}
-          >
+          <Button type="primary" icon={<MessageOutlined />} onClick={() => void onChat(employee)}>
             {t('actionChat')}
           </Button>
           <Button danger icon={<DeleteOutlined />} onClick={() => setDeleting(true)}>
@@ -673,24 +625,14 @@ function EmployeeDetail({
                     },
                   ]}
                 />
-                <Alert
-                  type="info"
-                  showIcon
-                  title={t('editGapTitle')}
-                  description={t('editGapDescription')}
-                />
+                <Alert type="info" showIcon title={t('editGapTitle')} description={t('editGapDescription')} />
               </div>
             ),
           },
           {
             key: 'capabilities',
             label: t('detailTabCapabilities'),
-            children: (
-              <EmptyDetails
-                title={t('capabilitiesGapTitle')}
-                description={t('capabilitiesGapDescription')}
-              />
-            ),
+            children: <EmptyDetails title={t('capabilitiesGapTitle')} description={t('capabilitiesGapDescription')} />,
           },
           {
             key: 'memory',
@@ -740,9 +682,7 @@ function EmployeeDetail({
                       key: 'wecom',
                       label: t('publishWecom'),
                       children: employee.channels?.wecom
-                        ? `${t('publishChannelOn')}（${
-                            employee.channels.wecomName ?? t('publishChannelUnknownName')
-                          }）`
+                        ? `${t('publishChannelOn')}（${employee.channels.wecomName ?? t('publishChannelUnknownName')}）`
                         : t('publishChannelOff'),
                     },
                   ]}
@@ -760,9 +700,7 @@ function EmployeeDetail({
           {
             key: 'runs',
             label: t('detailTabRuns'),
-            children: (
-              <EmptyDetails title={t('runsGapTitle')} description={t('runsGapDescription')} />
-            ),
+            children: <EmptyDetails title={t('runsGapTitle')} description={t('runsGapDescription')} />,
           },
         ]}
       />
@@ -818,18 +756,12 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
   const filtered = useMemo(() => {
     const items = requests ?? [];
     const byState = items.filter((request) =>
-      filter === 'all'
-        ? true
-        : filter === 'pending'
-          ? request.state === 'pending'
-          : request.state !== 'pending',
+      filter === 'all' ? true : filter === 'pending' ? request.state === 'pending' : request.state !== 'pending',
     );
     if (!query.trim()) return byState;
     const needle = query.trim().toLowerCase();
     return byState.filter((request) =>
-      [request.employeeName, request.displayName, request.owner].some((value) =>
-        value.toLowerCase().includes(needle),
-      ),
+      [request.employeeName, request.displayName, request.owner].some((value) => value.toLowerCase().includes(needle)),
     );
   }, [requests, filter, query]);
 
@@ -954,31 +886,27 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
       </div>
 
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          title={`${translate(language, 'digitalEmployeesRequestsLoadFailed')}：${error}`}
-        />
+        <Alert type="error" showIcon title={`${translate(language, 'digitalEmployeesRequestsLoadFailed')}：${error}`} />
       ) : null}
       {actionError ? <Alert type="error" showIcon title={actionError} /> : null}
 
       {error ? null : (
-      <Table
-        rowKey="id"
-        size="middle"
-        loading={loading && requests === null}
-        dataSource={filtered}
-        columns={columns}
-        pagination={{ hideOnSinglePage: true }}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={translate(language, 'digitalEmployeesRequestsEmpty')}
-            />
-          ),
-        }}
-      />
+        <Table
+          rowKey="id"
+          size="middle"
+          loading={loading && requests === null}
+          dataSource={filtered}
+          columns={columns}
+          pagination={{ hideOnSinglePage: true }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={translate(language, 'digitalEmployeesRequestsEmpty')}
+              />
+            ),
+          }}
+        />
       )}
 
       <RejectRequestModal
@@ -991,12 +919,7 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
         }}
       />
 
-      <Drawer
-        open={viewing !== null}
-        title={t('requestsDetailTitle')}
-        size={480}
-        onClose={() => setViewing(null)}
-      >
+      <Drawer open={viewing !== null} title={t('requestsDetailTitle')} size={480} onClose={() => setViewing(null)}>
         {viewing ? (
           <Descriptions
             column={1}
@@ -1065,9 +988,7 @@ function RejectRequestModal({
       onOk={() => void form.submit()}
       destroyOnHidden
     >
-      <Typography.Paragraph type="secondary">
-        {t('requestsRejectDescription')}
-      </Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('requestsRejectDescription')}</Typography.Paragraph>
       {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} /> : null}
       <Form form={form} layout="vertical" onFinish={(values) => void reject(values)}>
         <Form.Item

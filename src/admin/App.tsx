@@ -1,7 +1,16 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import {
-  App as AntApp,
+  AppstoreOutlined,
+  AuditOutlined,
+  BookOutlined,
+  DashboardOutlined,
+  LogoutOutlined,
+  RobotOutlined,
+  SettingOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
+import {
   Alert,
+  App as AntApp,
   Breadcrumb,
   Button,
   Card,
@@ -21,165 +30,130 @@ import {
   Tabs,
   Typography,
   theme,
-} from "antd";
-import zhCN from "antd/locale/zh_CN";
-import {
-  AppstoreOutlined,
-  AuditOutlined,
-  BookOutlined,
-  DashboardOutlined,
-  LogoutOutlined,
-  RobotOutlined,
-  SettingOutlined,
-  TeamOutlined,
-} from "@ant-design/icons";
+} from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import {
   AdminConsoleClient,
   AdminConsoleStatus,
-  AdminMetadataError,
-  AdminPermission as P,
-  hasAdminPermission,
+  type AdminEventRecord,
   type AdminIdentity,
+  AdminMetadataError,
   type AdminOverview,
   type AdminSession,
-  type AdminEventRecord,
-} from "./client.js";
+  hasAdminPermission,
+  AdminPermission as P,
+} from './client.js';
+import { translate } from './i18n.js';
+import { AdminNotificationViewport } from './notifications.js';
+import { PortalClient, type PortalEmployee } from './portal.js';
+import { shellCopy as c } from './shell-copy.js';
 import {
-  AdminThemeMode,
+  type AdminThemeMode,
   applyAdminTheme,
   initialAdminTheme,
   persistAdminTheme,
   subscribeToSystemTheme,
-} from "./theme.js";
-import { translate } from "./i18n.js";
-import { shellCopy as c } from "./shell-copy.js";
-import { AdminNotificationViewport } from "./notifications.js";
-import { PortalClient, type PortalEmployee } from "./portal.js";
+} from './theme.js';
 
-const Resources = lazy(() =>
-  import("./Resources.js").then((m) => ({ default: m.Resources })),
-);
-const Identity = lazy(() =>
-  import("./Identity.js").then((m) => ({ default: m.Identity })),
-);
-const Models = lazy(() =>
-  import("./Models.js").then((m) => ({ default: m.Models })),
-);
+const Resources = lazy(() => import('./Resources.js').then((m) => ({ default: m.Resources })));
+const Identity = lazy(() => import('./Identity.js').then((m) => ({ default: m.Identity })));
+const Models = lazy(() => import('./Models.js').then((m) => ({ default: m.Models })));
 const Employees = lazy(() =>
-  import("./DigitalEmployees.js").then((m) => ({
+  import('./DigitalEmployees.js').then((m) => ({
     default: m.DigitalEmployees,
   })),
 );
-const Knowledge = lazy(() =>
-  import("./ServiceStatus.js").then((m) => ({ default: m.KnowledgeView })),
-);
-const Services = lazy(() =>
-  import("./ServiceStatus.js").then((m) => ({ default: m.ServicesView })),
-);
-const Operations = lazy(() =>
-  import("./Operations.js").then((m) => ({ default: m.Operations })),
-);
-const Sessions = lazy(() =>
-  import("./Operations.js").then((m) => ({ default: m.SessionsView })),
-);
-const Credentials = lazy(() =>
-  import("./Operations.js").then((m) => ({ default: m.CredentialsView })),
-);
+const Knowledge = lazy(() => import('./ServiceStatus.js').then((m) => ({ default: m.KnowledgeView })));
+const Services = lazy(() => import('./ServiceStatus.js').then((m) => ({ default: m.ServicesView })));
+const Operations = lazy(() => import('./Operations.js').then((m) => ({ default: m.Operations })));
+const Sessions = lazy(() => import('./Operations.js').then((m) => ({ default: m.SessionsView })));
+const Credentials = lazy(() => import('./Operations.js').then((m) => ({ default: m.CredentialsView })));
 const ConfigurationStatus = lazy(() =>
-  import("./Operations.js").then((m) => ({
+  import('./Operations.js').then((m) => ({
     default: m.ConfigurationStatusView,
   })),
 );
 const DeploymentSettings = lazy(() =>
-  import("./Operations.js").then((m) => ({
+  import('./Operations.js').then((m) => ({
     default: m.DeploymentSettingsView,
   })),
 );
-const Events = lazy(() =>
-  import("./Events.js").then((m) => ({ default: m.Events })),
-);
+const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
 
 const modules = [
   {
-    key: "overview",
+    key: 'overview',
     label: c.overview,
     icon: <DashboardOutlined />,
     permissions: [],
   },
   {
-    key: "employees",
+    key: 'employees',
     label: c.employees,
     icon: <RobotOutlined />,
     permissions: [],
   },
   {
-    key: "knowledge",
+    key: 'knowledge',
     label: c.knowledge,
     icon: <BookOutlined />,
     permissions: [],
   },
   {
-    key: "skills",
+    key: 'skills',
     label: c.skills,
     icon: <AppstoreOutlined />,
     permissions: [P.SkillsRead],
   },
   {
-    key: "users",
+    key: 'users',
     label: c.users,
     icon: <TeamOutlined />,
     permissions: [P.UsersRead, P.TeamsRead, P.RolesRead, P.IdentityRead],
   },
   {
-    key: "audit",
+    key: 'audit',
     label: c.audit,
     icon: <AuditOutlined />,
     permissions: [P.EventsRead],
   },
   {
-    key: "system",
+    key: 'system',
     label: c.system,
     icon: <SettingOutlined />,
-    permissions: [
-      P.ModelsRead,
-      P.CredentialsRead,
-      P.LicensesRead,
-      P.DataPlaneWrite,
-      P.DeploymentRead,
-    ],
+    permissions: [P.ModelsRead, P.CredentialsRead, P.LicensesRead, P.DataPlaneWrite, P.DeploymentRead],
   },
 ] as const;
 const legacyRoutes: Record<string, string> = {
-  resources: "users",
-  identity: "users/accounts",
-  "digital-employees": "employees",
-  memory: "system/services",
-  models: "system/models",
-  events: "audit",
-  operations: "system/licenses",
+  resources: 'users',
+  identity: 'users/accounts',
+  'digital-employees': 'employees',
+  memory: 'system/services',
+  models: 'system/models',
+  events: 'audit',
+  operations: 'system/licenses',
 };
 function readRoute() {
-  const raw = window.location.hash.replace(/^#\/?/, "") || "overview";
-  if (raw === "system/connections") return "system/models/connections";
-  if (raw === "system/configuration") return "system/models/configuration";
-  if (raw === "resources/skills") return "skills";
-  const [first = "overview", ...rest] = raw.split("/");
-  return `${legacyRoutes[first] ?? first}${rest.length ? "/" + rest.join("/") : ""}`;
+  const raw = window.location.hash.replace(/^#\/?/, '') || 'overview';
+  if (raw === 'system/connections') return 'system/models/connections';
+  if (raw === 'system/configuration') return 'system/models/configuration';
+  if (raw === 'resources/skills') return 'skills';
+  const [first = 'overview', ...rest] = raw.split('/');
+  return `${legacyRoutes[first] ?? first}${rest.length ? `/${rest.join('/')}` : ''}`;
 }
 function navigate(route: string) {
   window.location.hash = route;
 }
-const t = (key: Parameters<typeof translate>[1]) => translate("zh", key);
+const t = (key: Parameters<typeof translate>[1]) => translate('zh', key);
 
 export function AdminApp() {
   const [mode, setMode] = useState<AdminThemeMode>(initialAdminTheme);
-  const [dark, setDark] = useState(() =>
-    document.documentElement.classList.contains("dark"),
-  );
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   useEffect(() => {
     const update = () => {
       applyAdminTheme(mode);
-      setDark(document.documentElement.classList.contains("dark"));
+      setDark(document.documentElement.classList.contains('dark'));
     };
     update();
     return subscribeToSystemTheme(update);
@@ -190,8 +164,8 @@ export function AdminApp() {
       button={{ autoInsertSpace: false }}
       theme={{
         algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
-        cssVar: { key: "zhiyuan-admin" },
-        token: { colorPrimary: "#1677ff", borderRadius: 6, fontSize: 14 },
+        cssVar: { key: 'zhiyuan-admin' },
+        token: { colorPrimary: '#1677ff', borderRadius: 6, fontSize: 14 },
       }}
     >
       <AntApp>
@@ -202,9 +176,9 @@ export function AdminApp() {
               value={mode}
               style={{ width: 110 }}
               options={[
-                { value: "system", label: c.systemTheme },
-                { value: "light", label: c.light },
-                { value: "dark", label: c.dark },
+                { value: 'system', label: c.systemTheme },
+                { value: 'light', label: c.light },
+                { value: 'dark', label: c.dark },
               ]}
               onChange={(value) => {
                 persistAdminTheme(value);
@@ -224,7 +198,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [session, setSession] = useState<AdminSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<"signInFailed" | "signInMetadataFailed" | null>(null);
+  const [error, setError] = useState<'signInFailed' | 'signInMetadataFailed' | null>(null);
   const [route, setRoute] = useState(readRoute);
   useEffect(() => {
     let live = true;
@@ -245,15 +219,15 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   }, [client]);
   useEffect(() => {
     const change = () => setRoute(readRoute());
-    window.addEventListener("hashchange", change);
-    return () => window.removeEventListener("hashchange", change);
+    window.addEventListener('hashchange', change);
+    return () => window.removeEventListener('hashchange', change);
   }, []);
   const signOut = async () => {
     setPending(true);
     try {
       await client.logout();
       setSession({ status: AdminConsoleStatus.SignedOut });
-      navigate("overview");
+      navigate('overview');
     } finally {
       setPending(false);
     }
@@ -269,29 +243,15 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       <main className="admin-login">
         <div className="admin-login-theme">{themeControl}</div>
         <Card className="admin-login-card">
-          <Typography.Text type="secondary">
-            ZHIYUAN · {c.brand}
-          </Typography.Text>
+          <Typography.Text type="secondary">ZHIYUAN · {c.brand}</Typography.Text>
           <Typography.Title level={2}>{c.signIn}</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            {c.signInHint}
-          </Typography.Paragraph>
-          {error && (
-            <Alert
-              type="error"
-              showIcon
-              title={t(error)}
-              style={{ marginBottom: 20 }}
-            />
-          )}
+          <Typography.Paragraph type="secondary">{c.signInHint}</Typography.Paragraph>
+          {error && <Alert type="error" showIcon title={t(error)} style={{ marginBottom: 20 }} />}
           <Form
             layout="vertical"
             requiredMark={false}
             disabled={pending}
-            onFinish={async (values: {
-              username: string;
-              password: string;
-            }) => {
+            onFinish={async (values: { username: string; password: string }) => {
               setPending(true);
               setError(null);
               try {
@@ -302,38 +262,30 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
                   }),
                 );
               } catch (cause) {
-                setError(
-                  cause instanceof AdminMetadataError
-                    ? "signInMetadataFailed"
-                    : "signInFailed",
-                );
+                setError(cause instanceof AdminMetadataError ? 'signInMetadataFailed' : 'signInFailed');
               } finally {
                 setPending(false);
               }
             }}
           >
             <Form.Item
-              label={t("username")}
+              label={t('username')}
               name="username"
               rules={[
                 {
                   required: true,
                   whitespace: true,
-                  message: t("requiredFields"),
+                  message: t('requiredFields'),
                 },
               ]}
             >
               <Input autoComplete="username" />
             </Form.Item>
-            <Form.Item
-              label={t("password")}
-              name="password"
-              rules={[{ required: true, message: t("requiredFields") }]}
-            >
+            <Form.Item label={t('password')} name="password" rules={[{ required: true, message: t('requiredFields') }]}>
               <Input.Password autoComplete="current-password" />
             </Form.Item>
             <Button type="primary" htmlType="submit" block loading={pending}>
-              {t("signIn")}
+              {t('signIn')}
             </Button>
           </Form>
         </Card>
@@ -345,24 +297,16 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         status="403"
         title={c.forbidden}
         subTitle={session.identity?.user.displayName}
-        extra={
-          <Button onClick={() => void signOut()}>{c.switchAccount}</Button>
-        }
+        extra={<Button onClick={() => void signOut()}>{c.switchAccount}</Button>}
       />
     );
   const identity = session.identity;
   const allowed = (permission: P) => hasAdminPermission(identity, permission);
-  const visible = modules.filter(
-    (m) => m.permissions.length === 0 || m.permissions.some(allowed),
-  );
-  const [page = "overview", subpage, detailTab] = route.split("/");
+  const visible = modules.filter((m) => m.permissions.length === 0 || m.permissions.some(allowed));
+  const [page = 'overview', subpage, detailTab] = route.split('/');
   const selected = modules.find((m) => m.key === page);
   const accessible = visible.some((m) => m.key === page);
-  const enterprise =
-    identity?.deployment?.name ??
-    identity?.enterprise?.name ??
-    identity?.deploymentId ??
-    c.enterprise;
+  const enterprise = identity?.deployment?.name ?? identity?.enterprise?.name ?? identity?.deploymentId ?? c.enterprise;
   const props = { client, identity };
   const tabs = (
     items: {
@@ -375,104 +319,94 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     const usable = items.filter(
       (item) =>
         !item.permission ||
-        (typeof item.permission === "string"
-          ? allowed(item.permission)
-          : item.permission.some(allowed)),
+        (typeof item.permission === 'string' ? allowed(item.permission) : item.permission.some(allowed)),
     );
     const key = subpage ?? usable[0]?.key;
-    if (!key || !usable.some((item) => item.key === key))
-      return <Result status="403" title={c.forbidden} />;
-    return (
-      <Tabs
-        activeKey={key}
-        onChange={(key) => navigate(`${page}/${key}`)}
-        items={usable}
-        destroyOnHidden
-      />
-    );
+    if (!key || !usable.some((item) => item.key === key)) return <Result status="403" title={c.forbidden} />;
+    return <Tabs activeKey={key} onChange={(key) => navigate(`${page}/${key}`)} items={usable} destroyOnHidden />;
   };
   let content: ReactNode;
   switch (page) {
-    case "overview":
+    case 'overview':
       content = <Overview {...props} onNavigate={navigate} />;
       break;
-    case "employees":
+    case 'employees':
       content = (
         <Employees
-          key={subpage ?? "employees"}
+          key={subpage ?? 'employees'}
           {...props}
-          initialTab={subpage === "requests" ? "requests" : "employees"}
+          initialTab={subpage === 'requests' ? 'requests' : 'employees'}
         />
       );
       break;
-    case "knowledge":
+    case 'knowledge':
       content = <Knowledge client={client} />;
       break;
-    case "skills":
+    case 'skills':
       content = <Resources {...props} tab="skills" />;
       break;
-    case "users":
+    case 'users':
       content = tabs([
         {
-          key: "users",
+          key: 'users',
           label: c.userList,
           permission: P.UsersRead,
           children: <Resources {...props} tab="users" />,
         },
         {
-          key: "teams",
+          key: 'teams',
           label: c.teams,
           permission: P.TeamsRead,
           children: <Resources {...props} tab="teams" />,
         },
         {
-          key: "roles",
+          key: 'roles',
           label: c.roles,
           permission: P.RolesRead,
           children: <Resources {...props} tab="roles" />,
         },
         {
-          key: "accounts",
+          key: 'accounts',
           label: c.accounts,
           permission: P.IdentityRead,
           children: <Identity {...props} />,
         },
         {
-          key: "sessions",
+          key: 'sessions',
           label: c.sessions,
           permission: P.UsersRead,
           children: <Sessions {...props} />,
         },
       ]);
       break;
-    case "audit":
+    case 'audit':
       content = <Events {...props} />;
       break;
-    case "system":
+    case 'system':
       content = tabs([
         {
-          key: "models",
+          key: 'models',
           label: c.models,
           permission: [P.ModelsRead, P.CredentialsRead, P.DataPlaneWrite],
           children: <ModelServices {...props} tab={detailTab} />,
         },
         {
-          key: "channels",
+          key: 'channels',
           label: c.channels,
           children: <Channels client={client} />,
         },
         {
-          key: "services",
+          key: 'services',
           label: c.services,
           children: <Services client={client} />,
         },
         {
-          key: "settings",
+          key: 'settings',
           label: c.settings,
           children: <DeploymentSettings {...props} />,
         },
         {
-          key: "licenses",
+          key: 'licenses',
           label: c.licenses,
           permission: P.LicensesRead,
           children: <Operations {...props} />,
@@ -484,9 +418,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         <Result
           status="404"
           title={c.notFound}
-          extra={
-            <Button onClick={() => navigate("overview")}>{c.overview}</Button>
-          }
+          extra={<Button onClick={() => navigate('overview')}>{c.overview}</Button>}
         />
       );
   }
@@ -508,7 +440,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             key,
             label,
             icon,
-            "aria-label": label,
+            'aria-label': label,
           }))}
           onClick={({ key }) => navigate(key)}
         />
@@ -521,36 +453,18 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           </Typography.Text>
           <Space wrap>
             {themeControl}
-            <Typography.Text className="admin-user">
-              {identity?.user.displayName}
-            </Typography.Text>
-            <Button
-              aria-label={c.signOut}
-              icon={<LogoutOutlined />}
-              loading={pending}
-              onClick={() => void signOut()}
-            >
+            <Typography.Text className="admin-user">{identity?.user.displayName}</Typography.Text>
+            <Button aria-label={c.signOut} icon={<LogoutOutlined />} loading={pending} onClick={() => void signOut()}>
               {c.signOut}
             </Button>
           </Space>
         </Layout.Header>
         <Layout.Content className="admin-content">
-          <Breadcrumb
-            items={[
-              { title: c.admin },
-              { title: selected?.label ?? c.notFound },
-            ]}
-          />
+          <Breadcrumb items={[{ title: c.admin }, { title: selected?.label ?? c.notFound }]} />
           <div className="admin-page">
             <Suspense fallback={<Skeleton active />}>
               <div key={page}>
-                {accessible ? (
-                  content
-                ) : selected ? (
-                  <Result status="403" title={c.forbidden} />
-                ) : (
-                  content
-                )}
+                {accessible ? content : selected ? <Result status="403" title={c.forbidden} /> : content}
               </div>
             </Suspense>
           </div>
@@ -572,27 +486,26 @@ function ModelServices({
   const props = { client, identity };
   const items = [
     {
-      key: "catalog",
+      key: 'catalog',
       label: c.modelList,
       permission: P.ModelsRead,
       children: <Models {...props} />,
     },
     {
-      key: "connections",
+      key: 'connections',
       label: c.connections,
       permission: P.CredentialsRead,
       children: <Credentials {...props} />,
     },
     {
-      key: "configuration",
+      key: 'configuration',
       label: c.configuration,
       permission: P.DataPlaneWrite,
       children: <ConfigurationStatus {...props} />,
     },
   ].filter((item) => hasAdminPermission(identity, item.permission));
   const active = tab ?? items[0]?.key;
-  if (!active || !items.some((item) => item.key === active))
-    return <Result status="403" title={c.forbidden} />;
+  if (!active || !items.some((item) => item.key === active)) return <Result status="403" title={c.forbidden} />;
   return (
     <Tabs
       type="card"
@@ -636,16 +549,14 @@ function Channels({ client }: { client: AdminConsoleClient }) {
       <div className="admin-page-heading">
         <div>
           <Typography.Title level={2}>{c.channels}</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            {c.channelHint}
-          </Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{c.channelHint}</Typography.Paragraph>
         </div>
         <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
-          {t("refresh")}
+          {t('refresh')}
         </Button>
       </div>
       <Alert
-        type={error ? "error" : "info"}
+        type={error ? 'error' : 'info'}
         title={error ? c.channelFailure : c.channelScope}
         style={{ marginBottom: 16 }}
       />
@@ -655,11 +566,10 @@ function Channels({ client }: { client: AdminConsoleClient }) {
         dataSource={[...rows]}
         scroll={{ x: 580 }}
         columns={[
-          { title: c.employees, dataIndex: "displayName" },
+          { title: c.employees, dataIndex: 'displayName' },
           {
             title: c.channelName,
-            render: (_, employee) =>
-              employee.channels?.wecomName || t("wecomBadge"),
+            render: (_, employee) => employee.channels?.wecomName || t('wecomBadge'),
           },
           { title: c.channelStatus, render: () => c.configured },
         ]}
@@ -701,19 +611,16 @@ function Overview({
         if (live)
           setEmployeeCounts({
             total: items.length,
-            ready: items.filter((item) => item.phase === "Ready").length,
+            ready: items.filter((item) => item.phase === 'Ready').length,
           });
       })
       .catch(() => {
         if (live) setEmployeeCounts(null);
       });
     void portal
-      .listRequests("pending")
+      .listRequests('pending')
       .then((items) => {
-        if (live)
-          setPendingCount(
-            items.filter((item) => item.state === "pending").length,
-          );
+        if (live) setPendingCount(items.filter((item) => item.state === 'pending').length);
       })
       .catch(() => {
         if (live) setPendingCount(null);
@@ -753,28 +660,28 @@ function Overview({
   }, [client, identity, canAudit, revision]);
   const metrics = [
     {
-      key: "users",
+      key: 'users',
       label: c.accountCount,
       permission: P.UsersRead,
-      route: "users",
+      route: 'users',
     },
     {
-      key: "teams",
+      key: 'teams',
       label: c.teams,
       permission: P.TeamsRead,
-      route: "users/teams",
+      route: 'users/teams',
     },
     {
-      key: "skills",
+      key: 'skills',
       label: c.skills,
       permission: P.SkillsRead,
-      route: "skills",
+      route: 'skills',
     },
     {
-      key: "models",
+      key: 'models',
       label: c.models,
       permission: P.ModelsRead,
-      route: "system/models",
+      route: 'system/models',
     },
   ] as const;
   return (
@@ -782,47 +689,26 @@ function Overview({
       <div className="admin-page-heading">
         <div>
           <Typography.Title level={2}>{c.overview}</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            {c.overviewHint}
-          </Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{c.overviewHint}</Typography.Paragraph>
         </div>
         <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
-          {t("refresh")}
+          {t('refresh')}
         </Button>
       </div>
-      {failed && (
-        <Alert
-          type="warning"
-          showIcon
-          title={c.overviewFailed}
-          style={{ marginBottom: 20 }}
-        />
-      )}
+      {failed && <Alert type="warning" showIcon title={c.overviewFailed} style={{ marginBottom: 20 }} />}
       <Card title={c.runningSummary} style={{ marginBottom: 20 }}>
         <Row gutter={[24, 16]}>
           <Col xs={24} sm={8}>
-            <Statistic
-              title={c.visibleEmployees}
-              value={employeeCounts?.total ?? c.unknown}
-            />
+            <Statistic title={c.visibleEmployees} value={employeeCounts?.total ?? c.unknown} />
           </Col>
           <Col xs={24} sm={8}>
-            <Statistic
-              title={c.readyEmployees}
-              value={employeeCounts?.ready ?? c.unknown}
-            />
+            <Statistic title={c.readyEmployees} value={employeeCounts?.ready ?? c.unknown} />
           </Col>
           <Col xs={24} sm={8}>
-            <Statistic
-              title={c.pendingRequests}
-              value={pendingCount ?? c.unknown}
-            />
+            <Statistic title={c.pendingRequests} value={pendingCount ?? c.unknown} />
           </Col>
         </Row>
-        <Typography.Paragraph
-          type="secondary"
-          style={{ marginTop: 16, marginBottom: 0 }}
-        >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
           {c.runSummaryHint}
         </Typography.Paragraph>
       </Card>
@@ -832,16 +718,8 @@ function Overview({
           .map((m) => (
             <Col xs={24} sm={12} xl={6} key={m.key}>
               <Card>
-                <Statistic
-                  title={m.label}
-                  loading={loading}
-                  value={overview?.[m.key] ?? c.unknown}
-                />
-                <Button
-                  type="link"
-                  style={{ paddingInline: 0 }}
-                  onClick={() => onNavigate(m.route)}
-                >
+                <Statistic title={m.label} loading={loading} value={overview?.[m.key] ?? c.unknown} />
+                <Button type="link" style={{ paddingInline: 0 }} onClick={() => onNavigate(m.route)}>
                   {c.manage}
                 </Button>
               </Card>
@@ -852,14 +730,10 @@ function Overview({
         <Col xs={24} xl={10}>
           <Card title={c.quickLinks}>
             <Space wrap>
-              <Button onClick={() => onNavigate("employees")}>
-                {c.employees}
-              </Button>
-              <Button onClick={() => onNavigate("knowledge")}>
-                {c.knowledge}
-              </Button>
+              <Button onClick={() => onNavigate('employees')}>{c.employees}</Button>
+              <Button onClick={() => onNavigate('knowledge')}>{c.knowledge}</Button>
               {hasAdminPermission(identity, P.UsersRead) && (
-                <Button onClick={() => onNavigate("users")}>{c.users}</Button>
+                <Button onClick={() => onNavigate('users')}>{c.users}</Button>
               )}
             </Space>
             <Typography.Paragraph type="secondary" style={{ marginTop: 20 }}>
@@ -867,13 +741,11 @@ function Overview({
             </Typography.Paragraph>
           </Card>
           <Card title={c.pendingWork} style={{ marginTop: 20 }}>
-              <Space orientation="vertical">
+            <Space orientation="vertical">
               <Typography.Text>
                 {c.pendingRequests}: {pendingCount ?? c.unknown}
               </Typography.Text>
-              <Button onClick={() => onNavigate("employees/requests")}>
-                {c.reviewRequests}
-              </Button>
+              <Button onClick={() => onNavigate('employees/requests')}>{c.reviewRequests}</Button>
             </Space>
           </Card>
         </Col>
@@ -894,26 +766,24 @@ function Overview({
                   columns={[
                     {
                       title: c.event,
-                      dataIndex: "type",
+                      dataIndex: 'type',
                       render: (v: string) => v || c.unknown,
                     },
                     {
                       title: c.actor,
-                      dataIndex: "userId",
+                      dataIndex: 'userId',
                       render: (v: string) => v || c.unknown,
                     },
                     {
                       title: c.result,
-                      dataIndex: "result",
+                      dataIndex: 'result',
                       render: (v: string) => v || c.unknown,
                     },
                   ]}
                 />
               )
             ) : (
-              <Typography.Text type="secondary">
-                {c.auditRestricted}
-              </Typography.Text>
+              <Typography.Text type="secondary">{c.auditRestricted}</Typography.Text>
             )}
           </Card>
         </Col>

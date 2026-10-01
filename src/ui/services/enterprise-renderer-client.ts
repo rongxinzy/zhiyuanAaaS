@@ -7,13 +7,13 @@ import type {
 } from '../../host-contract.js';
 import { ModelCapabilityStatus } from '../../host-contract.js';
 import {
+  type EnterpriseRendererInitializeMessage,
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
-  EnterpriseRendererSessionOperation,
-  type EnterpriseRendererInitializeMessage,
   type EnterpriseRendererModelCatalogRequestMessage,
   type EnterpriseRendererModelCatalogResult,
   type EnterpriseRendererReadyMessage,
+  EnterpriseRendererSessionOperation,
   type EnterpriseRendererSessionRequestMessage,
   type EnterpriseRendererSessionResponseMessage,
 } from '../../renderer-contract.js';
@@ -86,11 +86,7 @@ export class EnterpriseRendererClient {
     return this.#request(EnterpriseRendererSessionOperation.Snapshot);
   }
 
-  login(input: {
-    aepBaseUrl: string;
-    username: string;
-    password: string;
-  }): Promise<EnterpriseSessionResult> {
+  login(input: { aepBaseUrl: string; username: string; password: string }): Promise<EnterpriseSessionResult> {
     return this.#request(EnterpriseRendererSessionOperation.Login, {
       ...input,
       enterpriseId: HOST_LOGIN_ENTERPRISE_ID,
@@ -124,7 +120,7 @@ export class EnterpriseRendererClient {
         timeout,
       });
       window.parent.postMessage(request, '*');
-    }).then(result => {
+    }).then((result) => {
       if (!result.ok) throw new Error('Enterprise model catalog is unavailable.');
       return result.models;
     });
@@ -178,10 +174,7 @@ export class EnterpriseRendererClient {
     const pending = this.#pending.get(message.requestId);
     if (!pending) return;
 
-    if (
-      message.type === EnterpriseRendererMessageType.SessionResponse &&
-      pending.kind === PendingRequestKind.Session
-    ) {
+    if (message.type === EnterpriseRendererMessageType.SessionResponse && pending.kind === PendingRequestKind.Session) {
       if (!isSessionResult(message.result)) return;
       this.#completeRequest(message.requestId, pending);
       pending.resolve((message as unknown as EnterpriseRendererSessionResponseMessage).result);
@@ -273,22 +266,11 @@ function parseCapabilities(value: unknown): Partial<ModelCapabilities> | null {
 }
 
 function isModelCapabilityKey(value: string): value is keyof ModelCapabilities {
-  return [
-    'toolCalling',
-    'imageInput',
-    'videoInput',
-    'audioInput',
-    'documentInput',
-    'reasoning',
-  ].includes(value);
+  return ['toolCalling', 'imageInput', 'videoInput', 'audioInput', 'documentInput', 'reasoning'].includes(value);
 }
 
-function isModelCapabilityStatus(
-  value: unknown,
-): value is ModelCapabilities[keyof ModelCapabilities] {
-  return Object.values(ModelCapabilityStatus).includes(
-    value as ModelCapabilities[keyof ModelCapabilities],
-  );
+function isModelCapabilityStatus(value: unknown): value is ModelCapabilities[keyof ModelCapabilities] {
+  return Object.values(ModelCapabilityStatus).includes(value as ModelCapabilities[keyof ModelCapabilities]);
 }
 
 function isBoundedString(value: unknown, maxLength: number): value is string {

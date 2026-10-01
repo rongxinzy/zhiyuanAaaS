@@ -45,8 +45,7 @@ export function subscribeToSystemTheme(listener: () => void): () => void {
 function readStoredMode(): AdminThemeMode | null {
   try {
     const raw = globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
-    if (raw === AdminThemeMode.Light || raw === AdminThemeMode.Dark || raw === AdminThemeMode.System)
-      return raw;
+    if (raw === AdminThemeMode.Light || raw === AdminThemeMode.Dark || raw === AdminThemeMode.System) return raw;
   } catch {
     // Storage access can be denied in restricted browser profiles; fall back to system.
   }

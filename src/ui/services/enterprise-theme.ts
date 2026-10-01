@@ -1,7 +1,7 @@
 import {
-  EnterpriseRendererThemeVariables,
-  EnterpriseRendererTheme,
   type EnterpriseRendererInitializeMessage,
+  EnterpriseRendererTheme,
+  EnterpriseRendererThemeVariables,
 } from '../../renderer-contract.js';
 
 export function applyEnterpriseTheme(message: EnterpriseRendererInitializeMessage): void {

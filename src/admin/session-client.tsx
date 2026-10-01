@@ -1,7 +1,7 @@
 import { Space, Tag, Typography } from 'antd';
 
 import type { AdminSessionClient } from './client.js';
-import { translate, type AdminLanguage, type AdminTranslationKey } from './i18n.js';
+import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 
 const language: AdminLanguage = 'zh';
 const t = (key: AdminTranslationKey) => translate(language, key);
@@ -29,7 +29,10 @@ export function truncateSessionDeviceId(deviceId: string): string {
   return deviceId.length > 11 ? `${deviceId.slice(0, 8)}…` : deviceId;
 }
 
-export function SessionClientCell({ client, current = false }: {
+export function SessionClientCell({
+  client,
+  current = false,
+}: {
   readonly client: AdminSessionClient | null | undefined;
   readonly current?: boolean;
 }) {
@@ -56,9 +59,7 @@ export function SessionClientCell({ client, current = false }: {
   );
 }
 
-export function SessionClientDetail({ client }: {
-  readonly client: AdminSessionClient | null | undefined;
-}) {
+export function SessionClientDetail({ client }: { readonly client: AdminSessionClient | null | undefined }) {
   if (!client) return <Typography.Text type="secondary">{t('sessionClientUnknown')}</Typography.Text>;
   return (
     <Space orientation="vertical" size={2}>

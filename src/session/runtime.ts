@@ -5,21 +5,14 @@ import type { AepClient, AepProtectedStorage } from '@aep/sdk-node';
 import { resolveZhiyuanAgentId } from '../agent-id.js';
 import { loadZhiyuanEnterpriseConfig } from '../enterprise-config.js';
 import type { ZhiyuanEnterpriseHostContext } from '../host-contract.js';
-import { createZhiyuanAepClient, type ZhiyuanPasswordSessionOptions } from './factory.js';
-import {
-  ProtectedFileStorage,
-  SafeStorageProtector,
-  type SafeStorageLike,
-} from './protected-file-storage.js';
-import { ZhiyuanPasswordSession } from './password-session.js';
 import { ZhiyuanLicenseActivation } from '../license/activation.js';
+import { createZhiyuanAepClient, type ZhiyuanPasswordSessionOptions } from './factory.js';
+import { ZhiyuanPasswordSession } from './password-session.js';
+import { ProtectedFileStorage, type SafeStorageLike, SafeStorageProtector } from './protected-file-storage.js';
 
 export interface SessionRuntimeDependencies {
   readonly loadSafeStorage?: () => Promise<SafeStorageLike>;
-  readonly createProtectedStorage?: (
-    directory: string,
-    safeStorage: SafeStorageLike,
-  ) => AepProtectedStorage;
+  readonly createProtectedStorage?: (directory: string, safeStorage: SafeStorageLike) => AepProtectedStorage;
   readonly createClient?: (options: ZhiyuanPasswordSessionOptions) => AepClient;
 }
 
@@ -49,9 +42,7 @@ export async function createZhiyuanSessionRuntimeComponents(
     (dependencies.loadSafeStorage ?? loadElectronSafeStorage)(),
   ]);
   assertSecureStorageBackend(safeStorage, platform);
-  const protectedStorage = (
-    dependencies.createProtectedStorage ?? createDefaultProtectedStorage
-  )(
+  const protectedStorage = (dependencies.createProtectedStorage ?? createDefaultProtectedStorage)(
     path.join(context.paths.userData, 'zhiyuan-enterprise', 'secrets'),
     safeStorage,
   );
@@ -63,7 +54,7 @@ export async function createZhiyuanSessionRuntimeComponents(
     protectedStorage,
   });
   const client = dependencies.createClient ? activeClient : routeClient(() => activeClient);
-  const session = new ZhiyuanPasswordSession(client, baseUrl => {
+  const session = new ZhiyuanPasswordSession(client, (baseUrl) => {
     activeClient = (dependencies.createClient ?? createZhiyuanAepClient)({
       baseUrl,
       agentId,
@@ -73,7 +64,7 @@ export async function createZhiyuanSessionRuntimeComponents(
     });
     return activeClient;
   });
-  const licenseActivation = ZhiyuanLicenseActivation.create({session, client});
+  const licenseActivation = ZhiyuanLicenseActivation.create({ session, client });
   return Object.freeze({
     session,
     client,
@@ -92,10 +83,7 @@ function routeClient<T extends object>(getClient: () => T): T {
   });
 }
 
-function assertSecureStorageBackend(
-  safeStorage: SafeStorageLike,
-  platform: 'windows' | 'macos' | 'linux',
-): void {
+function assertSecureStorageBackend(safeStorage: SafeStorageLike, platform: 'windows' | 'macos' | 'linux'): void {
   if (platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
     throw new Error(
       'Zhiyuan protected storage requires a Linux secret store; the basic_text backend is not permitted.',
@@ -103,10 +91,7 @@ function assertSecureStorageBackend(
   }
 }
 
-function createDefaultProtectedStorage(
-  directory: string,
-  safeStorage: SafeStorageLike,
-): AepProtectedStorage {
+function createDefaultProtectedStorage(directory: string, safeStorage: SafeStorageLike): AepProtectedStorage {
   return new ProtectedFileStorage(directory, new SafeStorageProtector(safeStorage));
 }
 

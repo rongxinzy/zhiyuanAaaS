@@ -1,30 +1,38 @@
-import {
-  InfoCircleOutlined,
-  LinkOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SafetyOutlined,
-} from '@ant-design/icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AutoComplete, Alert, Button, Empty, Form, Input, Modal, Radio, Select, Space, Table, Tag, Typography } from 'antd';
 import type { PlatformUser } from '@aep/sdk-node';
+import { InfoCircleOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SafetyOutlined } from '@ant-design/icons';
+import {
+  Alert,
+  AutoComplete,
+  Button,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Radio,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  AdminConsoleClient,
+  type AdminConsoleClient,
+  type AdminIdentity,
+  type AdminIdentityMapping,
   AdminIdentityMappingStatus,
+  type AdminIdentitySource,
   AdminIdentitySourceKind,
   AdminIdentitySubjectType,
   AdminPermission,
   hasAdminPermission,
-  type AdminIdentity,
-  type AdminIdentityMapping,
-  type AdminIdentitySource,
 } from './client.js';
-import { identityCopy as copy } from './identity-copy.js';
-import { translate, type AdminLanguage } from './i18n.js';
-import { AdminNotificationKind, notify } from './notifications.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import { type AdminLanguage, translate } from './i18n.js';
+import { identityCopy as copy } from './identity-copy.js';
+import { AdminNotificationKind, notify } from './notifications.js';
 
 const language: AdminLanguage = 'zh';
 
@@ -59,7 +67,10 @@ interface MappingRow extends AdminIdentityMapping {
  * requires an explicit confirmation so an existing binding is never silently
  * overwritten. This is not SSO or directory sync.
  */
-export function Identity({ client, identity }: {
+export function Identity({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -85,31 +96,28 @@ export function Identity({ client, identity }: {
     setLoading(true);
     setFailed(false);
     setPartialFailures([]);
-    const loadUsers = canReadUsers
-      ? client.users().catch(() => null)
-      : Promise.resolve(null);
+    const loadUsers = canReadUsers ? client.users().catch(() => null) : Promise.resolve(null);
     void Promise.all([client.identitySources(), loadUsers])
       .then(([page, knownUsers]) => {
         const items = page.items;
-        return Promise.allSettled(items.map(source => client.identityMappings(source.id)))
-          .then(results => {
-            if (!live) return;
-            setSources(items);
-            setUsers(knownUsers);
-            const next: MappingRow[] = [];
-            const failedSources: string[] = [];
-            results.forEach((result, index) => {
-              if (result.status === 'fulfilled') {
-                for (const mapping of result.value.items) {
-                  next.push({ ...mapping, sourceName: items[index]!.displayName, sourceKind: items[index]!.kind });
-                }
-              } else {
-                failedSources.push(items[index]!.displayName);
+        return Promise.allSettled(items.map((source) => client.identityMappings(source.id))).then((results) => {
+          if (!live) return;
+          setSources(items);
+          setUsers(knownUsers);
+          const next: MappingRow[] = [];
+          const failedSources: string[] = [];
+          results.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              for (const mapping of result.value.items) {
+                next.push({ ...mapping, sourceName: items[index]!.displayName, sourceKind: items[index]!.kind });
               }
-            });
-            setRows(next);
-            setPartialFailures(failedSources);
+            } else {
+              failedSources.push(items[index]!.displayName);
+            }
           });
+          setRows(next);
+          setPartialFailures(failedSources);
+        });
       })
       .catch(() => {
         if (live) {
@@ -126,18 +134,22 @@ export function Identity({ client, identity }: {
     };
   }, [client, canReadUsers, revision]);
 
-  const usersById = useMemo(() => new Map((users ?? []).map(user => [user.id, user])), [users]);
+  const usersById = useMemo(() => new Map((users ?? []).map((user) => [user.id, user])), [users]);
 
-  const userLabel = useCallback((userId: string): { readonly primary: string; readonly secondary: string } => {
-    const user = usersById.get(userId);
-    if (user) return { primary: user.displayName, secondary: `${userId}${user.username ? ` · ${user.username}` : ''}` };
-    return { primary: userId, secondary: userId };
-  }, [usersById]);
+  const userLabel = useCallback(
+    (userId: string): { readonly primary: string; readonly secondary: string } => {
+      const user = usersById.get(userId);
+      if (user)
+        return { primary: user.displayName, secondary: `${userId}${user.username ? ` · ${user.username}` : ''}` };
+      return { primary: userId, secondary: userId };
+    },
+    [usersById],
+  );
 
   const filtered = useMemo(() => {
     if (!rows) return [];
     const keyword = (filters.query ?? '').trim().toLowerCase();
-    return rows.filter(row => {
+    return rows.filter((row) => {
       if (filters.sourceId && row.sourceId !== filters.sourceId) return false;
       if (filters.status && row.status !== filters.status) return false;
       if (!keyword) return true;
@@ -150,89 +162,116 @@ export function Identity({ client, identity }: {
     });
   }, [rows, filters, userLabel]);
 
-  const columns = useMemo(() => [
-    {
-      title: copy.sourceListTitle,
-      key: 'source',
-      render: (_: unknown, row: MappingRow) => (
-        <Space orientation="vertical" size={0}>
-          <span>{row.sourceName}</span>
-          <Tag>{identityKindLabel(row.sourceKind)}</Tag>
-        </Space>
-      ),
-    },
-    {
-      title: copy.externalAccount,
-      key: 'externalId',
-      render: (_: unknown, row: MappingRow) => (
-        <Typography.Text code copyable={{ text: row.externalId }}>{row.externalId}</Typography.Text>
-      ),
-    },
-    {
-      title: copy.platformUser,
-      key: 'user',
-      render: (_: unknown, row: MappingRow) => {
-        const label = userLabel(row.localSubjectId);
-        return (
+  const columns = useMemo(
+    () => [
+      {
+        title: copy.sourceListTitle,
+        key: 'source',
+        render: (_: unknown, row: MappingRow) => (
           <Space orientation="vertical" size={0}>
-            <span>{label.primary}</span>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label.secondary}</Typography.Text>
+            <span>{row.sourceName}</span>
+            <Tag>{identityKindLabel(row.sourceKind)}</Tag>
           </Space>
-        );
+        ),
       },
-    },
-    {
-      title: translate(language, 'status'),
-      key: 'status',
-      render: (_: unknown, row: MappingRow) => row.status === AdminIdentityMappingStatus.Active
-        ? <Tag color="success">{copy.linkActive}</Tag>
-        : <Tag>{copy.linkDisabled}</Tag>,
-    },
-    {
-      title: copy.linkTime,
-      key: 'linkTime',
-      render: () => <Typography.Text type="secondary">{copy.linkTimeUnknown}</Typography.Text>,
-    },
-    ...(canWrite ? [{
-      title: translate(language, 'actions'),
-      key: 'actions',
-      render: (_: unknown, row: MappingRow) => (
-        <Space size={0}>
-          <Button type="link" size="small" onClick={() => setEditing(row)}>{translate(language, 'edit')}</Button>
-          <Button type="link" size="small" danger onClick={() => setUnlinking(row)}>{copy.unlink}</Button>
-        </Space>
-      ),
-    }] : []),
-  ], [canWrite, userLabel]);
+      {
+        title: copy.externalAccount,
+        key: 'externalId',
+        render: (_: unknown, row: MappingRow) => (
+          <Typography.Text code copyable={{ text: row.externalId }}>
+            {row.externalId}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: copy.platformUser,
+        key: 'user',
+        render: (_: unknown, row: MappingRow) => {
+          const label = userLabel(row.localSubjectId);
+          return (
+            <Space orientation="vertical" size={0}>
+              <span>{label.primary}</span>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {label.secondary}
+              </Typography.Text>
+            </Space>
+          );
+        },
+      },
+      {
+        title: translate(language, 'status'),
+        key: 'status',
+        render: (_: unknown, row: MappingRow) =>
+          row.status === AdminIdentityMappingStatus.Active ? (
+            <Tag color="success">{copy.linkActive}</Tag>
+          ) : (
+            <Tag>{copy.linkDisabled}</Tag>
+          ),
+      },
+      {
+        title: copy.linkTime,
+        key: 'linkTime',
+        render: () => <Typography.Text type="secondary">{copy.linkTimeUnknown}</Typography.Text>,
+      },
+      ...(canWrite
+        ? [
+            {
+              title: translate(language, 'actions'),
+              key: 'actions',
+              render: (_: unknown, row: MappingRow) => (
+                <Space size={0}>
+                  <Button type="link" size="small" onClick={() => setEditing(row)}>
+                    {translate(language, 'edit')}
+                  </Button>
+                  <Button type="link" size="small" danger onClick={() => setUnlinking(row)}>
+                    {copy.unlink}
+                  </Button>
+                </Space>
+              ),
+            },
+          ]
+        : []),
+    ],
+    [canWrite, userLabel],
+  );
 
   return (
     <div className="flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Typography.Text type="secondary"><InfoCircleOutlined style={{ marginInlineEnd: 6 }} />{copy.pageDescription}</Typography.Text>
+          <Typography.Text type="secondary">
+            <InfoCircleOutlined style={{ marginInlineEnd: 6 }} />
+            {copy.pageDescription}
+          </Typography.Text>
         </div>
         <Space wrap>
           {canWrite ? (
             <>
-              {/* <Button icon={<PlusOutlined />} onClick={() => setCreatingSource(true)}>{copy.addSource}</Button> */}
-              <Button type="primary" icon={<LinkOutlined />} onClick={() => setEditing('new')}>{copy.addLink}</Button>
+              <Button icon={<PlusOutlined />} onClick={() => setCreatingSource(true)}>
+                {copy.addSource}
+              </Button>
+              <Button type="primary" icon={<LinkOutlined />} onClick={() => setEditing('new')}>
+                {copy.addLink}
+              </Button>
             </>
           ) : null}
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
-            {/* {translate(language, 'refresh')} */}
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+            {translate(language, 'refresh')}
           </Button>
         </Space>
       </div>
 
-      {!canReadUsers ? (
-        <Alert type="info" showIcon title={copy.userNamesUnavailable} />
-      ) : null}
+      {!canReadUsers ? <Alert type="info" showIcon title={copy.userNamesUnavailable} /> : null}
       {failed ? (
         <Alert
           type="error"
           showIcon
           title={copy.sourcesLoadFailed}
-          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
       {partialFailures.length > 0 ? (
@@ -240,25 +279,27 @@ export function Identity({ client, identity }: {
           type="warning"
           showIcon
           title={copy.partialSourcesFailed}
-          description={<Space wrap>{partialFailures.map(name => <Tag key={name}>{name}</Tag>)}</Space>}
+          description={
+            <Space wrap>
+              {partialFailures.map((name) => (
+                <Tag key={name}>{name}</Tag>
+              ))}
+            </Space>
+          }
         />
       ) : null}
 
       {/* 2026-09-30 LiXiang2019 账号关联筛选条件 + 查询/重置按钮组 */}
       <Form form={filterForm} layout="inline" style={{ gap: 12 }}>
         <Form.Item name="query" style={{ marginInlineEnd: 0 }}>
-          <Input
-            allowClear
-            placeholder={copy.searchPlaceholder}
-            style={{ width: 240 }}
-          />
+          <Input allowClear placeholder={copy.searchPlaceholder} style={{ width: 240 }} />
         </Form.Item>
         <Form.Item name="sourceId" style={{ marginInlineEnd: 0 }}>
           <Select
             allowClear
             placeholder={copy.sourceListTitle}
             style={{ minWidth: 180 }}
-            options={(sources ?? NO_SOURCES).map(source => ({ value: source.id, label: source.displayName }))}
+            options={(sources ?? NO_SOURCES).map((source) => ({ value: source.id, label: source.displayName }))}
           />
         </Form.Item>
         <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
@@ -284,7 +325,7 @@ export function Identity({ client, identity }: {
 
       {failed && rows === null ? null : (
         <Table
-          rowKey={row => `${row.sourceId}/${row.externalSubjectType}/${row.externalId}`}
+          rowKey={(row) => `${row.sourceId}/${row.externalSubjectType}/${row.externalId}`}
           columns={columns}
           dataSource={[...filtered]}
           loading={loading && rows === null}
@@ -306,7 +347,7 @@ export function Identity({ client, identity }: {
           client={client}
           open
           onClose={() => setCreatingSource(false)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
       {canWrite && editing ? (
@@ -316,12 +357,12 @@ export function Identity({ client, identity }: {
           sources={sources ?? NO_SOURCES}
           rows={rows ?? NO_ROWS}
           editing={editing === 'new' ? undefined : editing}
-          userOptions={(users ?? NO_USERS).map(user => ({
+          userOptions={(users ?? NO_USERS).map((user) => ({
             value: user.id,
             label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}`,
           }))}
           onClose={() => setEditing(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
       {canWrite && unlinking ? (
@@ -329,14 +370,19 @@ export function Identity({ client, identity }: {
           client={client}
           row={unlinking}
           onClose={() => setUnlinking(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
     </div>
   );
 }
 
-function SourceCreateModal({ client, open, onClose, onChanged }: {
+function SourceCreateModal({
+  client,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly open: boolean;
   readonly onClose: () => void;
@@ -356,7 +402,11 @@ function SourceCreateModal({ client, open, onClose, onChanged }: {
     setPending(true);
     setFailed(false);
     try {
-      await client.createIdentitySource({ id: values.id.trim(), kind: values.kind, displayName: values.displayName.trim() });
+      await client.createIdentitySource({
+        id: values.id.trim(),
+        kind: values.kind,
+        displayName: values.displayName.trim(),
+      });
       notify(AdminNotificationKind.Success, copy.sourceCreated);
       onClose();
       onChanged();
@@ -374,10 +424,12 @@ function SourceCreateModal({ client, open, onClose, onChanged }: {
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
       destroyOnHidden
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void form.submit()}
     >
-      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
+      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)} disabled={pending}>
         {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.sourceCreateFailed} /> : null}
         <Form.Item
           name="id"
@@ -389,13 +441,19 @@ function SourceCreateModal({ client, open, onClose, onChanged }: {
         >
           <Input placeholder={copy.sourceIdPlaceholder} />
         </Form.Item>
-        <Form.Item name="displayName" label={copy.sourceNameLabel} rules={[{ required: true, message: copy.sourceNameRequired }]}>
+        <Form.Item
+          name="displayName"
+          label={copy.sourceNameLabel}
+          rules={[{ required: true, message: copy.sourceNameRequired }]}
+        >
           <Input />
         </Form.Item>
         <Form.Item name="kind" label={copy.sourceKindLabel} rules={[{ required: true }]}>
           <Radio.Group>
-            {IdentitySourceKindOrder.map(kind => (
-              <Radio.Button key={kind} value={kind}>{identityKindLabel(kind)}</Radio.Button>
+            {IdentitySourceKindOrder.map((kind) => (
+              <Radio.Button key={kind} value={kind}>
+                {identityKindLabel(kind)}
+              </Radio.Button>
             ))}
           </Radio.Group>
         </Form.Item>
@@ -404,7 +462,16 @@ function SourceCreateModal({ client, open, onClose, onChanged }: {
   );
 }
 
-function MappingModal({ client, open, sources, rows, editing, userOptions, onClose, onChanged }: {
+function MappingModal({
+  client,
+  open,
+  sources,
+  rows,
+  editing,
+  userOptions,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly open: boolean;
   readonly sources: readonly AdminIdentitySource[];
@@ -438,7 +505,7 @@ function MappingModal({ client, open, sources, rows, editing, userOptions, onClo
     // An external account must never silently move to another user: when the
     // new binding differs from the current one, show both and require an
     // explicit confirmation before the upsert overwrites it.
-    const existing = rows.find(row => row.sourceId === values.sourceId && row.externalId === externalId);
+    const existing = rows.find((row) => row.sourceId === values.sourceId && row.externalId === externalId);
     if (existing && existing.localSubjectId !== localSubjectId && !conflict) {
       setConflict({ current: existing.localSubjectId, next: localSubjectId });
       return;
@@ -469,13 +536,15 @@ function MappingModal({ client, open, sources, rows, editing, userOptions, onClo
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
       destroyOnHidden
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void form.submit()}
     >
       <Form
         form={form}
         layout="vertical"
-        onFinish={values => void submit(values)}
+        onFinish={(values) => void submit(values)}
         onValuesChange={() => setConflict(null)}
         disabled={pending}
       >
@@ -488,15 +557,19 @@ function MappingModal({ client, open, sources, rows, editing, userOptions, onClo
             title={copy.bindingConflictTitle}
             description={
               <div>
-                <div>{copy.bindingConflictCurrent}：<Typography.Text code>{conflict.current}</Typography.Text></div>
-                <div>{copy.bindingConflictNext}：<Typography.Text code>{conflict.next}</Typography.Text></div>
+                <div>
+                  {copy.bindingConflictCurrent}：<Typography.Text code>{conflict.current}</Typography.Text>
+                </div>
+                <div>
+                  {copy.bindingConflictNext}：<Typography.Text code>{conflict.next}</Typography.Text>
+                </div>
               </div>
             }
           />
         ) : null}
         <Form.Item name="sourceId" label={copy.sourceListTitle} rules={[{ required: true }]}>
           <Select
-            options={sources.map(source => ({ value: source.id, label: source.displayName }))}
+            options={sources.map((source) => ({ value: source.id, label: source.displayName }))}
             disabled={Boolean(editing)}
           />
         </Form.Item>
@@ -515,7 +588,9 @@ function MappingModal({ client, open, sources, rows, editing, userOptions, onClo
         >
           <AutoComplete
             options={[...userOptions]}
-            showSearch={{ filterOption: (input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) }}
+            showSearch={{
+              filterOption: (input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase()),
+            }}
           />
         </Form.Item>
         <Alert type="info" showIcon title={copy.noOverwriteNote} />
@@ -524,7 +599,12 @@ function MappingModal({ client, open, sources, rows, editing, userOptions, onClo
   );
 }
 
-function UnlinkModal({ client, row, onClose, onChanged }: {
+function UnlinkModal({
+  client,
+  row,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly row: MappingRow;
   readonly onClose: () => void;
@@ -554,14 +634,20 @@ function UnlinkModal({ client, row, onClose, onChanged }: {
       okButtonProps={{ danger: true }}
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.mappingDeleteFailed} /> : null}
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <Space orientation="vertical" size={2}>
-          <span>{copy.sourceListTitle}：<strong>{row.sourceName}</strong></span>
-          <span>{copy.externalAccount}：<Typography.Text code>{row.externalId}</Typography.Text></span>
+          <span>
+            {copy.sourceListTitle}：<strong>{row.sourceName}</strong>
+          </span>
+          <span>
+            {copy.externalAccount}：<Typography.Text code>{row.externalId}</Typography.Text>
+          </span>
         </Space>
         <Alert type="warning" showIcon icon={<SafetyOutlined />} title={copy.unlinkImpact} />
       </Space>

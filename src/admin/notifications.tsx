@@ -1,13 +1,11 @@
-import { useSyncExternalStore } from "react";
-
-import { Alert } from "antd";
+import { Alert } from 'antd';
+import { useSyncExternalStore } from 'react';
 
 export const AdminNotificationKind = {
-  Success: "success",
-  Error: "error",
+  Success: 'success',
+  Error: 'error',
 } as const;
-export type AdminNotificationKind =
-  (typeof AdminNotificationKind)[keyof typeof AdminNotificationKind];
+export type AdminNotificationKind = (typeof AdminNotificationKind)[keyof typeof AdminNotificationKind];
 
 interface AdminNotification {
   readonly id: number;
@@ -51,11 +49,7 @@ export function AdminNotificationViewport() {
   const success = notification.kind === AdminNotificationKind.Success;
   return (
     <div className="admin-notification" role="status" aria-live="polite">
-      <Alert
-        showIcon
-        type={success ? "success" : "error"}
-        title={notification.message}
-      />
+      <Alert showIcon type={success ? 'success' : 'error'} title={notification.message} />
     </div>
   );
 }

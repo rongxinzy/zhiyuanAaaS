@@ -52,9 +52,9 @@ describe('Zhiyuan session runtime', () => {
       path.join(context.paths.userData, 'zhiyuan-enterprise', 'secrets'),
       expect.any(Object),
     );
-    expect(
-      fs.readFileSync(path.join(context.paths.userData, 'zhiyuan-enterprise', 'agent-id'), 'utf8'),
-    ).toMatch(/[0-9a-f-]{36}/);
+    expect(fs.readFileSync(path.join(context.paths.userData, 'zhiyuan-enterprise', 'agent-id'), 'utf8')).toMatch(
+      /[0-9a-f-]{36}/,
+    );
   });
 
   test('rejects the insecure Linux basic_text storage backend', async () => {
@@ -87,10 +87,7 @@ describe('Zhiyuan session runtime', () => {
   });
 });
 
-function hostContext(
-  root: string,
-  platform: NodeJS.Platform = 'win32',
-): ZhiyuanEnterpriseHostContext {
+function hostContext(root: string, platform: NodeJS.Platform = 'win32'): ZhiyuanEnterpriseHostContext {
   return {
     apiVersion: 1,
     appVersion: '2026.8.0',

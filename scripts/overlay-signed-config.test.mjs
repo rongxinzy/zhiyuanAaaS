@@ -43,15 +43,11 @@ describe('electron-builder.overlay-signed.cjs', () => {
   test('throws when CERTUM_CERT_THUMBPRINT is missing or invalid', () => {
     const missing = requireSignedConfig({});
     expect(missing.status).not.toBe(0);
-    expect(missing.stderr).toContain(
-      'CERTUM_CERT_THUMBPRINT must contain the 40-character SHA-1 thumbprint',
-    );
+    expect(missing.stderr).toContain('CERTUM_CERT_THUMBPRINT must contain the 40-character SHA-1 thumbprint');
 
     const invalid = requireSignedConfig({ CERTUM_CERT_THUMBPRINT: 'not-a-thumbprint' });
     expect(invalid.status).not.toBe(0);
-    expect(invalid.stderr).toContain(
-      'CERTUM_CERT_THUMBPRINT must contain the 40-character SHA-1 thumbprint',
-    );
+    expect(invalid.stderr).toContain('CERTUM_CERT_THUMBPRINT must contain the 40-character SHA-1 thumbprint');
   });
 });
 

@@ -1,15 +1,15 @@
 /**
  * 2026-09-30 LiXiang2019 列表查询按钮组：查询、重置、导出，供各列表页筛选区复用
  */
-import { ClearOutlined, DownloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Space, type FormInstance } from "antd";
-import { useCallback, useState } from "react";
+import { ClearOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, type FormInstance, Space } from 'antd';
+import { useCallback, useState } from 'react';
 
-import { translate, type AdminLanguage } from "../i18n.js";
-import { AdminNotificationKind, notify } from "../notifications.js";
+import { type AdminLanguage, translate } from '../i18n.js';
+import { AdminNotificationKind, notify } from '../notifications.js';
 
-const language: AdminLanguage = "zh";
-const t = (key: "search" | "reset" | "export" | "searchFailed" | "exportFailed" | "exportSuccess") =>
+const language: AdminLanguage = 'zh';
+const t = (key: 'search' | 'reset' | 'export' | 'searchFailed' | 'exportFailed' | 'exportSuccess') =>
   translate(language, key);
 
 /**
@@ -27,11 +27,11 @@ export type ListQueryAction<Values extends object> =
   | {
       /** 2026-09-30 LiXiang2019 接口路径，不同页面传入不同地址 */
       readonly url: string;
-      readonly method?: "GET" | "POST";
+      readonly method?: 'GET' | 'POST';
       /** 2026-09-30 LiXiang2019 统一请求适配器，由页面注入鉴权与下载逻辑 */
       readonly request: (input: {
         readonly url: string;
-        readonly method: "GET" | "POST";
+        readonly method: 'GET' | 'POST';
         readonly values: Values;
       }) => void | Promise<void>;
     };
@@ -62,17 +62,14 @@ export interface ListQueryActionsProps<Values extends object = Record<string, un
 }
 
 /** 2026-09-30 LiXiang2019 按动作形态执行查询或导出 */
-async function invokeAction<Values extends object>(
-  action: ListQueryAction<Values>,
-  values: Values,
-): Promise<void> {
-  if ("run" in action) {
+async function invokeAction<Values extends object>(action: ListQueryAction<Values>, values: Values): Promise<void> {
+  if ('run' in action) {
     await action.run(values);
     return;
   }
   await action.request({
     url: action.url,
-    method: action.method ?? "GET",
+    method: action.method ?? 'GET',
     values,
   });
 }
@@ -129,7 +126,7 @@ export function ListQueryActions<Values extends object = Record<string, unknown>
     try {
       await invokeAction(search, values);
     } catch {
-      notify(AdminNotificationKind.Error, t("searchFailed"));
+      notify(AdminNotificationKind.Error, t('searchFailed'));
     } finally {
       setSearchingLocal(false);
     }
@@ -149,9 +146,9 @@ export function ListQueryActions<Values extends object = Record<string, unknown>
     setExportingLocal(true);
     try {
       await invokeAction(exportAction, values);
-      notify(AdminNotificationKind.Success, t("exportSuccess"));
+      notify(AdminNotificationKind.Success, t('exportSuccess'));
     } catch {
-      notify(AdminNotificationKind.Error, t("exportFailed"));
+      notify(AdminNotificationKind.Error, t('exportFailed'));
     } finally {
       setExportingLocal(false);
     }
@@ -166,15 +163,11 @@ export function ListQueryActions<Values extends object = Record<string, unknown>
         loading={searching}
         onClick={() => void handleSearch()}
       >
-        {t("search")}
+        {t('search')}
       </Button>
       {showReset ? (
-        <Button
-          icon={<ClearOutlined />}
-          disabled={disabled || searching || exporting}
-          onClick={handleReset}
-        >
-          {t("reset")}
+        <Button icon={<ClearOutlined />} disabled={disabled || searching || exporting} onClick={handleReset}>
+          {t('reset')}
         </Button>
       ) : null}
       {exportVisible && exportAction ? (
@@ -184,7 +177,7 @@ export function ListQueryActions<Values extends object = Record<string, unknown>
           loading={exporting}
           onClick={() => void handleExport()}
         >
-          {t("export")}
+          {t('export')}
         </Button>
       ) : null}
     </Space>

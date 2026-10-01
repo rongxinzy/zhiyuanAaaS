@@ -139,7 +139,8 @@ const copy = {
     accessModelsUnknown: '模型授权范围暂无法获取',
     accessStateUnknown: '授权状态未知',
     disableSessionsNoPermission: '当前账号没有撤销会话的权限，请到登录会话页处理。',
-    disableBoundaryNote: '数字员工负责人依赖无法通过当前接口确认；新登录与令牌续期由服务端阻止，已签发的令牌可能存在短暂失效窗口。',
+    disableBoundaryNote:
+      '数字员工负责人依赖无法通过当前接口确认；新登录与令牌续期由服务端阻止，已签发的令牌可能存在短暂失效窗口。',
     assignmentSubject: '授权对象',
     assignmentRevoke: '撤销授权',
   },
@@ -176,7 +177,8 @@ const copy = {
     statusEnabled: 'Enabled',
     statusDisabled: 'Disabled',
     disableUserTitle: 'Disable user',
-    disableUserImpact: 'Disabling blocks new sign-ins and token renewal; revocation of existing sessions is reported in the login sessions list and enforced server-side.',
+    disableUserImpact:
+      'Disabling blocks new sign-ins and token renewal; revocation of existing sessions is reported in the login sessions list and enforced server-side.',
     disableSelfWarning: 'This account is signed in to the current console. Disabling it signs you out as well.',
     disableUserActiveSessions: 'Current active login sessions',
     disableUserSessionsUnknown: 'Active sign-ins unavailable',
@@ -205,7 +207,8 @@ const copy = {
     accessEffective: 'Effective',
     accessResourceDisabled: 'Resource disabled',
     accessUserDisabled: 'Account disabled',
-    accessNote: 'Edit inherited access at its source; this is the same grant relationship maintained from the resource side.',
+    accessNote:
+      'Edit inherited access at its source; this is the same grant relationship maintained from the resource side.',
     accessEmpty: 'No resource grants to show',
     accessEmptyHint: 'Grant skills or models to this user, their roles or teams to see them here.',
     resourceTypeSkill: 'Skill',
@@ -218,7 +221,8 @@ const copy = {
     linkExternal: 'External account',
     unlinkAction: 'Unlink',
     unlinkTitle: 'Unlink account',
-    unlinkImpact: 'After unlinking, this mapping no longer identifies an enterprise member and enterprise data access is rejected. The platform account and existing data are kept.',
+    unlinkImpact:
+      'After unlinking, this mapping no longer identifies an enterprise member and enterprise data access is rejected. The platform account and existing data are kept.',
     confirmUnlink: 'Confirm unlink',
     sessionsNote: 'A valid credential does not mean the user is online right now.',
     sessionClient: 'Client / device',
@@ -255,7 +259,8 @@ const copy = {
     skillEmployeesEmptyHint: 'The current API does not expose skill-to-employee references.',
     skillDeleteBlockedTitle: 'Skill still referenced',
     skillDeleteBlockedNote: 'This skill still has usage grants. Revoke all grants under "Access" before deleting it.',
-    skillDeleteUncheckedNote: 'The API does not expose digital-employee references to this skill. Make sure no digital employee still uses it before deleting.',
+    skillDeleteUncheckedNote:
+      'The API does not expose digital-employee references to this skill. Make sure no digital employee still uses it before deleting.',
     versionSha: 'SHA256',
     skillAccessEmpty: 'No usage grants',
     skillAccessEmptyHint: 'Grant this skill to users, roles or teams to see them here.',
@@ -275,12 +280,14 @@ const copy = {
     disableSessionsRevoked: 'Active sessions revoked',
     disableSessionsFailed: 'Some sessions could not be revoked. Handle them on the login sessions page.',
     disableSessionsNone: 'No active sessions to revoke.',
-    disableSessionsUnknown: 'Account disabled, but session revocation results are unavailable. Retry on the login sessions page.',
+    disableSessionsUnknown:
+      'Account disabled, but session revocation results are unavailable. Retry on the login sessions page.',
     accessSkillsUnknown: 'Skill grants are unavailable',
     accessModelsUnknown: 'Model grants are unavailable',
     accessStateUnknown: 'Access status unknown',
     disableSessionsNoPermission: 'Your account cannot revoke sessions. Handle them on the login sessions page.',
-    disableBoundaryNote: 'Digital-employee ownership cannot be checked with the current API. New sign-ins and token renewal are blocked server-side; already-issued tokens may take a short window to expire.',
+    disableBoundaryNote:
+      'Digital-employee ownership cannot be checked with the current API. New sign-ins and token renewal are blocked server-side; already-issued tokens may take a short window to expire.',
     assignmentSubject: 'Subject',
     assignmentRevoke: 'Revoke grant',
   },

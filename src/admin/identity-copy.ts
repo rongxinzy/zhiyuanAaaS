@@ -62,7 +62,8 @@ const copy = {
   },
   en: {
     pageTitle: 'Account mappings',
-    pageDescription: 'Link external accounts such as WeCom or Feishu to platform users to identify visiting employees. Account mapping is not SSO or directory sync.',
+    pageDescription:
+      'Link external accounts such as WeCom or Feishu to platform users to identify visiting employees. Account mapping is not SSO or directory sync.',
     sourceListTitle: 'Platforms',
     sourceKindColumn: 'Type',
     manageLinks: 'Manage mappings',
@@ -79,10 +80,12 @@ const copy = {
     externalAccount: 'External account',
     selectPlatformUser: 'Select platform user',
     selectPlatformUserPlaceholder: 'Search name or account',
-    noOverwriteNote: 'An external account must not silently move to another user. Review the current binding and its impact before changing; changes are audited.',
+    noOverwriteNote:
+      'An external account must not silently move to another user. Review the current binding and its impact before changing; changes are audited.',
     unlink: 'Unlink',
     unlinkTitle: 'Unlink account',
-    unlinkImpact: 'After unlinking, this mapping no longer identifies an enterprise member and enterprise data access is rejected. The platform account and existing data are kept.',
+    unlinkImpact:
+      'After unlinking, this mapping no longer identifies an enterprise member and enterprise data access is rejected. The platform account and existing data are kept.',
     confirmUnlink: 'Confirm unlink',
     linksEmpty: 'No account mappings',
     linksEmptyHint: 'Link external accounts from this platform to platform users to see them here.',

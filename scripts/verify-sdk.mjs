@@ -5,9 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const root = new URL('../', import.meta.url);
 const packageJson = JSON.parse(await fs.readFile(new URL('package.json', root), 'utf8'));
-const manifest = JSON.parse(
-  await fs.readFile(new URL('build/build-manifest.json', root), 'utf8'),
-);
+const manifest = JSON.parse(await fs.readFile(new URL('build/build-manifest.json', root), 'utf8'));
 const sdkUrl = packageJson.dependencies['@aep/sdk-node'];
 const response = await downloadWithRetry(sdkUrl);
 

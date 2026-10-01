@@ -7,4 +7,8 @@ import { AdminApp } from './App.js';
 const root = document.getElementById('root');
 if (!root) throw new Error('Zhiyuan admin console root is missing.');
 root.classList.add('zhiyuan-admin-console');
-ReactDOM.createRoot(root).render(<React.StrictMode><AdminApp /></React.StrictMode>);
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>
+    <AdminApp />
+  </React.StrictMode>,
+);

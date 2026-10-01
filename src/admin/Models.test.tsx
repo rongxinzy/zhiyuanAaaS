@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles). The wrapper below mirrors the production
 // ConfigProvider (stable two-CJK button names) and disables wave/motion so
 // jsdom does not burn seconds per click on synchronous style work.
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-
+import type { AdminIdentity } from './client.js';
 import { Models } from './Models.js';
 import { administratorIdentity } from './test-fixtures.js';
-import type { AdminIdentity } from './client.js';
 
 const TIMEOUT = 15000;
 
@@ -30,15 +29,41 @@ describe('admin models', () => {
   const emptyResources = { users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] };
   const credentials = {
     credentials: [
-      { id: 'cred-1', name: '在线接入', service: 'openai', type: 'api_key', deliveryMode: 'server_only', maskedValue: 'sk-***', enabled: true, updatedAt: '2026-09-01T00:00:00Z' },
-      { id: 'cred-2', name: '已停用接入', service: 'openai', type: 'api_key', deliveryMode: 'server_only', maskedValue: 'sk-***', enabled: false, updatedAt: '2026-09-01T00:00:00Z' },
+      {
+        id: 'cred-1',
+        name: '在线接入',
+        service: 'openai',
+        type: 'api_key',
+        deliveryMode: 'server_only',
+        maskedValue: 'sk-***',
+        enabled: true,
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'cred-2',
+        name: '已停用接入',
+        service: 'openai',
+        type: 'api_key',
+        deliveryMode: 'server_only',
+        maskedValue: 'sk-***',
+        enabled: false,
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
     ],
     assignments: [],
   };
   const dataPlaneApplied = {
     desired: {
       revision: 'r2',
-      routes: [{ modelId: 'chat', enabled: true, endpoint: 'http://gateway/v1', upstreamModel: 'deepseek-chat', protocol: 'openai-compatible' }],
+      routes: [
+        {
+          modelId: 'chat',
+          enabled: true,
+          endpoint: 'http://gateway/v1',
+          upstreamModel: 'deepseek-chat',
+          protocol: 'openai-compatible',
+        },
+      ],
       deploymentId: 'demo',
       publishedAt: '2026-09-29T06:30:00Z',
       contentHash: 'h2',
@@ -75,7 +100,15 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+            },
+          ],
           assignments: [],
         }),
       };
@@ -105,7 +138,12 @@ describe('admin models', () => {
       fireEvent.click(screen.getByRole('button', { name: '保存' }));
       await waitFor(() =>
         expect(client.createModel).toHaveBeenCalledWith(
-          expect.objectContaining({ id: 'chat', upstreamModel: 'deepseek-chat', sourceType: 'gateway', credentialId: null }),
+          expect.objectContaining({
+            id: 'chat',
+            upstreamModel: 'deepseek-chat',
+            sourceType: 'gateway',
+            credentialId: null,
+          }),
         ),
       );
     },
@@ -141,7 +179,17 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false, credentialId: 'cred-1' }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+              credentialId: 'cred-1',
+            },
+          ],
           assignments: [],
         }),
       };
@@ -168,7 +216,17 @@ describe('admin models', () => {
         ...makeBaseClient(),
         credentials: vi.fn(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false, credentialId: 'cred-9' }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+              credentialId: 'cred-9',
+            },
+          ],
           assignments: [],
         }),
       };
@@ -195,7 +253,16 @@ describe('admin models', () => {
         ...makeBaseClient(),
         dataPlane: vi.fn(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
       };
@@ -223,7 +290,16 @@ describe('admin models', () => {
           status: { state: 'ready', observedRevision: null, contentHash: null },
         }),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
       };
@@ -245,7 +321,16 @@ describe('admin models', () => {
         ...makeBaseClient(),
         dataPlane: vi.fn().mockRejectedValue(new Error('AEP 403')),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
       };
@@ -263,7 +348,16 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
         resources: vi.fn().mockResolvedValue({
@@ -280,8 +374,14 @@ describe('admin models', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /李四/ }));
       fireEvent.click(screen.getByRole('button', { name: '授权' }));
       await waitFor(() => expect(client.createModelAssignment).toHaveBeenCalledTimes(2));
-      expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'user', id: 'u1' } });
-      expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'user', id: 'u2' } });
+      expect(client.createModelAssignment).toHaveBeenCalledWith({
+        modelId: 'chat',
+        subject: { type: 'user', id: 'u1' },
+      });
+      expect(client.createModelAssignment).toHaveBeenCalledWith({
+        modelId: 'chat',
+        subject: { type: 'user', id: 'u2' },
+      });
     },
     TIMEOUT,
   );
@@ -292,8 +392,25 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
-          assignments: [{ id: 'a1', resourceType: 'model', resourceId: 'chat', subject: { type: 'user', id: 'u1' }, createdAt: '2026-09-01T00:00:00Z' }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
+          assignments: [
+            {
+              id: 'a1',
+              resourceType: 'model',
+              resourceId: 'chat',
+              subject: { type: 'user', id: 'u1' },
+              createdAt: '2026-09-01T00:00:00Z',
+            },
+          ],
         }),
         resources: vi.fn().mockResolvedValue({
           ...emptyResources,
@@ -317,7 +434,16 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
         resources: vi.fn().mockResolvedValue({
@@ -348,7 +474,16 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
       };
@@ -358,7 +493,14 @@ describe('admin models', () => {
       fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '新名称' } });
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
       await waitFor(() =>
-        expect(client.updateModel).toHaveBeenCalledWith('chat', expect.objectContaining({ displayName: '新名称', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat' })),
+        expect(client.updateModel).toHaveBeenCalledWith(
+          'chat',
+          expect.objectContaining({
+            displayName: '新名称',
+            endpoint: 'http://localhost:8081/v1',
+            upstreamModel: 'deepseek-chat',
+          }),
+        ),
       );
 
       fireEvent.click(await screen.findByRole('button', { name: /操作/ }));
@@ -377,7 +519,16 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
         resources: vi.fn().mockResolvedValue({
@@ -392,8 +543,14 @@ describe('admin models', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
       fireEvent.click(screen.getByRole('button', { name: '授权' }));
       await waitFor(() => expect(client.createModelAssignment).toHaveBeenCalledTimes(2));
-      expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'role', id: 'role-1' } });
-      expect(client.createModelAssignment).toHaveBeenCalledWith({ modelId: 'chat', subject: { type: 'team', id: 'team-1' } });
+      expect(client.createModelAssignment).toHaveBeenCalledWith({
+        modelId: 'chat',
+        subject: { type: 'role', id: 'role-1' },
+      });
+      expect(client.createModelAssignment).toHaveBeenCalledWith({
+        modelId: 'chat',
+        subject: { type: 'team', id: 'team-1' },
+      });
     },
     TIMEOUT,
   );
@@ -404,7 +561,16 @@ describe('admin models', () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({
-          models: [{ id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat', enabled: true, isDefault: false }],
+          models: [
+            {
+              id: 'chat',
+              displayName: '企业对话',
+              endpoint: 'http://localhost:8081/v1',
+              upstreamModel: 'deepseek-chat',
+              enabled: true,
+              isDefault: false,
+            },
+          ],
           assignments: [],
         }),
         resources: vi.fn().mockResolvedValue({
@@ -434,8 +600,14 @@ describe('admin models', () => {
   );
 
   const publishableModel = {
-    id: 'chat', displayName: '企业对话', endpoint: 'http://localhost:8081/v1', upstreamModel: 'deepseek-chat',
-    enabled: true, isDefault: false, sourceType: 'gateway', protocol: 'openai-compatible',
+    id: 'chat',
+    displayName: '企业对话',
+    endpoint: 'http://localhost:8081/v1',
+    upstreamModel: 'deepseek-chat',
+    enabled: true,
+    isDefault: false,
+    sourceType: 'gateway',
+    protocol: 'openai-compatible',
   };
 
   test(
@@ -454,7 +626,11 @@ describe('admin models', () => {
           desired: dataPlaneApplied.desired,
           status: {
             ...dataPlaneApplied.status,
-            catalogComparison: { missing: ['vision'], extra: [], mismatched: [{ modelId: 'chat', fields: ['endpoint'] }] },
+            catalogComparison: {
+              missing: ['vision'],
+              extra: [],
+              mismatched: [{ modelId: 'chat', fields: ['endpoint'] }],
+            },
           },
         }),
       };

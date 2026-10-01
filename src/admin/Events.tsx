@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import type { AdminControlEvent } from '@aep/sdk-node';
 import {
   Alert,
   Button,
@@ -13,20 +13,20 @@ import {
   Tabs,
   Tag,
   Typography,
-} from "antd";
-import type { AdminControlEvent } from "@aep/sdk-node";
+} from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import { auditCopy as c } from './audit-copy.js';
 import {
+  type AdminConsoleClient,
+  type AdminDeliveryRecord,
+  type AdminEventRecord,
+  type AdminIdentity,
   AdminPermission,
   hasAdminPermission,
-  type AdminConsoleClient,
-  type AdminIdentity,
-  type AdminEventRecord,
-  type AdminDeliveryRecord,
-} from "./client.js";
-import { auditCopy as c } from "./audit-copy.js";
+} from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
-import { ListQueryActions } from "./components/ListQueryActions.js";
-import { shellCopy } from "./shell-copy.js";
+import { ListQueryActions } from './components/ListQueryActions.js';
+import { shellCopy } from './shell-copy.js';
 
 type Filters = { type?: string; userId?: string; result?: string };
 const shown = (value?: string | null) => value || c.unknown;
@@ -38,7 +38,7 @@ export function Events({
   readonly identity?: AdminIdentity | undefined;
 }) {
   const allowed = hasAdminPermission(identity, AdminPermission.EventsRead);
-  const [tab, setTab] = useState("operations");
+  const [tab, setTab] = useState('operations');
   return (
     <section>
       <Typography.Title level={2}>{c.title}</Typography.Title>
@@ -50,25 +50,19 @@ export function Events({
           destroyOnHidden
           items={[
             {
-              key: "operations",
+              key: 'operations',
               label: c.operations,
               children: <AuditRecords client={client} />,
             },
             {
-              key: "execution",
+              key: 'execution',
               label: c.execution,
               children: <ExecutionRecords client={client} />,
             },
             {
-              key: "login",
+              key: 'login',
               label: c.login,
-              children: (
-                <Result
-                  status="info"
-                  title={c.loginGap}
-                  subTitle={c.loginHint}
-                />
-              ),
+              children: <Result status="info" title={c.loginGap} subTitle={c.loginHint} />,
             },
           ]}
         />
@@ -132,11 +126,7 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
   };
   return (
     <>
-      <Form
-        form={form}
-        layout="inline"
-        style={{ gap: 12, marginBottom: 20 }}
-      >
+      <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
         <Form.Item name="type" label={c.type}>
           <Input allowClear />
         </Form.Item>
@@ -149,9 +139,9 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
             style={{ width: 130 }}
             placeholder={c.all}
             options={[
-              { value: "success", label: c.success },
-              { value: "failure", label: c.failure },
-              { value: "info", label: c.info },
+              { value: 'success', label: c.success },
+              { value: 'failure', label: c.failure },
+              { value: 'info', label: c.info },
             ]}
           />
         </Form.Item>
@@ -174,14 +164,7 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
         />
         <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
       </Form>
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          title={c.failed}
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
       <Table
         loading={loading}
         dataSource={rows.map((row, index) => ({
@@ -193,39 +176,23 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
         scroll={{ x: 800 }}
         locale={{ emptyText: error ? c.failed : c.empty }}
         columns={[
-          { title: c.type, dataIndex: "type", render: shown },
-          { title: c.actor, dataIndex: "userId", render: shown },
+          { title: c.type, dataIndex: 'type', render: shown },
+          { title: c.actor, dataIndex: 'userId', render: shown },
           {
             title: c.object,
             render: (_, row) =>
-              shown(
-                row.resourceType
-                  ? `${row.resourceType} / ${row.resourceId ?? c.unknown}`
-                  : row.resourceId,
-              ),
+              shown(row.resourceType ? `${row.resourceType} / ${row.resourceId ?? c.unknown}` : row.resourceId),
           },
           {
             title: c.result,
-            dataIndex: "result",
+            dataIndex: 'result',
             render: (value: string) => (
-              <Tag
-                color={
-                  value === "success"
-                    ? "success"
-                    : value === "failure"
-                      ? "error"
-                      : "default"
-                }
-              >
-                {value === "success"
-                  ? c.success
-                  : value === "failure"
-                    ? c.failure
-                    : shown(value)}
+              <Tag color={value === 'success' ? 'success' : value === 'failure' ? 'error' : 'default'}>
+                {value === 'success' ? c.success : value === 'failure' ? c.failure : shown(value)}
               </Tag>
             ),
           },
-          { title: c.time, dataIndex: "receivedAt", render: shown },
+          { title: c.time, dataIndex: 'receivedAt', render: shown },
           {
             title: c.details,
             render: (_, row) => (
@@ -237,20 +204,11 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
         ]}
       />
       {cursor && (
-        <Button
-          loading={loading}
-          onClick={() => void more()}
-          style={{ marginTop: 16 }}
-        >
+        <Button loading={loading} onClick={() => void more()} style={{ marginTop: 16 }}>
           {c.more}
         </Button>
       )}
-      <Drawer
-        title={c.detailTitle}
-        open={Boolean(selected)}
-        onClose={() => setSelected(null)}
-        size={560}
-      >
+      <Drawer title={c.detailTitle} open={Boolean(selected)} onClose={() => setSelected(null)} size={560}>
         <Alert type="info" title={c.scopeNote} style={{ marginBottom: 20 }} />
         {selected && (
           <Descriptions
@@ -258,34 +216,34 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
             bordered
             items={[
               {
-                key: "id",
+                key: 'id',
                 label: c.eventId,
                 children: shown(selected.eventId),
               },
-              { key: "type", label: c.type, children: shown(selected.type) },
-              { key: "user", label: c.actor, children: shown(selected.userId) },
+              { key: 'type', label: c.type, children: shown(selected.type) },
+              { key: 'user', label: c.actor, children: shown(selected.userId) },
               {
-                key: "resource",
+                key: 'resource',
                 label: c.resourceId,
                 children: shown(selected.resourceId),
               },
               {
-                key: "scope",
+                key: 'scope',
                 label: c.scope,
                 children: shown(selected.scopeType),
               },
               {
-                key: "scopeId",
+                key: 'scopeId',
                 label: c.scopeId,
                 children: shown(selected.scopeId),
               },
               {
-                key: "result",
+                key: 'result',
                 label: c.result,
                 children: shown(selected.result),
               },
               {
-                key: "time",
+                key: 'time',
                 label: c.time,
                 children: shown(selected.receivedAt),
               },
@@ -304,9 +262,7 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
   const [error, setError] = useState(false);
   const [revision, refresh] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const [deliveries, setDeliveries] = useState<readonly AdminDeliveryRecord[]>(
-    [],
-  );
+  const [deliveries, setDeliveries] = useState<readonly AdminDeliveryRecord[]>([]);
   const [deliveryError, setDeliveryError] = useState(false);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [deliveryRevision, retry] = useState(0);
@@ -372,9 +328,9 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
         pagination={false}
         scroll={{ x: 640 }}
         columns={[
-          { title: c.type, dataIndex: "type" },
-          { title: c.state, dataIndex: "state" },
-          { title: c.time, dataIndex: "createdAt" },
+          { title: c.type, dataIndex: 'type' },
+          { title: c.state, dataIndex: 'state' },
+          { title: c.time, dataIndex: 'createdAt' },
           {
             title: c.details,
             render: (_, row) => (
@@ -405,19 +361,12 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
           {c.more}
         </Button>
       )}
-      <Drawer
-        title={c.deliveryTitle}
-        size={720}
-        open={Boolean(selected)}
-        onClose={() => setSelected(null)}
-      >
+      <Drawer title={c.deliveryTitle} size={720} open={Boolean(selected)} onClose={() => setSelected(null)}>
         {deliveryError && (
           <Alert
             type="error"
             title={c.deliveryError}
-            action={
-              <Button onClick={() => retry((n) => n + 1)}>{c.refresh}</Button>
-            }
+            action={<Button onClick={() => retry((n) => n + 1)}>{c.refresh}</Button>}
           />
         )}
         <Table
@@ -426,10 +375,10 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
           rowKey="deliveryId"
           pagination={false}
           columns={[
-            { title: c.eventId, dataIndex: "deliveryId" },
-            { title: c.state, dataIndex: "state" },
-            { title: c.attempts, dataIndex: "attemptCount" },
-            { title: c.completed, dataIndex: "completedAt", render: shown },
+            { title: c.eventId, dataIndex: 'deliveryId' },
+            { title: c.state, dataIndex: 'state' },
+            { title: c.attempts, dataIndex: 'attemptCount' },
+            { title: c.completed, dataIndex: 'completedAt', render: shown },
           ]}
         />
         {deliveryCursor && (

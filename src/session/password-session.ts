@@ -1,7 +1,7 @@
 import type {
-  AgentModelList,
   AepSessionState,
   AepTokens,
+  AgentModelList,
   CurrentIdentity,
   EntitlementTokenResponse,
   LicenseActivationRequest,
@@ -14,11 +14,7 @@ export interface PasswordSessionClient {
   restoreSession(): Promise<AepTokens | null>;
   refreshSession(): Promise<AepTokens>;
   getMetadata(): Promise<ServiceMetadata>;
-  loginWithPassword(input: {
-    deploymentId: string;
-    username: string;
-    password: string;
-  }): Promise<AepTokens>;
+  loginWithPassword(input: { deploymentId: string; username: string; password: string }): Promise<AepTokens>;
   changePassword(currentPassword: string, newPassword: string): Promise<AepTokens>;
   getCurrentIdentity(): Promise<CurrentIdentity>;
   activateEnterpriseLicense?(input: LicenseActivationRequest): Promise<EntitlementTokenResponse>;
@@ -132,10 +128,7 @@ export class ZhiyuanPasswordSession {
     });
   }
 
-  changePassword(
-    currentPassword: string,
-    newPassword: string,
-  ): Promise<ZhiyuanSessionSnapshot> {
+  changePassword(currentPassword: string, newPassword: string): Promise<ZhiyuanSessionSnapshot> {
     if (!currentPassword || !newPassword) {
       return Promise.reject(new Error('Current and new passwords are required.'));
     }
@@ -174,10 +167,7 @@ export class ZhiyuanPasswordSession {
       if (this.#snapshot.status !== 'authenticated') {
         throw new Error('Zhiyuan enterprise session is not authenticated.');
       }
-      if (
-        this.#modelAccessExpiresAt <=
-        Date.now() + ZhiyuanPasswordSession.MODEL_TOKEN_REFRESH_WINDOW_MS
-      ) {
+      if (this.#modelAccessExpiresAt <= Date.now() + ZhiyuanPasswordSession.MODEL_TOKEN_REFRESH_WINDOW_MS) {
         this.#recordTokens(await this.#client.refreshSession());
       }
       return this.#client.getModelConnection();
@@ -226,7 +216,7 @@ export class ZhiyuanPasswordSession {
 
   async #publishChanged(): Promise<void> {
     await Promise.all(
-      [...this.#listeners].map(async listener => {
+      [...this.#listeners].map(async (listener) => {
         try {
           await listener();
         } catch {

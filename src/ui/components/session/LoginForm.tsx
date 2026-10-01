@@ -2,23 +2,19 @@ import { CircleAlert, LogIn } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
+import { type TranslationKey, translate } from '../../i18n.js';
 import { Alert, AlertDescription } from '../ui/alert.js';
 import { Button } from '../ui/button.js';
 import { Field, FieldError, FieldGroup, FieldLabel } from '../ui/field.js';
 import { Input } from '../ui/input.js';
 import { Spinner } from '../ui/spinner.js';
-import { translate, type TranslationKey } from '../../i18n.js';
 
 interface LoginFormProps {
   readonly language: EnterpriseRendererLanguage;
   readonly recoverable: boolean;
   readonly pending: boolean;
   readonly error: TranslationKey | null;
-  readonly onSubmit: (input: {
-    aepBaseUrl: string;
-    username: string;
-    password: string;
-  }) => Promise<void>;
+  readonly onSubmit: (input: { aepBaseUrl: string; username: string; password: string }) => Promise<void>;
 }
 
 export function LoginForm({ language, recoverable, pending, error, onSubmit }: LoginFormProps) {
@@ -68,7 +64,7 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
             id="aep-server-url"
             name="aepBaseUrl"
             value={aepBaseUrl}
-            onChange={event => setAepBaseUrl(event.target.value)}
+            onChange={(event) => setAepBaseUrl(event.target.value)}
             placeholder={translate(language, 'aepServerUrlPlaceholder')}
             autoComplete="url"
             inputMode="url"
@@ -87,7 +83,7 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
             id="username"
             name="username"
             value={username}
-            onChange={event => setUsername(event.target.value)}
+            onChange={(event) => setUsername(event.target.value)}
             placeholder={translate(language, 'usernamePlaceholder')}
             autoComplete="username"
             maxLength={320}
@@ -102,7 +98,7 @@ export function LoginForm({ language, recoverable, pending, error, onSubmit }: L
             name="password"
             type="password"
             value={password}
-            onChange={event => setPassword(event.target.value)}
+            onChange={(event) => setPassword(event.target.value)}
             placeholder={translate(language, 'passwordPlaceholder')}
             autoComplete="current-password"
             maxLength={1024}

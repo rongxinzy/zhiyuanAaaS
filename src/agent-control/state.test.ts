@@ -28,8 +28,14 @@ describe('Agent control state', () => {
     const state = new AgentControlState(databasePath);
     const database = new DatabaseSync(databasePath);
     expect(database.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
-    expect(database.prepare('SELECT value FROM agent_control_kv WHERE key=?').get('legacy')).toEqual({ value: 'preserved' });
-    expect(database.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get('idx_agent_control_inbox_pending')).toEqual({ name: 'idx_agent_control_inbox_pending' });
+    expect(database.prepare('SELECT value FROM agent_control_kv WHERE key=?').get('legacy')).toEqual({
+      value: 'preserved',
+    });
+    expect(
+      database
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?")
+        .get('idx_agent_control_inbox_pending'),
+    ).toEqual({ name: 'idx_agent_control_inbox_pending' });
     database.close();
     state.close();
   });
@@ -70,9 +76,7 @@ describe('Agent control state', () => {
     expect(second.listPendingInbox()).toEqual([
       expect.objectContaining({ deliveryId: 'delivery-1', state: InboxState.Running }),
     ]);
-    expect(second.listTelemetry()).toEqual([
-      { eventId: 'telemetry-1', type: 'skill.sync.completed' },
-    ]);
+    expect(second.listTelemetry()).toEqual([{ eventId: 'telemetry-1', type: 'skill.sync.completed' }]);
     expect(second.managedSkills()).toEqual([
       {
         skillId: 'demo',
@@ -95,7 +99,7 @@ describe('Agent control state', () => {
       state.setInboxState('succeeded', InboxState.Succeeded);
       state.setInboxState('terminal', InboxState.Terminal);
 
-      expect(state.listPendingInbox().map(item => item.deliveryId)).toEqual(['retry']);
+      expect(state.listPendingInbox().map((item) => item.deliveryId)).toEqual(['retry']);
     } finally {
       state.close();
     }
@@ -109,9 +113,7 @@ describe('Agent control state', () => {
       state.enqueueTelemetry({ eventId: 'retry', type: 'skill.sync.failed' });
       state.removeTelemetry(['accepted']);
 
-      expect(state.listTelemetry()).toEqual([
-        { eventId: 'retry', type: 'skill.sync.failed' },
-      ]);
+      expect(state.listTelemetry()).toEqual([{ eventId: 'retry', type: 'skill.sync.failed' }]);
     } finally {
       state.close();
     }

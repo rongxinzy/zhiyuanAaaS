@@ -7,10 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { loadZhiyuanEnterpriseConfig } from '../src/enterprise-config.js';
-import {
-  parseArguments,
-  renderEnterpriseConfig,
-} from './render-enterprise-config.mjs';
+import { parseArguments, renderEnterpriseConfig } from './render-enterprise-config.mjs';
 
 const scriptPath = fileURLToPath(new URL('./render-enterprise-config.mjs', import.meta.url));
 const temporaryDirectories = [];
@@ -39,30 +36,20 @@ describe('renderEnterpriseConfig', () => {
   });
 
   test('strips trailing slashes like the runtime loader', () => {
-    expect(renderEnterpriseConfig('https://aep.example.test/').aepBaseUrl).toBe(
-      'https://aep.example.test',
-    );
-    expect(renderEnterpriseConfig('http://172.18.5.188:30196/aep//').aepBaseUrl).toBe(
-      'http://172.18.5.188:30196/aep',
-    );
+    expect(renderEnterpriseConfig('https://aep.example.test/').aepBaseUrl).toBe('https://aep.example.test');
+    expect(renderEnterpriseConfig('http://172.18.5.188:30196/aep//').aepBaseUrl).toBe('http://172.18.5.188:30196/aep');
   });
 
   test('rejects unsupported protocols', () => {
-    expect(() => renderEnterpriseConfig('ftp://aep.example.test')).toThrow(
-      'protocol is not supported',
-    );
+    expect(() => renderEnterpriseConfig('ftp://aep.example.test')).toThrow('protocol is not supported');
   });
 
   test('rejects URLs with credentials, query, or fragment', () => {
     expect(() => renderEnterpriseConfig('https://user:secret@aep.example.test')).toThrow(
       'must not contain credentials',
     );
-    expect(() => renderEnterpriseConfig('https://aep.example.test/?tenant=1')).toThrow(
-      'must not contain credentials',
-    );
-    expect(() => renderEnterpriseConfig('https://aep.example.test/#fragment')).toThrow(
-      'must not contain credentials',
-    );
+    expect(() => renderEnterpriseConfig('https://aep.example.test/?tenant=1')).toThrow('must not contain credentials');
+    expect(() => renderEnterpriseConfig('https://aep.example.test/#fragment')).toThrow('must not contain credentials');
   });
 
   test('rejects empty and unparseable input', () => {
@@ -80,13 +67,10 @@ describe('parseArguments', () => {
         ZHIYUAN_AEP_BASE_URL: 'https://env.test',
       }).baseUrl,
     ).toBe('https://flag.test');
-    expect(
-      parseArguments(['https://positional.test'], { ZHIYUAN_AEP_BASE_URL: 'https://env.test' })
-        .baseUrl,
-    ).toBe('https://positional.test');
-    expect(parseArguments([], { ZHIYUAN_AEP_BASE_URL: 'https://env.test' }).baseUrl).toBe(
-      'https://env.test',
+    expect(parseArguments(['https://positional.test'], { ZHIYUAN_AEP_BASE_URL: 'https://env.test' }).baseUrl).toBe(
+      'https://positional.test',
     );
+    expect(parseArguments([], { ZHIYUAN_AEP_BASE_URL: 'https://env.test' }).baseUrl).toBe('https://env.test');
   });
 });
 

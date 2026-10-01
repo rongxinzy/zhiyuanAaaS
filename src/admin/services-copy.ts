@@ -87,7 +87,8 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   servicesTitle: 'Service status',
-  servicesDescription: 'Detection results by business impact; reachability does not imply invocation, processing, or write success.',
+  servicesDescription:
+    'Detection results by business impact; reachability does not imply invocation, processing, or write success.',
   servicesColService: 'Service',
   servicesColResult: 'Result',
   servicesColImpact: 'Business impact',
@@ -125,7 +126,8 @@ const en: Record<keyof typeof zh, string> = {
   memoryFactLastWrite: 'Last memory write',
   memoryLastWriteUnknown: 'Not collected',
   memoryNotProvisioned: 'No memory metrics for this employee (absent from the memory service); not reported as 0',
-  memorySessionsNote: 'Session count is not memory count; no edit switch until read/write and retention semantics after toggling are confirmed.',
+  memorySessionsNote:
+    'Session count is not memory count; no edit switch until read/write and retention semantics after toggling are confirmed.',
   memoryAccountsTitle: 'Platform accounts',
   memoryEmployeesTitle: 'Employee memory statistics',
   memoryColAccount: 'Account',
@@ -135,7 +137,8 @@ const en: Record<keyof typeof zh, string> = {
   memoryColSessions: 'Sessions',
   memoryColLastActive: 'Last activity',
   memoryNoAccounts: 'No accounts',
-  memoryServiceStatusHint: 'Connectivity and detection live under "System → Service status"; this view is business statistics.',
+  memoryServiceStatusHint:
+    'Connectivity and detection live under "System → Service status"; this view is business statistics.',
   knowledgeTitle: 'Knowledge bases',
   knowledgeDescription: 'Maintain content, audience, and digital-employee associations.',
   knowledgeColName: 'Knowledge base',
@@ -147,13 +150,16 @@ const en: Record<keyof typeof zh, string> = {
   knowledgeColActions: 'Actions',
   knowledgeNotCounted: 'Not counted yet',
   knowledgeScopeUnknown: 'Not provided',
-  knowledgeProcessStateHint: 'Document processing needs the knowledge system task API; reachability does not mean everything is processed.',
+  knowledgeProcessStateHint:
+    'Document processing needs the knowledge system task API; reachability does not mean everything is processed.',
   knowledgeManageDocs: 'Manage documents',
   knowledgeDocsNote:
-    'Opens the external knowledge system console: it may require a separate sign-in, and what you can view or edit there follows that system\'s own permissions; the link carries no secrets.',
-  knowledgeDocsInvalid: 'The service URL is empty or not an http/https link; no management entry is offered. Ask the deployment side to fix the knowledge service URL.',
+    "Opens the external knowledge system console: it may require a separate sign-in, and what you can view or edit there follows that system's own permissions; the link carries no secrets.",
+  knowledgeDocsInvalid:
+    'The service URL is empty or not an http/https link; no management entry is offered. Ask the deployment side to fix the knowledge service URL.',
   knowledgeUnconfiguredTitle: 'Knowledge service not configured',
-  knowledgeUnconfiguredHint: 'Ask an administrator to configure the knowledge service at deployment level; bases appear here afterwards.',
+  knowledgeUnconfiguredHint:
+    'Ask an administrator to configure the knowledge service at deployment level; bases appear here afterwards.',
   knowledgeUnhealthyTitle: 'Knowledge service unreachable',
   knowledgeRetry: 'Retry',
   knowledgeForbiddenTitle: 'No permission to view knowledge status',

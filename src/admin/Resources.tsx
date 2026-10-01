@@ -6,11 +6,11 @@
  *
  */
 
+import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
 import {
-  AppstoreOutlined,
   DeleteOutlined,
-  DownOutlined,
   DownloadOutlined,
+  DownOutlined,
   EditOutlined,
   InfoCircleOutlined,
   KeyOutlined,
@@ -19,8 +19,7 @@ import {
   SafetyCertificateOutlined,
   TeamOutlined,
   UploadOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+} from '@ant-design/icons';
 import {
   Alert,
   Badge,
@@ -35,59 +34,48 @@ import {
   Modal,
   Popconfirm,
   Select,
-  Skeleton,
   Space,
   Spin,
   Switch,
   Table,
+  type TableProps,
   Tabs,
-  Tree,
   Tag,
   Tooltip,
+  Tree,
   Typography,
-  Upload,
   theme,
-  type TableProps,
-} from "antd";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-
-import type {
-  AdminModel,
-  JsonObject,
-  ModelAssignment,
-  Permission,
-  PlatformUser,
-  Role,
-  Team,
-} from "@aep/sdk-node";
+  Upload,
+} from 'antd';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { runBatch } from './batch.js';
 import {
-  AdminConsoleClient,
-  AdminPermission,
-  AdminSubjectType,
-  hasAdminPermission,
+  type AdminConsoleClient,
   type AdminIdentity,
   type AdminIdentitySource,
+  AdminPermission,
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
   type AdminSkillVersion,
+  AdminSubjectType,
   type AdminUserSession,
-} from "./client.js";
-import { translate, type AdminLanguage, type AdminTranslationKey } from "./i18n.js";
-import { resourcesCopy as rc } from "./resources-copy.js";
-import { SessionClientCell, SessionClientDetail } from "./session-client.js";
-import { formatTimestamp } from "./format.js";
-import { runBatch } from "./batch.js";
-import { AdminNotificationKind, notify } from "./notifications.js";
+  hasAdminPermission,
+} from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
-import { ListQueryActions } from "./components/ListQueryActions.js";
+import { ListQueryActions } from './components/ListQueryActions.js';
+import { formatTimestamp } from './format.js';
+import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
+import { AdminNotificationKind, notify } from './notifications.js';
+import { resourcesCopy as rc } from './resources-copy.js';
+import { SessionClientCell, SessionClientDetail } from './session-client.js';
 
-const language: AdminLanguage = "zh";
+const language: AdminLanguage = 'zh';
 const t = (key: AdminTranslationKey) => translate(language, key);
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 1024;
-const RBAC_ID_PATTERN = /^[A-Za-z0-9._\-]{1,100}$/;
+const RBAC_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 
 type AdminUser = PlatformUser & { readonly email?: string | null };
 
@@ -96,7 +84,7 @@ interface UserListFilters {
   readonly query?: string;
   readonly teamId?: string;
   readonly roleId?: string;
-  readonly status?: "active" | "disabled";
+  readonly status?: 'active' | 'disabled';
 }
 
 /** 2026-09-30 LiXiang2019 团队/角色列表按名称筛选字段 */
@@ -105,14 +93,13 @@ interface NameListFilters {
 }
 
 export const AdminResourceTab = {
-  Users: "users",
-  Teams: "teams",
-  Roles: "roles",
-  Skills: "skills",
-  Assignments: "assignments",
+  Users: 'users',
+  Teams: 'teams',
+  Roles: 'roles',
+  Skills: 'skills',
+  Assignments: 'assignments',
 } as const;
-export type AdminResourceTab =
-  (typeof AdminResourceTab)[keyof typeof AdminResourceTab];
+export type AdminResourceTab = (typeof AdminResourceTab)[keyof typeof AdminResourceTab];
 
 interface ResourcesProps {
   readonly client: AdminConsoleClient;
@@ -120,7 +107,7 @@ interface ResourcesProps {
   readonly identity?: AdminIdentity | undefined;
 }
 
-const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false, align: "center" } as const;
+const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false, align: 'center' } as const;
 
 /** 2026-09-30 LiXiang2019 首屏加载占位资源，用于先渲染页面结构再等接口返回 */
 const EMPTY_RESOURCES: AdminResources = {
@@ -147,16 +134,19 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
     setError(false);
     try {
       const canQueryModels =
-        hasAdminPermission(identity, AdminPermission.ModelsRead) &&
-        typeof client.models === "function";
+        hasAdminPermission(identity, AdminPermission.ModelsRead) && typeof client.models === 'function';
       const [next, models] = await Promise.all([
         client.resources(identity),
-        canQueryModels
-          ? client.models(identity)
-          : Promise.resolve({ models: [], assignments: [] }),
+        canQueryModels ? client.models(identity) : Promise.resolve({ models: [], assignments: [] }),
       ]);
       setResources(next);
-      setModelResources({ ...models, available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign), skillsAvailable: hasAdminPermission(identity, AdminPermission.SkillsRead) && hasAdminPermission(identity, AdminPermission.SkillsAssign) });
+      setModelResources({
+        ...models,
+        available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign),
+        skillsAvailable:
+          hasAdminPermission(identity, AdminPermission.SkillsRead) &&
+          hasAdminPermission(identity, AdminPermission.SkillsAssign),
+      });
     } catch {
       setError(true);
     } finally {
@@ -167,7 +157,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
     void load();
   }, [load]);
   const reportError = useCallback(() => {
-    notify(AdminNotificationKind.Error, t("operationUnavailable"));
+    notify(AdminNotificationKind.Error, t('operationUnavailable'));
   }, []);
   const canMutate =
     tab === AdminResourceTab.Users
@@ -188,7 +178,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
         <Alert
           type="error"
           showIcon
-          title={t("resourcesLoadFailed")}
+          title={t('resourcesLoadFailed')}
           action={
             <Button size="small" onClick={() => void load()}>
               {rc.retry}
@@ -294,11 +284,11 @@ function SectionHeader({
   return (
     <div
       style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
         gap: 16,
-        flexWrap: "wrap",
+        flexWrap: 'wrap',
         marginBottom: 16,
       }}
     >
@@ -313,18 +303,12 @@ function SectionHeader({
   );
 }
 
-function RefreshButton({
-  loading,
-  onRefresh,
-}: {
-  readonly loading: boolean;
-  readonly onRefresh: () => Promise<void>;
-}) {
+function RefreshButton({ loading, onRefresh }: { readonly loading: boolean; readonly onRefresh: () => Promise<void> }) {
   return (
     <Button
       icon={<ReloadOutlined />}
-      aria-label={t("refresh")}
-      title={t("refresh")}
+      aria-label={t('refresh')}
+      title={t('refresh')}
       loading={loading}
       onClick={() => void onRefresh()}
     />
@@ -336,21 +320,10 @@ function UnknownText({ children }: { readonly children?: string }) {
 }
 
 function EnabledBadge({ enabled }: { readonly enabled: boolean }) {
-  return (
-    <Badge
-      status={enabled ? "success" : "default"}
-      text={enabled ? rc.statusEnabled : rc.statusDisabled}
-    />
-  );
+  return <Badge status={enabled ? 'success' : 'default'} text={enabled ? rc.statusEnabled : rc.statusDisabled} />;
 }
 
-function NameCell({
-  name,
-  detail,
-}: {
-  readonly name: string;
-  readonly detail: string;
-}) {
+function NameCell({ name, detail }: { readonly name: string; readonly detail: string }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div>{name}</div>
@@ -405,7 +378,7 @@ interface ModelResources {
 
 interface AccessRow {
   readonly key: string;
-  readonly resourceType: "skill" | "model";
+  readonly resourceType: 'skill' | 'model';
   readonly resourceId: string;
   readonly resourceName: string;
   readonly source: string;
@@ -414,13 +387,17 @@ interface AccessRow {
 }
 
 function skillEffective(skill: AdminSkill | undefined): boolean {
-  return Boolean(skill && skill.enabled && skill.state === "active");
+  return Boolean(skill?.enabled && skill.state === 'active');
 }
 
 function buildAccessRows(input: {
   readonly resources: AdminResources;
   readonly modelResources: ModelResources;
-  readonly subjects: readonly { readonly type: "user" | "role" | "team"; readonly id: string; readonly label: string }[];
+  readonly subjects: readonly {
+    readonly type: 'user' | 'role' | 'team';
+    readonly id: string;
+    readonly label: string;
+  }[];
   readonly accountActive: boolean;
 }): readonly AccessRow[] {
   const { resources, modelResources, subjects, accountActive } = input;
@@ -435,13 +412,13 @@ function buildAccessRows(input: {
     const effective = skill !== undefined && accountActive && skillEffective(skill);
     rows.push({
       key: `skill:${assignment.id}`,
-      resourceType: "skill",
+      resourceType: 'skill',
       resourceId: assignment.skillId,
       resourceName: skill?.name ?? assignment.skillId,
       source:
-        subject.type === "user"
+        subject.type === 'user'
           ? rc.accessDirect
-          : `${subject.type === "role" ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
+          : `${subject.type === 'role' ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
       effective,
       reason: effective
         ? null
@@ -459,13 +436,13 @@ function buildAccessRows(input: {
     const effective = model !== undefined && accountActive && Boolean(model.enabled);
     rows.push({
       key: `model:${assignment.id}`,
-      resourceType: "model",
+      resourceType: 'model',
       resourceId: assignment.resourceId,
       resourceName: model?.displayName ?? assignment.resourceId,
       source:
-        subject.type === "user"
+        subject.type === 'user'
           ? rc.accessDirect
-          : `${subject.type === "role" ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
+          : `${subject.type === 'role' ? rc.accessViaRole : rc.accessViaTeam}：${subject.label}`,
       effective,
       reason: effective
         ? null
@@ -482,17 +459,17 @@ function buildAccessRows(input: {
 function userSubjects(
   user: PlatformUser,
   resources: AdminResources,
-): readonly { readonly type: "user" | "role" | "team"; readonly id: string; readonly label: string }[] {
+): readonly { readonly type: 'user' | 'role' | 'team'; readonly id: string; readonly label: string }[] {
   const roles = new Map(resources.roles.map((role) => [role.id, role]));
   const teams = new Map(resources.teams.map((team) => [team.id, team]));
   return [
-    { type: "user" as const, id: user.id, label: user.displayName },
+    { type: 'user' as const, id: user.id, label: user.displayName },
     ...(user.roleIds ?? [])
       .filter((id) => roles.get(id)?.enabled)
-      .map((id) => ({ type: "role" as const, id, label: roles.get(id)?.name ?? id })),
+      .map((id) => ({ type: 'role' as const, id, label: roles.get(id)?.name ?? id })),
     ...(user.teamIds ?? [])
       .filter((id) => teams.get(id)?.enabled)
-      .map((id) => ({ type: "team" as const, id, label: teams.get(id)?.name ?? id })),
+      .map((id) => ({ type: 'team' as const, id, label: teams.get(id)?.name ?? id })),
   ];
 }
 
@@ -505,24 +482,24 @@ function AccessTable({
   readonly modelsAvailable?: boolean;
   readonly skillsAvailable?: boolean;
 }) {
-  const columns: TableProps<AccessRow>["columns"] = [
+  const columns: TableProps<AccessRow>['columns'] = [
     {
       title: rc.accessResource,
-      key: "resource",
+      key: 'resource',
       render: (_, row) => (
         <Space size={8}>
-          <Tag color={row.resourceType === "skill" ? "geekblue" : "purple"}>
-            {row.resourceType === "skill" ? rc.resourceTypeSkill : rc.resourceTypeModel}
+          <Tag color={row.resourceType === 'skill' ? 'geekblue' : 'purple'}>
+            {row.resourceType === 'skill' ? rc.resourceTypeSkill : rc.resourceTypeModel}
           </Tag>
           <span>{row.resourceName}</span>
         </Space>
       ),
     },
-    { title: rc.accessPermission, key: "permission", render: () => rc.accessUse },
-    { title: rc.accessSource, dataIndex: "source", key: "source" },
+    { title: rc.accessPermission, key: 'permission', render: () => rc.accessUse },
+    { title: rc.accessSource, dataIndex: 'source', key: 'source' },
     {
       title: rc.accessState,
-      key: "effective",
+      key: 'effective',
       render: (_, row) =>
         row.effective ? (
           <Badge status="success" text={rc.accessEffective} />
@@ -532,11 +509,9 @@ function AccessTable({
     },
   ];
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       {skillsAvailable ? null : <Alert type="info" showIcon title={rc.accessSkillsUnknown} />}
-      {modelsAvailable ? null : (
-        <Alert type="info" showIcon title={rc.accessModelsUnknown} />
-      )}
+      {modelsAvailable ? null : <Alert type="info" showIcon title={rc.accessModelsUnknown} />}
       {rows.length === 0 ? (
         <Empty
           description={modelsAvailable && skillsAvailable ? rc.accessEmpty : rc.accessStateUnknown}
@@ -552,8 +527,8 @@ function AccessTable({
 function accessCount(rows: readonly AccessRow[]): { readonly skills: number; readonly models: number } {
   const effective = rows.filter((row) => row.effective);
   return {
-    skills: new Set(effective.filter((row) => row.resourceType === "skill").map((row) => row.resourceId)).size,
-    models: new Set(effective.filter((row) => row.resourceType === "model").map((row) => row.resourceId)).size,
+    skills: new Set(effective.filter((row) => row.resourceType === 'skill').map((row) => row.resourceId)).size,
+    models: new Set(effective.filter((row) => row.resourceType === 'model').map((row) => row.resourceId)).size,
   };
 }
 
@@ -569,12 +544,8 @@ function ResourceAccessTags({
   const counts = accessCount(rows);
   return (
     <Space size={4} wrap>
-      <Tag>{skillsAvailable ? `${counts.skills} ${t("skills")}` : rc.accessSkillsUnknown}</Tag>
-      {modelsAvailable ? (
-        <Tag>{`${counts.models} ${t("models")}`}</Tag>
-      ) : (
-        <Tag>{rc.accessModelsUnknown}</Tag>
-      )}
+      <Tag>{skillsAvailable ? `${counts.skills} ${t('skills')}` : rc.accessSkillsUnknown}</Tag>
+      {modelsAvailable ? <Tag>{`${counts.models} ${t('models')}`}</Tag> : <Tag>{rc.accessModelsUnknown}</Tag>}
     </Space>
   );
 }
@@ -616,7 +587,7 @@ function UsersSection({
   const teamNames = useMemo(() => new Map(resources.teams.map((team) => [team.id, team.name])), [resources.teams]);
   const roleNames = useMemo(() => new Map(resources.roles.map((role) => [role.id, role.name])), [resources.roles]);
   const rows = useMemo(() => {
-    const normalized = (filters.query ?? "").trim().toLowerCase();
+    const normalized = (filters.query ?? '').trim().toLowerCase();
     return resources.users.filter((user) => {
       if (normalized && !`${user.displayName} ${user.username}`.toLowerCase().includes(normalized)) return false;
       if (filters.teamId && !(user.teamIds ?? []).includes(filters.teamId)) return false;
@@ -626,17 +597,17 @@ function UsersSection({
     });
   }, [resources.users, filters]);
 
-  const detailUser = detailUserId ? resources.users.find((user) => user.id === detailUserId) ?? null : null;
+  const detailUser = detailUserId ? (resources.users.find((user) => user.id === detailUserId) ?? null) : null;
 
-  const columns: TableProps<PlatformUser>["columns"] = [
+  const columns: TableProps<PlatformUser>['columns'] = [
     {
       title: rc.nameAndAccount,
-      key: "name",
+      key: 'name',
       render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
     },
     {
       title: rc.belongTeams,
-      key: "teams",
+      key: 'teams',
       render: (_, user) =>
         (user.teamIds ?? []).length > 0 ? (
           <Space size={4} wrap>
@@ -650,7 +621,7 @@ function UsersSection({
     },
     {
       title: rc.accountRoles,
-      key: "roles",
+      key: 'roles',
       render: (_, user) =>
         (user.roleIds ?? []).length > 0 ? (
           <Space size={4} wrap>
@@ -662,17 +633,17 @@ function UsersSection({
           <UnknownText>{rc.noRoles}</UnknownText>
         ),
     },
-    { title: rc.sourceColumn, key: "source", render: () => <UnknownText>{rc.sourceUnknown}</UnknownText> },
+    { title: rc.sourceColumn, key: 'source', render: () => <UnknownText>{rc.sourceUnknown}</UnknownText> },
     {
-      title: t("status"),
-      key: "status",
-      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+      title: t('status'),
+      key: 'status',
+      render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
     },
-    { title: rc.lastLogin, key: "lastLogin", render: () => <UnknownText /> },
+    { title: rc.lastLogin, key: 'lastLogin', render: () => <UnknownText /> },
     {
-      title: t("actions"),
-      key: "actions",
-      align: "right",
+      title: t('actions'),
+      key: 'actions',
+      align: 'right',
       render: (_, user) => (
         <Space size={0} wrap>
           <Button type="link" size="small" disabled={pending} onClick={() => setDetailUserId(user.id)}>
@@ -681,22 +652,22 @@ function UsersSection({
           {canWrite ? (
             <>
               <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: user.id })}>
-                {t("edit")}
+                {t('edit')}
               </Button>
               <Dropdown
                 menu={{
                   items: [
-                    { key: "reset", icon: <KeyOutlined />, label: t("resetPassword") },
-                    user.status === "active"
-                      ? { key: "disable", icon: <DeleteOutlined />, danger: true, label: t("disable") }
-                      : { key: "enable", icon: <PlusOutlined />, label: t("enable") },
+                    { key: 'reset', icon: <KeyOutlined />, label: t('resetPassword') },
+                    user.status === 'active'
+                      ? { key: 'disable', icon: <DeleteOutlined />, danger: true, label: t('disable') }
+                      : { key: 'enable', icon: <PlusOutlined />, label: t('enable') },
                   ],
                   onClick: ({ key }) => {
-                    if (key === "reset") setResetUser(user);
-                    else if (key === "disable") setDisableTarget(user);
-                    else if (key === "enable")
+                    if (key === 'reset') setResetUser(user);
+                    else if (key === 'disable') setDisableTarget(user);
+                    else if (key === 'enable')
                       void run(async () => {
-                        await client.updateUser(user.id, { status: "active" });
+                        await client.updateUser(user.id, { status: 'active' });
                       });
                   },
                 }}
@@ -719,7 +690,7 @@ function UsersSection({
           <>
             {canWrite ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
-                {t("addUser")}
+                {t('addUser')}
               </Button>
             ) : null}
             {canWrite ? (
@@ -730,7 +701,7 @@ function UsersSection({
                   setImportOpen(true);
                 }}
               >
-                {t("importUsers")}
+                {t('importUsers')}
               </Button>
             ) : null}
             <RefreshButton loading={loading} onRefresh={onRefresh} />
@@ -767,12 +738,12 @@ function UsersSection({
         </Form.Item>
         <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
           <Select
-            aria-label={t("status")}
+            aria-label={t('status')}
             placeholder={rc.allStatus}
             allowClear
             options={[
-              { value: "active", label: rc.statusEnabled },
-              { value: "disabled", label: rc.statusDisabled },
+              { value: 'active', label: rc.statusEnabled },
+              { value: 'disabled', label: rc.statusDisabled },
             ]}
             style={{ minWidth: 140 }}
           />
@@ -787,10 +758,10 @@ function UsersSection({
       </Form>
       {importResult ? (
         <Alert
-          type={importResult.rejected > 0 ? "warning" : "success"}
+          type={importResult.rejected > 0 ? 'warning' : 'success'}
           showIcon
           style={{ marginBottom: 16 }}
-          title={`${rc.importResultTitle}：${t("usersImported")}: ${importResult.created} / ${t("usersRejected")}: ${importResult.rejected}`}
+          title={`${rc.importResultTitle}：${t('usersImported')}: ${importResult.created} / ${t('usersRejected')}: ${importResult.rejected}`}
           description={
             importResult.errors.length > 0 ? (
               <div>
@@ -815,8 +786,8 @@ function UsersSection({
         loading={loading}
         locale={{
           emptyText: (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("usersEmpty")}>
-              <Typography.Text type="secondary">{t("usersEmptyHint")}</Typography.Text>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('usersEmpty')}>
+              <Typography.Text type="secondary">{t('usersEmptyHint')}</Typography.Text>
             </Empty>
           ),
         }}
@@ -839,7 +810,9 @@ function UsersSection({
         <UserEditorModal
           client={client}
           existingUsernames={resources.users.map((user) => user.username)}
-          user={editor.id ? (resources.users.find((user) => user.id === editor.id) as AdminUser | undefined) : undefined}
+          user={
+            editor.id ? (resources.users.find((user) => user.id === editor.id) as AdminUser | undefined) : undefined
+          }
           roles={resources.roles}
           teams={resources.teams}
           open
@@ -927,12 +900,16 @@ function UserDetailDrawer({
         resources,
         modelResources,
         subjects: userSubjects(user, resources),
-        accountActive: user.status === "active",
+        accountActive: user.status === 'active',
       }),
     [resources, modelResources, user],
   );
-  const userTeams = (user.teamIds ?? []).map((id) => teamNames.get(id)).filter((team): team is NonNullable<typeof team> => Boolean(team));
-  const userRoles = (user.roleIds ?? []).map((id) => roleNames.get(id)).filter((role): role is NonNullable<typeof role> => Boolean(role));
+  const userTeams = (user.teamIds ?? [])
+    .map((id) => teamNames.get(id))
+    .filter((team): team is NonNullable<typeof team> => Boolean(team));
+  const userRoles = (user.roleIds ?? [])
+    .map((id) => roleNames.get(id))
+    .filter((role): role is NonNullable<typeof role> => Boolean(role));
   return (
     <Drawer
       open={open}
@@ -942,38 +919,50 @@ function UserDetailDrawer({
         <Space size={8}>
           <span>{user.displayName}</span>
           <Tag>{user.username}</Tag>
-          <EnabledBadge enabled={user.status === "active"} />
+          <EnabledBadge enabled={user.status === 'active'} />
         </Space>
       }
     >
       <Tabs
         items={[
           {
-            key: "basic",
+            key: 'basic',
             label: rc.detailBasic,
             children: (
               <Descriptions
                 column={1}
                 size="small"
                 items={[
-                  { key: "name", label: t("displayName"), children: user.displayName },
-                  { key: "username", label: t("username"), children: user.username },
-                  { key: "email", label: t("email"), children: user.email ?? <UnknownText>{rc.emailUnset}</UnknownText> },
-                  { key: "type", label: rc.accountType, children: <UnknownText /> },
-                  { key: "source", label: rc.sourceColumn, children: <UnknownText>{rc.sourceUnknown}</UnknownText> },
-                  { key: "status", label: t("status"), children: <EnabledBadge enabled={user.status === "active"} /> },
-                  { key: "lastLogin", label: rc.lastLogin, children: <UnknownText /> },
-                  { key: "createdAt", label: rc.createdAtLabel, children: formatTimestamp(user.createdAt) || <UnknownText /> },
-                  { key: "updatedAt", label: rc.updatedAtLabel, children: formatTimestamp(user.updatedAt) || <UnknownText /> },
+                  { key: 'name', label: t('displayName'), children: user.displayName },
+                  { key: 'username', label: t('username'), children: user.username },
+                  {
+                    key: 'email',
+                    label: t('email'),
+                    children: user.email ?? <UnknownText>{rc.emailUnset}</UnknownText>,
+                  },
+                  { key: 'type', label: rc.accountType, children: <UnknownText /> },
+                  { key: 'source', label: rc.sourceColumn, children: <UnknownText>{rc.sourceUnknown}</UnknownText> },
+                  { key: 'status', label: t('status'), children: <EnabledBadge enabled={user.status === 'active'} /> },
+                  { key: 'lastLogin', label: rc.lastLogin, children: <UnknownText /> },
+                  {
+                    key: 'createdAt',
+                    label: rc.createdAtLabel,
+                    children: formatTimestamp(user.createdAt) || <UnknownText />,
+                  },
+                  {
+                    key: 'updatedAt',
+                    label: rc.updatedAtLabel,
+                    children: formatTimestamp(user.updatedAt) || <UnknownText />,
+                  },
                 ]}
               />
             ),
           },
           {
-            key: "org",
+            key: 'org',
             label: rc.detailOrg,
             children: (
-              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <div>
                   <Typography.Title level={5}>{rc.belongTeams}</Typography.Title>
                   {userTeams.length === 0 ? (
@@ -1011,22 +1000,26 @@ function UserDetailDrawer({
             ),
           },
           {
-            key: "access",
+            key: 'access',
             label: rc.detailAccess,
             children: (
-              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                 <Alert type="info" showIcon title={rc.accessNote} />
-                <AccessTable rows={accessRows} modelsAvailable={modelResources.available} skillsAvailable={modelResources.skillsAvailable} />
+                <AccessTable
+                  rows={accessRows}
+                  modelsAvailable={modelResources.available}
+                  skillsAvailable={modelResources.skillsAvailable}
+                />
               </Space>
             ),
           },
           {
-            key: "links",
+            key: 'links',
             label: rc.detailLinks,
             children: <UserAccountLinks client={client} identity={identity} userId={user.id} onError={onError} />,
           },
           {
-            key: "sessions",
+            key: 'sessions',
             label: rc.detailSessions,
             children: <UserLoginSessions client={client} identity={identity} userId={user.id} onError={onError} />,
           },
@@ -1075,7 +1068,7 @@ function AdjustOrgModal({
       await client.replaceUserRBAC(user.id, { roleIds: values.roles, teamIds: values.teams ? [values.teams] : [] });
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
       onError();
     } finally {
@@ -1087,8 +1080,8 @@ function AdjustOrgModal({
       open={open}
       width={600}
       title={rc.adjustOrgTitle}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -1106,28 +1099,31 @@ function AdjustOrgModal({
       >
         <Form.Item
           name="roles"
-          label={t("selectRoles")}
-          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
+          label={t('selectRoles')}
+          rules={[
+            {
+              validator: (_, value: string[]) =>
+                Array.isArray(value) && value.length > 0
+                  ? Promise.resolve()
+                  : Promise.reject(new Error(t('roleRequired'))),
+            },
+          ]}
         >
           <Select
             mode="multiple"
             allowClear
             showSearch
             optionFilterProp="label"
-            placeholder={t("selectRoles")}
+            placeholder={t('selectRoles')}
             options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
           />
         </Form.Item>
-        <Form.Item
-          name="teams"
-          label={t("selectTeams")}
-          rules={[{ required: true, message: t("teamRequired") }]}
-        >
+        <Form.Item name="teams" label={t('selectTeams')} rules={[{ required: true, message: t('teamRequired') }]}>
           <Select
             allowClear
             showSearch
             optionFilterProp="label"
-            placeholder={t("selectTeams")}
+            placeholder={t('selectTeams')}
             options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
           />
         </Form.Item>
@@ -1149,7 +1145,15 @@ function UserAccountLinks({
 }) {
   const canRead = hasAdminPermission(identity, AdminPermission.IdentityRead);
   const canWrite = hasAdminPermission(identity, AdminPermission.IdentityWrite);
-  const [rows, setRows] = useState<readonly { readonly key: string; readonly source: AdminIdentitySource; readonly externalId: string; readonly status: string }[] | null>(null);
+  const [rows, setRows] = useState<
+    | readonly {
+        readonly key: string;
+        readonly source: AdminIdentitySource;
+        readonly externalId: string;
+        readonly status: string;
+      }[]
+    | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const load = useCallback(async () => {
@@ -1193,7 +1197,8 @@ function UserAccountLinks({
         }
       />
     );
-  if (loading && !rows) return <Spin spinning size="large" style={{ display: "block", padding: 24, textAlign: "center", width: "100%" }} />;
+  if (loading && !rows)
+    return <Spin spinning size="large" style={{ display: 'block', padding: 24, textAlign: 'center', width: '100%' }} />;
   if (!rows || rows.length === 0)
     return (
       <Empty description={rc.linksEmpty}>
@@ -1207,25 +1212,25 @@ function UserAccountLinks({
       pagination={false}
       dataSource={[...rows]}
       columns={[
-        { title: rc.linkSource, key: "source", render: (_, row) => row.source.displayName },
-        { title: rc.linkExternal, dataIndex: "externalId", key: "externalId" },
+        { title: rc.linkSource, key: 'source', render: (_, row) => row.source.displayName },
+        { title: rc.linkExternal, dataIndex: 'externalId', key: 'externalId' },
         {
-          title: t("status"),
-          key: "status",
-          render: (_, row) => <EnabledBadge enabled={row.status === "active"} />,
+          title: t('status'),
+          key: 'status',
+          render: (_, row) => <EnabledBadge enabled={row.status === 'active'} />,
         },
         ...(canWrite
           ? [
               {
-                title: t("actions"),
-                key: "actions",
-                align: "right" as const,
+                title: t('actions'),
+                key: 'actions',
+                align: 'right' as const,
                 render: (_: unknown, row: (typeof rows)[number]) => (
                   <Popconfirm
                     title={rc.unlinkTitle}
                     description={rc.unlinkImpact}
                     okText={rc.confirmUnlink}
-                    cancelText={t("cancel")}
+                    cancelText={t('cancel')}
                     okButtonProps={{ danger: true }}
                     onConfirm={() =>
                       void (async () => {
@@ -1295,9 +1300,10 @@ function UserLoginSessions({
         }
       />
     );
-  if (loading && !sessions) return <Spin spinning size="large" style={{ display: "block", padding: 24, textAlign: "center", width: "100%" }} />;
+  if (loading && !sessions)
+    return <Spin spinning size="large" style={{ display: 'block', padding: 24, textAlign: 'center', width: '100%' }} />;
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Typography.Text type="secondary">{rc.sessionsNote}</Typography.Text>
       {!sessions || sessions.length === 0 ? (
         <Empty description={rc.sessionsEmpty}>
@@ -1312,30 +1318,30 @@ function UserLoginSessions({
           columns={[
             {
               title: rc.sessionClient,
-              key: "client",
+              key: 'client',
               render: (_, session) => (
                 <SessionClientCell client={session.client} current={session.sessionId === client.sessionId} />
               ),
             },
             {
               title: rc.sessionLastActive,
-              key: "lastSeenAt",
+              key: 'lastSeenAt',
               render: (_, session) => formatTimestamp(session.lastSeenAt) || <UnknownText />,
             },
             {
-              title: t("status"),
-              key: "status",
+              title: t('status'),
+              key: 'status',
               render: (_, session) => (
                 <Badge
-                  status={session.revokedAt ? "default" : "success"}
+                  status={session.revokedAt ? 'default' : 'success'}
                   text={session.revokedAt ? rc.sessionStateRevoked : rc.sessionStateActive}
                 />
               ),
             },
             {
-              title: t("actions"),
-              key: "actions",
-              align: "right",
+              title: t('actions'),
+              key: 'actions',
+              align: 'right',
               render: (_, session) => (
                 <Space size={0}>
                   <Button type="link" size="small" onClick={() => setDetail(session)}>
@@ -1343,7 +1349,7 @@ function UserLoginSessions({
                   </Button>
                   {canRevoke && !session.revokedAt ? (
                     session.sessionId === client.sessionId ? (
-                      <Tooltip title={t("sessionCurrentRevokeDisabled")}>
+                      <Tooltip title={t('sessionCurrentRevokeDisabled')}>
                         <span>
                           <Button type="link" size="small" danger disabled>
                             {rc.revokeLogin}
@@ -1355,7 +1361,7 @@ function UserLoginSessions({
                         title={rc.revokeLoginTitle}
                         description={rc.revokeLoginImpact}
                         okText={rc.confirmRevokeLogin}
-                        cancelText={t("cancel")}
+                        cancelText={t('cancel')}
                         okButtonProps={{ danger: true }}
                         onConfirm={() =>
                           void run(async () => {
@@ -1390,14 +1396,26 @@ function UserLoginSessions({
             column={1}
             size="small"
             items={[
-              { key: "sessionId", label: t("sessionId"), children: <Typography.Text copyable>{detail.sessionId}</Typography.Text> },
-              { key: "userId", label: t("userId"), children: detail.userId },
-              { key: "client", label: rc.sessionClient, children: <SessionClientDetail client={detail.client} /> },
-              { key: "topic", label: rc.sessionSubject, children: detail.topic },
-              { key: "createdAt", label: rc.sessionCreatedAt, children: formatTimestamp(detail.createdAt) || <UnknownText /> },
-              { key: "lastSeenAt", label: rc.sessionLastActive, children: formatTimestamp(detail.lastSeenAt) || <UnknownText /> },
+              {
+                key: 'sessionId',
+                label: t('sessionId'),
+                children: <Typography.Text copyable>{detail.sessionId}</Typography.Text>,
+              },
+              { key: 'userId', label: t('userId'), children: detail.userId },
+              { key: 'client', label: rc.sessionClient, children: <SessionClientDetail client={detail.client} /> },
+              { key: 'topic', label: rc.sessionSubject, children: detail.topic },
+              {
+                key: 'createdAt',
+                label: rc.sessionCreatedAt,
+                children: formatTimestamp(detail.createdAt) || <UnknownText />,
+              },
+              {
+                key: 'lastSeenAt',
+                label: rc.sessionLastActive,
+                children: formatTimestamp(detail.lastSeenAt) || <UnknownText />,
+              },
               ...(detail.revokedAt
-                ? [{ key: "revokedAt", label: rc.sessionRevokedAt, children: formatTimestamp(detail.revokedAt) }]
+                ? [{ key: 'revokedAt', label: rc.sessionRevokedAt, children: formatTimestamp(detail.revokedAt) }]
                 : []),
             ]}
           />
@@ -1445,7 +1463,7 @@ function DisableUserModal({
   const disable = async () => {
     setPending(true);
     try {
-      await client.updateUser(user.id, { status: "disabled" });
+      await client.updateUser(user.id, { status: 'disabled' });
       let revoked = 0;
       let failed = 0;
       if (canRevokeSessions) {
@@ -1477,11 +1495,11 @@ function DisableUserModal({
       open={open}
       title={result ? rc.disableResultTitle : `${rc.disableUserTitle}：${user.displayName}`}
       okText={result ? rc.ok : rc.confirmDisableUser}
-      cancelText={t("cancel")}
+      cancelText={t('cancel')}
       okButtonProps={result ? {} : { danger: true }}
       confirmLoading={pending}
       mask={{ closable: false }}
-      cancelButtonProps={result ? { style: { display: "none" } } : {}}
+      cancelButtonProps={result ? { style: { display: 'none' } } : {}}
       onOk={() => {
         if (result) onOpenChange(false);
         else void disable();
@@ -1491,16 +1509,18 @@ function DisableUserModal({
       }}
     >
       {result ? (
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Alert type="success" showIcon title={rc.disableAccountDone} />
           <Alert
-            type={result.failed !== 0 ? "warning" : "info"}
+            type={result.failed !== 0 ? 'warning' : 'info'}
             showIcon
             title={
               result.failed > 0
                 ? rc.disableSessionsFailed
                 : result.failed < 0
-                  ? (canRevokeSessions ? rc.disableSessionsUnknown : rc.disableSessionsNoPermission)
+                  ? canRevokeSessions
+                    ? rc.disableSessionsUnknown
+                    : rc.disableSessionsNoPermission
                   : result.revoked > 0
                     ? `${rc.disableSessionsRevoked}：${result.revoked}`
                     : rc.disableSessionsNone
@@ -1509,7 +1529,7 @@ function DisableUserModal({
           <Typography.Text type="secondary">{rc.disableBoundaryNote}</Typography.Text>
         </Space>
       ) : (
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Alert type="warning" showIcon title={rc.disableUserImpact} />
           {isSelf ? <Alert type="error" showIcon title={rc.disableSelfWarning} /> : null}
           <Descriptions
@@ -1517,7 +1537,7 @@ function DisableUserModal({
             size="small"
             items={[
               {
-                key: "sessions",
+                key: 'sessions',
                 label: rc.disableUserActiveSessions,
                 children:
                   activeSessions !== null ? (
@@ -1574,9 +1594,9 @@ function UserEditorModal({
     teams: string;
     requirePasswordChange?: boolean;
   }) => {
-    const normalizedUsername = (values.username ?? "").trim();
+    const normalizedUsername = (values.username ?? '').trim();
     if (!user && existingUsernames.includes(normalizedUsername)) {
-      form.setFields([{ name: "username", errors: [t("usernameAlreadyExists")] }]);
+      form.setFields([{ name: 'username', errors: [t('usernameAlreadyExists')] }]);
       return;
     }
     setPending(true);
@@ -1592,7 +1612,7 @@ function UserEditorModal({
           username: normalizedUsername,
           displayName: values.displayName.trim(),
           email: values.email?.trim() || null,
-          temporaryPassword: values.temporaryPassword ?? "",
+          temporaryPassword: values.temporaryPassword ?? '',
           roleIds: values.roles,
           teamIds: values.teams ? [values.teams] : [],
           requirePasswordChange: values.requirePasswordChange !== false,
@@ -1600,7 +1620,7 @@ function UserEditorModal({
       }
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t(editing ? "userUpdated" : "userCreated"));
+      notify(AdminNotificationKind.Success, t(editing ? 'userUpdated' : 'userCreated'));
     } catch {
       onError();
     } finally {
@@ -1611,9 +1631,9 @@ function UserEditorModal({
     <Modal
       open={open}
       width={600}
-      title={t(editing ? "userEditTitle" : "userEditorTitle")}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      title={t(editing ? 'userEditTitle' : 'userEditorTitle')}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -1622,7 +1642,7 @@ function UserEditorModal({
       }}
     >
       <Typography.Paragraph type="secondary">
-        {t(editing ? "userEditDescription" : "userEditorDescription")}
+        {t(editing ? 'userEditDescription' : 'userEditorDescription')}
       </Typography.Paragraph>
       <Form
         form={form}
@@ -1630,10 +1650,10 @@ function UserEditorModal({
         preserve={false}
         autoComplete="off"
         initialValues={{
-          username: user?.username ?? "",
-          displayName: user?.displayName ?? "",
-          email: user?.email ?? "",
-          temporaryPassword: "",
+          username: user?.username ?? '',
+          displayName: user?.displayName ?? '',
+          email: user?.email ?? '',
+          temporaryPassword: '',
           roles: [...(user?.roleIds ?? [])],
           teams: user?.teamIds?.[0] ?? undefined,
           requirePasswordChange: true,
@@ -1643,70 +1663,73 @@ function UserEditorModal({
         {editing ? null : (
           <Form.Item
             name="username"
-            label={t("username")}
-            rules={[{ required: true, whitespace: true, message: t("usernameRequired") }]}
+            label={t('username')}
+            rules={[{ required: true, whitespace: true, message: t('usernameRequired') }]}
           >
             <Input autoComplete="off" disabled={pending} />
           </Form.Item>
         )}
         <Form.Item
           name="displayName"
-          label={t("displayName")}
-          rules={[{ required: true, whitespace: true, message: t("displayNameRequired") }]}
+          label={t('displayName')}
+          rules={[{ required: true, whitespace: true, message: t('displayNameRequired') }]}
         >
           <Input autoComplete="off" disabled={pending} />
         </Form.Item>
-        <Form.Item name="email" label={t("email")} rules={[{ type: "email", message: t("email") }]}>
-          <Input autoComplete="off" placeholder={t("emailPlaceholder")} disabled={pending} />
+        <Form.Item name="email" label={t('email')} rules={[{ type: 'email', message: t('email') }]}>
+          <Input autoComplete="off" placeholder={t('emailPlaceholder')} disabled={pending} />
         </Form.Item>
         {editing ? null : (
           <Form.Item
             name="temporaryPassword"
-            label={t("temporaryPassword")}
-            extra={t("passwordPolicy")}
+            label={t('temporaryPassword')}
+            extra={t('passwordPolicy')}
             rules={[
-              { required: true, message: t("passwordPolicy") },
-              { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t("passwordPolicy") },
+              { required: true, message: t('passwordPolicy') },
+              { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
             ]}
           >
             <Input.Password
               autoComplete="new-password"
-              placeholder={t("temporaryPasswordPlaceholder")}
+              placeholder={t('temporaryPasswordPlaceholder')}
               disabled={pending}
             />
           </Form.Item>
         )}
         <Form.Item
           name="roles"
-          label={t("selectRoles")}
-          rules={[{ validator: (_, value: string[]) => (Array.isArray(value) && value.length > 0 ? Promise.resolve() : Promise.reject(new Error(t("roleRequired")))) }]}
+          label={t('selectRoles')}
+          rules={[
+            {
+              validator: (_, value: string[]) =>
+                Array.isArray(value) && value.length > 0
+                  ? Promise.resolve()
+                  : Promise.reject(new Error(t('roleRequired'))),
+            },
+          ]}
         >
           <Select
             mode="multiple"
             allowClear
             showSearch
             optionFilterProp="label"
-            placeholder={t("selectRoles")}
+            placeholder={t('selectRoles')}
             disabled={pending}
             options={roles.map((role) => ({ value: role.id, label: `${role.name}（${role.id}）` }))}
           />
         </Form.Item>
-        <Form.Item
-          name="teams"
-          label={t("selectTeams")}
-          rules={[{ required: true, message: t("teamRequired") }]}
-        >
+        <Form.Item name="teams" label={t('selectTeams')} rules={[{ required: true, message: t('teamRequired') }]}>
           <Select
             allowClear
             showSearch
             optionFilterProp="label"
-            placeholder={t("selectTeams")}
+            placeholder={t('selectTeams')}
             disabled={pending}
             options={teams.map((team) => ({ value: team.id, label: `${team.name}（${team.id}）` }))}
           />
         </Form.Item>
         {editing ? null : (
-          <Form.Item name="requirePasswordChange" label={t("requirePasswordChange")} valuePropName="checked">
+          <Form.Item name="requirePasswordChange" label={t('requirePasswordChange')} valuePropName="checked">
             <Switch disabled={pending} />
           </Form.Item>
         )}
@@ -1750,9 +1773,9 @@ function PasswordResetModal({
   return (
     <Modal
       open={open}
-      title={t("resetPasswordTitle")}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      title={t('resetPasswordTitle')}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -1761,32 +1784,32 @@ function PasswordResetModal({
       }}
     >
       <Typography.Paragraph type="secondary">
-        {t("resetPasswordDescription")} <Typography.Text strong>{user.displayName}</Typography.Text>
+        {t('resetPasswordDescription')} <Typography.Text strong>{user.displayName}</Typography.Text>
       </Typography.Paragraph>
       <Form
         form={form}
         layout="vertical"
         preserve={false}
         autoComplete="off"
-        initialValues={{ temporaryPassword: "", requirePasswordChange: true }}
+        initialValues={{ temporaryPassword: '', requirePasswordChange: true }}
         onFinish={submit}
       >
         <Form.Item
           name="temporaryPassword"
-          label={t("temporaryPassword")}
-          extra={t("passwordPolicy")}
+          label={t('temporaryPassword')}
+          extra={t('passwordPolicy')}
           rules={[
-            { required: true, message: t("passwordPolicy") },
-            { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t("passwordPolicy") },
+            { required: true, message: t('passwordPolicy') },
+            { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
           ]}
         >
           <Input.Password
             autoComplete="new-password"
-            placeholder={t("temporaryPasswordPlaceholder")}
+            placeholder={t('temporaryPasswordPlaceholder')}
             disabled={pending}
           />
         </Form.Item>
-        <Form.Item name="requirePasswordChange" label={t("requirePasswordChange")} valuePropName="checked">
+        <Form.Item name="requirePasswordChange" label={t('requirePasswordChange')} valuePropName="checked">
           <Switch disabled={pending} />
         </Form.Item>
       </Form>
@@ -1832,14 +1855,14 @@ function UserImportModal({
     setFailed(false);
     try {
       const name = file.name.toLowerCase();
-      const payload = name.endsWith(".json")
+      const payload = name.endsWith('.json')
         ? normalizeUserImport(JSON.parse(await file.text()))
         : normalizeUserImport(parseUserImportTable(await file.text()));
       const result = await client.importUsers(payload);
-      const created = typeof result.created === "number" ? result.created : 0;
-      const rejected = typeof result.rejected === "number" ? result.rejected : 0;
+      const created = typeof result.created === 'number' ? result.created : 0;
+      const rejected = typeof result.rejected === 'number' ? result.rejected : 0;
       const errors = Array.isArray(result.errors)
-        ? result.errors.filter((item): item is string => typeof item === "string").slice(0, 20)
+        ? result.errors.filter((item): item is string => typeof item === 'string').slice(0, 20)
         : [];
       onOpenChange(false);
       await onChanged({ created, rejected, errors });
@@ -1854,9 +1877,9 @@ function UserImportModal({
     <Modal
       open={open}
       width={700}
-      title={t("importUsersTitle")}
-      okText={t("importUsers")}
-      cancelText={t("cancel")}
+      title={t('importUsersTitle')}
+      okText={t('importUsers')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => void submit()}
@@ -1864,24 +1887,27 @@ function UserImportModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0, flex: 1 }}>{t("importUsersDescription")}</Typography.Paragraph>
-       
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0, flex: 1 }}>
+          {t('importUsersDescription')}
+        </Typography.Paragraph>
       </div>
-      {failed ? (
-        <Alert type="error" showIcon title={t("importUsersFailed")} style={{ marginBottom: 16 }} />
-      ) : null}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "24px 0px" }}>
+      {failed ? <Alert type="error" showIcon title={t('importUsersFailed')} style={{ marginBottom: 16 }} /> : null}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '24px 0px' }}>
         <Upload
           accept=".csv,.xlsx,.xls,.json,application/json,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           maxCount={1}
           disabled={pending}
-          style={{ textAlign: "center" }}
-          fileList={
-            file
-              ? [{ uid: "users-import", name: file.name, size: file.size }]
-              : []
-          }
+          style={{ textAlign: 'center' }}
+          fileList={file ? [{ uid: 'users-import', name: file.name, size: file.size }] : []}
           beforeUpload={(candidate) => {
             setFile(candidate);
             setFailed(false);
@@ -1890,15 +1916,21 @@ function UserImportModal({
           onChange={({ fileList }) => setFile(fileList[0]?.originFileObj ?? null)}
           onRemove={() => setFile(null)}
         >
-          <Button icon={<UploadOutlined />} aria-label={t("importUsersFile")} disabled={pending}>
-            {t("importUsersFile")}
+          <Button icon={<UploadOutlined />} aria-label={t('importUsersFile')} disabled={pending}>
+            {t('importUsersFile')}
           </Button>
         </Upload>
       </div>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
-        {t("importUsersHint")}
-        <Button type="link" icon={<DownloadOutlined />} disabled={pending} onClick={downloadUserImportTemplate} style={{ flexShrink: 0, paddingInlineEnd: 0 }}>
-          {t("downloadTemplate")}
+        {t('importUsersHint')}
+        <Button
+          type="link"
+          icon={<DownloadOutlined />}
+          disabled={pending}
+          onClick={downloadUserImportTemplate}
+          style={{ flexShrink: 0, paddingInlineEnd: 0 }}
+        >
+          {t('downloadTemplate')}
         </Button>
       </Typography.Paragraph>
     </Modal>
@@ -1907,33 +1939,42 @@ function UserImportModal({
 
 function downloadUserImportTemplate(): void {
   const columns: ReadonlyArray<{ readonly label: string; readonly required: boolean }> = [
-    { label: "用户名", required: true },
-    { label: "显示名称", required: true },
-    { label: "邮箱", required: false },
-    { label: "临时密码", required: true },
-    { label: "选择角色", required: true },
-    { label: "选择团队", required: true },
-    { label: "首次登录要求修改密码", required: false },
+    { label: '用户名', required: true },
+    { label: '显示名称', required: true },
+    { label: '邮箱', required: false },
+    { label: '临时密码', required: true },
+    { label: '选择角色', required: true },
+    { label: '选择团队', required: true },
+    { label: '首次登录要求修改密码', required: false },
   ];
-  const example = ["zhangsan", "张三", "zhangsan@example.com", "TempPass123456", "role-admin;role-viewer", "team-a", "是"];
-  const escapeHtml = (cell: string): string =>
-    cell.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const example = [
+    'zhangsan',
+    '张三',
+    'zhangsan@example.com',
+    'TempPass123456',
+    'role-admin;role-viewer',
+    'team-a',
+    '是',
+  ];
+  const escapeHtml = (cell: string): string => cell.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const headerCells = columns
     .map((column) =>
       column.required
         ? `<th style="color:#ff0000;border:1px solid #000000;padding:4px 8px;">${escapeHtml(`*${column.label}`)}</th>`
         : `<th style="border:1px solid #000000;padding:4px 8px;">${escapeHtml(column.label)}</th>`,
     )
-    .join("");
-  const exampleCells = example.map((cell) => `<td style="border:1px solid #000000;padding:4px 8px;">${escapeHtml(cell)}</td>`).join("");
+    .join('');
+  const exampleCells = example
+    .map((cell) => `<td style="border:1px solid #000000;padding:4px 8px;">${escapeHtml(cell)}</td>`)
+    .join('');
   const html =
     `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">` +
     `<head><meta charset="UTF-8" /><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;"><tr>${headerCells}</tr><tr>${exampleCells}</tr></table></body></html>`;
-  const blob = new Blob([`﻿${html}`], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const blob = new Blob([`﻿${html}`], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
+  const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = "用户导入模板.xls";
+  anchor.download = '用户导入模板.xls';
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -1941,21 +1982,24 @@ function downloadUserImportTemplate(): void {
 }
 
 function splitIds(cell: string): string[] {
-  return cell.split(/[;；，,、\s|]+/).map((part) => part.trim()).filter(Boolean);
+  return cell
+    .split(/[;；，,、\s|]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function parseUserImportTable(text: string): { readonly users: readonly Record<string, unknown>[] } {
-  const content = text.replace(/^\uFEFF/, "");
+  const content = text.replace(/^\uFEFF/, '');
   if (/<table[\s>]/i.test(content)) {
-    const doc = new DOMParser().parseFromString(content, "text/html");
-    const rows = [...doc.querySelectorAll("table tr")].map((row) =>
-      [...row.querySelectorAll("th, td")].map((cell) => cell.textContent?.trim() ?? ""),
+    const doc = new DOMParser().parseFromString(content, 'text/html');
+    const rows = [...doc.querySelectorAll('table tr')].map((row) =>
+      [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim() ?? ''),
     );
-    return buildUserImportUsers(rows.filter((row) => row.some((cell) => cell !== "")));
+    return buildUserImportUsers(rows.filter((row) => row.some((cell) => cell !== '')));
   }
   const rows: string[][] = [];
   let current: string[] = [];
-  let field = "";
+  let field = '';
   let quoted = false;
   for (let i = 0; i < content.length; i += 1) {
     const char = content[i];
@@ -1967,25 +2011,27 @@ function parseUserImportTable(text: string): { readonly users: readonly Record<s
         } else quoted = false;
       } else field += char;
     } else if (char === '"') quoted = true;
-    else if (char === ",") {
+    else if (char === ',') {
       current.push(field);
-      field = "";
-    } else if (char === "\n" || char === "\r") {
-      if (char === "\r" && content[i + 1] === "\n") i += 1;
+      field = '';
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && content[i + 1] === '\n') i += 1;
       current.push(field);
-      field = "";
-      if (current.some((cell) => cell.trim() !== "")) rows.push(current);
+      field = '';
+      if (current.some((cell) => cell.trim() !== '')) rows.push(current);
       current = [];
     } else field += char;
   }
   current.push(field);
-  if (current.some((cell) => cell.trim() !== "")) rows.push(current);
+  if (current.some((cell) => cell.trim() !== '')) rows.push(current);
   return buildUserImportUsers(rows);
 }
 
 function buildUserImportUsers(rows: readonly string[][]): { readonly users: readonly Record<string, unknown>[] } {
-  if (rows.length < 2) throw new Error("Empty user import table.");
-  const header = rows[0].map((cell) => cell.trim().replace(/^[*＊]+\s*/, ""));
+  if (rows.length < 2) throw new Error('Empty user import table.');
+  const [headerRow] = rows;
+  if (!headerRow) throw new Error('Empty user import table.');
+  const header = headerRow.map((cell) => cell.trim().replace(/^[*＊]+\s*/, ''));
   const indexOf = (...names: readonly string[]): number => {
     for (const name of names) {
       const index = header.indexOf(name);
@@ -1993,19 +2039,19 @@ function buildUserImportUsers(rows: readonly string[][]): { readonly users: read
     }
     return -1;
   };
-  const usernameIdx = indexOf("用户名", "username");
-  const displayNameIdx = indexOf("显示名称", "displayName");
-  const emailIdx = indexOf("邮箱", "email");
-  const passwordIdx = indexOf("临时密码", "temporaryPassword");
-  const rolesIdx = indexOf("选择角色", "角色ID", "角色", "roleIds", "roles");
-  const teamsIdx = indexOf("选择团队", "团队ID", "团队", "teamIds", "teams");
-  const requireChangeIdx = indexOf("首次登录要求修改密码", "requirePasswordChange");
+  const usernameIdx = indexOf('用户名', 'username');
+  const displayNameIdx = indexOf('显示名称', 'displayName');
+  const emailIdx = indexOf('邮箱', 'email');
+  const passwordIdx = indexOf('临时密码', 'temporaryPassword');
+  const rolesIdx = indexOf('选择角色', '角色ID', '角色', 'roleIds', 'roles');
+  const teamsIdx = indexOf('选择团队', '团队ID', '团队', 'teamIds', 'teams');
+  const requireChangeIdx = indexOf('首次登录要求修改密码', 'requirePasswordChange');
   if (usernameIdx < 0 || displayNameIdx < 0 || passwordIdx < 0 || rolesIdx < 0 || teamsIdx < 0)
-    throw new Error("Invalid user import header.");
+    throw new Error('Invalid user import header.');
   return {
     users: rows.slice(1).map((cells, rowIndex) => {
-      const at = (index: number): string => (cells[index] ?? "").trim();
-      const requireText = requireChangeIdx >= 0 ? at(requireChangeIdx).trim().toLowerCase() : "";
+      const at = (index: number): string => (cells[index] ?? '').trim();
+      const requireText = requireChangeIdx >= 0 ? at(requireChangeIdx).trim().toLowerCase() : '';
       return {
         externalRowId: `row-${rowIndex + 2}`,
         username: at(usernameIdx),
@@ -2014,40 +2060,36 @@ function buildUserImportUsers(rows: readonly string[][]): { readonly users: read
         temporaryPassword: at(passwordIdx),
         roleIds: splitIds(at(rolesIdx)),
         teamIds: splitIds(at(teamsIdx)),
-        requirePasswordChange: ["", "是", "yes", "true", "1", "y"].includes(requireText),
+        requirePasswordChange: ['', '是', 'yes', 'true', '1', 'y'].includes(requireText),
       };
     }),
   };
 }
 
-function normalizeUserImport(value: unknown): JsonObject {  const users = Array.isArray(value)
+function normalizeUserImport(value: unknown): JsonObject {
+  const users = Array.isArray(value)
     ? value
-    : value &&
-        typeof value === "object" &&
-        Array.isArray((value as { readonly users?: unknown }).users)
+    : value && typeof value === 'object' && Array.isArray((value as { readonly users?: unknown }).users)
       ? (value as { readonly users: unknown[] }).users
       : null;
-  if (!users || users.length === 0 || users.length > 1000)
-    throw new Error("Invalid user import row count.");
+  if (!users || users.length === 0 || users.length > 1000) throw new Error('Invalid user import row count.');
   for (const row of users) {
-    if (!row || typeof row !== "object") throw new Error("Invalid user import row.");
+    if (!row || typeof row !== 'object') throw new Error('Invalid user import row.');
     const item = row as Record<string, unknown>;
-    for (const key of ["externalRowId", "username", "displayName", "temporaryPassword"]) {
-      if (typeof item[key] !== "string" || item[key].trim() === "")
-        throw new Error(`Missing ${key}.`);
+    for (const key of ['externalRowId', 'username', 'displayName', 'temporaryPassword']) {
+      if (typeof item[key] !== 'string' || item[key].trim() === '') throw new Error(`Missing ${key}.`);
     }
-    if ((item.temporaryPassword as string).length < 12)
-      throw new Error("Temporary password is too short.");
-    for (const key of ["teamIds", "roleIds"]) {
+    if ((item.temporaryPassword as string).length < 12) throw new Error('Temporary password is too short.');
+    for (const key of ['teamIds', 'roleIds']) {
       if (
         item[key] !== undefined &&
-        (!Array.isArray(item[key]) || item[key].some((entry) => typeof entry !== "string"))
+        (!Array.isArray(item[key]) || item[key].some((entry) => typeof entry !== 'string'))
       )
         throw new Error(`Invalid ${key}.`);
       if (!Array.isArray(item[key]) || item[key].length === 0) throw new Error(`Missing ${key}.`);
     }
-    if (item.requirePasswordChange !== undefined && typeof item.requirePasswordChange !== "boolean")
-      throw new Error("Invalid requirePasswordChange.");
+    if (item.requirePasswordChange !== undefined && typeof item.requirePasswordChange !== 'boolean')
+      throw new Error('Invalid requirePasswordChange.');
   }
   return { users } as JsonObject;
 }
@@ -2075,31 +2117,36 @@ function TeamsSection({
   const { pending, run } = useMutationRunner(onChanged, onError);
   const [teamOwners, setTeamOwners] = useState<Record<string, string>>(() => loadTeamOwners());
   const rows = useMemo(() => {
-    const normalized = (filters.query ?? "").trim().toLowerCase();
+    const normalized = (filters.query ?? '').trim().toLowerCase();
     return normalized
       ? resources.teams.filter((team) => `${team.name} ${team.id}`.toLowerCase().includes(normalized))
       : resources.teams;
   }, [resources.teams, filters]);
-  const detailTeam = detailTeamId ? resources.teams.find((team) => team.id === detailTeamId) ?? null : null;
-  const columns: TableProps<Team>["columns"] = [
+  const detailTeam = detailTeamId ? (resources.teams.find((team) => team.id === detailTeamId) ?? null) : null;
+  const columns: TableProps<Team>['columns'] = [
     {
-      title: t("team"),
-      key: "team",
+      title: t('team'),
+      key: 'team',
       render: (_, team) => (
         <Space size={8}>
           <NameCell name={team.name} detail={team.id} />
-          {team.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+          {team.builtIn ? <Tag color="blue">{t('builtIn')}</Tag> : null}
         </Space>
       ),
     },
-    { title: t("teamOwner"), key: "owner", width: 120, render: (_, team) => {
-      const owner = (teamOwners[team.id] ?? "").trim();
-      return owner ? owner : <UnknownText>{t("teamOwnerUnset")}</UnknownText>;
-    } },
-    { title: rc.memberCount, dataIndex: "memberCount", key: "memberCount", width: 100 },
     {
-      title: t("teamEmployees"),
-      key: "employees",
+      title: t('teamOwner'),
+      key: 'owner',
+      width: 120,
+      render: (_, team) => {
+        const owner = (teamOwners[team.id] ?? '').trim();
+        return owner ? owner : <UnknownText>{t('teamOwnerUnset')}</UnknownText>;
+      },
+    },
+    { title: rc.memberCount, dataIndex: 'memberCount', key: 'memberCount', width: 100 },
+    {
+      title: t('teamEmployees'),
+      key: 'employees',
       width: 140,
       render: (_, team) => (
         <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setEmployeesTeamId(team.id)}>
@@ -2108,8 +2155,8 @@ function TeamsSection({
       ),
     },
     {
-      title: t("effectiveResources"),
-      key: "access",
+      title: t('effectiveResources'),
+      key: 'access',
       render: (_, team) => (
         <ResourceAccessTags
           modelsAvailable={modelResources.available}
@@ -2117,17 +2164,17 @@ function TeamsSection({
           rows={buildAccessRows({
             resources,
             modelResources,
-            subjects: [{ type: "team", id: team.id, label: team.name }],
+            subjects: [{ type: 'team', id: team.id, label: team.name }],
             accountActive: team.enabled,
           })}
         />
       ),
     },
-    { title: t("status"), key: "status", render: (_, team) => <EnabledBadge enabled={team.enabled} /> },
+    { title: t('status'), key: 'status', render: (_, team) => <EnabledBadge enabled={team.enabled} /> },
     {
-      title: t("actions"),
-      key: "actions",
-      align: "right",
+      title: t('actions'),
+      key: 'actions',
+      align: 'right',
       render: (_, team) => (
         <Space size={0} wrap>
           <Button type="link" size="small" disabled={pending} onClick={() => setDetailTeamId(team.id)}>
@@ -2136,7 +2183,7 @@ function TeamsSection({
           {canWrite ? (
             <>
               <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: team.id })}>
-                {t("edit")}
+                {t('edit')}
               </Button>
               <Button
                 type="link"
@@ -2148,13 +2195,13 @@ function TeamsSection({
                   })
                 }
               >
-                {team.enabled ? t("disable") : t("enable")}
+                {team.enabled ? t('disable') : t('enable')}
               </Button>
               <Popconfirm
-                title={t("deleteTeamTitle")}
-                description={t("deleteResourceDescription")}
-                okText={t("delete")}
-                cancelText={t("cancel")}
+                title={t('deleteTeamTitle')}
+                description={t('deleteResourceDescription')}
+                okText={t('delete')}
+                cancelText={t('cancel')}
                 okButtonProps={{ danger: true }}
                 disabled={team.builtIn}
                 onConfirm={() =>
@@ -2164,7 +2211,7 @@ function TeamsSection({
                 }
               >
                 <Button type="link" size="small" danger disabled={pending || team.builtIn}>
-                  {t("delete")}
+                  {t('delete')}
                 </Button>
               </Popconfirm>
             </>
@@ -2182,7 +2229,7 @@ function TeamsSection({
           <>
             {canWrite ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
-                {t("addTeam")}
+                {t('addTeam')}
               </Button>
             ) : null}
             <RefreshButton loading={loading} onRefresh={onRefresh} />
@@ -2216,8 +2263,8 @@ function TeamsSection({
         loading={loading}
         locale={{
           emptyText: (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("teamsEmpty")}>
-              <Typography.Text type="secondary">{t("teamsEmptyHint")}</Typography.Text>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('teamsEmpty')}>
+              <Typography.Text type="secondary">{t('teamsEmptyHint')}</Typography.Text>
             </Empty>
           ),
         }}
@@ -2293,7 +2340,7 @@ function TeamDetailDrawer({
   const accessRows = buildAccessRows({
     resources,
     modelResources,
-    subjects: [{ type: "team", id: team.id, label: team.name }],
+    subjects: [{ type: 'team', id: team.id, label: team.name }],
     accountActive: team.enabled,
   });
   return (
@@ -2310,7 +2357,7 @@ function TeamDetailDrawer({
       extra={
         canWrite ? (
           <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
-            {t("edit")}
+            {t('edit')}
           </Button>
         ) : null
       }
@@ -2318,7 +2365,7 @@ function TeamDetailDrawer({
       <Tabs
         items={[
           {
-            key: "members",
+            key: 'members',
             label: `${rc.teamMembersTab}（${team.memberCount}）`,
             children:
               members.length === 0 ? (
@@ -2331,13 +2378,13 @@ function TeamDetailDrawer({
                   dataSource={[...members]}
                   columns={[
                     {
-                      title: t("user"),
-                      key: "user",
+                      title: t('user'),
+                      key: 'user',
                       render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
                     },
                     {
                       title: rc.accountRoles,
-                      key: "roles",
+                      key: 'roles',
                       render: (_, user) =>
                         (user.roleIds ?? []).length > 0 ? (
                           <Space size={4} wrap>
@@ -2350,21 +2397,25 @@ function TeamDetailDrawer({
                         ),
                     },
                     {
-                      title: t("status"),
-                      key: "status",
-                      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+                      title: t('status'),
+                      key: 'status',
+                      render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
                     },
                   ]}
                 />
               ),
           },
           {
-            key: "access",
+            key: 'access',
             label: rc.teamAccessTab,
             children: (
-              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                 <Typography.Text type="secondary">{rc.teamAccessNote}</Typography.Text>
-                <AccessTable rows={accessRows} modelsAvailable={modelResources.available} skillsAvailable={modelResources.skillsAvailable} />
+                <AccessTable
+                  rows={accessRows}
+                  modelsAvailable={modelResources.available}
+                  skillsAvailable={modelResources.skillsAvailable}
+                />
               </Space>
             ),
           },
@@ -2376,12 +2427,14 @@ function TeamDetailDrawer({
 
 function loadTeamOwners(): Record<string, string> {
   try {
-    const raw = localStorage.getItem("admin-team-owners");
+    const raw = localStorage.getItem('admin-team-owners');
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      ),
     );
   } catch {
     return {};
@@ -2390,7 +2443,7 @@ function loadTeamOwners(): Record<string, string> {
 
 function saveTeamOwners(owners: Record<string, string>): void {
   try {
-    localStorage.setItem("admin-team-owners", JSON.stringify(owners));
+    localStorage.setItem('admin-team-owners', JSON.stringify(owners));
   } catch {
     // 忽略本地存储失败，不阻塞主流程
   }
@@ -2416,15 +2469,15 @@ function TeamEmployeesModal({
     <Modal
       open={open}
       width={600}
-      title={team ? `${t("teamEmployeesTitle")}：${team.name}` : t("teamEmployeesTitle")}
-      cancelText={t("close")}
-      okButtonProps={{ style: { display: "none" } }}
+      title={team ? `${t('teamEmployeesTitle')}：${team.name}` : t('teamEmployeesTitle')}
+      cancelText={t('close')}
+      okButtonProps={{ style: { display: 'none' } }}
       onCancel={onClose}
       onOk={onClose}
     >
-      <Typography.Paragraph type="secondary">{t("teamEmployeesEmptyHint")}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('teamEmployeesEmptyHint')}</Typography.Paragraph>
       {members.length === 0 ? (
-        <Empty description={t("teamEmployeesEmpty")} />
+        <Empty description={t('teamEmployeesEmpty')} />
       ) : (
         <Table<PlatformUser>
           rowKey="id"
@@ -2432,8 +2485,17 @@ function TeamEmployeesModal({
           pagination={PAGINATION}
           dataSource={[...members]}
           columns={[
-            { title: t("displayName"), key: "name", render: (_, user) => <NameCell name={user.displayName} detail={user.username} /> },
-            { title: t("status"), key: "status", width: 100, render: (_, user) => <EnabledBadge enabled={user.status === "active"} /> },
+            {
+              title: t('displayName'),
+              key: 'name',
+              render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+            },
+            {
+              title: t('status'),
+              key: 'status',
+              width: 100,
+              render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
+            },
           ]}
         />
       )}
@@ -2454,7 +2516,6 @@ function TeamEditorModal({
 }: {
   readonly client: AdminConsoleClient;
   readonly existingTeams: readonly Team[];
-  readonly users: readonly PlatformUser[];
   readonly team: Team | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -2466,33 +2527,39 @@ function TeamEditorModal({
   const editing = Boolean(team);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean; ownerId?: string }) => {
-    const normalizedId = (values.id ?? "").trim();
+  const submit = async (values: {
+    id?: string;
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    ownerId?: string;
+  }) => {
+    const normalizedId = (values.id ?? '').trim();
     if (!team && existingTeams.some((item) => item.id === normalizedId)) {
-      form.setFields([{ name: "id", errors: [t("teamIdAlreadyExists")] }]);
+      form.setFields([{ name: 'id', errors: [t('teamIdAlreadyExists')] }]);
       return;
     }
     setPending(true);
     try {
-      let teamId = team?.id ?? "";
+      let teamId = team?.id ?? '';
       if (team)
         await client.updateTeam(team.id, {
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
         });
       else {
         const created = await client.createTeam({
           id: normalizedId,
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
         });
         teamId = created.id;
       }
       onOwnerChange(teamId, values.ownerId || undefined);
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
       onError();
     } finally {
@@ -2503,9 +2570,9 @@ function TeamEditorModal({
     <Modal
       open={open}
       width={600}
-      title={t(editing ? "teamEditTitle" : "teamEditorTitle")}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      title={t(editing ? 'teamEditTitle' : 'teamEditorTitle')}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -2513,15 +2580,15 @@ function TeamEditorModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <Typography.Paragraph type="secondary">{t("teamEditorDescription")}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('teamEditorDescription')}</Typography.Paragraph>
       <Form
         form={form}
         layout="vertical"
         preserve={false}
         initialValues={{
-          id: team?.id ?? "",
-          name: team?.name ?? "",
-          description: team?.description ?? "",
+          id: team?.id ?? '',
+          name: team?.name ?? '',
+          description: team?.description ?? '',
           enabled: team?.enabled !== false,
           ownerId: initialOwnerId ?? undefined,
         }}
@@ -2530,28 +2597,32 @@ function TeamEditorModal({
         {editing ? null : (
           <Form.Item
             name="id"
-            label={t("teamId")}
-            extra={t("rbacIdHint")}
+            label={t('teamId')}
+            extra={t('rbacIdHint')}
             rules={[
-              { required: true, whitespace: true, message: t("fieldRequired") },
-              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+              { required: true, whitespace: true, message: t('fieldRequired') },
+              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
             ]}
           >
             <Input disabled={pending} />
           </Form.Item>
         )}
-        <Form.Item name="name" label={t("teamName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+        <Form.Item
+          name="name"
+          label={t('teamName')}
+          rules={[{ required: true, whitespace: true, message: t('nameRequired') }]}
+        >
           <Input disabled={pending} />
         </Form.Item>
-        <Form.Item name="ownerId" label={t("teamOwner")}>
-          <Input autoComplete="off" placeholder={t("teamOwnerPlaceholder")} disabled={pending} />
+        <Form.Item name="ownerId" label={t('teamOwner')}>
+          <Input autoComplete="off" placeholder={t('teamOwnerPlaceholder')} disabled={pending} />
         </Form.Item>
-        <Form.Item name="description" label={t("description")}>
-          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        <Form.Item name="description" label={t('description')}>
+          <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
         </Form.Item>
         {editing ? (
-          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
-            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          <Form.Item name="enabled" label={t('status')} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t('enabled')} unCheckedChildren={t('disabled')} />
           </Form.Item>
         ) : null}
       </Form>
@@ -2581,34 +2652,34 @@ function RolesSection({
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const { pending, run } = useMutationRunner(onChanged, onError);
   const rows = useMemo(() => {
-    const normalized = (filters.query ?? "").trim().toLowerCase();
+    const normalized = (filters.query ?? '').trim().toLowerCase();
     return normalized
       ? resources.roles.filter((role) => `${role.name} ${role.id}`.toLowerCase().includes(normalized))
       : resources.roles;
   }, [resources.roles, filters]);
-  const detailRole = detailRoleId ? resources.roles.find((role) => role.id === detailRoleId) ?? null : null;
+  const detailRole = detailRoleId ? (resources.roles.find((role) => role.id === detailRoleId) ?? null) : null;
   const memberCount = (roleId: string) =>
     resources.users.filter((user) => (user.roleIds ?? []).includes(roleId)).length;
-  const columns: TableProps<Role>["columns"] = [
+  const columns: TableProps<Role>['columns'] = [
     {
-      title: t("role"),
-      key: "role",
+      title: t('role'),
+      key: 'role',
       render: (_, role) => (
         <Space size={8}>
           <NameCell name={role.name} detail={role.id} />
-          {role.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+          {role.builtIn ? <Tag color="blue">{t('builtIn')}</Tag> : null}
         </Space>
       ),
     },
     {
       title: rc.permissionCount,
-      key: "permissions",
+      key: 'permissions',
       width: 100,
       render: (_, role) => role.permissions.length,
     },
     {
       title: rc.roleMemberCount,
-      key: "members",
+      key: 'members',
       width: 100,
       render: (_, role) => (
         <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setMembersRoleId(role.id)}>
@@ -2617,8 +2688,8 @@ function RolesSection({
       ),
     },
     {
-      title: t("effectiveResources"),
-      key: "access",
+      title: t('effectiveResources'),
+      key: 'access',
       render: (_, role) => (
         <ResourceAccessTags
           modelsAvailable={modelResources.available}
@@ -2626,17 +2697,17 @@ function RolesSection({
           rows={buildAccessRows({
             resources,
             modelResources,
-            subjects: [{ type: "role", id: role.id, label: role.name }],
+            subjects: [{ type: 'role', id: role.id, label: role.name }],
             accountActive: role.enabled,
           })}
         />
       ),
     },
-    { title: t("status"), key: "status", render: (_, role) => <EnabledBadge enabled={role.enabled} /> },
+    { title: t('status'), key: 'status', render: (_, role) => <EnabledBadge enabled={role.enabled} /> },
     {
-      title: t("actions"),
-      key: "actions",
-      align: "right",
+      title: t('actions'),
+      key: 'actions',
+      align: 'right',
       render: (_, role) => (
         <Space size={0} wrap>
           <Button type="link" size="small" disabled={pending} onClick={() => setDetailRoleId(role.id)}>
@@ -2645,7 +2716,7 @@ function RolesSection({
           {canWrite ? (
             <>
               <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: role.id })}>
-                {t("edit")}
+                {t('edit')}
               </Button>
               <Button
                 type="link"
@@ -2657,13 +2728,13 @@ function RolesSection({
                   })
                 }
               >
-                {role.enabled ? t("disable") : t("enable")}
+                {role.enabled ? t('disable') : t('enable')}
               </Button>
               <Popconfirm
-                title={t("deleteRoleTitle")}
-                description={t("deleteResourceDescription")}
-                okText={t("delete")}
-                cancelText={t("cancel")}
+                title={t('deleteRoleTitle')}
+                description={t('deleteResourceDescription')}
+                okText={t('delete')}
+                cancelText={t('cancel')}
                 okButtonProps={{ danger: true }}
                 disabled={role.builtIn}
                 onConfirm={() =>
@@ -2673,7 +2744,7 @@ function RolesSection({
                 }
               >
                 <Button type="link" size="small" danger disabled={pending || role.builtIn}>
-                  {t("delete")}
+                  {t('delete')}
                 </Button>
               </Popconfirm>
             </>
@@ -2691,7 +2762,7 @@ function RolesSection({
           <>
             {canWrite ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
-                {t("addRole")}
+                {t('addRole')}
               </Button>
             ) : null}
             <RefreshButton loading={loading} onRefresh={onRefresh} />
@@ -2725,8 +2796,8 @@ function RolesSection({
         loading={loading}
         locale={{
           emptyText: (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("rolesEmpty")}>
-              <Typography.Text type="secondary">{t("rolesEmptyHint")}</Typography.Text>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('rolesEmpty')}>
+              <Typography.Text type="secondary">{t('rolesEmptyHint')}</Typography.Text>
             </Empty>
           ),
         }}
@@ -2787,8 +2858,8 @@ function RoleMembersModal({
       open={open}
       width={600}
       title={role ? `${rc.roleSubjectsTab}：${role.name}` : rc.roleSubjectsTab}
-      cancelText={t("close")}
-      okButtonProps={{ style: { display: "none" } }}
+      cancelText={t('close')}
+      okButtonProps={{ style: { display: 'none' } }}
       onCancel={onClose}
       onOk={onClose}
     >
@@ -2801,8 +2872,17 @@ function RoleMembersModal({
           pagination={PAGINATION}
           dataSource={[...members]}
           columns={[
-            { title: t("user"), key: "user", render: (_, user) => <NameCell name={user.displayName} detail={user.username} /> },
-            { title: t("status"), key: "status", width: 100, render: (_, user) => <EnabledBadge enabled={user.status === "active"} /> },
+            {
+              title: t('user'),
+              key: 'user',
+              render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+            },
+            {
+              title: t('status'),
+              key: 'status',
+              width: 100,
+              render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
+            },
           ]}
         />
       )}
@@ -2825,7 +2905,9 @@ function RoleDetailDrawer({
   readonly onClose: () => void;
   readonly onEdit: () => void;
 }) {
-  const permissionDescriptions = new Map(resources.permissions.map((permission) => [permission.id, permission.description]));
+  const permissionDescriptions = new Map(
+    resources.permissions.map((permission) => [permission.id, permission.description]),
+  );
   const subjects = resources.users.filter((user) => (user.roleIds ?? []).includes(role.id));
   return (
     <Drawer
@@ -2835,14 +2917,14 @@ function RoleDetailDrawer({
       title={
         <Space size={8}>
           <span>{role.name}</span>
-          {role.builtIn ? <Tag color="blue">{t("builtIn")}</Tag> : null}
+          {role.builtIn ? <Tag color="blue">{t('builtIn')}</Tag> : null}
           <EnabledBadge enabled={role.enabled} />
         </Space>
       }
       extra={
         canWrite ? (
           <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
-            {t("edit")}
+            {t('edit')}
           </Button>
         ) : null
       }
@@ -2850,7 +2932,7 @@ function RoleDetailDrawer({
       <Tabs
         items={[
           {
-            key: "permissions",
+            key: 'permissions',
             label: `${rc.rolePermissionsTab}（${role.permissions.length}）`,
             children:
               role.permissions.length === 0 ? (
@@ -2862,10 +2944,10 @@ function RoleDetailDrawer({
                   pagination={PAGINATION}
                   dataSource={role.permissions.map((id) => ({ id, description: permissionDescriptions.get(id) }))}
                   columns={[
-                    { title: t("permissions"), dataIndex: "id", key: "id" },
+                    { title: t('permissions'), dataIndex: 'id', key: 'id' },
                     {
-                      title: t("description"),
-                      key: "description",
+                      title: t('description'),
+                      key: 'description',
                       render: (_, item) =>
                         item.description ? (
                           <Typography.Text type="secondary">{item.description}</Typography.Text>
@@ -2878,7 +2960,7 @@ function RoleDetailDrawer({
               ),
           },
           {
-            key: "subjects",
+            key: 'subjects',
             label: `${rc.roleSubjectsTab}（${subjects.length}）`,
             children:
               subjects.length === 0 ? (
@@ -2891,14 +2973,14 @@ function RoleDetailDrawer({
                   dataSource={[...subjects]}
                   columns={[
                     {
-                      title: t("user"),
-                      key: "user",
+                      title: t('user'),
+                      key: 'user',
                       render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
                     },
                     {
-                      title: t("status"),
-                      key: "status",
-                      render: (_, user) => <EnabledBadge enabled={user.status === "active"} />,
+                      title: t('status'),
+                      key: 'status',
+                      render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
                     },
                   ]}
                 />
@@ -2939,9 +3021,9 @@ function RoleEditorModal({
     permissions?: string[];
     enabled?: boolean;
   }) => {
-    const normalizedId = (values.id ?? "").trim();
+    const normalizedId = (values.id ?? '').trim();
     if (!role && existingRoleIds.includes(normalizedId)) {
-      form.setFields([{ name: "id", errors: [t("roleIdAlreadyExists")] }]);
+      form.setFields([{ name: 'id', errors: [t('roleIdAlreadyExists')] }]);
       return;
     }
     setPending(true);
@@ -2949,7 +3031,7 @@ function RoleEditorModal({
       if (role)
         await client.updateRole(role.id, {
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
           permissions: values.permissions ?? [],
         });
@@ -2957,12 +3039,12 @@ function RoleEditorModal({
         await client.createRole({
           id: normalizedId,
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
           permissions: values.permissions ?? [],
         });
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
       onError();
     } finally {
@@ -2973,9 +3055,9 @@ function RoleEditorModal({
     <Modal
       open={open}
       width={1000}
-      title={t(editing ? "roleEditTitle" : "roleEditorTitle")}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      title={t(editing ? 'roleEditTitle' : 'roleEditorTitle')}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -2983,15 +3065,15 @@ function RoleEditorModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <Typography.Paragraph type="secondary">{t("roleEditorDescription")}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('roleEditorDescription')}</Typography.Paragraph>
       <Form
         form={form}
         layout="vertical"
         preserve={false}
         initialValues={{
-          id: role?.id ?? "",
-          name: role?.name ?? "",
-          description: role?.description ?? "",
+          id: role?.id ?? '',
+          name: role?.name ?? '',
+          description: role?.description ?? '',
           permissions: [...(role?.permissions ?? [])],
           enabled: role?.enabled !== false,
         }}
@@ -3000,29 +3082,37 @@ function RoleEditorModal({
         {editing ? null : (
           <Form.Item
             name="id"
-            label={t("roleId")}
-            extra={t("rbacIdHint")}
+            label={t('roleId')}
+            extra={t('rbacIdHint')}
             rules={[
-              { required: true, whitespace: true, message: t("fieldRequired") },
-              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+              { required: true, whitespace: true, message: t('fieldRequired') },
+              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
             ]}
           >
             <Input disabled={pending} />
           </Form.Item>
         )}
-        <Form.Item name="name" label={t("roleName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+        <Form.Item
+          name="name"
+          label={t('roleName')}
+          rules={[{ required: true, whitespace: true, message: t('nameRequired') }]}
+        >
           <Input disabled={pending} />
         </Form.Item>
-        <Form.Item name="description" label={t("description")}>
-          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        <Form.Item name="description" label={t('description')}>
+          <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
         </Form.Item>
         <Form.Item
           name="permissions"
-          label={t("permissions")}
+          label={t('permissions')}
           valuePropName="checkedKeys"
           trigger="onCheck"
           getValueFromEvent={(checked: readonly string[] | { readonly checked: readonly string[] }) =>
-            (Array.isArray(checked) ? checked : checked.checked) as string[]
+            // Array.isArray cannot narrow a readonly array, so cast the
+            // object branch instead.
+            (Array.isArray(checked)
+              ? checked
+              : (checked as { readonly checked: readonly string[] }).checked) as string[]
           }
         >
           <Tree
@@ -3035,8 +3125,8 @@ function RoleEditorModal({
           />
         </Form.Item>
         {editing ? (
-          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
-            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          <Form.Item name="enabled" label={t('status')} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t('enabled')} unCheckedChildren={t('disabled')} />
           </Form.Item>
         ) : null}
       </Form>
@@ -3058,8 +3148,8 @@ function SkillsSection({
   onChanged,
   onError,
 }: SectionProps & { readonly canAssign: boolean }) {
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const [grant, setGrant] = useState<{ readonly skillId?: string } | null>(null);
@@ -3068,48 +3158,44 @@ function SkillsSection({
   const rows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return resources.skills.filter((skill) => {
-      if (statusFilter === "enabled" && !skill.enabled) return false;
-      if (statusFilter === "disabled" && skill.enabled) return false;
+      if (statusFilter === 'enabled' && !skill.enabled) return false;
+      if (statusFilter === 'disabled' && skill.enabled) return false;
       if (!normalized) return true;
-      return `${skill.name} ${skill.description ?? ""} ${skill.id}`.toLowerCase().includes(normalized);
+      return `${skill.name} ${skill.description ?? ''} ${skill.id}`.toLowerCase().includes(normalized);
     });
   }, [resources.skills, query, statusFilter]);
-  const detailSkill = detailSkillId ? resources.skills.find((skill) => skill.id === detailSkillId) ?? null : null;
+  const detailSkill = detailSkillId ? (resources.skills.find((skill) => skill.id === detailSkillId) ?? null) : null;
   const assignmentsFor = (skillId: string) => resources.assignments.filter((item) => item.skillId === skillId);
   const latestPublished = (skill: AdminSkill) =>
-    skill.versions.find((version) => version.state === "published")?.version ?? null;
+    skill.versions.find((version) => version.state === 'published')?.version ?? null;
   const blockedRefs = blockedSkill ? assignmentsFor(blockedSkill.id) : [];
-  const columns: TableProps<AdminSkill>["columns"] = [
+  const columns: TableProps<AdminSkill>['columns'] = [
     {
-      title: t("skill"),
-      key: "skill",
+      title: t('skill'),
+      key: 'skill',
       render: (_, skill) => <NameCell name={skill.name} detail={skill.description || skill.id} />,
     },
     {
       title: rc.skillPurpose,
-      key: "purpose",
+      key: 'purpose',
       render: (_, skill) =>
-        skill.description ? (
-          <Typography.Text type="secondary">{skill.description}</Typography.Text>
-        ) : (
-          <UnknownText />
-        ),
+        skill.description ? <Typography.Text type="secondary">{skill.description}</Typography.Text> : <UnknownText />,
     },
     {
-      title: t("versions"),
-      key: "versions",
+      title: t('versions'),
+      key: 'versions',
       width: 120,
       render: (_, skill) => {
         const published = latestPublished(skill);
         return published ? <Tag color="green">{published}</Tag> : <UnknownText>—</UnknownText>;
       },
     },
-    { title: t("status"), key: "status", render: (_, skill) => <EnabledBadge enabled={skill.enabled} /> },
-    { title: rc.skillEmployees, key: "employees", render: () => <UnknownText>{rc.notCollected}</UnknownText> },
+    { title: t('status'), key: 'status', render: (_, skill) => <EnabledBadge enabled={skill.enabled} /> },
+    { title: rc.skillEmployees, key: 'employees', render: () => <UnknownText>{rc.notCollected}</UnknownText> },
     {
-      title: t("actions"),
-      key: "actions",
-      align: "right",
+      title: t('actions'),
+      key: 'actions',
+      align: 'right',
       render: (_, skill) => {
         const refs = assignmentsFor(skill.id);
         return (
@@ -3120,7 +3206,7 @@ function SkillsSection({
             {canWrite ? (
               <>
                 <Button type="link" size="small" disabled={pending} onClick={() => setEditor({ id: skill.id })}>
-                  {t("edit")}
+                  {t('edit')}
                 </Button>
                 <Button
                   type="link"
@@ -3132,18 +3218,18 @@ function SkillsSection({
                     })
                   }
                 >
-                  {skill.enabled ? t("disable") : t("enable")}
+                  {skill.enabled ? t('disable') : t('enable')}
                 </Button>
                 {refs.length > 0 ? (
                   <Button type="link" size="small" danger disabled={pending} onClick={() => setBlockedSkill(skill)}>
-                    {t("delete")}
+                    {t('delete')}
                   </Button>
                 ) : (
                   <Popconfirm
                     title={rc.deleteSkillConfirm}
                     description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
-                    okText={t("delete")}
-                    cancelText={t("cancel")}
+                    okText={t('delete')}
+                    cancelText={t('cancel')}
                     okButtonProps={{ danger: true }}
                     onConfirm={() =>
                       void run(async () => {
@@ -3152,7 +3238,7 @@ function SkillsSection({
                     }
                   >
                     <Button type="link" size="small" danger disabled={pending}>
-                      {t("delete")}
+                      {t('delete')}
                     </Button>
                   </Popconfirm>
                 )}
@@ -3171,10 +3257,14 @@ function SkillsSection({
         extra={
           <>
             {canAssign ? (
-              <Button icon={<KeyOutlined />} onClick={() => setGrant({})}>{t("grantSkill")}</Button>
+              <Button icon={<KeyOutlined />} onClick={() => setGrant({})}>
+                {t('grantSkill')}
+              </Button>
             ) : null}
             {canWrite ? (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>{t("addSkill")}</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditor({})}>
+                {t('addSkill')}
+              </Button>
             ) : null}
             <RefreshButton loading={loading} onRefresh={onRefresh} />
           </>
@@ -3194,24 +3284,19 @@ function SkillsSection({
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
-            { value: "all", label: rc.allStatus },
-            { value: "enabled", label: rc.statusEnabled },
-            { value: "disabled", label: rc.statusDisabled },
+            { value: 'all', label: rc.allStatus },
+            { value: 'enabled', label: rc.statusEnabled },
+            { value: 'disabled', label: rc.statusDisabled },
           ]}
           style={{ width: 140 }}
         />
       </Space>
       {rows.length === 0 ? (
-        <Empty description={t("skillsEmpty")}>
-          <Typography.Text type="secondary">{t("skillsEmptyHint")}</Typography.Text>
+        <Empty description={t('skillsEmpty')}>
+          <Typography.Text type="secondary">{t('skillsEmptyHint')}</Typography.Text>
         </Empty>
       ) : (
-        <Table<AdminSkill>
-          rowKey="id"
-          columns={columns}
-          dataSource={[...rows]}
-          pagination={PAGINATION}
-        />
+        <Table<AdminSkill> rowKey="id" columns={columns} dataSource={[...rows]} pagination={PAGINATION} />
       )}
       {detailSkill ? (
         <SkillDetailDrawer
@@ -3274,7 +3359,7 @@ function SkillsSection({
         }
         onCancel={() => setBlockedSkill(null)}
       >
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Typography.Text>{rc.skillDeleteBlockedNote}</Typography.Text>
           <ul style={{ margin: 0, paddingInlineStart: 20 }}>
             {blockedRefs.map((assignment) => (
@@ -3338,7 +3423,7 @@ function SkillDetailDrawer({
       extra={
         canWrite ? (
           <Button size="small" icon={<EditOutlined />} onClick={onEdit}>
-            {t("edit")}
+            {t('edit')}
           </Button>
         ) : null
       }
@@ -3346,29 +3431,29 @@ function SkillDetailDrawer({
       <Tabs
         items={[
           {
-            key: "config",
+            key: 'config',
             label: rc.skillDetailConfig,
             children: (
-              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <Descriptions
                   column={1}
                   bordered
                   size="small"
                   items={[
-                    { key: "id", label: t("skillId"), children: skill.id },
-                    { key: "name", label: t("skillName"), children: skill.name },
+                    { key: 'id', label: t('skillId'), children: skill.id },
+                    { key: 'name', label: t('skillName'), children: skill.name },
                     {
-                      key: "description",
-                      label: t("description"),
+                      key: 'description',
+                      label: t('description'),
                       children: skill.description ? skill.description : <UnknownText />,
                     },
-                    { key: "status", label: t("status"), children: <EnabledBadge enabled={skill.enabled} /> },
+                    { key: 'status', label: t('status'), children: <EnabledBadge enabled={skill.enabled} /> },
                   ]}
                 />
                 {canWrite ? (
                   <Space wrap>
                     <Button icon={<EditOutlined />} onClick={onEdit}>
-                      {t("edit")}
+                      {t('edit')}
                     </Button>
                     <Button
                       disabled={pending}
@@ -3378,7 +3463,7 @@ function SkillDetailDrawer({
                         })
                       }
                     >
-                      {skill.enabled ? t("disable") : t("enable")}
+                      {skill.enabled ? t('disable') : t('enable')}
                     </Button>
                   </Space>
                 ) : null}
@@ -3386,7 +3471,7 @@ function SkillDetailDrawer({
             ),
           },
           {
-            key: "versions",
+            key: 'versions',
             label: `${rc.skillDetailVersions}（${skill.versions.length}）`,
             children: (
               <VersionManager
@@ -3399,16 +3484,18 @@ function SkillDetailDrawer({
             ),
           },
           {
-            key: "access",
+            key: 'access',
             label: canAssign ? `${rc.skillDetailAccess}（${assignments.length}）` : rc.skillDetailAccess,
             children: (
-              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                 {canAssign ? (
                   <Button icon={<KeyOutlined />} onClick={onGrant}>
                     {rc.grantAccess}
                   </Button>
                 ) : null}
-                {!canAssign ? <Alert type="info" title={rc.accessSkillsUnknown} /> : assignments.length === 0 ? (
+                {!canAssign ? (
+                  <Alert type="info" title={rc.accessSkillsUnknown} />
+                ) : assignments.length === 0 ? (
                   <Empty description={rc.skillAccessEmpty}>
                     <Typography.Text type="secondary">{rc.skillAccessEmptyHint}</Typography.Text>
                   </Empty>
@@ -3421,7 +3508,7 @@ function SkillDetailDrawer({
                     columns={[
                       {
                         title: rc.assignmentSubject,
-                        key: "subject",
+                        key: 'subject',
                         render: (_, assignment) => (
                           <SubjectCell
                             subjectType={assignment.subjectType}
@@ -3437,15 +3524,15 @@ function SkillDetailDrawer({
                       ...(canAssign
                         ? [
                             {
-                              title: t("actions"),
-                              key: "actions",
-                              align: "right" as const,
+                              title: t('actions'),
+                              key: 'actions',
+                              align: 'right' as const,
                               render: (_: unknown, assignment: AdminSkillAssignment) => (
                                 <Popconfirm
-                                  title={t("revokeConfirmTitle")}
-                                  description={t("revokeConfirmDescription")}
-                                  okText={t("confirmRevoke")}
-                                  cancelText={t("cancel")}
+                                  title={t('revokeConfirmTitle')}
+                                  description={t('revokeConfirmDescription')}
+                                  okText={t('confirmRevoke')}
+                                  cancelText={t('cancel')}
                                   okButtonProps={{ danger: true }}
                                   onConfirm={() =>
                                     void run(async () => {
@@ -3468,7 +3555,7 @@ function SkillDetailDrawer({
             ),
           },
           {
-            key: "employees",
+            key: 'employees',
             label: rc.skillDetailEmployees,
             children: (
               <Empty description={rc.skillEmployeesEmpty}>
@@ -3495,7 +3582,7 @@ function VersionManager({
   readonly onChanged: () => Promise<void>;
   readonly onError: () => void;
 }) {
-  const [version, setVersion] = useState("");
+  const [version, setVersion] = useState('');
   const [archive, setArchive] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
@@ -3503,18 +3590,18 @@ function VersionManager({
   const busy = uploading || pending || pendingVersion !== null;
   const upload = async () => {
     if (!version.trim() || !archive) {
-      notify(AdminNotificationKind.Error, t("skillUploadFailed"));
+      notify(AdminNotificationKind.Error, t('skillUploadFailed'));
       return;
     }
     setUploading(true);
     try {
       await client.uploadSkillVersion(skill.id, version.trim(), new Uint8Array(await archive.arrayBuffer()));
-      setVersion("");
+      setVersion('');
       setArchive(null);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("versionUploaded"));
+      notify(AdminNotificationKind.Success, t('versionUploaded'));
     } catch {
-      notify(AdminNotificationKind.Error, t("skillUploadFailed"));
+      notify(AdminNotificationKind.Error, t('skillUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -3524,20 +3611,20 @@ function VersionManager({
     try {
       await client.publishSkillVersion(skill.id, candidate);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
-      notify(AdminNotificationKind.Error, t("skillPublishFailed"));
+      notify(AdminNotificationKind.Error, t('skillPublishFailed'));
     } finally {
       setPendingVersion(null);
     }
   };
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       {canWrite ? (
         <Space size={8} wrap align="start">
           <Input
-            aria-label={t("skillVersion")}
-            placeholder={t("skillVersion")}
+            aria-label={t('skillVersion')}
+            placeholder={t('skillVersion')}
             value={version}
             disabled={busy}
             onChange={(event) => setVersion(event.target.value)}
@@ -3556,16 +3643,21 @@ function VersionManager({
             }}
           >
             <Button icon={<UploadOutlined />} disabled={busy}>
-              {t("chooseSkillPackage")}
+              {t('chooseSkillPackage')}
             </Button>
           </Upload>
-          <Button type="primary" loading={uploading} disabled={busy || !version.trim() || !archive} onClick={() => void upload()}>
-            {t("uploadVersion")}
+          <Button
+            type="primary"
+            loading={uploading}
+            disabled={busy || !version.trim() || !archive}
+            onClick={() => void upload()}
+          >
+            {t('uploadVersion')}
           </Button>
         </Space>
       ) : null}
       {skill.versions.length === 0 ? (
-        <Empty description={t("noVersions")} />
+        <Empty description={t('noVersions')} />
       ) : (
         <Table<AdminSkillVersion>
           rowKey="version"
@@ -3573,24 +3665,24 @@ function VersionManager({
           pagination={PAGINATION}
           dataSource={[...skill.versions]}
           columns={[
-            { title: t("skillVersion"), dataIndex: "version", key: "version" },
+            { title: t('skillVersion'), dataIndex: 'version', key: 'version' },
             {
-              title: t("status"),
-              key: "state",
+              title: t('status'),
+              key: 'state',
               render: (_, item) => (
-                <Tag color={item.state === "published" ? "green" : item.state === "draft" ? "gold" : "default"}>
+                <Tag color={item.state === 'published' ? 'green' : item.state === 'draft' ? 'gold' : 'default'}>
                   {t(versionStateLabel(item.state))}
                 </Tag>
               ),
             },
             {
               title: rc.versionSize,
-              key: "size",
-              render: (_, item) => `${item.size} ${t("bytes")}`,
+              key: 'size',
+              render: (_, item) => `${item.size} ${t('bytes')}`,
             },
             {
               title: rc.versionSha,
-              key: "sha256",
+              key: 'sha256',
               render: (_, item) => (
                 <Typography.Text copyable={{ text: item.sha256 }} style={{ fontSize: 12 }}>
                   {`${item.sha256.slice(0, 12)}…`}
@@ -3599,18 +3691,19 @@ function VersionManager({
             },
             {
               title: rc.versionCreatedAt,
-              key: "createdAt",
-              render: (_, item) => (item.createdAt ? formatTimestamp(item.createdAt) || <UnknownText /> : <UnknownText />),
+              key: 'createdAt',
+              render: (_, item) =>
+                item.createdAt ? formatTimestamp(item.createdAt) || <UnknownText /> : <UnknownText />,
             },
             ...(canWrite
               ? [
                   {
-                    title: t("actions"),
-                    key: "actions",
-                    align: "right" as const,
+                    title: t('actions'),
+                    key: 'actions',
+                    align: 'right' as const,
                     render: (_: unknown, item: AdminSkillVersion) => (
                       <Space size={0} wrap>
-                        {item.state === "draft" ? (
+                        {item.state === 'draft' ? (
                           <Button
                             type="link"
                             size="small"
@@ -3622,10 +3715,10 @@ function VersionManager({
                           </Button>
                         ) : null}
                         <Popconfirm
-                          title={t("withdrawVersionTitle")}
-                          description={t("withdrawVersionDescription")}
-                          okText={t("confirmWithdrawVersion")}
-                          cancelText={t("cancel")}
+                          title={t('withdrawVersionTitle')}
+                          description={t('withdrawVersionDescription')}
+                          okText={t('confirmWithdrawVersion')}
+                          cancelText={t('cancel')}
                           okButtonProps={{ danger: true }}
                           onConfirm={() =>
                             void run(async () => {
@@ -3670,9 +3763,9 @@ function SkillEditorModal({
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
   const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean }) => {
-    const normalizedId = (values.id ?? "").trim();
+    const normalizedId = (values.id ?? '').trim();
     if (!skill && existingSkillIds.includes(normalizedId)) {
-      form.setFields([{ name: "id", errors: [t("skillIdAlreadyExists")] }]);
+      form.setFields([{ name: 'id', errors: [t('skillIdAlreadyExists')] }]);
       return;
     }
     setPending(true);
@@ -3680,18 +3773,18 @@ function SkillEditorModal({
       if (skill)
         await client.updateSkill(skill.id, {
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
         });
       else
         await client.createSkill({
           id: normalizedId,
           name: values.name.trim(),
-          description: (values.description ?? "").trim(),
+          description: (values.description ?? '').trim(),
         });
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
       onError();
     } finally {
@@ -3701,9 +3794,9 @@ function SkillEditorModal({
   return (
     <Modal
       open={open}
-      title={t(editing ? "skillEditTitle" : "skillEditorTitle")}
-      okText={t("save")}
-      cancelText={t("cancel")}
+      title={t(editing ? 'skillEditTitle' : 'skillEditorTitle')}
+      okText={t('save')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       mask={{ closable: false }}
       onOk={() => form.submit()}
@@ -3711,15 +3804,15 @@ function SkillEditorModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <Typography.Paragraph type="secondary">{t("skillEditorDescription")}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('skillEditorDescription')}</Typography.Paragraph>
       <Form
         form={form}
         layout="vertical"
         preserve={false}
         initialValues={{
-          id: skill?.id ?? "",
-          name: skill?.name ?? "",
-          description: skill?.description ?? "",
+          id: skill?.id ?? '',
+          name: skill?.name ?? '',
+          description: skill?.description ?? '',
           enabled: skill?.enabled !== false,
         }}
         onFinish={submit}
@@ -3727,25 +3820,29 @@ function SkillEditorModal({
         {editing ? null : (
           <Form.Item
             name="id"
-            label={t("skillId")}
-            extra={t("rbacIdHint")}
+            label={t('skillId')}
+            extra={t('rbacIdHint')}
             rules={[
-              { required: true, whitespace: true, message: t("fieldRequired") },
-              { pattern: RBAC_ID_PATTERN, message: t("rbacIdHint") },
+              { required: true, whitespace: true, message: t('fieldRequired') },
+              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
             ]}
           >
             <Input disabled={pending} />
           </Form.Item>
         )}
-        <Form.Item name="name" label={t("skillName")} rules={[{ required: true, whitespace: true, message: t("nameRequired") }]}>
+        <Form.Item
+          name="name"
+          label={t('skillName')}
+          rules={[{ required: true, whitespace: true, message: t('nameRequired') }]}
+        >
           <Input disabled={pending} />
         </Form.Item>
-        <Form.Item name="description" label={t("description")}>
-          <Input.TextArea rows={2} placeholder={t("descriptionPlaceholder")} disabled={pending} />
+        <Form.Item name="description" label={t('description')}>
+          <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
         </Form.Item>
         {editing ? (
-          <Form.Item name="enabled" label={t("status")} valuePropName="checked">
-            <Switch disabled={pending} checkedChildren={t("enabled")} unCheckedChildren={t("disabled")} />
+          <Form.Item name="enabled" label={t('status')} valuePropName="checked">
+            <Switch disabled={pending} checkedChildren={t('enabled')} unCheckedChildren={t('disabled')} />
           </Form.Item>
         ) : null}
       </Form>
@@ -3807,7 +3904,7 @@ function SkillGrantModal({
     try {
       const subjectKeys = [...selected];
       const results = await runBatch(subjectKeys, (subjectKey) => {
-        const separator = subjectKey.indexOf(":");
+        const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminSubjectType;
         const id = subjectKey.slice(separator + 1);
         return client.createSkillAssignment({ skillId, subject: { type, id } });
@@ -3822,7 +3919,7 @@ function SkillGrantModal({
       }
       onOpenChange(false);
       await onChanged();
-      notify(AdminNotificationKind.Success, t("changesSaved"));
+      notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch {
       onError();
     } finally {
@@ -3832,9 +3929,9 @@ function SkillGrantModal({
   return (
     <Modal
       open={open}
-      title={t("grantSkillTitle")}
-      okText={t("grant")}
-      cancelText={t("cancel")}
+      title={t('grantSkillTitle')}
+      okText={t('grant')}
+      cancelText={t('cancel')}
       confirmLoading={pending}
       okButtonProps={{ disabled: !skillId || selected.size === 0 }}
       mask={{ closable: false }}
@@ -3843,31 +3940,31 @@ function SkillGrantModal({
         if (!pending) onOpenChange(false);
       }}
     >
-      <Typography.Paragraph type="secondary">{t("grantSkillDescription")}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{t('grantSkillDescription')}</Typography.Paragraph>
       {failed ? (
         <Alert
           type="error"
           showIcon
-          title={t("grantFailed")}
+          title={t('grantFailed')}
           description={
-            failedSubjects.length > 0 ? `${t("grantFailedSubjects")}: ${failedSubjects.join(", ")}` : undefined
+            failedSubjects.length > 0 ? `${t('grantFailedSubjects')}: ${failedSubjects.join(', ')}` : undefined
           }
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <div>
-          <Typography.Text strong>{t("selectSkill")}</Typography.Text>
+          <Typography.Text strong>{t('selectSkill')}</Typography.Text>
           <Select
-            aria-label={t("selectSkill")}
+            aria-label={t('selectSkill')}
             value={skillId}
             onChange={(value) => setSkillId(value)}
             disabled={pending || Boolean(presetSkillId)}
-            placeholder={t("selectSkill")}
-            style={{ width: "100%", marginTop: 8 }}
+            placeholder={t('selectSkill')}
+            style={{ width: '100%', marginTop: 8 }}
             options={skills.map((skill) => ({
               value: skill.id,
-              label: skill.enabled ? skill.name : `${skill.name}（${t("disabled")}）`,
+              label: skill.enabled ? skill.name : `${skill.name}（${t('disabled')}）`,
             }))}
           />
         </div>
@@ -3895,15 +3992,7 @@ function SkillGrantModal({
 // Assignments
 // ---------------------------------------------------------------------------
 
-function AssignmentsSection({
-  client,
-  resources,
-  canWrite,
-  loading,
-  onRefresh,
-  onChanged,
-  onError,
-}: SectionProps) {
+function AssignmentsSection({ client, resources, canWrite, loading, onRefresh, onChanged, onError }: SectionProps) {
   const [grantOpen, setGrantOpen] = useState(false);
   const { pending, run } = useMutationRunner(onChanged, onError);
   const skillNames = new Map(resources.skills.map((skill) => [skill.id, skill.name]));
@@ -3917,7 +4006,7 @@ function AssignmentsSection({
           <>
             {canWrite ? (
               <Button type="primary" icon={<KeyOutlined />} onClick={() => setGrantOpen(true)}>
-                {t("grantSkill")}
+                {t('grantSkill')}
               </Button>
             ) : null}
             <RefreshButton loading={loading} onRefresh={onRefresh} />
@@ -3925,12 +4014,12 @@ function AssignmentsSection({
         }
       />
       {resources.assignments.length === 0 ? (
-        <Empty description={t("assignmentsEmpty")}>
+        <Empty description={t('assignmentsEmpty')}>
           <Space orientation="vertical" size={12}>
-            <Typography.Text type="secondary">{t("assignmentsEmptyHint")}</Typography.Text>
+            <Typography.Text type="secondary">{t('assignmentsEmptyHint')}</Typography.Text>
             {canWrite ? (
               <Button type="primary" icon={<KeyOutlined />} onClick={() => setGrantOpen(true)}>
-                {t("grantSkill")}
+                {t('grantSkill')}
               </Button>
             ) : null}
           </Space>
@@ -3942,13 +4031,13 @@ function AssignmentsSection({
           dataSource={[...resources.assignments]}
           columns={[
             {
-              title: t("skill"),
-              key: "skill",
+              title: t('skill'),
+              key: 'skill',
               render: (_, assignment) => skillNames.get(assignment.skillId) || assignment.skillId,
             },
             {
               title: rc.assignmentSubject,
-              key: "subject",
+              key: 'subject',
               render: (_, assignment) => (
                 <SubjectCell
                   subjectType={assignment.subjectType}
@@ -3960,15 +4049,15 @@ function AssignmentsSection({
             ...(canWrite
               ? [
                   {
-                    title: t("actions"),
-                    key: "actions",
-                    align: "right" as const,
+                    title: t('actions'),
+                    key: 'actions',
+                    align: 'right' as const,
                     render: (_: unknown, assignment: AdminSkillAssignment) => (
                       <Popconfirm
-                        title={t("revokeConfirmTitle")}
-                        description={t("revokeConfirmDescription")}
-                        okText={t("confirmRevoke")}
-                        cancelText={t("cancel")}
+                        title={t('revokeConfirmTitle')}
+                        description={t('revokeConfirmDescription')}
+                        okText={t('confirmRevoke')}
+                        cancelText={t('cancel')}
                         okButtonProps={{ danger: true }}
                         onConfirm={() =>
                           void run(async () => {
@@ -4036,8 +4125,8 @@ export function SubjectMultiPicker({
   selected,
   onToggle,
   disabled,
-  subjectType = "all",
-  searchQuery = "",
+  subjectType = 'all',
+  searchQuery = '',
 }: {
   readonly users: readonly PlatformUser[];
   readonly roles: readonly Role[];
@@ -4046,7 +4135,7 @@ export function SubjectMultiPicker({
   readonly selected: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
   readonly disabled: boolean;
-  readonly subjectType?: "all" | "user" | "role" | "team";
+  readonly subjectType?: 'all' | 'user' | 'role' | 'team';
   readonly searchQuery?: string;
 }) {
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
@@ -4055,47 +4144,46 @@ export function SubjectMultiPicker({
       key: `${AdminSubjectType.User}:${user.id}`,
       label: user.displayName,
       description: user.username,
-      type: t("user"),
+      type: t('user'),
       subjectType: AdminSubjectType.User as AdminSubjectType,
     })),
     ...roles.map((role) => ({
       key: `${AdminSubjectType.Role}:${role.id}`,
       label: role.name,
       description: role.id,
-      type: t("role"),
+      type: t('role'),
       subjectType: AdminSubjectType.Role as AdminSubjectType,
     })),
     ...teams.map((team) => ({
       key: `${AdminSubjectType.Team}:${team.id}`,
       label: team.name,
       description: team.id,
-      type: t("team"),
+      type: t('team'),
       subjectType: AdminSubjectType.Team as AdminSubjectType,
     })),
   ].filter((option) => {
     if (excluded.has(option.key)) return false;
-    if (subjectType !== "all" && option.subjectType !== subjectType) return false;
+    if (subjectType !== 'all' && option.subjectType !== subjectType) return false;
     if (!normalizedQuery) return true;
     return `${option.label} ${option.description} ${option.key}`.toLocaleLowerCase().includes(normalizedQuery);
   });
   return (
     <div>
-      <Typography.Text strong>{t("selectSubjects")}</Typography.Text>
-      <div
-        role="group"
-        aria-label={t("selectSubjects")}
+      <Typography.Text strong>{t('selectSubjects')}</Typography.Text>
+      <fieldset
+        aria-label={t('selectSubjects')}
         style={{
           marginTop: 8,
           maxHeight: 240,
-          overflowY: "auto",
-          border: "1px solid rgba(128, 128, 128, 0.35)",
+          overflowY: 'auto',
+          border: '1px solid rgba(128, 128, 128, 0.35)',
           borderRadius: 8,
           padding: 4,
         }}
       >
         {options.length === 0 ? (
-          <Typography.Text type="secondary" style={{ display: "block", padding: "12px 8px" }}>
-            {t("noMatchingSubjects")}
+          <Typography.Text type="secondary" style={{ display: 'block', padding: '12px 8px' }}>
+            {t('noMatchingSubjects')}
           </Typography.Text>
         ) : (
           options.map((option) => (
@@ -4104,26 +4192,26 @@ export function SubjectMultiPicker({
               checked={selected.has(option.key)}
               onChange={() => onToggle(option.key)}
               disabled={disabled}
-              style={{ display: "flex", marginInlineStart: 0, padding: "6px 8px", alignItems: "flex-start" }}
+              style={{ display: 'flex', marginInlineStart: 0, padding: '6px 8px', alignItems: 'flex-start' }}
             >
               <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {option.label}{" "}
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {option.label}{' '}
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     ({option.type})
                   </Typography.Text>
                 </span>
-                <Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>
+                <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
                   {option.description}
                 </Typography.Text>
               </span>
             </Checkbox>
           ))
         )}
-      </div>
+      </fieldset>
       <Space size={8} style={{ marginTop: 8 }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t("selectedSubjectsLabel")}
+          {t('selectedSubjectsLabel')}
         </Typography.Text>
         <Badge count={selected.size} showZero color="geekblue" />
       </Space>
@@ -4131,8 +4219,8 @@ export function SubjectMultiPicker({
   );
 }
 
-function versionStateLabel(state: AdminSkillVersion["state"]): AdminTranslationKey {
-  if (state === "published") return "versionPublished";
-  if (state === "withdrawn") return "versionWithdrawn";
-  return "versionDraft";
+function versionStateLabel(state: AdminSkillVersion['state']): AdminTranslationKey {
+  if (state === 'published') return 'versionPublished';
+  if (state === 'withdrawn') return 'versionWithdrawn';
+  return 'versionDraft';
 }

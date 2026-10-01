@@ -1,8 +1,8 @@
 import {
-  EnterpriseSessionStatus,
   type EnterprisePasswordChangeInput,
   type EnterprisePasswordLoginInput,
   type EnterpriseSessionSnapshot,
+  EnterpriseSessionStatus,
   type ZhiyuanEnterpriseSessionProvider,
 } from '../host-contract.js';
 import { AepMetadataError, type ZhiyuanPasswordSession } from './password-session.js';
@@ -25,7 +25,7 @@ export class ZhiyuanPasswordSessionProvider implements ZhiyuanEnterpriseSessionP
         username: input.username,
         password: input.password,
       })
-      .catch(error => {
+      .catch((error) => {
         // The host v1 session result cannot carry extension error detail, so a
         // metadata failure is surfaced as a signed-out snapshot; the renderer
         // reads a non-authenticated login response as a metadata failure.

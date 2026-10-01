@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 
 import { AepClient, MemoryTokenStore } from '@aep/sdk-node';
 import yazl from 'yazl';
@@ -71,18 +71,13 @@ try {
 
   const installEvent = await publishSkillEvent(admin, 'install');
   await backend.runOnce();
-  const installedDefinition = path.join(
-    temporaryDirectory,
-    'managed-skills',
-    skillId,
-    'SKILL.md',
-  );
+  const installedDefinition = path.join(temporaryDirectory, 'managed-skills', skillId, 'SKILL.md');
   assert.equal(fs.readFileSync(installedDefinition, 'utf8'), '# Zhiyuan E2E Skill\n');
   await assertDelivery(admin, installEvent.eventId, 'succeeded');
 
   const telemetry = await admin.searchEvents({ userId: user.id });
   assert.equal(
-    telemetry.items.some(item => item.type === 'skill.sync.completed'),
+    telemetry.items.some((item) => item.type === 'skill.sync.completed'),
     true,
   );
 
@@ -128,7 +123,7 @@ try {
 
 async function ensureMemberRole(adminClient) {
   const page = await adminClient.listRoles({ limit: 200 });
-  const existing = page.roles.find(role => role.id === memberRoleId);
+  const existing = page.roles.find((role) => role.id === memberRoleId);
   if (existing) {
     assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
     assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
@@ -189,7 +184,7 @@ function createSkillArchive() {
   return new Promise((resolve, reject) => {
     const archive = new yazl.ZipFile();
     const chunks = [];
-    archive.outputStream.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    archive.outputStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     archive.outputStream.on('error', reject);
     archive.outputStream.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
     archive.addBuffer(Buffer.from('# Zhiyuan E2E Skill\n'), 'SKILL.md');

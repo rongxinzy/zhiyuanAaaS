@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -45,37 +45,50 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const requests = [];
 const authenticationDiagnostics = [];
 const browserDiagnostics = [];
-page.on('request', request => {
+page.on('request', (request) => {
   if (request.url().includes('/aep/')) requests.push(`${request.method()} ${new URL(request.url()).pathname}`);
 });
-page.on('response', response => {
+page.on('response', (response) => {
   const pathname = new URL(response.url()).pathname;
   if (pathname === '/aep/v1/auth/password/login' || pathname === '/aep/v1/user/me') {
     authenticationDiagnostics.push(`${response.request().method()} ${pathname} ${response.status()}`);
   }
 });
-page.on('requestfailed', request => {
+page.on('requestfailed', (request) => {
   const pathname = new URL(request.url()).pathname;
   if (pathname === '/aep/v1/auth/password/login' || pathname === '/aep/v1/user/me') {
-    authenticationDiagnostics.push(`${request.method()} ${pathname} failed: ${request.failure()?.errorText ?? 'unknown error'}`);
+    authenticationDiagnostics.push(
+      `${request.method()} ${pathname} failed: ${request.failure()?.errorText ?? 'unknown error'}`,
+    );
   }
 });
-page.on('console', message => {
+page.on('console', (message) => {
   if (message.type() === 'error') browserDiagnostics.push(message.text().slice(0, 500));
 });
-page.on('pageerror', error => browserDiagnostics.push(error.message.slice(0, 500)));
+page.on('pageerror', (error) => browserDiagnostics.push(error.message.slice(0, 500)));
 
-const waitText = value => page.getByText(value, { exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
-const waitGone = value => page.getByText(value, { exact: true }).first().waitFor({ state: 'detached', timeout: 15000 });
-const waitHeading = value => page.getByRole('heading', { name: value, exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
+const waitText = (value) =>
+  page.getByText(value, { exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
+const waitGone = (value) =>
+  page.getByText(value, { exact: true }).first().waitFor({ state: 'detached', timeout: 15000 });
+const waitHeading = (value) =>
+  page.getByRole('heading', { name: value, exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
 const dialog = () => page.getByRole('dialog');
-const row = text => page.getByRole('row').filter({ hasText: text }).first();
-const menuItem = name => page.getByRole('menuitem', { name, exact: true }).first();
-const tabItem = name => page.getByRole('tab', { name }).first();
+const row = (text) => page.getByRole('row').filter({ hasText: text }).first();
+const menuItem = (name) => page.getByRole('menuitem', { name, exact: true }).first();
+const tabItem = (name) => page.getByRole('tab', { name }).first();
 // Ant Design keeps closed Popconfirm overlays mounted; only confirm the visible one.
-const confirmPopover = label => page.locator('.ant-popover:not(.ant-popover-hidden)').getByRole('button', { name: label, exact: true }).first().click();
+const confirmPopover = (label) =>
+  page
+    .locator('.ant-popover:not(.ant-popover-hidden)')
+    .getByRole('button', { name: label, exact: true })
+    .first()
+    .click();
 const closeDrawer = async () => {
-  await dialog().getByRole('button', { name: /关闭|Close/ }).first().click();
+  await dialog()
+    .getByRole('button', { name: /关闭|Close/ })
+    .first()
+    .click();
   await dialog().first().waitFor({ state: 'hidden', timeout: 15000 });
 };
 
@@ -98,10 +111,17 @@ try {
   await page.getByRole('button', { name: '登录', exact: true }).click();
   const loginOutcome = await Promise.race([
     waitHeading('概览').then(() => 'authenticated'),
-    page.getByText('登录失败，请检查账号信息或稍后重试。', { exact: true }).waitFor({ state: 'visible', timeout: 15000 }).then(() => 'failed'),
+    page
+      .getByText('登录失败，请检查账号信息或稍后重试。', { exact: true })
+      .waitFor({ state: 'visible', timeout: 15000 })
+      .then(() => 'failed'),
   ]);
   assert.equal(loginOutcome, 'authenticated', 'Admin Console rejected a successful AEP authentication response');
-  assert.equal(await page.getByRole('menuitem').count(), 7, 'The redesigned console must expose exactly seven business entries');
+  assert.equal(
+    await page.getByRole('menuitem').count(),
+    7,
+    'The redesigned console must expose exactly seven business entries',
+  );
 
   await createUserAndMemberships();
   await exerciseTeamAndRole();
@@ -113,32 +133,41 @@ try {
   await assertApiState();
   await assertSessionSemantics();
 
-  console.log(JSON.stringify({
-    status: 'passed',
-    origin: adminOrigin,
-    prefix: suffix,
-    checks: [
-      'browser login and seven business entries',
-      'reload restores the persisted session; explicit sign-out clears it',
-      'user create/update/password reset/RBAC/import/disable',
-      'team and role create/update/enable/disable/delete',
-      'skill create/update/enable/disable/version upload/publish/withdraw/grant+revoke/delete',
-      'model create/update/assignment grant/revoke/delete',
-      'credential create/update/rotate/enable/disable/grant+revoke/delete',
-      'audit read-only query, execution records, honest login-history gap',
-      'data-plane configuration status read-only (route editing removed from the product)',
-      'real API list state verification',
-    ],
-    requests: requests.length,
-  }));
+  console.log(
+    JSON.stringify({
+      status: 'passed',
+      origin: adminOrigin,
+      prefix: suffix,
+      checks: [
+        'browser login and seven business entries',
+        'reload restores the persisted session; explicit sign-out clears it',
+        'user create/update/password reset/RBAC/import/disable',
+        'team and role create/update/enable/disable/delete',
+        'skill create/update/enable/disable/version upload/publish/withdraw/grant+revoke/delete',
+        'model create/update/assignment grant/revoke/delete',
+        'credential create/update/rotate/enable/disable/grant+revoke/delete',
+        'audit read-only query, execution records, honest login-history gap',
+        'data-plane configuration status read-only (route editing removed from the product)',
+        'real API list state verification',
+      ],
+      requests: requests.length,
+    }),
+  );
 } catch (error) {
-  console.error(JSON.stringify({
-    verifier: 'admin-real-e2e',
-    url: page.url(),
-    body: (await page.locator('body').innerText().catch(() => '')).slice(0, 2000),
-    authenticationDiagnostics,
-    browserDiagnostics,
-  }));
+  console.error(
+    JSON.stringify({
+      verifier: 'admin-real-e2e',
+      url: page.url(),
+      body: (
+        await page
+          .locator('body')
+          .innerText()
+          .catch(() => '')
+      ).slice(0, 2000),
+      authenticationDiagnostics,
+      browserDiagnostics,
+    }),
+  );
   verifierError = error;
 } finally {
   if (accessToken) {
@@ -206,8 +235,21 @@ async function createUserAndMemberships() {
 
   await page.getByRole('button', { name: '导入用户', exact: true }).click();
   current = dialog();
-  const importPayload = JSON.stringify({ users: [{ externalRowId: `row-${suffix}`, username: names.imported, displayName: `Imported ${suffix}`, temporaryPassword: `Imported-${suffix}-password`, roleIds: [memberRoleId], teamIds: ['all-users'] }] });
-  await current.locator('input[type="file"]').setInputFiles({ name: 'users.json', mimeType: 'application/json', buffer: Buffer.from(importPayload) });
+  const importPayload = JSON.stringify({
+    users: [
+      {
+        externalRowId: `row-${suffix}`,
+        username: names.imported,
+        displayName: `Imported ${suffix}`,
+        temporaryPassword: `Imported-${suffix}-password`,
+        roleIds: [memberRoleId],
+        teamIds: ['all-users'],
+      },
+    ],
+  });
+  await current
+    .locator('input[type="file"]')
+    .setInputFiles({ name: 'users.json', mimeType: 'application/json', buffer: Buffer.from(importPayload) });
   await current.getByRole('button', { name: '导入用户', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
   await waitText('导入结果');
@@ -293,7 +335,11 @@ async function exerciseSkill() {
   current = dialog();
   await current.getByRole('tab', { name: /^版本记录/ }).click();
   await current.getByLabel('版本号', { exact: true }).fill('1.0.0');
-  await current.locator('input[type="file"]').setInputFiles({ name: 'skill.zip', mimeType: 'application/zip', buffer: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64') });
+  await current.locator('input[type="file"]').setInputFiles({
+    name: 'skill.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64'),
+  });
   await current.getByRole('button', { name: '上传版本', exact: true }).click();
   const versionRow = current.getByRole('row').filter({ hasText: '1.0.0' }).first();
   await versionRow.waitFor({ state: 'visible', timeout: 15000 });
@@ -307,7 +353,11 @@ async function exerciseSkill() {
   await page.getByRole('button', { name: '授权技能', exact: true }).click();
   current = dialog();
   await current.getByRole('combobox').click();
-  await page.locator('.ant-select-item-option').filter({ hasText: `Console Skill Updated ${suffix}` }).first().click();
+  await page
+    .locator('.ant-select-item-option')
+    .filter({ hasText: `Console Skill Updated ${suffix}` })
+    .first()
+    .click();
   await current.getByRole('checkbox', { name: new RegExp(names.user) }).check();
   await current.getByRole('button', { name: '授权', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
@@ -416,7 +466,9 @@ async function exerciseCredential() {
   const grantedRow = page.getByRole('row').filter({ hasText: names.user }).first();
   await grantedRow.getByRole('button', { name: '撤销授权', exact: true }).click();
   await confirmPopover('确认撤销');
-  await grantedRow.getByRole('button', { name: '撤销授权', exact: true }).waitFor({ state: 'detached', timeout: 15000 });
+  await grantedRow
+    .getByRole('button', { name: '撤销授权', exact: true })
+    .waitFor({ state: 'detached', timeout: 15000 });
 
   await credentialRow.getByRole('button', { name: '删除', exact: true }).click();
   current = dialog();
@@ -451,10 +503,18 @@ async function assertSessionSemantics() {
   await waitHeading('概览');
   await page.reload({ waitUntil: 'networkidle' });
   await waitHeading('概览');
-  assert.notEqual(await page.evaluate(() => window.localStorage.getItem('zhiyuan.admin.tokens')), null, 'A page reload must restore the persisted admin session');
+  assert.notEqual(
+    await page.evaluate(() => window.localStorage.getItem('zhiyuan.admin.tokens')),
+    null,
+    'A page reload must restore the persisted admin session',
+  );
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await waitHeading('登录企业管理后台');
-  assert.equal(await page.evaluate(() => window.localStorage.getItem('zhiyuan.admin.tokens')), null, 'Explicit sign-out must clear the persisted admin session');
+  assert.equal(
+    await page.evaluate(() => window.localStorage.getItem('zhiyuan.admin.tokens')),
+    null,
+    'Explicit sign-out must clear the persisted admin session',
+  );
 }
 
 async function assertApiState() {
@@ -464,22 +524,37 @@ async function assertApiState() {
   const skills = await api('/aep/v1/admin/skills');
   const models = await api('/aep/v1/admin/models');
   const credentials = await api('/aep/v1/admin/credentials');
-  assert.equal(teams.teams.some(item => item.id === names.team), false);
-  assert.equal(roles.roles.some(item => item.id === names.role), false);
-  assert.equal(skills.skills.some(item => item.id === names.skill), false);
-  assert.equal(models.models.some(item => item.id === names.model), false);
-  assert.equal(credentials.credentials.some(item => item.name.startsWith(names.credential)), false);
-  assert.equal(users.items.find(item => item.username === names.user)?.status, 'disabled');
-  assert.equal(users.items.find(item => item.username === names.imported)?.status, 'disabled');
-  assert.ok(requests.some(value => value.includes('/aep/v1/admin/skills/') && value.includes('/versions')));
-  assert.ok(requests.some(value => value.includes('/aep/v1/admin/events')));
-  assert.ok(requests.some(value => value.includes('/aep/v1/admin/control-events')));
-  assert.ok(requests.some(value => value.includes('/aep/v1/admin/data-plane/desired-state')));
+  assert.equal(
+    teams.teams.some((item) => item.id === names.team),
+    false,
+  );
+  assert.equal(
+    roles.roles.some((item) => item.id === names.role),
+    false,
+  );
+  assert.equal(
+    skills.skills.some((item) => item.id === names.skill),
+    false,
+  );
+  assert.equal(
+    models.models.some((item) => item.id === names.model),
+    false,
+  );
+  assert.equal(
+    credentials.credentials.some((item) => item.name.startsWith(names.credential)),
+    false,
+  );
+  assert.equal(users.items.find((item) => item.username === names.user)?.status, 'disabled');
+  assert.equal(users.items.find((item) => item.username === names.imported)?.status, 'disabled');
+  assert.ok(requests.some((value) => value.includes('/aep/v1/admin/skills/') && value.includes('/versions')));
+  assert.ok(requests.some((value) => value.includes('/aep/v1/admin/events')));
+  assert.ok(requests.some((value) => value.includes('/aep/v1/admin/control-events')));
+  assert.ok(requests.some((value) => value.includes('/aep/v1/admin/data-plane/desired-state')));
 }
 
 async function ensureMemberRole() {
   const roles = await api('/aep/v1/admin/roles?limit=200');
-  const existing = roles.roles.find(role => role.id === memberRoleId);
+  const existing = roles.roles.find((role) => role.id === memberRoleId);
   if (existing) {
     assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
     assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
@@ -498,7 +573,7 @@ async function ensureMemberRole() {
 
 async function disableAndRevokeTestUsers() {
   const users = await api('/aep/v1/admin/users?limit=200');
-  const testUsers = users.items.filter(item => [names.user, names.imported].includes(item.username));
+  const testUsers = users.items.filter((item) => [names.user, names.imported].includes(item.username));
   for (const user of testUsers) {
     if (user.status !== 'disabled') {
       await api(`/aep/v1/admin/users/${encodeURIComponent(user.id)}`, {
@@ -529,7 +604,12 @@ async function loginApi() {
 async function api(pathname, options = {}) {
   const response = await fetch(`${adminOrigin}${pathname}`, {
     ...options,
-    headers: { 'content-type': 'application/json', 'X-AEP-Protocol-Version': '1.0', Authorization: `Bearer ${accessToken}`, ...(options.headers ?? {}) },
+    headers: {
+      'content-type': 'application/json',
+      'X-AEP-Protocol-Version': '1.0',
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.headers ?? {}),
+    },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const text = await response.text();
@@ -547,24 +627,34 @@ async function findBrowser() {
     '/usr/bin/chromium',
   ].filter(Boolean);
   for (const candidate of candidates) {
-    try { await fs.access(candidate); return candidate; } catch { /* try next candidate */ }
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      /* try next candidate */
+    }
   }
   throw new Error('Chrome/Chromium was not found. Set ZHIYUAN_CHROME_PATH.');
 }
 
 async function freePort() {
   const server = http.createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
-  await new Promise(resolve => server.close(resolve));
+  await new Promise((resolve) => server.close(resolve));
   return port;
 }
 
 async function waitForHttp(url) {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
-    try { const response = await fetch(url); if (response.ok) return; } catch { /* server still starting */ }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+    } catch {
+      /* server still starting */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`HTTP server did not start: ${url}`);
 }

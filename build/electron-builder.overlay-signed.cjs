@@ -17,9 +17,7 @@ const yaml = require('js-yaml');
 const overlayFile = path.join(__dirname, 'electron-builder.overlay.yml');
 const overlayConfig = yaml.load(fs.readFileSync(overlayFile, 'utf8'));
 
-const certificateThumbprint = (process.env.CERTUM_CERT_THUMBPRINT || '')
-  .replace(/[^0-9a-f]/gi, '')
-  .toUpperCase();
+const certificateThumbprint = (process.env.CERTUM_CERT_THUMBPRINT || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
 
 if (!/^[0-9A-F]{40}$/.test(certificateThumbprint)) {
   throw new Error(

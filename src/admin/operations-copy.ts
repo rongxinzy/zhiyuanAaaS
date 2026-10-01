@@ -168,9 +168,11 @@ const copy = {
     licenseDetail: 'License detail',
     issuedAtLabel: 'Issued at',
     revokeLicenseImpact: 'Revocation disables this license immediately. Make sure a replacement license is in place.',
-    licenseImportNote: 'Import validates the signature, deployment binding and validity. A failed import never overwrites the current valid license.',
+    licenseImportNote:
+      'Import validates the signature, deployment binding and validity. A failed import never overwrites the current valid license.',
     sessionsTitle: 'Login sessions',
-    sessionsDescription: 'Review valid sign-ins and device information, and revoke when needed. A valid credential does not mean the user is online right now.',
+    sessionsDescription:
+      'Review valid sign-ins and device information, and revoke when needed. A valid credential does not mean the user is online right now.',
     clientColumn: 'Client / device',
     lastActive: 'Last activity',
     sessionStateActive: 'Active',
@@ -184,7 +186,8 @@ const copy = {
     sessionCreatedAt: 'Created at',
     sessionRevokedAt: 'Revoked at',
     credentialsTitle: 'Connections',
-    credentialsDescription: 'Connection and authentication settings for model and other services are maintained and reused here. Secrets are write-only to the server and never echoed back.',
+    credentialsDescription:
+      'Connection and authentication settings for model and other services are maintained and reused here. Secrets are write-only to the server and never echoed back.',
     addConnection: 'New connection',
     serviceColumn: 'Service',
     authColumn: 'Authentication',
@@ -196,7 +199,8 @@ const copy = {
     notCollected: 'Not collected',
     updateKey: 'Update key',
     updateKeyTitle: 'Update key',
-    updateKeyNote: 'The current key is never shown and an empty value never overwrites it. Track application and check results under configuration status after saving.',
+    updateKeyNote:
+      'The current key is never shown and an empty value never overwrites it. Track application and check results under configuration status after saving.',
     newKey: 'New key',
     configSaved: 'Configuration saved',
     savedNotApplied: 'A successful save only means the configuration is persisted; it is not yet applied or checked.',
@@ -205,7 +209,8 @@ const copy = {
     grantAccess: 'Grant',
     rotateRetryNote: 'Rotation failed and the key is unchanged. Fix the input and retry.',
     statusTitle: 'Configuration status',
-    statusDescription: 'Desired revision, applied revision and sync results. Save, apply and check are separate stages.',
+    statusDescription:
+      'Desired revision, applied revision and sync results. Save, apply and check are separate stages.',
     desiredRevision: 'Desired revision',
     appliedRevision: 'Applied revision',
     publishedAt: 'Published at',
@@ -221,11 +226,13 @@ const copy = {
     stateUnknown: 'State unknown',
     errorMessage: 'Error',
     retryApply: 'Retry apply',
-    retryApplyConfirm: 'Re-deliver the current desired revision? The operation is idempotent and does not create duplicate configuration.',
+    retryApplyConfirm:
+      'Re-deliver the current desired revision? The operation is idempotent and does not create duplicate configuration.',
     retrySubmitted: 'Re-delivered; waiting for the apply result',
     retryFailed: 'Retry delivery failed',
     routesReadonly: 'Current routes (read-only)',
-    routesReadonlyNote: 'Raw route editing is a restricted debugging capability, not a regular page. Change routes through model and connection configuration.',
+    routesReadonlyNote:
+      'Raw route editing is a restricted debugging capability, not a regular page. Change routes through model and connection configuration.',
     routeModelColumn: 'Model',
     routeEndpointColumn: 'Gateway path',
     routeUpstreamColumn: 'Upstream model',
@@ -244,14 +251,18 @@ const copy = {
     connectionsLoadFailed: 'Connections failed to load. Try again later.',
     connectionsSaveFailed: 'Failed to save the connection. Try again later.',
     connectionsDeleteFailed: 'Failed to delete the connection. Try again later.',
-    keyManagedViaRotate: 'Keys are changed only through the separate update-key action; the current value is never shown here.',
-    disableConnectionNote: 'While disabled, services referencing this connection cannot obtain authentication. Re-enabling restores access.',
+    keyManagedViaRotate:
+      'Keys are changed only through the separate update-key action; the current value is never shown here.',
+    disableConnectionNote:
+      'While disabled, services referencing this connection cannot obtain authentication. Re-enabling restores access.',
     deleteConnectionTitle: 'Delete connection',
-    deleteConnectionDescription: 'After deletion, calls from services referencing this connection fail and cannot be recovered. Confirm nothing references it first.',
+    deleteConnectionDescription:
+      'After deletion, calls from services referencing this connection fail and cannot be recovered. Confirm nothing references it first.',
     confirmDeleteConnection: 'Confirm delete',
     grantFailedRetryHint: 'Failed subjects stay selected so you can fix and retry.',
     licenseColumn: 'License',
-    modelCheckGap: 'No model-call check API exists yet: only configuration sync state is shown, and save/apply results do not prove the model is actually callable.',
+    modelCheckGap:
+      'No model-call check API exists yet: only configuration sync state is shown, and save/apply results do not prove the model is actually callable.',
     statusNoPermission: 'You are not allowed to view configuration status.',
     consistency: 'Revision consistency',
     consistencyMatch: 'In sync',
@@ -277,13 +288,17 @@ const copy = {
     revokeFailed: 'Revocation failed. Try again later.',
     affectedModels: 'Affected models',
     noReferences: 'No model references',
-    referencesUnknownNote: 'Reference counts cannot be confirmed without model-read permission or when the model list fails to load; they are never shown as zero.',
-    deleteBlockedMessage: 'This connection is still referenced by the models below. Change or remove the reference on each model first.',
-    deleteReferencesUnverified: 'Reference information could not be loaded, so it is unverified that no model references this connection.',
+    referencesUnknownNote:
+      'Reference counts cannot be confirmed without model-read permission or when the model list fails to load; they are never shown as zero.',
+    deleteBlockedMessage:
+      'This connection is still referenced by the models below. Change or remove the reference on each model first.',
+    deleteReferencesUnverified:
+      'Reference information could not be loaded, so it is unverified that no model references this connection.',
     deploymentSettingsTitle: 'Deployment runtime settings',
     deploymentSettingsDescription: 'Deployment-level runtime configuration applied to every client of this deployment.',
     modelGatewayLabel: 'Model gateway URL',
-    modelGatewayDescription: 'Base URL of the OpenAI-compatible model gateway used by clients, distributed through service metadata.',
+    modelGatewayDescription:
+      'Base URL of the OpenAI-compatible model gateway used by clients, distributed through service metadata.',
     currentEffectiveValue: 'Effective value',
     overrideValue: 'Runtime override',
     valueSource: 'Source',
@@ -296,14 +311,17 @@ const copy = {
     saveOverride: 'Save override',
     clearOverride: 'Clear override',
     clearOverrideConfirm: 'After clearing, the gateway URL falls back to the environment-configured value. Clear it?',
-    effectTimingHint: 'No service restart is needed after saving: clients pick the change up through service-metadata polling within about 30 seconds.',
+    effectTimingHint:
+      'No service restart is needed after saving: clients pick the change up through service-metadata polling within about 30 seconds.',
     invalidGatewayUrl: 'Enter an absolute http or https URL (at most 2048 characters).',
-    clusterInternalGatewayUrl: 'The gateway URL must not use a cluster-internal hostname (*.svc.cluster.local) or a single-label hostname; clients could not reach it.',
+    clusterInternalGatewayUrl:
+      'The gateway URL must not use a cluster-internal hostname (*.svc.cluster.local) or a single-label hostname; clients could not reach it.',
     deploymentSettingsLoadFailed: 'Deployment settings failed to load. Try again later.',
     deploymentSettingsSaveFailed: 'Deployment settings could not be saved. Try again later.',
     deploymentSettingsRejected: 'The server rejected this gateway URL',
     deploymentNoPermission: 'Your account cannot view deployment runtime settings.',
-    deploymentReadonlyHint: 'Your account is read-only here; changing these settings requires the deployment write permission.',
+    deploymentReadonlyHint:
+      'Your account is read-only here; changing these settings requires the deployment write permission.',
   },
 } as const;
 export const operationsCopy = copy.zh;

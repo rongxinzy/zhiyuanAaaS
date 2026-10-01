@@ -7,8 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageRoot = path.resolve(
-  process.env.ZHIYUAN_ELECTRON_PACKAGE_DIR ??
-    path.join(root, '..', 'zhiyuan-dev', 'dist', 'win-unpacked'),
+  process.env.ZHIYUAN_ELECTRON_PACKAGE_DIR ?? path.join(root, '..', 'zhiyuan-dev', 'dist', 'win-unpacked'),
 );
 const enterpriseRoot = path.join(packageRoot, 'resources', 'zhiyuan-enterprise');
 const source = {
@@ -17,8 +16,7 @@ const source = {
   admin: path.join(root, 'dist', 'admin'),
   notices: path.join(root, 'THIRD_PARTY_NOTICES.md'),
   config: path.resolve(
-    process.env.ZHIYUAN_ENTERPRISE_CONFIG_FILE ??
-      path.join(root, 'build', 'enterprise-config.example.json'),
+    process.env.ZHIYUAN_ENTERPRISE_CONFIG_FILE ?? path.join(root, 'build', 'enterprise-config.example.json'),
   ),
 };
 
@@ -31,11 +29,11 @@ const checks = [
 const sourceRenderer = await collectFiles(source.renderer);
 const packagedRenderer = await collectFiles(path.join(enterpriseRoot, 'ui'));
 assert.deepEqual(
-  packagedRenderer.map(file => file.relative),
-  sourceRenderer.filter(file => !file.relative.endsWith('.map')).map(file => file.relative),
+  packagedRenderer.map((file) => file.relative),
+  sourceRenderer.filter((file) => !file.relative.endsWith('.map')).map((file) => file.relative),
   'Packaged Renderer files do not match the AaaS build output.',
 );
-for (const file of sourceRenderer.filter(file => !file.relative.endsWith('.map'))) {
+for (const file of sourceRenderer.filter((file) => !file.relative.endsWith('.map'))) {
   checks.push(
     await compareFile(
       path.join(source.renderer, file.relative),
@@ -47,11 +45,11 @@ for (const file of sourceRenderer.filter(file => !file.relative.endsWith('.map')
 const sourceAdmin = await collectFiles(source.admin);
 const packagedAdmin = await collectFiles(path.join(enterpriseRoot, 'admin'));
 assert.deepEqual(
-  packagedAdmin.map(file => file.relative),
-  sourceAdmin.filter(file => !file.relative.endsWith('.map')).map(file => file.relative),
+  packagedAdmin.map((file) => file.relative),
+  sourceAdmin.filter((file) => !file.relative.endsWith('.map')).map((file) => file.relative),
   'Packaged Admin Console files do not match the AaaS build output.',
 );
-for (const file of sourceAdmin.filter(file => !file.relative.endsWith('.map'))) {
+for (const file of sourceAdmin.filter((file) => !file.relative.endsWith('.map'))) {
   checks.push(
     await compareFile(
       path.join(source.admin, file.relative),

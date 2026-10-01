@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-contract.js';
+import { type EnterpriseSessionResult, EnterpriseSessionStatus } from '../host-contract.js';
 import {
   EnterpriseRendererLanguage,
-  EnterpriseRendererSurface,
   type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
+  EnterpriseRendererSurface,
 } from '../renderer-contract.js';
 import { LoginForm } from './components/session/LoginForm.js';
+import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
+import { SessionLayout } from './components/session/SessionLayout.js';
 import { AccountSettingsUnavailable } from './components/settings/AccountSettings.js';
 import { EnterpriseSettings } from './components/settings/EnterpriseSettings.js';
 import { ManagedModels } from './components/settings/ManagedModels.js';
-import { PasswordChangeForm } from './components/session/PasswordChangeForm.js';
-import { SessionLayout } from './components/session/SessionLayout.js';
-import { translate, type TranslationKey } from './i18n.js';
+import { type TranslationKey, translate } from './i18n.js';
 import { EnterpriseRendererClient } from './services/enterprise-renderer-client.js';
 import { applyEnterpriseTheme } from './services/enterprise-theme.js';
 
@@ -34,10 +34,9 @@ export function App() {
 
   useEffect(
     () =>
-      client.start(message => {
+      client.start((message) => {
         applyEnterpriseTheme(message);
-        document.documentElement.lang =
-          message.language === EnterpriseRendererLanguage.Chinese ? 'zh-CN' : 'en';
+        document.documentElement.lang = message.language === EnterpriseRendererLanguage.Chinese ? 'zh-CN' : 'en';
         setRuntime({
           language: message.language,
           surface: message.surface,
@@ -52,18 +51,13 @@ export function App() {
 
   const snapshot = runtime.session.ok ? runtime.session.snapshot : null;
   const passwordChangeRequired =
-    snapshot?.status === EnterpriseSessionStatus.Authenticated &&
-    snapshot.identity.passwordChangeRequired;
+    snapshot?.status === EnterpriseSessionStatus.Authenticated && snapshot.identity.passwordChangeRequired;
 
   const updateSession = (session: EnterpriseSessionResult) => {
-    setRuntime(current => (current ? { ...current, session } : current));
+    setRuntime((current) => (current ? { ...current, session } : current));
   };
 
-  const handleLogin = async (input: {
-    aepBaseUrl: string;
-    username: string;
-    password: string;
-  }) => {
+  const handleLogin = async (input: { aepBaseUrl: string; username: string; password: string }) => {
     setPending(true);
     setError(null);
     setSuccess(null);
@@ -83,10 +77,7 @@ export function App() {
     }
   };
 
-  const handlePasswordChange = async (input: {
-    currentPassword: string;
-    newPassword: string;
-  }): Promise<boolean> => {
+  const handlePasswordChange = async (input: { currentPassword: string; newPassword: string }): Promise<boolean> => {
     setPending(true);
     setError(null);
     setSuccess(null);
@@ -181,9 +172,6 @@ export function App() {
   );
 }
 
-function initialError(
-  session: EnterpriseSessionResult,
-  current: TranslationKey | null,
-): TranslationKey | null {
+function initialError(session: EnterpriseSessionResult, current: TranslationKey | null): TranslationKey | null {
   return current ?? (session.ok ? null : 'operationFailed');
 }

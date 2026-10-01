@@ -1,3 +1,15 @@
+import type {
+  AdminModel,
+  CredentialAssignment,
+  CredentialMetadata,
+  DataPlaneRoute,
+  DataPlaneStatus,
+  License,
+  LicenseImportRequest,
+  PlatformUser,
+  Role,
+  Team,
+} from '@aep/sdk-node';
 import {
   DeleteOutlined,
   EyeOutlined,
@@ -8,7 +20,6 @@ import {
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Button,
@@ -30,43 +41,31 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import type {
-  AdminModel,
-  CredentialAssignment,
-  CredentialMetadata,
-  DataPlaneRoute,
-  DataPlaneStatus,
-  License,
-  LicenseImportRequest,
-  PlatformUser,
-  Role,
-  Team,
-} from '@aep/sdk-node';
-
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { runBatch } from './batch.js';
 import {
-  AdminConsoleClient,
-  AdminModelGatewayUrlProblem,
-  AdminPermission,
-  AdminRequestError,
-  AdminSubjectType,
-  hasAdminPermission,
-  modelGatewayBaseUrlProblem,
+  type AdminConsoleClient,
   type AdminCredentials,
   type AdminDataPlane,
   type AdminDataPlaneCatalogComparison,
   type AdminDeploymentSettings,
   type AdminDeploymentSettingValue,
   type AdminIdentity,
+  AdminModelGatewayUrlProblem,
+  AdminPermission,
+  AdminRequestError,
+  AdminSubjectType,
   type AdminUserSession,
+  hasAdminPermission,
+  modelGatewayBaseUrlProblem,
 } from './client.js';
-import { runBatch } from './batch.js';
-import { formatTimestamp } from './format.js';
-import { operationsCopy as copy } from './operations-copy.js';
-import { SessionClientCell, SessionClientDetail } from './session-client.js';
-import { translate, type AdminLanguage } from './i18n.js';
-import { AdminNotificationKind, notify } from './notifications.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import { formatTimestamp } from './format.js';
+import { type AdminLanguage, translate } from './i18n.js';
+import { AdminNotificationKind, notify } from './notifications.js';
+import { operationsCopy as copy } from './operations-copy.js';
+import { SessionClientCell, SessionClientDetail } from './session-client.js';
 
 const language: AdminLanguage = 'zh';
 
@@ -80,13 +79,20 @@ const NO_USERS: readonly PlatformUser[] = [];
 const NO_ROLES: readonly Role[] = [];
 const NO_TEAMS: readonly Team[] = [];
 
-type CredentialGrantTarget = { readonly credential: CredentialMetadata; readonly assignments: readonly CredentialAssignment[] };
+type CredentialGrantTarget = {
+  readonly credential: CredentialMetadata;
+  readonly assignments: readonly CredentialAssignment[];
+};
 
 /**
  * Product licensing section. `section` selects which system-management page to
  * render when this module is embedded; the default is product licensing.
  */
-export function Operations({ client, identity, section = 'licenses' as 'licenses' | 'credentials' | 'status' }: {
+export function Operations({
+  client,
+  identity,
+  section = 'licenses' as 'licenses' | 'credentials' | 'status',
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
   readonly section?: 'licenses' | 'credentials' | 'status';
@@ -97,7 +103,10 @@ export function Operations({ client, identity, section = 'licenses' as 'licenses
 }
 
 /** Login sessions (登录会话). A valid credential does not mean the user is online right now. */
-export function SessionsView({ client, identity }: {
+export function SessionsView({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -105,7 +114,10 @@ export function SessionsView({ client, identity }: {
 }
 
 /** Connection configuration (接入配置): shared service endpoints and credentials. */
-export function CredentialsView({ client, identity }: {
+export function CredentialsView({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -113,7 +125,10 @@ export function CredentialsView({ client, identity }: {
 }
 
 /** Configuration status (配置生效详情): desired vs applied revisions, read-only. */
-export function ConfigurationStatusView({ client, identity }: {
+export function ConfigurationStatusView({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -121,14 +136,21 @@ export function ConfigurationStatusView({ client, identity }: {
 }
 
 /** Deployment runtime settings (部署运行时设置): model gateway override. */
-export function DeploymentSettingsView({ client, identity }: {
+export function DeploymentSettingsView({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
   return <DeploymentSettingsPanel client={client} identity={identity} />;
 }
 
-function ModuleHeading({ title: _title, description, children }: {
+function ModuleHeading({
+  title,
+  description,
+  children,
+}: {
   readonly title: string;
   readonly description: string;
   readonly children?: ReactNode;
@@ -136,7 +158,13 @@ function ModuleHeading({ title: _title, description, children }: {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <Typography.Text type="secondary"><InfoCircleOutlined style={{ marginInlineEnd: 6 }} />{description}</Typography.Text>
+        <Typography.Title level={4} style={{ marginBottom: 4 }}>
+          {title}
+        </Typography.Title>
+        <Typography.Text type="secondary">
+          <InfoCircleOutlined style={{ marginInlineEnd: 6 }} />
+          {description}
+        </Typography.Text>
       </div>
       {children ? <Space wrap>{children}</Space> : null}
     </div>
@@ -145,7 +173,10 @@ function ModuleHeading({ title: _title, description, children }: {
 
 /* --------------------------------- licenses -------------------------------- */
 
-function LicensePanel({ client, identity }: {
+function LicensePanel({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -162,58 +193,83 @@ function LicensePanel({ client, identity }: {
     let live = true;
     setLoading(true);
     setFailed(false);
-    void client.licenses()
-      .then(items => { if (live) setLicenses(items); })
-      .catch(() => { if (live) { setFailed(true); setLicenses(null); } })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+    void client
+      .licenses()
+      .then((items) => {
+        if (live) setLicenses(items);
+      })
+      .catch(() => {
+        if (live) {
+          setFailed(true);
+          setLicenses(null);
+        }
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client, revision]);
 
-  const columns = useMemo(() => [
-    {
-      title: copy.licenseColumn,
-      key: 'license',
-      render: (_: unknown, license: License) => (
-        <Space orientation="vertical" size={0}>
-          <Typography.Text code>{license.licenseId}</Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{license.customerId} · {license.keyId}</Typography.Text>
-        </Space>
-      ),
-    },
-    {
-      title: translate(language, 'licenseStatus'),
-      key: 'status',
-      render: (_: unknown, license: License) => license.status === 'active'
-        ? <Tag color="success">{copy.licenseValid}</Tag>
-        : <Tag color="default">{copy.licenseRevoked}</Tag>,
-    },
-    {
-      title: copy.validUntil,
-      key: 'expiresAt',
-      render: (_: unknown, license: License) => license.expiresAt
-        ? formatTimestamp(license.expiresAt)
-        : <Typography.Text type="secondary">{copy.perpetual}</Typography.Text>,
-    },
-    {
-      title: copy.userScope,
-      key: 'users',
-      render: (_: unknown, license: License) => license.activeUsers,
-    },
-    {
-      title: translate(language, 'actions'),
-      key: 'actions',
-      render: (_: unknown, license: License) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(license)}>{copy.view}</Button>
-          {canRevoke && license.status === 'active' ? (
-            <Button type="link" size="small" danger onClick={() => setRevoking(license)}>
-              {translate(language, 'revokeLicense')}
+  const columns = useMemo(
+    () => [
+      {
+        title: copy.licenseColumn,
+        key: 'license',
+        render: (_: unknown, license: License) => (
+          <Space orientation="vertical" size={0}>
+            <Typography.Text code>{license.licenseId}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {license.customerId} · {license.keyId}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: translate(language, 'licenseStatus'),
+        key: 'status',
+        render: (_: unknown, license: License) =>
+          license.status === 'active' ? (
+            <Tag color="success">{copy.licenseValid}</Tag>
+          ) : (
+            <Tag color="default">{copy.licenseRevoked}</Tag>
+          ),
+      },
+      {
+        title: copy.validUntil,
+        key: 'expiresAt',
+        render: (_: unknown, license: License) =>
+          license.expiresAt ? (
+            formatTimestamp(license.expiresAt)
+          ) : (
+            <Typography.Text type="secondary">{copy.perpetual}</Typography.Text>
+          ),
+      },
+      {
+        title: copy.userScope,
+        key: 'users',
+        render: (_: unknown, license: License) => license.activeUsers,
+      },
+      {
+        title: translate(language, 'actions'),
+        key: 'actions',
+        render: (_: unknown, license: License) => (
+          <Space size={0}>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(license)}>
+              {copy.view}
             </Button>
-          ) : null}
-        </Space>
-      ),
-    },
-  ], [canRevoke]);
+            {canRevoke && license.status === 'active' ? (
+              <Button type="link" size="small" danger onClick={() => setRevoking(license)}>
+                {translate(language, 'revokeLicense')}
+              </Button>
+            ) : null}
+          </Space>
+        ),
+      },
+    ],
+    [canRevoke],
+  );
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -223,7 +279,7 @@ function LicensePanel({ client, identity }: {
             {copy.importLicenseAction}
           </Button>
         ) : null}
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -233,7 +289,11 @@ function LicensePanel({ client, identity }: {
           type="error"
           showIcon
           title={translate(language, 'licensesLoadFailed')}
-          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
 
@@ -244,7 +304,9 @@ function LicensePanel({ client, identity }: {
           dataSource={licenses ? [...licenses] : []}
           loading={loading && licenses === null}
           scroll={{ x: 760 }}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noLicenses')} /> }}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate(language, 'noLicenses')} />,
+          }}
           pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
         />
       )}
@@ -258,19 +320,31 @@ function LicensePanel({ client, identity }: {
       >
         {detail ? (
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label={copy.licenseColumn}><Typography.Text code>{detail.licenseId}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label={copy.licenseColumn}>
+              <Typography.Text code>{detail.licenseId}</Typography.Text>
+            </Descriptions.Item>
             <Descriptions.Item label="customerId">{detail.customerId}</Descriptions.Item>
             <Descriptions.Item label="deploymentId">{detail.deploymentId}</Descriptions.Item>
             <Descriptions.Item label="keyId">{detail.keyId}</Descriptions.Item>
             <Descriptions.Item label={translate(language, 'licenseStatus')}>
-              {detail.status === 'active' ? <Tag color="success">{copy.licenseValid}</Tag> : <Tag>{copy.licenseRevoked}</Tag>}
+              {detail.status === 'active' ? (
+                <Tag color="success">{copy.licenseValid}</Tag>
+              ) : (
+                <Tag>{copy.licenseRevoked}</Tag>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label={copy.issuedAtLabel}>{formatTimestamp(detail.issuedAt)}</Descriptions.Item>
-            <Descriptions.Item label={copy.validUntil}>{detail.expiresAt ? formatTimestamp(detail.expiresAt) : copy.perpetual}</Descriptions.Item>
+            <Descriptions.Item label={copy.validUntil}>
+              {detail.expiresAt ? formatTimestamp(detail.expiresAt) : copy.perpetual}
+            </Descriptions.Item>
             <Descriptions.Item label={copy.graceUntil}>{formatTimestamp(detail.graceEndsAt)}</Descriptions.Item>
             <Descriptions.Item label={copy.userScope}>{detail.activeUsers}</Descriptions.Item>
             <Descriptions.Item label={copy.moduleScope}>
-              <Space wrap>{detail.features.map(feature => <Tag key={feature}>{feature}</Tag>)}</Space>
+              <Space wrap>
+                {detail.features.map((feature) => (
+                  <Tag key={feature}>{feature}</Tag>
+                ))}
+              </Space>
             </Descriptions.Item>
           </Descriptions>
         ) : null}
@@ -281,7 +355,7 @@ function LicensePanel({ client, identity }: {
           client={client}
           open={importOpen}
           onClose={() => setImportOpen(false)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
       {canRevoke && revoking ? (
@@ -289,14 +363,19 @@ function LicensePanel({ client, identity }: {
           client={client}
           license={revoking}
           onClose={() => setRevoking(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
     </div>
   );
 }
 
-function LicenseImportModal({ client, open, onClose, onChanged }: {
+function LicenseImportModal({
+  client,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly open: boolean;
   readonly onClose: () => void;
@@ -306,10 +385,16 @@ function LicenseImportModal({ client, open, onClose, onChanged }: {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (open) { setFile(null); setFailed(false); }
+    if (open) {
+      setFile(null);
+      setFailed(false);
+    }
   }, [open]);
   const submit = async () => {
-    if (!file) { setFailed(true); return; }
+    if (!file) {
+      setFailed(true);
+      return;
+    }
     setPending(true);
     setFailed(false);
     try {
@@ -334,7 +419,9 @@ function LicenseImportModal({ client, open, onClose, onChanged }: {
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
       destroyOnHidden
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
@@ -347,7 +434,7 @@ function LicenseImportModal({ client, open, onClose, onChanged }: {
             aria-label={translate(language, 'licenseFile')}
             disabled={pending}
             style={{ display: 'block', marginTop: 8 }}
-            onChange={event => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
         </div>
         <Alert type="info" showIcon title={copy.licenseImportNote} />
@@ -361,11 +448,23 @@ function extractLicenseEnvelope(value: unknown): LicenseImportRequest['license']
   const candidate = 'license' in value && value.license && typeof value.license === 'object' ? value.license : value;
   if (!candidate || typeof candidate !== 'object') return null;
   const record = candidate as Record<string, unknown>;
-  if (record.format !== 'zhiyuan-license-v1' || typeof record.keyId !== 'string' || typeof record.signature !== 'string' || !record.payload || typeof record.payload !== 'object') return null;
+  if (
+    record.format !== 'zhiyuan-license-v1' ||
+    typeof record.keyId !== 'string' ||
+    typeof record.signature !== 'string' ||
+    !record.payload ||
+    typeof record.payload !== 'object'
+  )
+    return null;
   return candidate as LicenseImportRequest['license'];
 }
 
-function RevokeLicenseModal({ client, license, onClose, onChanged }: {
+function RevokeLicenseModal({
+  client,
+  license,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly license: License;
   readonly onClose: () => void;
@@ -394,13 +493,17 @@ function RevokeLicenseModal({ client, license, onClose, onChanged }: {
       okButtonProps={{ danger: true }}
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         {failed ? <Alert type="error" showIcon title={copy.revokeFailed} /> : null}
         <Space orientation="vertical" size={2}>
-          <span>{copy.licenseColumn}：<Typography.Text code>{license.licenseId}</Typography.Text></span>
+          <span>
+            {copy.licenseColumn}：<Typography.Text code>{license.licenseId}</Typography.Text>
+          </span>
         </Space>
         <Alert type="warning" showIcon title={copy.revokeLicenseImpact} />
         <Typography.Text type="secondary">{translate(language, 'revokeLicenseDescription')}</Typography.Text>
@@ -411,7 +514,10 @@ function RevokeLicenseModal({ client, license, onClose, onChanged }: {
 
 /* --------------------------------- sessions -------------------------------- */
 
-function SessionPanel({ client, identity }: {
+function SessionPanel({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -435,9 +541,7 @@ function SessionPanel({ client, identity }: {
     setLoading(true);
     setFailed(false);
     const userId = filters.userId?.trim() || undefined;
-    const loadUsers = canReadUsers
-      ? client.users().catch(() => null)
-      : Promise.resolve(null);
+    const loadUsers = canReadUsers ? client.users().catch(() => null) : Promise.resolve(null);
     void Promise.all([client.sessions(userId), loadUsers])
       .then(([items, knownUsers]) => {
         if (!live) return;
@@ -445,80 +549,110 @@ function SessionPanel({ client, identity }: {
         setUsers(knownUsers);
       })
       .catch(() => {
-        if (live) { setFailed(true); setSessions(null); }
+        if (live) {
+          setFailed(true);
+          setSessions(null);
+        }
       })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client, canReadUsers, filters.userId, revision]);
 
-  const usersById = useMemo(() => new Map((users ?? NO_USERS).map(user => [user.id, user])), [users]);
+  const usersById = useMemo(() => new Map((users ?? NO_USERS).map((user) => [user.id, user])), [users]);
 
-  const userCell = useCallback((userId: string) => {
-    const user = usersById.get(userId);
-    if (user) {
-      return (
-        <Space orientation="vertical" size={0}>
-          <span>{user.displayName}</span>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{userId}</Typography.Text>
-        </Space>
-      );
-    }
-    return <span>{userId}</span>;
-  }, [usersById]);
+  const userCell = useCallback(
+    (userId: string) => {
+      const user = usersById.get(userId);
+      if (user) {
+        return (
+          <Space orientation="vertical" size={0}>
+            <span>{user.displayName}</span>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {userId}
+            </Typography.Text>
+          </Space>
+        );
+      }
+      return <span>{userId}</span>;
+    },
+    [usersById],
+  );
 
   const rows = useMemo(() => {
     if (!sessions) return [];
     if (!filters.status) return [...sessions];
-    return [...sessions].filter(session => (filters.status === 'revoked' ? Boolean(session.revokedAt) : !session.revokedAt));
+    return [...sessions].filter((session) =>
+      filters.status === 'revoked' ? Boolean(session.revokedAt) : !session.revokedAt,
+    );
   }, [sessions, filters.status]);
 
-  const columns = useMemo(() => [
-    { title: copy.userColumn, key: 'user', render: (_: unknown, session: AdminUserSession) => userCell(session.userId) },
-    {
-      title: copy.clientColumn,
-      key: 'client',
-      render: (_: unknown, session: AdminUserSession) => (
-        <SessionClientCell client={session.client} current={session.sessionId === currentSessionId} />
-      ),
-    },
-    {
-      title: copy.lastActive,
-      key: 'lastActive',
-      render: (_: unknown, session: AdminUserSession) => formatTimestamp(session.lastSeenAt),
-    },
-    {
-      title: translate(language, 'status'),
-      key: 'status',
-      render: (_: unknown, session: AdminUserSession) => session.revokedAt
-        ? <Tag>{copy.sessionStateRevoked}</Tag>
-        : <Tag color="success">{copy.sessionStateActive}</Tag>,
-    },
-    {
-      title: translate(language, 'actions'),
-      key: 'actions',
-      render: (_: unknown, session: AdminUserSession) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(session)}>{copy.view}</Button>
-          {canRevoke && !session.revokedAt ? (
-            session.sessionId === currentSessionId ? (
-              <Tooltip title={translate(language, 'sessionCurrentRevokeDisabled')}>
-                <span>
-                  <Button type="link" size="small" danger disabled>{copy.revokeLogin}</Button>
-                </span>
-              </Tooltip>
-            ) : (
-              <Button type="link" size="small" danger onClick={() => setRevoking(session)}>{copy.revokeLogin}</Button>
-            )
-          ) : null}
-        </Space>
-      ),
-    },
-  ], [canRevoke, userCell, currentSessionId]);
+  const columns = useMemo(
+    () => [
+      {
+        title: copy.userColumn,
+        key: 'user',
+        render: (_: unknown, session: AdminUserSession) => userCell(session.userId),
+      },
+      {
+        title: copy.clientColumn,
+        key: 'client',
+        render: (_: unknown, session: AdminUserSession) => (
+          <SessionClientCell client={session.client} current={session.sessionId === currentSessionId} />
+        ),
+      },
+      {
+        title: copy.lastActive,
+        key: 'lastActive',
+        render: (_: unknown, session: AdminUserSession) => formatTimestamp(session.lastSeenAt),
+      },
+      {
+        title: translate(language, 'status'),
+        key: 'status',
+        render: (_: unknown, session: AdminUserSession) =>
+          session.revokedAt ? (
+            <Tag>{copy.sessionStateRevoked}</Tag>
+          ) : (
+            <Tag color="success">{copy.sessionStateActive}</Tag>
+          ),
+      },
+      {
+        title: translate(language, 'actions'),
+        key: 'actions',
+        render: (_: unknown, session: AdminUserSession) => (
+          <Space size={0}>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(session)}>
+              {copy.view}
+            </Button>
+            {canRevoke && !session.revokedAt ? (
+              session.sessionId === currentSessionId ? (
+                <Tooltip title={translate(language, 'sessionCurrentRevokeDisabled')}>
+                  <span>
+                    <Button type="link" size="small" danger disabled>
+                      {copy.revokeLogin}
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Button type="link" size="small" danger onClick={() => setRevoking(session)}>
+                  {copy.revokeLogin}
+                </Button>
+              )
+            ) : null}
+          </Space>
+        ),
+      },
+    ],
+    [canRevoke, userCell, currentSessionId],
+  );
 
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.sessionsTitle} description={copy.sessionsDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -526,11 +660,7 @@ function SessionPanel({ client, identity }: {
       {/* 2026-09-30 LiXiang2019 登录会话筛选条件 + 查询/重置按钮组 */}
       <Form form={filterForm} layout="inline" style={{ gap: 12 }}>
         <Form.Item name="userId" style={{ marginInlineEnd: 0 }}>
-          <Input
-            allowClear
-            placeholder={translate(language, 'filterUserId')}
-            style={{ width: 280 }}
-          />
+          <Input allowClear placeholder={translate(language, 'filterUserId')} style={{ width: 280 }} />
         </Form.Item>
         <Form.Item name="status" style={{ marginInlineEnd: 0 }}>
           <Select
@@ -548,10 +678,13 @@ function SessionPanel({ client, identity }: {
             form={filterForm}
             searching={loading}
             search={{
-              run: (values) => setFilters({
-                userId: values.userId?.trim() || undefined,
-                status: values.status,
-              }),
+              // exactOptionalPropertyTypes: spread instead of assigning
+              // undefined, which `userId?: string` forbids.
+              run: (values) =>
+                setFilters({
+                  ...(values.userId?.trim() ? { userId: values.userId.trim() } : {}),
+                  ...(values.status ? { status: values.status } : {}),
+                }),
             }}
             onReset={() => setFilters({})}
           />
@@ -563,7 +696,11 @@ function SessionPanel({ client, identity }: {
           type="error"
           showIcon
           title={copy.sessionsLoadFailed}
-          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
 
@@ -594,24 +731,41 @@ function SessionPanel({ client, identity }: {
                 <SessionClientDetail client={detail.client} />
               </Descriptions.Item>
               <Descriptions.Item label={translate(language, 'status')}>
-                {detail.revokedAt ? <Tag>{copy.sessionStateRevoked}</Tag> : <Tag color="success">{copy.sessionStateActive}</Tag>}
+                {detail.revokedAt ? (
+                  <Tag>{copy.sessionStateRevoked}</Tag>
+                ) : (
+                  <Tag color="success">{copy.sessionStateActive}</Tag>
+                )}
               </Descriptions.Item>
               <Descriptions.Item label={copy.lastActive}>{formatTimestamp(detail.lastSeenAt)}</Descriptions.Item>
               <Descriptions.Item label={copy.sessionCreatedAt}>{formatTimestamp(detail.createdAt)}</Descriptions.Item>
               <Descriptions.Item label={copy.sessionRevokedAt}>{formatTimestamp(detail.revokedAt)}</Descriptions.Item>
               <Descriptions.Item label={copy.sessionSubject}>{detail.topic}</Descriptions.Item>
-              <Descriptions.Item label="sessionId"><Typography.Text code copyable={{ text: detail.sessionId }}>{detail.sessionId}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label="sessionId">
+                <Typography.Text code copyable={{ text: detail.sessionId }}>
+                  {detail.sessionId}
+                </Typography.Text>
+              </Descriptions.Item>
             </Descriptions>
             <Alert type="info" showIcon title={copy.sessionsDescription} />
             {canRevoke && !detail.revokedAt ? (
               detail.sessionId === currentSessionId ? (
                 <Tooltip title={translate(language, 'sessionCurrentRevokeDisabled')}>
                   <span>
-                    <Button danger type="primary" disabled>{copy.revokeLogin}</Button>
+                    <Button danger type="primary" disabled>
+                      {copy.revokeLogin}
+                    </Button>
                   </span>
                 </Tooltip>
               ) : (
-                <Button danger type="primary" onClick={() => { setRevoking(detail); setDetail(null); }}>
+                <Button
+                  danger
+                  type="primary"
+                  onClick={() => {
+                    setRevoking(detail);
+                    setDetail(null);
+                  }}
+                >
                   {copy.revokeLogin}
                 </Button>
               )
@@ -626,14 +780,20 @@ function SessionPanel({ client, identity }: {
           session={revoking}
           userLabel={usersById.get(revoking.userId)?.displayName ?? revoking.userId}
           onClose={() => setRevoking(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
     </div>
   );
 }
 
-function RevokeSessionModal({ client, session, userLabel, onClose, onChanged }: {
+function RevokeSessionModal({
+  client,
+  session,
+  userLabel,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly session: AdminUserSession;
   readonly userLabel: string;
@@ -664,14 +824,20 @@ function RevokeSessionModal({ client, session, userLabel, onClose, onChanged }: 
       okButtonProps={{ danger: true }}
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         {failed ? <Alert type="error" showIcon title={copy.revokeFailed} /> : null}
         <Space orientation="vertical" size={2}>
-          <span>{copy.userColumn}：<strong>{userLabel}</strong></span>
-          <span>{copy.clientColumn}：<SessionClientDetail client={session.client} /></span>
+          <span>
+            {copy.userColumn}：<strong>{userLabel}</strong>
+          </span>
+          <span>
+            {copy.clientColumn}：<SessionClientDetail client={session.client} />
+          </span>
         </Space>
         <Alert type="warning" showIcon title={copy.revokeLoginImpact} />
       </Space>
@@ -681,7 +847,10 @@ function RevokeSessionModal({ client, session, userLabel, onClose, onChanged }: 
 
 /* -------------------------------- credentials ------------------------------- */
 
-function CredentialPanel({ client, identity }: {
+function CredentialPanel({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -691,7 +860,10 @@ function CredentialPanel({ client, identity }: {
   const [state, setState] = useState<AdminCredentials | null>(null);
   // null = references unknown (no models.read permission or the model list
   // failed); an empty map = known to have no references.
-  const [references, setReferences] = useState<{ readonly known: boolean; readonly byCredential: ReadonlyMap<string, readonly AdminModel[]> } | null>(null);
+  const [references, setReferences] = useState<{
+    readonly known: boolean;
+    readonly byCredential: ReadonlyMap<string, readonly AdminModel[]>;
+  } | null>(null);
   const [users, setUsers] = useState<readonly PlatformUser[]>(NO_USERS);
   const [roles, setRoles] = useState<readonly Role[]>(NO_ROLES);
   const [teams, setTeams] = useState<readonly Team[]>(NO_TEAMS);
@@ -711,7 +883,7 @@ function CredentialPanel({ client, identity }: {
     setPendingToggleId(credential.id);
     try {
       await client.updateCredential(credential.id, { enabled: !credential.enabled });
-      refresh(value => value + 1);
+      refresh((value) => value + 1);
     } catch {
       notify(AdminNotificationKind.Error, copy.connectionsSaveFailed);
     } finally {
@@ -728,9 +900,7 @@ function CredentialPanel({ client, identity }: {
     const loadResources = client.resources(identity).catch(() => null);
     // Model references are read through the model list (model.credentialId).
     // Without models.read or on failure the references stay "unknown", never 0.
-    const loadModels = canReadModels
-      ? client.models(identity).catch(() => null)
-      : Promise.resolve(null);
+    const loadModels = canReadModels ? client.models(identity).catch(() => null) : Promise.resolve(null);
     void Promise.all([client.credentials(identity), loadResources, loadModels])
       .then(([credentials, resources, models]) => {
         if (!live) return;
@@ -753,13 +923,20 @@ function CredentialPanel({ client, identity }: {
         }
       })
       .catch(() => {
-        if (live) { setFailed(true); setState(null); }
+        if (live) {
+          setFailed(true);
+          setState(null);
+        }
       })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client, identity, canReadModels, revision]);
 
-  const usersById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
+  const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const assignmentsByCredential = useMemo(() => {
     const map = new Map<string, readonly CredentialAssignment[]>();
     for (const assignment of state?.assignments ?? []) {
@@ -769,114 +946,145 @@ function CredentialPanel({ client, identity }: {
     return map;
   }, [state]);
 
-  const subjectLabel = useCallback((assignment: CredentialAssignment): string => {
-    if (assignment.subject.type === AdminSubjectType.User) {
-      const user = usersById.get(assignment.subject.id);
-      return user ? `${user.displayName}（${user.username || user.id}）` : `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
-    }
-    return `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
-  }, [usersById]);
+  const subjectLabel = useCallback(
+    (assignment: CredentialAssignment): string => {
+      if (assignment.subject.type === AdminSubjectType.User) {
+        const user = usersById.get(assignment.subject.id);
+        return user
+          ? `${user.displayName}（${user.username || user.id}）`
+          : `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
+      }
+      return `${subjectTypeLabel(assignment.subject.type)}：${assignment.subject.id}`;
+    },
+    [usersById],
+  );
 
   /** Models referencing a credential; null means the references are unknown. */
-  const referencesOf = useCallback((credential: CredentialMetadata): readonly AdminModel[] | null => {
-    if (!references?.known) return null;
-    return references.byCredential.get(credential.id) ?? [];
-  }, [references]);
+  const referencesOf = useCallback(
+    (credential: CredentialMetadata): readonly AdminModel[] | null => {
+      if (!references?.known) return null;
+      return references.byCredential.get(credential.id) ?? [];
+    },
+    [references],
+  );
 
-  const columns = useMemo(() => [
-    {
-      title: translate(language, 'credentialName'),
-      key: 'name',
-      render: (_: unknown, credential: CredentialMetadata) => (
-        <Space orientation="vertical" size={0}>
-          <span>{credential.name}</span>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{credential.id} · {credential.maskedValue}</Typography.Text>
-        </Space>
-      ),
-    },
-    {
-      title: copy.serviceColumn,
-      key: 'service',
-      render: (_: unknown, credential: CredentialMetadata) => credential.service,
-    },
-    {
-      title: copy.authColumn,
-      key: 'auth',
-      render: (_: unknown, credential: CredentialMetadata) => credential.maskedValue
-        ? <Tag>{copy.authSet}</Tag>
-        : <Tag>{copy.valueUnknown}</Tag>,
-    },
-    {
-      title: copy.referencedModels,
-      key: 'models',
-      render: (_: unknown, credential: CredentialMetadata) => <ReferenceTags references={referencesOf(credential)} />,
-    },
-    {
-      title: translate(language, 'status'),
-      key: 'status',
-      render: (_: unknown, credential: CredentialMetadata) => credential.enabled
-        ? <Tag color="success">{translate(language, 'enabled')}</Tag>
-        : <Tag>{translate(language, 'disabled')}</Tag>,
-    },
-    {
-      title: translate(language, 'actions'),
-      key: 'actions',
-      render: (_: unknown, credential: CredentialMetadata) => (
-        <Space size={0} wrap>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(credential)}>{copy.view}</Button>
-          {canWrite ? (
-            <>
-              <Button type="link" size="small" onClick={() => setEditing(credential)}>{translate(language, 'edit')}</Button>
-              <Button type="link" size="small" onClick={() => setRotating(credential)}>{copy.updateKey}</Button>
-              {credential.enabled ? (
-                <Popconfirm
-                  title={translate(language, 'disable')}
-                  description={copy.disableConnectionNote}
-                  okText={translate(language, 'disable')}
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => void toggleEnabled(credential)}
-                >
-                  <Button type="link" size="small" disabled={pendingToggleId !== null}>
-                    {translate(language, 'disable')}
+  const columns = useMemo(
+    () => [
+      {
+        title: translate(language, 'credentialName'),
+        key: 'name',
+        render: (_: unknown, credential: CredentialMetadata) => (
+          <Space orientation="vertical" size={0}>
+            <span>{credential.name}</span>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {credential.id} · {credential.maskedValue}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: copy.serviceColumn,
+        key: 'service',
+        render: (_: unknown, credential: CredentialMetadata) => credential.service,
+      },
+      {
+        title: copy.authColumn,
+        key: 'auth',
+        render: (_: unknown, credential: CredentialMetadata) =>
+          credential.maskedValue ? <Tag>{copy.authSet}</Tag> : <Tag>{copy.valueUnknown}</Tag>,
+      },
+      {
+        title: copy.referencedModels,
+        key: 'models',
+        render: (_: unknown, credential: CredentialMetadata) => <ReferenceTags references={referencesOf(credential)} />,
+      },
+      {
+        title: translate(language, 'status'),
+        key: 'status',
+        render: (_: unknown, credential: CredentialMetadata) =>
+          credential.enabled ? (
+            <Tag color="success">{translate(language, 'enabled')}</Tag>
+          ) : (
+            <Tag>{translate(language, 'disabled')}</Tag>
+          ),
+      },
+      {
+        title: translate(language, 'actions'),
+        key: 'actions',
+        render: (_: unknown, credential: CredentialMetadata) => (
+          <Space size={0} wrap>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetail(credential)}>
+              {copy.view}
+            </Button>
+            {canWrite ? (
+              <>
+                <Button type="link" size="small" onClick={() => setEditing(credential)}>
+                  {translate(language, 'edit')}
+                </Button>
+                <Button type="link" size="small" onClick={() => setRotating(credential)}>
+                  {copy.updateKey}
+                </Button>
+                {credential.enabled ? (
+                  <Popconfirm
+                    title={translate(language, 'disable')}
+                    description={copy.disableConnectionNote}
+                    okText={translate(language, 'disable')}
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => void toggleEnabled(credential)}
+                  >
+                    <Button type="link" size="small" disabled={pendingToggleId !== null}>
+                      {translate(language, 'disable')}
+                    </Button>
+                  </Popconfirm>
+                ) : (
+                  <Button
+                    type="link"
+                    size="small"
+                    disabled={pendingToggleId !== null}
+                    onClick={() => void toggleEnabled(credential)}
+                  >
+                    {translate(language, 'enable')}
                   </Button>
-                </Popconfirm>
-              ) : (
+                )}
                 <Button
                   type="link"
                   size="small"
-                  disabled={pendingToggleId !== null}
-                  onClick={() => void toggleEnabled(credential)}
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => setDeleting(credential)}
                 >
-                  {translate(language, 'enable')}
+                  {translate(language, 'delete')}
                 </Button>
-              )}
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(credential)}>
-                {translate(language, 'delete')}
+              </>
+            ) : null}
+            {canAssign ? (
+              <Button
+                type="link"
+                size="small"
+                icon={<TeamOutlined />}
+                onClick={() =>
+                  setGranting({ credential, assignments: assignmentsByCredential.get(credential.id) ?? [] })
+                }
+              >
+                {copy.grantAccess}
               </Button>
-            </>
-          ) : null}
-          {canAssign ? (
-            <Button
-              type="link"
-              size="small"
-              icon={<TeamOutlined />}
-              onClick={() => setGranting({ credential, assignments: assignmentsByCredential.get(credential.id) ?? [] })}
-            >
-              {copy.grantAccess}
-            </Button>
-          ) : null}
-        </Space>
-      ),
-    },
-  ], [canWrite, canAssign, assignmentsByCredential, referencesOf, client]);
+            ) : null}
+          </Space>
+        ),
+      },
+    ],
+    [canWrite, canAssign, assignmentsByCredential, referencesOf, client],
+  );
 
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.credentialsTitle} description={copy.credentialsDescription}>
         {canWrite ? (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>{copy.addConnection}</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+            {copy.addConnection}
+          </Button>
         ) : null}
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -895,41 +1103,47 @@ function CredentialPanel({ client, identity }: {
           type="error"
           showIcon
           title={copy.connectionsLoadFailed}
-          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
 
       {failed && state === null ? null : (
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={state ? [...state.credentials] : []}
-        loading={loading && state === null}
-        scroll={{ x: 900 }}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.connectionsEmpty} /> }}
-        pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
-        expandable={{
-          expandedRowRender: (credential: CredentialMetadata) => {
-            const assignments = assignmentsByCredential.get(credential.id) ?? [];
-            return assignments.length === 0 ? (
-              <Typography.Text type="secondary">{copy.usageSubjects}：{copy.notCollected}</Typography.Text>
-            ) : (
-              <Space wrap size={8}>
-                {assignments.map(assignment => (
-                  <CredentialAssignmentChip
-                    key={assignment.id}
-                    assignment={assignment}
-                    label={subjectLabel(assignment)}
-                    canAssign={canAssign}
-                    client={client}
-                    onChanged={() => refresh(value => value + 1)}
-                  />
-                ))}
-              </Space>
-            );
-          },
-        }}
-      />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={state ? [...state.credentials] : []}
+          loading={loading && state === null}
+          scroll={{ x: 900 }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.connectionsEmpty} /> }}
+          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+          expandable={{
+            expandedRowRender: (credential: CredentialMetadata) => {
+              const assignments = assignmentsByCredential.get(credential.id) ?? [];
+              return assignments.length === 0 ? (
+                <Typography.Text type="secondary">
+                  {copy.usageSubjects}：{copy.notCollected}
+                </Typography.Text>
+              ) : (
+                <Space wrap size={8}>
+                  {assignments.map((assignment) => (
+                    <CredentialAssignmentChip
+                      key={assignment.id}
+                      assignment={assignment}
+                      label={subjectLabel(assignment)}
+                      canAssign={canAssign}
+                      client={client}
+                      onChanged={() => refresh((value) => value + 1)}
+                    />
+                  ))}
+                </Space>
+              );
+            },
+          }}
+        />
       )}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {translate(language, 'credentialSecretHint')}
@@ -945,7 +1159,11 @@ function CredentialPanel({ client, identity }: {
         {detail ? (
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={translate(language, 'credentialName')}>{detail.name}</Descriptions.Item>
-            <Descriptions.Item label="id"><Typography.Text code copyable={{ text: detail.id }}>{detail.id}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="id">
+              <Typography.Text code copyable={{ text: detail.id }}>
+                {detail.id}
+              </Typography.Text>
+            </Descriptions.Item>
             <Descriptions.Item label={copy.serviceColumn}>{detail.service}</Descriptions.Item>
             <Descriptions.Item label={copy.authColumn}>
               {detail.maskedValue ? `${copy.authSet}（${detail.maskedValue}）` : copy.valueUnknown}
@@ -954,7 +1172,11 @@ function CredentialPanel({ client, identity }: {
               {translate(language, detail.deliveryMode === 'client' ? 'clientDelivery' : 'serverOnlyDelivery')}
             </Descriptions.Item>
             <Descriptions.Item label={translate(language, 'status')}>
-              {detail.enabled ? <Tag color="success">{translate(language, 'enabled')}</Tag> : <Tag>{translate(language, 'disabled')}</Tag>}
+              {detail.enabled ? (
+                <Tag color="success">{translate(language, 'enabled')}</Tag>
+              ) : (
+                <Tag>{translate(language, 'disabled')}</Tag>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label={copy.referencedModels}>
               <ReferenceTags references={referencesOf(detail)} />
@@ -968,7 +1190,10 @@ function CredentialPanel({ client, identity }: {
           client={client}
           open
           onClose={() => setCreating(false)}
-          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+          onChanged={() => {
+            setSavedNotice(true);
+            refresh((value) => value + 1);
+          }}
         />
       ) : null}
       {canWrite && editing ? (
@@ -977,7 +1202,10 @@ function CredentialPanel({ client, identity }: {
           credential={editing}
           open
           onClose={() => setEditing(null)}
-          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+          onChanged={() => {
+            setSavedNotice(true);
+            refresh((value) => value + 1);
+          }}
         />
       ) : null}
       {canWrite && rotating ? (
@@ -987,7 +1215,10 @@ function CredentialPanel({ client, identity }: {
           affected={referencesOf(rotating)}
           open
           onClose={() => setRotating(null)}
-          onChanged={() => { setSavedNotice(true); refresh(value => value + 1); }}
+          onChanged={() => {
+            setSavedNotice(true);
+            refresh((value) => value + 1);
+          }}
         />
       ) : null}
       {canWrite && deleting ? (
@@ -997,7 +1228,7 @@ function CredentialPanel({ client, identity }: {
           references={referencesOf(deleting)}
           open
           onClose={() => setDeleting(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
       {canAssign && granting ? (
@@ -1009,7 +1240,7 @@ function CredentialPanel({ client, identity }: {
           teams={teams}
           open
           onClose={() => setGranting(null)}
-          onChanged={() => refresh(value => value + 1)}
+          onChanged={() => refresh((value) => value + 1)}
         />
       ) : null}
     </div>
@@ -1030,12 +1261,20 @@ function ReferenceTags({ references }: { readonly references: readonly AdminMode
   }
   return (
     <Space wrap size={[4, 4]}>
-      {references.map(model => <Tag key={model.id}>{model.displayName}</Tag>)}
+      {references.map((model) => (
+        <Tag key={model.id}>{model.displayName}</Tag>
+      ))}
     </Space>
   );
 }
 
-function CredentialAssignmentChip({ assignment, label, canAssign, client, onChanged }: {
+function CredentialAssignmentChip({
+  assignment,
+  label,
+  canAssign,
+  client,
+  onChanged,
+}: {
   readonly assignment: CredentialAssignment;
   readonly label: string;
   readonly canAssign: boolean;
@@ -1065,14 +1304,26 @@ function CredentialAssignmentChip({ assignment, label, canAssign, client, onChan
           okButtonProps={{ danger: true }}
           onConfirm={() => void revoke()}
         >
-          <Button type="text" size="small" icon={<StopOutlined />} loading={pending} aria-label={translate(language, 'revoke')} />
+          <Button
+            type="text"
+            size="small"
+            icon={<StopOutlined />}
+            loading={pending}
+            aria-label={translate(language, 'revoke')}
+          />
         </Popconfirm>
       ) : null}
     </Space>
   );
 }
 
-function ConnectionEditorModal({ client, credential, open, onClose, onChanged }: {
+function ConnectionEditorModal({
+  client,
+  credential,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly credential?: CredentialMetadata | undefined;
   readonly open: boolean;
@@ -1080,7 +1331,13 @@ function ConnectionEditorModal({ client, credential, open, onClose, onChanged }:
   readonly onChanged: () => void;
 }) {
   const editing = Boolean(credential);
-  const [form] = Form.useForm<{ name: string; service: string; deliveryMode: 'server_only' | 'client'; enabled: boolean; value?: string }>();
+  const [form] = Form.useForm<{
+    name: string;
+    service: string;
+    deliveryMode: 'server_only' | 'client';
+    enabled: boolean;
+    value?: string;
+  }>();
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -1096,7 +1353,13 @@ function ConnectionEditorModal({ client, credential, open, onClose, onChanged }:
       setFailed(false);
     }
   }, [open, credential, form]);
-  const submit = async (values: { name: string; service: string; deliveryMode: 'server_only' | 'client'; enabled: boolean; value?: string }) => {
+  const submit = async (values: {
+    name: string;
+    service: string;
+    deliveryMode: 'server_only' | 'client';
+    enabled: boolean;
+    value?: string;
+  }) => {
     setPending(true);
     setFailed(false);
     try {
@@ -1133,15 +1396,27 @@ function ConnectionEditorModal({ client, credential, open, onClose, onChanged }:
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
       destroyOnHidden
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void form.submit()}
     >
-      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
-        {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.connectionsSaveFailed} /> : null}
-        <Form.Item name="name" label={translate(language, 'credentialName')} rules={[{ required: true, message: copy.nameRequired }]}>
+      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)} disabled={pending}>
+        {failed ? (
+          <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.connectionsSaveFailed} />
+        ) : null}
+        <Form.Item
+          name="name"
+          label={translate(language, 'credentialName')}
+          rules={[{ required: true, message: copy.nameRequired }]}
+        >
           <Input />
         </Form.Item>
-        <Form.Item name="service" label={copy.serviceColumn} rules={[{ required: true, message: copy.serviceRequired }]}>
+        <Form.Item
+          name="service"
+          label={copy.serviceColumn}
+          rules={[{ required: true, message: copy.serviceRequired }]}
+        >
           <Input />
         </Form.Item>
         {!editing ? (
@@ -1159,7 +1434,10 @@ function ConnectionEditorModal({ client, credential, open, onClose, onChanged }:
         </Form.Item>
         {editing ? (
           <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
-            <Switch checkedChildren={translate(language, 'enabled')} unCheckedChildren={translate(language, 'disabled')} />
+            <Switch
+              checkedChildren={translate(language, 'enabled')}
+              unCheckedChildren={translate(language, 'disabled')}
+            />
           </Form.Item>
         ) : null}
       </Form>
@@ -1167,7 +1445,14 @@ function ConnectionEditorModal({ client, credential, open, onClose, onChanged }:
   );
 }
 
-function RotateKeyModal({ client, credential, affected, open, onClose, onChanged }: {
+function RotateKeyModal({
+  client,
+  credential,
+  affected,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly credential: CredentialMetadata;
   readonly affected: readonly AdminModel[] | null;
@@ -1206,10 +1491,12 @@ function RotateKeyModal({ client, credential, affected, open, onClose, onChanged
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
       destroyOnHidden={false}
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void form.submit()}
     >
-      <Form form={form} layout="vertical" onFinish={values => void submit(values)} disabled={pending}>
+      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)} disabled={pending}>
         {failed ? (
           <Alert
             type="error"
@@ -1224,11 +1511,13 @@ function RotateKeyModal({ client, credential, affected, open, onClose, onChanged
           showIcon
           style={{ marginBottom: 16 }}
           title={copy.affectedModels}
-          description={affected === null
-            ? `${copy.valueUnknown}（${copy.referencesUnknownNote}）`
-            : affected.length > 0
-              ? affected.map(model => model.displayName).join('、')
-              : copy.noReferences}
+          description={
+            affected === null
+              ? `${copy.valueUnknown}（${copy.referencesUnknownNote}）`
+              : affected.length > 0
+                ? affected.map((model) => model.displayName).join('、')
+                : copy.noReferences
+          }
         />
         <Form.Item
           name="value"
@@ -1243,7 +1532,14 @@ function RotateKeyModal({ client, credential, affected, open, onClose, onChanged
   );
 }
 
-function DeleteConnectionModal({ client, credential, references, open, onClose, onChanged }: {
+function DeleteConnectionModal({
+  client,
+  credential,
+  references,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly credential: CredentialMetadata;
   readonly references: readonly AdminModel[] | null;
@@ -1277,26 +1573,42 @@ function DeleteConnectionModal({ client, credential, references, open, onClose, 
       okButtonProps={{ danger: true, disabled: blocked }}
       cancelText={translate(language, 'cancel')}
       confirmLoading={pending}
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         {failed ? <Alert type="error" showIcon title={copy.connectionsDeleteFailed} /> : null}
-        <span>{translate(language, 'credentialName')}：<strong>{credential.name}</strong>（{credential.service}）</span>
+        <span>
+          {translate(language, 'credentialName')}：<strong>{credential.name}</strong>（{credential.service}）
+        </span>
         {blocked ? (
-          <Alert type="error" showIcon title={copy.deleteBlockedMessage} description={<ReferenceTags references={references} />} />
+          <Alert
+            type="error"
+            showIcon
+            title={copy.deleteBlockedMessage}
+            description={<ReferenceTags references={references} />}
+          />
         ) : (
           <Alert type="warning" showIcon title={copy.deleteConnectionDescription} />
         )}
-        {references === null ? (
-          <Alert type="info" showIcon title={copy.deleteReferencesUnverified} />
-        ) : null}
+        {references === null ? <Alert type="info" showIcon title={copy.deleteReferencesUnverified} /> : null}
       </Space>
     </Modal>
   );
 }
 
-function GrantAccessModal({ client, target, users, roles, teams, open, onClose, onChanged }: {
+function GrantAccessModal({
+  client,
+  target,
+  users,
+  roles,
+  teams,
+  open,
+  onClose,
+  onChanged,
+}: {
   readonly client: AdminConsoleClient;
   readonly target: CredentialGrantTarget;
   readonly users: readonly PlatformUser[];
@@ -1310,55 +1622,67 @@ function GrantAccessModal({ client, target, users, roles, teams, open, onClose, 
   const [pending, setPending] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[] | null>(null);
   const excluded = useMemo(
-    () => new Set(target.assignments.map(item => `${item.subject.type}:${item.subject.id}`)),
+    () => new Set(target.assignments.map((item) => `${item.subject.type}:${item.subject.id}`)),
     [target],
   );
-  const options = useMemo(() => [
-    {
-      label: translate(language, 'userScope'),
-      options: users
-        .filter(user => !excluded.has(`user:${user.id}`))
-        .map(user => ({ value: `user:${user.id}`, label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}` })),
-    },
-    {
-      label: translate(language, 'role'),
-      options: roles
-        .filter(role => !excluded.has(`role:${role.id}`))
-        .map(role => ({ value: `role:${role.id}`, label: role.name ?? role.id })),
-    },
-    {
-      label: translate(language, 'teamScope'),
-      options: teams
-        .filter(team => !excluded.has(`team:${team.id}`))
-        .map(team => ({ value: `team:${team.id}`, label: team.name ?? team.id })),
-    },
-  ], [users, roles, teams, excluded]);
+  const options = useMemo(
+    () => [
+      {
+        label: translate(language, 'userScope'),
+        options: users
+          .filter((user) => !excluded.has(`user:${user.id}`))
+          .map((user) => ({
+            value: `user:${user.id}`,
+            label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}`,
+          })),
+      },
+      {
+        label: translate(language, 'role'),
+        options: roles
+          .filter((role) => !excluded.has(`role:${role.id}`))
+          .map((role) => ({ value: `role:${role.id}`, label: role.name ?? role.id })),
+      },
+      {
+        label: translate(language, 'teamScope'),
+        options: teams
+          .filter((team) => !excluded.has(`team:${team.id}`))
+          .map((team) => ({ value: `team:${team.id}`, label: team.name ?? team.id })),
+      },
+    ],
+    [users, roles, teams, excluded],
+  );
   useEffect(() => {
-    if (open) { setSelected([]); setFailedSubjects(null); }
-  }, [open, target.credential.id]);
-  const optionLabel = useCallback((key: string): string => {
-    for (const group of options) {
-      const found = group.options.find(option => option.value === key);
-      if (found) return found.label;
+    if (open) {
+      setSelected([]);
+      setFailedSubjects(null);
     }
-    return key;
-  }, [options]);
+  }, [open, target.credential.id]);
+  const optionLabel = useCallback(
+    (key: string): string => {
+      for (const group of options) {
+        const found = group.options.find((option) => option.value === key);
+        if (found) return found.label;
+      }
+      return key;
+    },
+    [options],
+  );
   const submit = async () => {
     if (selected.length === 0) return;
     setPending(true);
     setFailedSubjects(null);
-    const results = await runBatch([...selected], async key => {
+    const results = await runBatch([...selected], async (key) => {
       const separator = key.indexOf(':');
       const type = key.slice(0, separator) as 'user' | 'role' | 'team';
       const id = key.slice(separator + 1);
       await client.createCredentialAssignment({ credentialId: target.credential.id, subject: { type, id } });
     });
-    const failures = results.filter(result => !result.ok).map(result => result.item);
+    const failures = results.filter((result) => !result.ok).map((result) => result.item);
     setPending(false);
     if (failures.length > 0) {
       // Keep only the failed subjects selected so the operator can retry them.
       setSelected(failures);
-      setFailedSubjects(failures.map(key => optionLabel(key)));
+      setFailedSubjects(failures.map((key) => optionLabel(key)));
       onChanged();
       return;
     }
@@ -1374,7 +1698,9 @@ function GrantAccessModal({ client, target, users, roles, teams, open, onClose, 
       confirmLoading={pending}
       okButtonProps={{ disabled: selected.length === 0 }}
       destroyOnHidden
-      onCancel={() => { if (!pending) onClose(); }}
+      onCancel={() => {
+        if (!pending) onClose();
+      }}
       onOk={() => void submit()}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
@@ -1385,7 +1711,9 @@ function GrantAccessModal({ client, target, users, roles, teams, open, onClose, 
             title={translate(language, 'credentialAssignmentFailed')}
             description={
               <div>
-                <div>{translate(language, 'grantFailedSubjects')}：{failedSubjects.join('、')}</div>
+                <div>
+                  {translate(language, 'grantFailedSubjects')}：{failedSubjects.join('、')}
+                </div>
                 <div>{copy.grantFailedRetryHint}</div>
               </div>
             }
@@ -1396,7 +1724,7 @@ function GrantAccessModal({ client, target, users, roles, teams, open, onClose, 
           style={{ width: '100%' }}
           placeholder={translate(language, 'grantCredentialDescription')}
           value={[...selected]}
-          onChange={values => setSelected(values)}
+          onChange={(values) => setSelected(values)}
           options={options}
           showSearch={{ optionFilterProp: 'label' }}
         />
@@ -1437,21 +1765,23 @@ function dataPlaneStateTag(state: DataPlaneStatus['state']) {
 
 function driftFieldLabel(field: string): string {
   switch (field) {
-    case 'enabled': return copy.driftFieldEnabled;
-    case 'endpoint': return copy.driftFieldEndpoint;
-    case 'upstreamModel': return copy.driftFieldUpstreamModel;
-    case 'providerType': return copy.driftFieldProviderType;
-    case 'credentialRef': return copy.driftFieldCredentialRef;
-    default: return field;
+    case 'enabled':
+      return copy.driftFieldEnabled;
+    case 'endpoint':
+      return copy.driftFieldEndpoint;
+    case 'upstreamModel':
+      return copy.driftFieldUpstreamModel;
+    case 'providerType':
+      return copy.driftFieldProviderType;
+    case 'credentialRef':
+      return copy.driftFieldCredentialRef;
+    default:
+      return field;
   }
 }
 
-function CatalogComparisonAlert({ comparison }: {
-  readonly comparison: AdminDataPlaneCatalogComparison;
-}) {
-  const hasDrift = comparison.missing.length > 0
-    || comparison.extra.length > 0
-    || comparison.mismatched.length > 0;
+function CatalogComparisonAlert({ comparison }: { readonly comparison: AdminDataPlaneCatalogComparison }) {
+  const hasDrift = comparison.missing.length > 0 || comparison.extra.length > 0 || comparison.mismatched.length > 0;
   return (
     <Alert
       type={hasDrift ? 'warning' : 'success'}
@@ -1463,12 +1793,16 @@ function CatalogComparisonAlert({ comparison }: {
             {copy.catalogComparisonNote}
           </Typography.Text>
           {comparison.missing.length > 0 ? (
-            <span>{copy.catalogMissing}：{comparison.missing.join('、')}</span>
+            <span>
+              {copy.catalogMissing}：{comparison.missing.join('、')}
+            </span>
           ) : null}
           {comparison.extra.length > 0 ? (
-            <span>{copy.catalogExtra}：{comparison.extra.join('、')}</span>
+            <span>
+              {copy.catalogExtra}：{comparison.extra.join('、')}
+            </span>
           ) : null}
-          {comparison.mismatched.map(item => (
+          {comparison.mismatched.map((item) => (
             <span key={item.modelId}>
               {copy.catalogMismatched}：{item.modelId}（{item.fields.map(driftFieldLabel).join('、')}）
             </span>
@@ -1479,7 +1813,10 @@ function CatalogComparisonAlert({ comparison }: {
   );
 }
 
-function ConfigurationStatusPanel({ client, identity }: {
+function ConfigurationStatusPanel({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -1493,28 +1830,41 @@ function ConfigurationStatusPanel({ client, identity }: {
     let live = true;
     setLoading(true);
     setFailed(false);
-    void client.dataPlane()
-      .then(next => { if (live) setState(next); })
-      .catch(() => { if (live) { setFailed(true); setState(null); } })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+    void client
+      .dataPlane()
+      .then((next) => {
+        if (live) setState(next);
+      })
+      .catch(() => {
+        if (live) {
+          setFailed(true);
+          setState(null);
+        }
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client, allowed, revision]);
 
   if (!allowed) {
-    return (
-      <Result
-        status="403"
-        title={copy.statusNoPermission}
-      />
-    );
+    return <Result status="403" title={copy.statusNoPermission} />;
   }
 
   const desired = state?.desired;
   const status = state?.status;
   const observed = status?.observedRevision ?? '';
-  const inSync = observed
-    ? (desired?.revision === observed ? <Tag color="success">{copy.consistencyMatch}</Tag> : <Tag color="warning">{copy.consistencyMismatch}</Tag>)
-    : <Tag>{copy.valueUnknown}</Tag>;
+  const inSync = observed ? (
+    desired?.revision === observed ? (
+      <Tag color="success">{copy.consistencyMatch}</Tag>
+    ) : (
+      <Tag color="warning">{copy.consistencyMismatch}</Tag>
+    )
+  ) : (
+    <Tag>{copy.valueUnknown}</Tag>
+  );
 
   const routeColumns = [
     {
@@ -1523,7 +1873,11 @@ function ConfigurationStatusPanel({ client, identity }: {
       render: (_: unknown, route: DataPlaneRoute) => (
         <Space orientation="vertical" size={0}>
           <span>{route.modelId}</span>
-          {route.upstreamModel ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{route.upstreamModel}</Typography.Text> : null}
+          {route.upstreamModel ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {route.upstreamModel}
+            </Typography.Text>
+          ) : null}
         </Space>
       ),
     },
@@ -1531,23 +1885,27 @@ function ConfigurationStatusPanel({ client, identity }: {
     {
       title: copy.routeProviderColumn,
       key: 'providerType',
-      render: (_: unknown, route: DataPlaneRoute) => route.providerType === 'deepseek'
-        ? translate(language, 'deepSeekProvider')
-        : translate(language, 'openAiProvider'),
+      render: (_: unknown, route: DataPlaneRoute) =>
+        route.providerType === 'deepseek'
+          ? translate(language, 'deepSeekProvider')
+          : translate(language, 'openAiProvider'),
     },
     {
       title: translate(language, 'status'),
       key: 'enabled',
-      render: (_: unknown, route: DataPlaneRoute) => route.enabled
-        ? <Tag color="success">{translate(language, 'enabled')}</Tag>
-        : <Tag>{translate(language, 'disabled')}</Tag>,
+      render: (_: unknown, route: DataPlaneRoute) =>
+        route.enabled ? (
+          <Tag color="success">{translate(language, 'enabled')}</Tag>
+        ) : (
+          <Tag>{translate(language, 'disabled')}</Tag>
+        ),
     },
   ];
 
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.statusTitle} description={copy.statusDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(value => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -1557,7 +1915,11 @@ function ConfigurationStatusPanel({ client, identity }: {
           type="error"
           showIcon
           title={translate(language, 'dataPlaneLoadFailed')}
-          action={<Button size="small" onClick={() => refresh(value => value + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
 
@@ -1571,17 +1933,29 @@ function ConfigurationStatusPanel({ client, identity }: {
             <Typography.Text code>{desired?.revision ?? copy.valueUnknown}</Typography.Text>
           </Descriptions.Item>
           <Descriptions.Item label={copy.appliedRevision}>
-            {observed ? <Typography.Text code>{observed}</Typography.Text> : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+            {observed ? (
+              <Typography.Text code>{observed}</Typography.Text>
+            ) : (
+              <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label={copy.consistency}>{inSync}</Descriptions.Item>
           <Descriptions.Item label={copy.configState}>
             {status ? dataPlaneStateTag(status.state) : <Tag>{copy.stateUnknown}</Tag>}
           </Descriptions.Item>
           <Descriptions.Item label={copy.lastSync}>
-            {status?.lastAppliedAt ? formatTimestamp(status.lastAppliedAt) : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+            {status?.lastAppliedAt ? (
+              formatTimestamp(status.lastAppliedAt)
+            ) : (
+              <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label={copy.publishedAt}>
-            {desired?.publishedAt ? formatTimestamp(desired.publishedAt) : <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>}
+            {desired?.publishedAt ? (
+              formatTimestamp(desired.publishedAt)
+            ) : (
+              <Typography.Text type="secondary">{copy.valueUnknown}</Typography.Text>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label={copy.resourceCount}>
             {status?.resourceCount ?? <Typography.Text type="secondary">{copy.notCollected}</Typography.Text>}
@@ -1601,15 +1975,15 @@ function ConfigurationStatusPanel({ client, identity }: {
         />
       ) : null}
 
-      {status?.catalogComparison ? (
-        <CatalogComparisonAlert comparison={status.catalogComparison} />
-      ) : null}
+      {status?.catalogComparison ? <CatalogComparisonAlert comparison={status.catalogComparison} /> : null}
 
       <div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{copy.routesReadonlyNote}</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {copy.routesReadonlyNote}
+        </Typography.Text>
         <Table
           style={{ marginTop: 8 }}
-          rowKey={route => `${route.modelId}-${route.endpoint}`}
+          rowKey={(route) => `${route.modelId}-${route.endpoint}`}
           columns={routeColumns}
           dataSource={desired ? [...desired.routes] : []}
           loading={loading && state === null}
@@ -1630,7 +2004,10 @@ function deploymentSourceTag(source: AdminDeploymentSettingValue['source']) {
   return <Tag color="warning">{copy.sourceUnset}</Tag>;
 }
 
-function DeploymentSettingsPanel({ client, identity }: {
+function DeploymentSettingsPanel({
+  client,
+  identity,
+}: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
@@ -1650,8 +2027,11 @@ function DeploymentSettingsPanel({ client, identity }: {
     setLoading(true);
     setFailed(false);
     setForbidden(false);
-    void client.deploymentSettings()
-      .then(next => { if (live) setSettings(next); })
+    void client
+      .deploymentSettings()
+      .then((next) => {
+        if (live) setSettings(next);
+      })
       .catch((error: unknown) => {
         if (!live) return;
         // A 403 here means the role check passed locally but the server
@@ -1661,8 +2041,12 @@ function DeploymentSettingsPanel({ client, identity }: {
         else setFailed(true);
         setSettings(null);
       })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [client, canRead, revision]);
 
   const save = async (value: string) => {
@@ -1672,14 +2056,15 @@ function DeploymentSettingsPanel({ client, identity }: {
       await client.updateDeploymentSettings({ modelGatewayBaseUrl: value.trim() });
       notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
       setEditing(false);
-      refresh(current => current + 1);
+      refresh((current) => current + 1);
     } catch (error) {
       // A 422 carries the server-side validation detail; keep the draft open
       // so the operator can fix the value instead of retyping it.
       setSaveError({
-        title: error instanceof AdminRequestError && error.status === 422
-          ? copy.deploymentSettingsRejected
-          : copy.deploymentSettingsSaveFailed,
+        title:
+          error instanceof AdminRequestError && error.status === 422
+            ? copy.deploymentSettingsRejected
+            : copy.deploymentSettingsSaveFailed,
         detail: error instanceof AdminRequestError ? error.detail : null,
       });
     } finally {
@@ -1693,7 +2078,7 @@ function DeploymentSettingsPanel({ client, identity }: {
     try {
       await client.updateDeploymentSettings({ modelGatewayBaseUrl: null });
       notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
-      refresh(current => current + 1);
+      refresh((current) => current + 1);
     } catch (error) {
       setSaveError({
         title: copy.deploymentSettingsSaveFailed,
@@ -1712,7 +2097,7 @@ function DeploymentSettingsPanel({ client, identity }: {
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.deploymentSettingsTitle} description={copy.deploymentSettingsDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh(current => current + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((current) => current + 1)}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -1724,7 +2109,11 @@ function DeploymentSettingsPanel({ client, identity }: {
           type="error"
           showIcon
           title={copy.deploymentSettingsLoadFailed}
-          action={<Button size="small" onClick={() => refresh(current => current + 1)}>{copy.retry}</Button>}
+          action={
+            <Button size="small" onClick={() => refresh((current) => current + 1)}>
+              {copy.retry}
+            </Button>
+          }
         />
       ) : null}
 
@@ -1734,18 +2123,28 @@ function DeploymentSettingsPanel({ client, identity }: {
         <>
           <Descriptions bordered column={1} size="small" title={copy.modelGatewayLabel}>
             <Descriptions.Item label={copy.currentEffectiveValue}>
-              {gateway.effectiveValue
-                ? <Typography.Text code style={{ wordBreak: 'break-all' }}>{gateway.effectiveValue}</Typography.Text>
-                : <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>}
+              {gateway.effectiveValue ? (
+                <Typography.Text code style={{ wordBreak: 'break-all' }}>
+                  {gateway.effectiveValue}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label={copy.valueSource}>{deploymentSourceTag(gateway.source)}</Descriptions.Item>
             <Descriptions.Item label={copy.overrideValue}>
-              {gateway.override
-                ? <Typography.Text code style={{ wordBreak: 'break-all' }}>{gateway.override}</Typography.Text>
-                : <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>}
+              {gateway.override ? (
+                <Typography.Text code style={{ wordBreak: 'break-all' }}>
+                  {gateway.override}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">{copy.noEffectiveValue}</Typography.Text>
+              )}
             </Descriptions.Item>
           </Descriptions>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{copy.modelGatewayDescription}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {copy.modelGatewayDescription}
+          </Typography.Text>
 
           {saveError && !editing ? (
             <Alert type="error" showIcon title={saveError.title} description={saveError.detail ?? undefined} />
@@ -1758,11 +2157,22 @@ function DeploymentSettingsPanel({ client, identity }: {
                 pending={pending}
                 error={saveError}
                 onSubmit={save}
-                onCancel={() => { if (!pending) { setEditing(false); setSaveError(null); } }}
+                onCancel={() => {
+                  if (!pending) {
+                    setEditing(false);
+                    setSaveError(null);
+                  }
+                }}
               />
             ) : (
               <Space wrap>
-                <Button type="primary" onClick={() => { setEditing(true); setSaveError(null); }}>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    setEditing(true);
+                    setSaveError(null);
+                  }}
+                >
                   {copy.editOverride}
                 </Button>
                 {gateway.override ? (
@@ -1774,7 +2184,9 @@ function DeploymentSettingsPanel({ client, identity }: {
                     cancelText={translate(language, 'cancel')}
                     onConfirm={() => void clear()}
                   >
-                    <Button danger disabled={pending}>{copy.clearOverride}</Button>
+                    <Button danger disabled={pending}>
+                      {copy.clearOverride}
+                    </Button>
                   </Popconfirm>
                 ) : null}
               </Space>
@@ -1788,7 +2200,13 @@ function DeploymentSettingsPanel({ client, identity }: {
   );
 }
 
-function DeploymentSettingsEditor({ initial, pending, error, onSubmit, onCancel }: {
+function DeploymentSettingsEditor({
+  initial,
+  pending,
+  error,
+  onSubmit,
+  onCancel,
+}: {
   readonly initial: string;
   readonly pending: boolean;
   readonly error: { readonly title: string; readonly detail: string | null } | null;
@@ -1802,7 +2220,7 @@ function DeploymentSettingsEditor({ initial, pending, error, onSubmit, onCancel 
       layout="vertical"
       initialValues={{ gateway: initial }}
       disabled={pending}
-      onFinish={values => void onSubmit(values.gateway)}
+      onFinish={(values) => void onSubmit(values.gateway)}
       style={{ maxWidth: 560 }}
     >
       {error ? (
@@ -1817,21 +2235,25 @@ function DeploymentSettingsEditor({ initial, pending, error, onSubmit, onCancel 
       <Form.Item
         name="gateway"
         label={copy.modelGatewayLabel}
-        rules={[{
-          validator: (_, value: unknown) => {
-            const problem = modelGatewayBaseUrlProblem(typeof value === 'string' ? value : '');
-            if (problem === AdminModelGatewayUrlProblem.ClusterInternal) {
-              return Promise.reject(new Error(copy.clusterInternalGatewayUrl));
-            }
-            if (problem) return Promise.reject(new Error(copy.invalidGatewayUrl));
-            return Promise.resolve();
+        rules={[
+          {
+            validator: (_, value: unknown) => {
+              const problem = modelGatewayBaseUrlProblem(typeof value === 'string' ? value : '');
+              if (problem === AdminModelGatewayUrlProblem.ClusterInternal) {
+                return Promise.reject(new Error(copy.clusterInternalGatewayUrl));
+              }
+              if (problem) return Promise.reject(new Error(copy.invalidGatewayUrl));
+              return Promise.resolve();
+            },
           },
-        }]}
+        ]}
       >
         <Input placeholder={copy.overridePlaceholder} allowClear />
       </Form.Item>
       <Space>
-        <Button type="primary" htmlType="submit" loading={pending}>{copy.saveOverride}</Button>
+        <Button type="primary" htmlType="submit" loading={pending}>
+          {copy.saveOverride}
+        </Button>
         <Button onClick={onCancel}>{translate(language, 'cancel')}</Button>
       </Space>
     </Form>

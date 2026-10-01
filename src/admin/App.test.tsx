@@ -1,67 +1,58 @@
 /**
  * @vitest-environment jsdom
  */
-import "@testing-library/jest-dom/vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AdminConsoleClient, AdminMetadataError } from "./client.js";
-import { administratorIdentity } from "./test-fixtures.js";
-import { AdminApp } from "./App.js";
-import { PortalClient } from "./portal.js";
+import '@testing-library/jest-dom/vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { AdminApp } from './App.js';
+import { AdminConsoleClient, AdminMetadataError } from './client.js';
+import { PortalClient } from './portal.js';
+import { administratorIdentity } from './test-fixtures.js';
 
-vi.mock("./Resources.js", () => ({
-  Resources: ({ tab }: { tab: string }) => (
-    <div data-testid="resource">{tab}</div>
-  ),
+vi.mock('./Resources.js', () => ({
+  Resources: ({ tab }: { tab: string }) => <div data-testid="resource">{tab}</div>,
 }));
-vi.mock("./Models.js", () => ({ Models: () => <div>model-content</div> }));
-vi.mock("./ServiceStatus.js", () => ({
+vi.mock('./Models.js', () => ({ Models: () => <div>model-content</div> }));
+vi.mock('./ServiceStatus.js', () => ({
   KnowledgeView: () => <div>knowledge-content</div>,
   ServicesView: () => <div>services-content</div>,
 }));
-vi.mock("./DigitalEmployees.js", () => ({
+vi.mock('./DigitalEmployees.js', () => ({
   DigitalEmployees: () => <div>employee-content</div>,
 }));
-vi.mock("./Operations.js", () => ({
+vi.mock('./Operations.js', () => ({
   Operations: () => <div>license-content</div>,
   SessionsView: () => <div>session-content</div>,
   CredentialsView: () => <div>credentials-content</div>,
   ConfigurationStatusView: () => <div>configuration-content</div>,
   DeploymentSettingsView: () => <div>deployment-settings-content</div>,
 }));
-vi.mock("./Identity.js", () => ({
+vi.mock('./Identity.js', () => ({
   Identity: () => <div>mapping-content</div>,
 }));
 
-describe("Ant Design admin shell", () => {
+describe('Ant Design admin shell', () => {
   beforeEach(() => {
-    window.location.hash = "";
-    vi.spyOn(PortalClient.prototype, "listEmployees").mockResolvedValue([]);
-    vi.spyOn(PortalClient.prototype, "listRequests").mockResolvedValue([]);
+    window.location.hash = '';
+    vi.spyOn(PortalClient.prototype, 'listEmployees').mockResolvedValue([]);
+    vi.spyOn(PortalClient.prototype, 'listRequests').mockResolvedValue([]);
     localStorage.clear();
-    vi.spyOn(AdminConsoleClient.prototype, "restore").mockResolvedValue({
-      status: "signed-out",
+    vi.spyOn(AdminConsoleClient.prototype, 'restore').mockResolvedValue({
+      status: 'signed-out',
     });
-    vi.spyOn(AdminConsoleClient.prototype, "login").mockResolvedValue({
-      status: "authenticated",
+    vi.spyOn(AdminConsoleClient.prototype, 'login').mockResolvedValue({
+      status: 'authenticated',
       identity: administratorIdentity,
     });
-    vi.spyOn(AdminConsoleClient.prototype, "logout").mockResolvedValue();
-    vi.spyOn(AdminConsoleClient.prototype, "overview").mockResolvedValue({
+    vi.spyOn(AdminConsoleClient.prototype, 'logout').mockResolvedValue();
+    vi.spyOn(AdminConsoleClient.prototype, 'overview').mockResolvedValue({
       users: 4,
       teams: 2,
       skills: 3,
       models: 1,
       pendingEvents: 0,
     });
-    vi.spyOn(AdminConsoleClient.prototype, "searchAudit").mockResolvedValue({
+    vi.spyOn(AdminConsoleClient.prototype, 'searchAudit').mockResolvedValue({
       items: [],
       nextCursor: null,
     });
@@ -72,129 +63,109 @@ describe("Ant Design admin shell", () => {
   });
   function authenticated() {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
-      status: "authenticated",
+      status: 'authenticated',
       identity: administratorIdentity,
     });
   }
-  test("requires administrator credentials and submits them without an enterprise ID", async () => {
+  test('requires administrator credentials and submits them without an enterprise ID', async () => {
     render(<AdminApp />);
-    expect(await screen.findByLabelText("用户名")).toHaveValue("");
-    expect(screen.queryByLabelText("部署 ID")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("企业 ID")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    await screen.findAllByText("请填写用户名和密码。");
+    expect(await screen.findByLabelText('用户名')).toHaveValue('');
+    expect(screen.queryByLabelText('部署 ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('企业 ID')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await screen.findAllByText('请填写用户名和密码。');
     expect(AdminConsoleClient.prototype.login).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("用户名"), {
-      target: { value: " alice " },
+    fireEvent.change(screen.getByLabelText('用户名'), {
+      target: { value: ' alice ' },
     });
-    fireEvent.change(screen.getByLabelText("密码"), {
-      target: { value: "test-password" },
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'test-password' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() =>
       expect(AdminConsoleClient.prototype.login).toHaveBeenCalledWith({
-        username: "alice",
-        password: "test-password",
+        username: 'alice',
+        password: 'test-password',
       }),
     );
-    expect(
-      await screen.findByRole("heading", { name: "概览" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
-  test("shows a recoverable login error", async () => {
+  test('shows a recoverable login error', async () => {
+    vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(new Error('denied'));
+    render(<AdminApp />);
+    fireEvent.change(await screen.findByLabelText('用户名'), {
+      target: { value: 'admin' },
+    });
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请检查账号信息或稍后重试。');
+    expect(screen.getByRole('button', { name: '登录' })).not.toBeDisabled();
+  });
+  test('explains when the server metadata does not name a deployment', async () => {
     vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(
-      new Error("denied"),
+      new AdminMetadataError('AEP server metadata could not be retrieved.'),
     );
     render(<AdminApp />);
-    fireEvent.change(await screen.findByLabelText("用户名"), {
-      target: { value: "admin" },
+    fireEvent.change(await screen.findByLabelText('用户名'), {
+      target: { value: 'admin' },
     });
-    fireEvent.change(screen.getByLabelText("密码"), {
-      target: { value: "wrong" },
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'test-password' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("登录失败，请检查账号信息或稍后重试。");
-    expect(screen.getByRole("button", { name: "登录" })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('无法获取部署信息，请确认企业管控服务可用后重试。');
+    expect(screen.getByRole('button', { name: '登录' })).not.toBeDisabled();
   });
-  test("explains when the server metadata does not name a deployment", async () => {
-    vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(
-      new AdminMetadataError("AEP server metadata could not be retrieved."),
-    );
-    render(<AdminApp />);
-    fireEvent.change(await screen.findByLabelText("用户名"), {
-      target: { value: "admin" },
-    });
-    fireEvent.change(screen.getByLabelText("密码"), {
-      target: { value: "test-password" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
-      "无法获取部署信息，请确认企业管控服务可用后重试。",
-    );
-    expect(screen.getByRole("button", { name: "登录" })).not.toBeDisabled();
-  });
-  test("renders seven business entries without legacy navigation", async () => {
+  test('renders seven business entries without legacy navigation', async () => {
     authenticated();
     render(<AdminApp />);
-    await screen.findByRole("heading", { name: "概览" });
-    expect(screen.getAllByRole("menuitem")).toHaveLength(7);
-    for (const name of [
-      "概览",
-      "数字员工",
-      "知识库",
-      "技能管理",
-      "用户管理",
-      "日志审计",
-      "系统管理",
-    ])
-      expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
-    for (const name of ["资源管理", "身份对齐", "平台运维", "数据平面"])
-      expect(screen.queryByRole("menuitem", { name })).not.toBeInTheDocument();
+    await screen.findByRole('heading', { name: '概览' });
+    expect(screen.getAllByRole('menuitem')).toHaveLength(7);
+    for (const name of ['概览', '数字员工', '知识库', '技能管理', '用户管理', '日志审计', '系统管理'])
+      expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
+    for (const name of ['资源管理', '身份对齐', '平台运维', '数据平面'])
+      expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument();
   });
-  test("hides unauthorized entries and rejects direct navigation", async () => {
+  test('hides unauthorized entries and rejects direct navigation', async () => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
-      status: "authenticated",
+      status: 'authenticated',
       identity: {
         ...administratorIdentity,
         roles: [],
-        permissions: ["models.read"],
+        permissions: ['models.read'],
       },
     });
     render(<AdminApp />);
-    expect(
-      await screen.findByRole("menuitem", { name: "系统管理" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("menuitem", { name: "用户管理" }),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: '系统管理' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '用户管理' })).not.toBeInTheDocument();
     await act(async () => {
-      window.location.hash = "users";
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      window.location.hash = 'users';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
-    expect(await screen.findByText("没有管理权限")).toBeInTheDocument();
-    expect(screen.queryByTestId("resource")).not.toBeInTheDocument();
+    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
+    expect(screen.queryByTestId('resource')).not.toBeInTheDocument();
   });
-  test("preserves legacy links and supports browser route changes", async () => {
+  test('preserves legacy links and supports browser route changes', async () => {
     authenticated();
-    window.location.hash = "identity";
+    window.location.hash = 'identity';
     render(<AdminApp />);
-    expect(await screen.findByText("mapping-content")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "登录会话" }));
-    expect(await screen.findByText("session-content")).toBeInTheDocument();
-    expect(window.location.hash).toBe("#users/sessions");
+    expect(await screen.findByText('mapping-content')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '登录会话' }));
+    expect(await screen.findByText('session-content')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#users/sessions');
   });
-  test("renders the deployment settings surface under system settings", async () => {
+  test('renders the deployment settings surface under system settings', async () => {
     authenticated();
-    window.location.hash = "system/settings";
+    window.location.hash = 'system/settings';
     render(<AdminApp />);
-    expect(
-      await screen.findByText("deployment-settings-content"),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "基本设置" })).toBeInTheDocument();
+    expect(await screen.findByText('deployment-settings-content')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '基本设置' })).toBeInTheDocument();
   });
-  test("keeps unknown counts distinct from zero and refreshes failures", async () => {
+  test('keeps unknown counts distinct from zero and refreshes failures', async () => {
     authenticated();
     vi.mocked(AdminConsoleClient.prototype.overview).mockResolvedValueOnce({
       users: 4,
@@ -202,34 +173,24 @@ describe("Ant Design admin shell", () => {
       skills: 3,
       models: 1,
       pendingEvents: 0,
-      failed: ["teams"],
+      failed: ['teams'],
     });
     render(<AdminApp />);
-    expect(await screen.findByText("暂无法获取")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("部分概览数据");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /刷新/ })).not.toHaveClass(
-        "ant-btn-loading",
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /刷新/ }));
-    await waitFor(() =>
-      expect(AdminConsoleClient.prototype.overview).toHaveBeenCalledTimes(2),
-    );
-    await waitFor(() =>
-      expect(screen.queryByText("暂无法获取")).not.toBeInTheDocument(),
-    );
+    expect(await screen.findByText('暂无法获取')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('部分概览数据');
+    await waitFor(() => expect(screen.getByRole('button', { name: /刷新/ })).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
+    await waitFor(() => expect(AdminConsoleClient.prototype.overview).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('暂无法获取')).not.toBeInTheDocument());
   });
-  test("allows forbidden users to clear session and switch account", async () => {
+  test('allows forbidden users to clear session and switch account', async () => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
-      status: "forbidden",
+      status: 'forbidden',
       identity: administratorIdentity,
     });
     render(<AdminApp />);
-    fireEvent.click(await screen.findByRole("button", { name: "切换账号" }));
-    expect(
-      await screen.findByRole("heading", { name: "登录企业管理后台" }),
-    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: '切换账号' }));
+    expect(await screen.findByRole('heading', { name: '登录企业管理后台' })).toBeInTheDocument();
     expect(AdminConsoleClient.prototype.logout).toHaveBeenCalledOnce();
   });
 });

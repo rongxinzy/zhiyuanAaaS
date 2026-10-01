@@ -1,16 +1,7 @@
-import type {
-  AepSessionState,
-  AepTokens,
-  CurrentIdentity,
-  ModelConnection,
-  ServiceMetadata,
-} from '@aep/sdk-node';
+import type { AepSessionState, AepTokens, CurrentIdentity, ModelConnection, ServiceMetadata } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
-import {
-  ZhiyuanPasswordSession,
-  type PasswordSessionClient,
-} from './password-session.js';
+import { type PasswordSessionClient, ZhiyuanPasswordSession } from './password-session.js';
 import { ZhiyuanPasswordSessionProvider } from './provider.js';
 
 describe('Zhiyuan password session provider', () => {

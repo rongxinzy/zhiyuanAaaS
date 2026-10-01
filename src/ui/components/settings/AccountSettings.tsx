@@ -2,10 +2,10 @@ import { CircleAlert } from 'lucide-react';
 
 import type { EnterpriseSessionIdentity } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
-import { translate, type TranslationKey } from '../../i18n.js';
+import { type TranslationKey, translate } from '../../i18n.js';
+import { PasswordChangeForm } from '../session/PasswordChangeForm.js';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert.js';
 import { Separator } from '../ui/separator.js';
-import { PasswordChangeForm } from '../session/PasswordChangeForm.js';
 
 interface AccountSettingsProps {
   readonly language: EnterpriseRendererLanguage;
@@ -14,10 +14,7 @@ interface AccountSettingsProps {
   readonly signingOut: boolean;
   readonly error: TranslationKey | null;
   readonly success: TranslationKey | null;
-  readonly onPasswordChange: (input: {
-    currentPassword: string;
-    newPassword: string;
-  }) => Promise<boolean>;
+  readonly onPasswordChange: (input: { currentPassword: string; newPassword: string }) => Promise<boolean>;
   readonly onSignOut: () => Promise<void>;
 }
 
@@ -40,10 +37,7 @@ export function AccountSettings({
       translate(language, 'roles'),
       identity.roles.length > 0 ? identity.roles.join(', ') : translate(language, 'noRoles'),
     ],
-    [
-      translate(language, 'sessionExpiresAt'),
-      formatSessionExpiry(identity.sessionExpiresAt, language),
-    ],
+    [translate(language, 'sessionExpiresAt'), formatSessionExpiry(identity.sessionExpiresAt, language)],
   ] as const;
 
   return (
@@ -69,9 +63,7 @@ export function AccountSettings({
           <h2 id="password-security-heading" className="text-sm font-semibold">
             {translate(language, 'passwordSecurity')}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {translate(language, 'passwordSecurityDescription')}
-          </p>
+          <p className="text-sm text-muted-foreground">{translate(language, 'passwordSecurityDescription')}</p>
         </div>
         <PasswordChangeForm
           language={language}
@@ -91,11 +83,7 @@ export function AccountSettings({
   );
 }
 
-export function AccountSettingsUnavailable({
-  language,
-}: {
-  readonly language: EnterpriseRendererLanguage;
-}) {
+export function AccountSettingsUnavailable({ language }: { readonly language: EnterpriseRendererLanguage }) {
   return (
     <main className="h-full overflow-y-auto bg-background px-4 py-4 sm:px-6">
       <Alert variant="warning">

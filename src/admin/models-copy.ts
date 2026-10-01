@@ -57,8 +57,7 @@ const zh = {
   accessEmpty: '暂无授权对象',
   accessHint: '使用权限只允许调用模型，不交付上游密钥。',
   associatedGapTitle: '关联数字员工暂未接入',
-  associatedGapDescription:
-    '数字员工与模型的关联关系需要门户员工接口；接入后在此展示受配置变更影响的数字员工。',
+  associatedGapDescription: '数字员工与模型的关联关系需要门户员工接口；接入后在此展示受配置变更影响的数字员工。',
   statusAlertTitle: '保存、应用、检测分别判断',
   statusAlertDescription:
     '保存成功只证明配置持久化；网关回报版本后才算已应用；实际调用检测通过才算检测成功。旧版本检测结果不能证明新配置可用。',
@@ -77,7 +76,8 @@ const zh = {
   configRefresh: '刷新生效状态',
   publishAction: '发布生效',
   publishConfirmTitle: '从模型目录发布网关路由',
-  publishConfirmDescription: '按当前模型目录派生并原子替换网关期望路由；仅收录已启用且映射完整（网关地址与上游模型齐全）的模型。',
+  publishConfirmDescription:
+    '按当前模型目录派生并原子替换网关期望路由；仅收录已启用且映射完整（网关地址与上游模型齐全）的模型。',
   publishExcluded: '以下模型不会被收录',
   publishExcludedDisabled: '未启用',
   publishExcludedIncomplete: '映射不完整',
@@ -109,7 +109,8 @@ const en: Record<keyof typeof zh, string> = {
   stateEnabled: 'Enabled',
   stateDisabled: 'Disabled',
   testNotRun: 'Not tested',
-  testGapHint: 'No model invocation test API yet. A successful save only means the config is persisted — not applied or callable.',
+  testGapHint:
+    'No model invocation test API yet. A successful save only means the config is persisted — not applied or callable.',
   configPending: 'Pending apply',
   configApplying: 'Applying',
   configApplied: 'Applied',
@@ -123,8 +124,10 @@ const en: Record<keyof typeof zh, string> = {
   configGatewayState: 'Gateway sync state',
   configRouteIncluded: 'Route for this model: included',
   configRouteMissing: 'Route for this model: missing',
-  configRouteMissingHint: 'The model is absent from the gateway desired state; it may not be published through the gateway (or uses a non-gateway path).',
-  configNotConfirmed: 'The gateway has not reported an observed revision; the running config is unknown and is not treated as applied.',
+  configRouteMissingHint:
+    'The model is absent from the gateway desired state; it may not be published through the gateway (or uses a non-gateway path).',
+  configNotConfirmed:
+    'The gateway has not reported an observed revision; the running config is unknown and is not treated as applied.',
   configLoadFailedHint: 'Gateway sync state could not be loaded; config effectiveness cannot be judged from this.',
   configNoPermission: 'No permission',
   configNoPermissionTitle: 'Config effectiveness requires ops permission',
@@ -143,7 +146,8 @@ const en: Record<keyof typeof zh, string> = {
   labelCapabilities: 'Capabilities',
   labelExecutionService: 'Execution service',
   executionServiceGateway: 'Model gateway (desired-state sync)',
-  credentialNote: 'API keys are not maintained on the model page; update them under "Connections" — models reuse them by reference.',
+  credentialNote:
+    'API keys are not maintained on the model page; update them under "Connections" — models reuse them by reference.',
   accessColSubject: 'Subject',
   accessColType: 'Type',
   accessColTime: 'Granted',
@@ -154,7 +158,7 @@ const en: Record<keyof typeof zh, string> = {
     'The model-to-employee relationship needs the portal employee API; once wired, employees affected by config changes are listed here.',
   statusAlertTitle: 'Save, apply, and detect are judged separately',
   statusAlertDescription:
-    'A successful save only persists configuration; applied requires the gateway-reported revision; detected requires a real invocation. A previous revision\'s test result does not validate the new config.',
+    "A successful save only persists configuration; applied requires the gateway-reported revision; detected requires a real invocation. A previous revision's test result does not validate the new config.",
   statusTimelineSaved: 'Desired state saved',
   statusTimelineApplied: 'Applied by gateway',
   statusTimelineNotApplied: 'Application unconfirmed',
@@ -170,14 +174,16 @@ const en: Record<keyof typeof zh, string> = {
   configRefresh: 'Refresh status',
   publishAction: 'Publish routes',
   publishConfirmTitle: 'Publish gateway routes from the model catalog',
-  publishConfirmDescription: 'Derives gateway routes from the current model catalog and atomically replaces the desired routes; only enabled models with complete mapping (gateway endpoint and upstream model) are included.',
+  publishConfirmDescription:
+    'Derives gateway routes from the current model catalog and atomically replaces the desired routes; only enabled models with complete mapping (gateway endpoint and upstream model) are included.',
   publishExcluded: 'Excluded from publishing',
   publishExcludedDisabled: 'disabled',
   publishExcludedIncomplete: 'incomplete mapping',
   publishSucceeded: 'Published; waiting for the gateway to apply',
   publishFailed: 'Publish failed',
   driftMissing: 'Pending publish',
-  driftMissingHint: 'The model is enabled with complete mapping but is absent from the desired gateway routes; run "Publish routes".',
+  driftMissingHint:
+    'The model is enabled with complete mapping but is absent from the desired gateway routes; run "Publish routes".',
   driftMismatched: 'Config drift',
   driftMismatchedHint: 'The desired gateway route differs from the catalog-derived route; run "Publish routes".',
   catalogPublishState: 'Catalog publish state',

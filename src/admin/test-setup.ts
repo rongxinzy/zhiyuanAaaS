@@ -1,7 +1,7 @@
 // Browser APIs needed by Ant Design's responsive layouts in jsdom.
-if (typeof window !== "undefined") {
+if (typeof window !== 'undefined') {
   if (!window.matchMedia)
-    Object.defineProperty(window, "matchMedia", {
+    Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: (query: string) => ({
         matches: false,
@@ -33,7 +33,7 @@ if (typeof window !== "undefined") {
   const captured = window.localStorage;
   if (globalThis.localStorage === undefined || globalThis.localStorage === null) {
     const store = captured ?? createMemoryStorage();
-    Object.defineProperty(globalThis, "localStorage", {
+    Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       get() {
         return store;

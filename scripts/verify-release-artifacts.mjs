@@ -6,15 +6,13 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const releaseDirectory = path.resolve(
-  process.env.ZHIYUAN_RELEASE_DIR ?? path.join(root, 'release'),
-);
+const releaseDirectory = path.resolve(process.env.ZHIYUAN_RELEASE_DIR ?? path.join(root, 'release'));
 const checksumFile = path.join(releaseDirectory, 'SHA256SUMS.txt');
 
 const entries = await fs.readdir(releaseDirectory, { withFileTypes: true });
 const installers = entries
-  .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.exe'))
-  .map(entry => entry.name)
+  .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.exe'))
+  .map((entry) => entry.name)
   .sort();
 assert.ok(installers.length > 0, `No Windows installer found in ${releaseDirectory}.`);
 
@@ -36,17 +34,14 @@ for (const installer of installers) {
   verified.push({ name: installer, bytes: content.byteLength, sha256: actual });
 }
 
-console.log(
-  JSON.stringify(
-    { status: 'passed', releaseDirectory, checksumFile, installers: verified },
-    null,
-    2,
-  ),
-);
+console.log(JSON.stringify({ status: 'passed', releaseDirectory, checksumFile, installers: verified }, null, 2));
 
 function parseChecksumFile(value) {
   const result = new Map();
-  for (const line of value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)) {
+  for (const line of value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)) {
     const match = line.match(/^([a-f0-9]{64})\s{2}(.+\.exe)$/i);
     assert.ok(match, `Invalid SHA256SUMS.txt line: ${line}`);
     const [, digest, name] = match;

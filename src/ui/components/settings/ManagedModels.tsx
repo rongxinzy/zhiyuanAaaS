@@ -2,23 +2,16 @@ import { CloudAlert, CloudOff, Cpu, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  ModelCapabilityStatus,
   type ManagedProviderCatalogModel,
   type ModelCapabilities,
+  ModelCapabilityStatus,
 } from '../../../host-contract.js';
 import type { EnterpriseRendererLanguage } from '../../../renderer-contract.js';
-import { translate, type TranslationKey } from '../../i18n.js';
+import { type TranslationKey, translate } from '../../i18n.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/empty.js';
 import { Skeleton } from '../ui/skeleton.js';
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '../ui/empty.js';
 
 export const ZHIYUAN_MODEL_PROVIDER_KEY = 'custom_enterprise';
 
@@ -60,9 +53,7 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
     const request = ++requestSequence.current;
     setState({ status: ManagedModelLoadStatus.Loading });
     try {
-      const models = (await loadModels()).filter(
-        model => model.providerKey === ZHIYUAN_MODEL_PROVIDER_KEY,
-      );
+      const models = (await loadModels()).filter((model) => model.providerKey === ZHIYUAN_MODEL_PROVIDER_KEY);
       if (request === requestSequence.current) {
         setState({ status: ManagedModelLoadStatus.Ready, models });
       }
@@ -86,9 +77,7 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
       aria-label={translate(language, 'managedModelsTitle')}
     >
       <header className="flex items-start justify-between gap-4">
-        <p className="min-w-0 text-sm text-muted-foreground">
-          {translate(language, 'managedModelsDescription')}
-        </p>
+        <p className="min-w-0 text-sm text-muted-foreground">{translate(language, 'managedModelsDescription')}</p>
         <Button
           type="button"
           variant="ghost"
@@ -122,7 +111,7 @@ export function ManagedModels({ language, loadModels }: ManagedModelsProps) {
         />
       ) : (
         <div role="list">
-          {state.models.map(model => (
+          {state.models.map((model) => (
             <ModelRow key={`${model.providerKey}/${model.id}`} language={language} model={model} />
           ))}
         </div>
@@ -152,9 +141,7 @@ function ModelRow({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="break-words text-sm font-semibold">{model.displayName}</h2>
-              {model.isDefault ? (
-                <Badge variant="secondary">{translate(language, 'defaultModel')}</Badge>
-              ) : null}
+              {model.isDefault ? <Badge variant="secondary">{translate(language, 'defaultModel')}</Badge> : null}
             </div>
             <p className="break-all text-xs text-tertiary-foreground">{model.id}</p>
           </div>
@@ -163,15 +150,11 @@ function ModelRow({
 
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-xs text-tertiary-foreground">
-            {translate(language, 'modelProvider')}
-          </dt>
+          <dt className="text-xs text-tertiary-foreground">{translate(language, 'modelProvider')}</dt>
           <dd className="font-normal">{model.providerDisplayName}</dd>
         </div>
         <div>
-          <dt className="text-xs text-tertiary-foreground">
-            {translate(language, 'contextWindow')}
-          </dt>
+          <dt className="text-xs text-tertiary-foreground">{translate(language, 'contextWindow')}</dt>
           <dd className="font-normal">
             {model.contextWindow
               ? `${new Intl.NumberFormat(language).format(model.contextWindow)} ${translate(language, 'tokens')}`
@@ -182,15 +165,13 @@ function ModelRow({
 
       <div className="flex flex-wrap gap-2" aria-label={translate(language, 'modelCapabilities')}>
         {capabilities.length > 0 ? (
-          capabilities.map(capability => (
+          capabilities.map((capability) => (
             <Badge key={capability} variant="outline">
               {translate(language, CapabilityTranslationKeys[capability])}
             </Badge>
           ))
         ) : (
-          <span className="text-xs text-tertiary-foreground">
-            {translate(language, 'noDeclaredCapabilities')}
-          </span>
+          <span className="text-xs text-tertiary-foreground">{translate(language, 'noDeclaredCapabilities')}</span>
         )}
       </div>
     </article>
@@ -234,11 +215,8 @@ function ModelCatalogMessage({
 function ModelListSkeleton({ language }: { readonly language: EnterpriseRendererLanguage }) {
   return (
     <div role="status" aria-label={translate(language, 'loadingModels')}>
-      {[0, 1, 2].map(item => (
-        <div
-          key={item}
-          className="flex gap-3 border-b border-border-subtle py-4 first:pt-0 last:border-b-0"
-        >
+      {[0, 1, 2].map((item) => (
+        <div key={item} className="flex gap-3 border-b border-border-subtle py-4 first:pt-0 last:border-b-0">
           <Skeleton className="size-8 shrink-0" />
           <div className="flex flex-1 flex-col gap-2">
             <Skeleton className="h-4 w-2/5" />
@@ -251,11 +229,9 @@ function ModelListSkeleton({ language }: { readonly language: EnterpriseRenderer
   );
 }
 
-function supportedCapabilities(
-  capabilities: Partial<ModelCapabilities> | undefined,
-): Array<keyof ModelCapabilities> {
+function supportedCapabilities(capabilities: Partial<ModelCapabilities> | undefined): Array<keyof ModelCapabilities> {
   if (!capabilities) return [];
   return (Object.keys(CapabilityTranslationKeys) as Array<keyof ModelCapabilities>).filter(
-    capability => capabilities[capability] === ModelCapabilityStatus.Supported,
+    (capability) => capabilities[capability] === ModelCapabilityStatus.Supported,
   );
 }

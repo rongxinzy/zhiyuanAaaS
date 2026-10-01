@@ -1,13 +1,8 @@
-import { useEffect, useState } from "react";
-import { Alert, Button, Select, Space, Typography } from "antd";
-import type { CredentialMetadata } from "@aep/sdk-node";
-import {
-  AdminPermission,
-  hasAdminPermission,
-  type AdminConsoleClient,
-  type AdminIdentity,
-} from "./client.js";
-import { connectionCopy as c } from "./model-connection-copy.js";
+import type { CredentialMetadata } from '@aep/sdk-node';
+import { Alert, Button, Select, Space, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { type AdminConsoleClient, type AdminIdentity, AdminPermission, hasAdminPermission } from './client.js';
+import { connectionCopy as c } from './model-connection-copy.js';
 
 /** Controlled Form.Item field. Only credential metadata is requested. */
 export function ModelConnectionSelect({
@@ -38,12 +33,7 @@ export function ModelConnectionSelect({
     void client
       .credentials(identity)
       .then((result) => {
-        if (live)
-          setRows(
-            result.credentials.filter(
-              (row) => row.enabled && row.deliveryMode === "server_only",
-            ),
-          );
+        if (live) setRows(result.credentials.filter((row) => row.enabled && row.deliveryMode === 'server_only'));
       })
       .catch(() => {
         if (live) {
@@ -67,7 +57,7 @@ export function ModelConnectionSelect({
     );
   const missing = Boolean(value && !rows.some((row) => row.id === value));
   const options = [
-    { value: "", label: c.none },
+    { value: '', label: c.none },
     ...rows.map((row) => ({
       value: row.id,
       label: `${row.name} · ${row.service}`,
@@ -75,17 +65,17 @@ export function ModelConnectionSelect({
     ...(missing ? [{ value: value!, label: value!, disabled: true }] : []),
   ];
   return (
-    <Space orientation="vertical" style={{ width: "100%" }}>
+    <Space orientation="vertical" style={{ width: '100%' }}>
       <Select
         {...(id ? { id } : {})}
         aria-label={c.label}
-        value={value ?? ""}
+        value={value ?? ''}
         onChange={(next) => onChange?.(next || null)}
         options={options}
         loading={loading}
         disabled={disabled || loading || failed}
-        showSearch={{ optionFilterProp: "label" }}
-        style={{ width: "100%" }}
+        showSearch={{ optionFilterProp: 'label' }}
+        style={{ width: '100%' }}
       />
       {failed ? (
         <Alert

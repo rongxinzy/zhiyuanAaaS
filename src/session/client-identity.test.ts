@@ -8,13 +8,12 @@ import type {
 } from '@aep/sdk-node';
 import { AepProblem } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
-
-import { createZhiyuanAepClient } from './factory.js';
 import {
+  isUnknownSessionClientProblem,
   ZHIYUAN_SESSION_CLIENT_NAME,
   ZHIYUAN_SESSION_CLIENT_VERSION,
-  isUnknownSessionClientProblem,
 } from './client-identity.js';
+import { createZhiyuanAepClient } from './factory.js';
 
 const AGENT_ID = '7b7d02c4-2c4f-4f6f-9d3c-9d6f8a1b2c3d';
 
@@ -55,7 +54,7 @@ describe('Zhiyuan session client identity', () => {
     const tokens = await client.loginWithPassword(credentials());
     expect(tokens.accessToken).toBe('access-token');
 
-    const logins = fixture.requests.filter(request => request.path === '/aep/v1/auth/password/login');
+    const logins = fixture.requests.filter((request) => request.path === '/aep/v1/auth/password/login');
     expect(logins).toHaveLength(2);
     expect(logins[0]?.body.client).toBeDefined();
     expect(logins[1]?.body.client).toBeUndefined();
@@ -72,13 +71,13 @@ describe('Zhiyuan session client identity', () => {
     const client = createClient(fixture.transport);
 
     await client.heartbeat({ status: 'online' });
-    let heartbeats = fixture.requests.filter(request => request.path === '/aep/v1/user/heartbeat');
+    let heartbeats = fixture.requests.filter((request) => request.path === '/aep/v1/user/heartbeat');
     expect(heartbeats).toHaveLength(2);
     expect(heartbeats[0]?.body.client).toBeDefined();
     expect(heartbeats[1]?.body.client).toBeUndefined();
 
     await client.heartbeat({ status: 'online' });
-    heartbeats = fixture.requests.filter(request => request.path === '/aep/v1/user/heartbeat');
+    heartbeats = fixture.requests.filter((request) => request.path === '/aep/v1/user/heartbeat');
     expect(heartbeats).toHaveLength(3);
     expect(heartbeats[2]?.body.client).toBeUndefined();
 
@@ -174,9 +173,7 @@ function fixtureTransport(options: FixtureOptions = {}): {
   const requests: FixtureRequest[] = [];
   const transport: AepTransport = {
     async request<T>(_baseUrl: string, request: AepRequest): Promise<AepResponse<T>> {
-      const body = (
-        typeof request.body === 'string' ? JSON.parse(request.body) : (request.body ?? {})
-      ) as JsonObject;
+      const body = (typeof request.body === 'string' ? JSON.parse(request.body) : (request.body ?? {})) as JsonObject;
       requests.push({ path: request.path, body });
       if (options.rejectClient && body.client !== undefined) {
         return problem(400, 'INVALID_REQUEST') as AepResponse<T>;

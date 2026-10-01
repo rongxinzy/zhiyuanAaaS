@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import type { ReactElement } from 'react';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { Identity } from './Identity.js';
@@ -21,7 +21,13 @@ function render(ui: ReactElement) {
 const source = { id: 'wecom-directory', kind: 'directory', displayName: '企业微信目录', enabled: true };
 const otherSource = { id: 'feishu-directory', kind: 'directory', displayName: '飞书目录', enabled: true };
 
-const mapping = { sourceId: 'wecom-directory', externalSubjectType: 'user', externalId: 'wecom-zhangsan', localSubjectId: 'u1', status: 'active' };
+const mapping = {
+  sourceId: 'wecom-directory',
+  externalSubjectType: 'user',
+  externalId: 'wecom-zhangsan',
+  localSubjectId: 'u1',
+  status: 'active',
+};
 
 describe('admin account mappings (账号关联)', () => {
   afterEach(() => cleanup());
@@ -56,11 +62,13 @@ describe('admin account mappings (账号关联)', () => {
     fireEvent.change(await screen.findByLabelText('外部账号'), { target: { value: 'wecom-lisi' } });
     fireEvent.change(screen.getByLabelText('选择平台用户'), { target: { value: 'u2' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    await waitFor(() => expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
-      externalSubjectType: 'user',
-      externalId: 'wecom-lisi',
-      localSubjectId: 'u2',
-    }));
+    await waitFor(() =>
+      expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
+        externalSubjectType: 'user',
+        externalId: 'wecom-lisi',
+        localSubjectId: 'u2',
+      }),
+    );
   });
 
   test('picks the platform user from the autocomplete suggestions', async () => {
@@ -78,18 +86,23 @@ describe('admin account mappings (账号关联)', () => {
     fireEvent.change(picker, { target: { value: '张三' } });
     fireEvent.click(await screen.findByText('张三（zhangsan）'));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    await waitFor(() => expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
-      externalSubjectType: 'user',
-      externalId: 'wecom-zhangsan',
-      localSubjectId: 'user-1',
-    }));
+    await waitFor(() =>
+      expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
+        externalSubjectType: 'user',
+        externalId: 'wecom-zhangsan',
+        localSubjectId: 'user-1',
+      }),
+    );
   });
 
   test('requires explicit confirmation before rebinding an external account to another user', async () => {
     const client = {
       identitySources: vi.fn().mockResolvedValue({ items: [source], nextCursor: null }),
       identityMappings: vi.fn().mockResolvedValue({ items: [mapping], nextCursor: null }),
-      users: vi.fn().mockResolvedValue([{ id: 'u1', displayName: '张三', username: 'zhang', status: 'active' }, { id: 'u2', displayName: '李四', username: 'li', status: 'active' }]),
+      users: vi.fn().mockResolvedValue([
+        { id: 'u1', displayName: '张三', username: 'zhang', status: 'active' },
+        { id: 'u2', displayName: '李四', username: 'li', status: 'active' },
+      ]),
       upsertIdentityMapping: vi.fn().mockResolvedValue(undefined),
     };
     render(<Identity client={client as never} identity={administratorIdentity} />);
@@ -106,17 +119,20 @@ describe('admin account mappings (账号关联)', () => {
     expect(client.upsertIdentityMapping).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '确认变更绑定' }));
-    await waitFor(() => expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
-      externalSubjectType: 'user',
-      externalId: 'wecom-zhangsan',
-      localSubjectId: 'u2',
-    }));
+    await waitFor(() =>
+      expect(client.upsertIdentityMapping).toHaveBeenCalledWith('wecom-directory', {
+        externalSubjectType: 'user',
+        externalId: 'wecom-zhangsan',
+        localSubjectId: 'u2',
+      }),
+    );
   });
 
   test('unlinks a mapping only after the impact confirmation', async () => {
     const client = {
       identitySources: vi.fn().mockResolvedValue({ items: [source], nextCursor: null }),
-      identityMappings: vi.fn()
+      identityMappings: vi
+        .fn()
         .mockResolvedValueOnce({ items: [mapping], nextCursor: null })
         .mockResolvedValue({ items: [], nextCursor: null }),
       users: vi.fn().mockResolvedValue([]),
@@ -146,11 +162,13 @@ describe('admin account mappings (账号关联)', () => {
     fireEvent.change(await screen.findByLabelText('来源标识'), { target: { value: 'wecom-directory' } });
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '企业微信通讯录' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    await waitFor(() => expect(client.createIdentitySource).toHaveBeenCalledWith({
-      id: 'wecom-directory',
-      kind: 'directory',
-      displayName: '企业微信通讯录',
-    }));
+    await waitFor(() =>
+      expect(client.createIdentitySource).toHaveBeenCalledWith({
+        id: 'wecom-directory',
+        kind: 'directory',
+        displayName: '企业微信通讯录',
+      }),
+    );
   });
 
   test('rejects a mapping save without required fields', async () => {
@@ -190,7 +208,8 @@ describe('admin account mappings (账号关联)', () => {
   test('reports partial source failures instead of pretending the list is complete', async () => {
     const client = {
       identitySources: vi.fn().mockResolvedValue({ items: [source, otherSource], nextCursor: null }),
-      identityMappings: vi.fn()
+      identityMappings: vi
+        .fn()
         .mockResolvedValueOnce({ items: [mapping], nextCursor: null })
         .mockRejectedValueOnce(new Error('boom')),
       users: vi.fn().mockResolvedValue([]),

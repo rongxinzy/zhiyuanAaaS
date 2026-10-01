@@ -2,14 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ProtectedRefreshTokenStore, type AepTokens } from '@aep/sdk-node';
+import { type AepTokens, ProtectedRefreshTokenStore } from '@aep/sdk-node';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import {
-  ProtectedFileStorage,
-  SafeStorageProtector,
-  type SecretProtector,
-} from './protected-file-storage.js';
+import { ProtectedFileStorage, SafeStorageProtector, type SecretProtector } from './protected-file-storage.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -51,10 +47,7 @@ describe('Zhiyuan protected file storage', () => {
       refreshToken: 'refresh-one',
     });
 
-    const restoredStore = new ProtectedRefreshTokenStore(
-      protectedStorage,
-      'aep.refresh-token.agent-2',
-    );
+    const restoredStore = new ProtectedRefreshTokenStore(protectedStorage, 'aep.refresh-token.agent-2');
     expect(await restoredStore.get()).toBeNull();
     expect(await restoredStore.getRefreshToken()).toBe('refresh-one');
 
@@ -81,8 +74,8 @@ describe('Zhiyuan protected file storage', () => {
     const protector = new SafeStorageProtector({
       isEncryptionAvailable: () => true,
       getSelectedStorageBackend: () => 'dpapi',
-      encryptString: value => Buffer.from(`protected:${value}`, 'utf8'),
-      decryptString: value => value.toString('utf8').replace(/^protected:/, ''),
+      encryptString: (value) => Buffer.from(`protected:${value}`, 'utf8'),
+      decryptString: (value) => value.toString('utf8').replace(/^protected:/, ''),
     });
     const plainText = new TextEncoder().encode('refresh-secret');
 
@@ -93,7 +86,7 @@ describe('Zhiyuan protected file storage', () => {
 });
 
 function xorProtector(): SecretProtector {
-  const transform = async (value: Uint8Array) => Uint8Array.from(value, byte => byte ^ 0xa5);
+  const transform = async (value: Uint8Array) => Uint8Array.from(value, (byte) => byte ^ 0xa5);
   return { protect: transform, unprotect: transform };
 }
 

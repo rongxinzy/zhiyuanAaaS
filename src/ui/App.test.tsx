@@ -4,16 +4,16 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { EnterpriseSessionStatus, type EnterpriseSessionResult } from '../host-contract.js';
+import { type EnterpriseSessionResult, EnterpriseSessionStatus } from '../host-contract.js';
 import {
   EnterpriseRendererLanguage,
+  type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
   EnterpriseRendererMessageSource,
   EnterpriseRendererMessageType,
   EnterpriseRendererSessionOperation,
   EnterpriseRendererSurface,
   type EnterpriseRendererSurface as EnterpriseRendererSurfaceValue,
   EnterpriseRendererTheme,
-  type EnterpriseRendererLanguage as EnterpriseRendererLanguageValue,
 } from '../renderer-contract.js';
 import { App } from './App.js';
 
@@ -76,8 +76,7 @@ describe('enterprise session UI', () => {
           return (
             message.type === EnterpriseRendererMessageType.SessionRequest &&
             message.operation === EnterpriseRendererSessionOperation.Login &&
-            (message.input as Record<string, unknown>)?.aepBaseUrl ===
-              'https://aep.customer.example'
+            (message.input as Record<string, unknown>)?.aepBaseUrl === 'https://aep.customer.example'
           );
         }),
       ).toBe(true),
@@ -159,9 +158,7 @@ describe('enterprise session UI', () => {
       ),
     );
 
-    expect(
-      await screen.findByText('Your previous session could not be restored. Sign in again.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Your previous session could not be restored. Sign in again.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
@@ -278,9 +275,7 @@ describe('enterprise session UI', () => {
     await waitForCatalogRequests(1);
     act(() => respondToLatestCatalog({ ok: false, error: 'sensitive host detail' }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Models are unavailable' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Models are unavailable' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('sensitive host detail');
   });
@@ -321,9 +316,7 @@ describe('enterprise session UI', () => {
 
   test('updates the active host theme without remounting a settings draft', () => {
     render(<App />);
-    act(() =>
-      initialize(authenticated(false), 'en', EnterpriseRendererSurface.Settings, 'account'),
-    );
+    act(() => initialize(authenticated(false), 'en', EnterpriseRendererSurface.Settings, 'account'));
     const input = screen.getByLabelText('Current password');
     fireEvent.change(input, { target: { value: 'draft-value' } });
     act(() =>
@@ -373,12 +366,10 @@ async function waitForCatalogRequests(count: number): Promise<void> {
   await waitFor(() => expect(catalogRequests()).toHaveLength(count));
 }
 
-async function waitForSessionRequest(
-  operation: EnterpriseRendererSessionOperation,
-): Promise<Record<string, unknown>> {
+async function waitForSessionRequest(operation: EnterpriseRendererSessionOperation): Promise<Record<string, unknown>> {
   let request: Record<string, unknown> | undefined;
   await waitFor(() => {
-    request = sessionRequests().find(message => message.operation === operation);
+    request = sessionRequests().find((message) => message.operation === operation);
     expect(request).toBeDefined();
   });
   return request!;
@@ -402,13 +393,12 @@ function respondToSession(request: Record<string, unknown>, result: unknown): vo
 function sessionRequests(): Array<Record<string, unknown>> {
   const calls = postMessage.mock.calls as unknown as Array<readonly [unknown, ...unknown[]]>;
   return calls
-    .map(call => call[0])
+    .map((call) => call[0])
     .filter(
       (message: unknown): message is Record<string, unknown> =>
         message !== null &&
         typeof message === 'object' &&
-        (message as Record<string, unknown>).type ===
-          EnterpriseRendererMessageType.SessionRequest,
+        (message as Record<string, unknown>).type === EnterpriseRendererMessageType.SessionRequest,
     );
 }
 
@@ -434,13 +424,12 @@ function respondToLatestCatalog(result: unknown): void {
 function catalogRequests(): Array<Record<string, unknown>> {
   const calls = postMessage.mock.calls as unknown as Array<readonly [unknown, ...unknown[]]>;
   return calls
-    .map(call => call[0])
+    .map((call) => call[0])
     .filter(
       (message: unknown): message is Record<string, unknown> =>
         message !== null &&
         typeof message === 'object' &&
-        (message as Record<string, unknown>).type ===
-          EnterpriseRendererMessageType.ModelCatalogRequest,
+        (message as Record<string, unknown>).type === EnterpriseRendererMessageType.ModelCatalogRequest,
     );
 }
 

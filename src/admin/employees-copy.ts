@@ -25,8 +25,7 @@ const zh = {
   actionChat: '测试对话',
   actionView: '查看',
   createTitle: '新建数字员工',
-  createDescription:
-    '提交后由门户创建策略决定结果：有权限的管理员直接创建，其他账号进入审批；两种结果分别反馈。',
+  createDescription: '提交后由门户创建策略决定结果：有权限的管理员直接创建，其他账号进入审批；两种结果分别反馈。',
   createFieldGapTitle: '发布条件缺口',
   createFieldGap:
     '当前创建接口仅支持标识名与显示名称。负责人、所属团队、使用模型、知识库、技能与开放范围需接口扩展后才能在此配置，不做假表单。',
@@ -44,14 +43,12 @@ const zh = {
   labelModel: '使用模型',
   labelOwner: '负责人',
   editGapTitle: '配置编辑暂未开放',
-  editGapDescription:
-    '数字员工暂无配置更新接口；负责人、团队、模型与开放范围的编辑需门户接口支持后开放。',
+  editGapDescription: '数字员工暂无配置更新接口；负责人、团队、模型与开放范围的编辑需门户接口支持后开放。',
   capabilitiesGapTitle: '知识与技能关联暂未接入',
   capabilitiesGapDescription:
     '数字员工与知识库、技能的关联接口尚未提供。接入后可在此选择知识库、技能及版本，并查看使用权限与依赖。',
   runsGapTitle: '运行记录暂未接入',
-  runsGapDescription:
-    '运行与对话记录需要按范围查询的接口；正文查看需独立内容权限。接入前此页不展示任何记录。',
+  runsGapDescription: '运行与对话记录需要按范围查询的接口；正文查看需独立内容权限。接入前此页不展示任何记录。',
   publishScope: '使用范围',
   publishScopeUnknown: '未提供（接口暂无）',
   publishScopeGap: '开放范围（可用用户/团队）的配置与鉴权接口暂未提供；门户当前按负责人与管理员校验访问。',
@@ -61,14 +58,12 @@ const zh = {
   publishWecom: '企业微信',
   publishChannelOn: '已接入',
   publishChannelOff: '未接入',
-  publishNote:
-    '「部署就绪」仅表示运行实例可用，不等于发布配置完成或当前模型认证有效。',
+  publishNote: '「部署就绪」仅表示运行实例可用，不等于发布配置完成或当前模型认证有效。',
   publishRecordTitle: '入口与发布记录',
   publishRecordGap: '发布记录（配置保存/应用/入口生效）接口暂未提供，无法展示历史。',
   publishChannelUnknownName: '渠道名称未提供',
   deleteBlockedTitle: '删除数字员工',
-  deleteBlockedNotice:
-    '删除会移除对话入口与运行实例；历史记录和记忆数据的处置策略尚待后端明确。',
+  deleteBlockedNotice: '删除会移除对话入口与运行实例；历史记录和记忆数据的处置策略尚待后端明确。',
   deleteBlockedFacts: '关联知识库与技能会解除关联，不删除其内容；历史与记忆的处置语义待确认。',
   deleteBlockedAction: '处置契约明确前，此处不开放删除确认。需要下线入口时请先联系平台方明确数据处置。',
   deleteBlockedBack: '返回详情',
@@ -96,11 +91,9 @@ const zh = {
   requestsTimeLabel: '提交时间',
   chatNoSession: '会话已过期，请重新登录',
   chatBlockedTitle: '未能自动打开对话',
-  chatBlockedMinted:
-    '浏览器拦截了新窗口。会话已就绪，请点击下面的链接进入对话。',
+  chatBlockedMinted: '浏览器拦截了新窗口。会话已就绪，请点击下面的链接进入对话。',
   chatOpenLink: '进入对话（新窗口）',
-  chatBlockedFallback:
-    '浏览器拦截了新窗口，且会话直通未成功。请允许本站弹出式窗口后重试；链接不会显示或记录访问令牌。',
+  chatBlockedFallback: '浏览器拦截了新窗口，且会话直通未成功。请允许本站弹出式窗口后重试；链接不会显示或记录访问令牌。',
   chatRetry: '重试打开',
   memoryFactScope: '记忆归属',
   memoryFactSessions: '会话数',
@@ -122,7 +115,8 @@ const en: Record<keyof typeof zh, string> = {
   colModel: 'Model',
   colLastUsed: 'Last used',
   lastUsedUnknown: 'No data yet',
-  lastUsedHint: 'Last-used requires real activity records; the API does not provide them yet, so creation time is not substituted.',
+  lastUsedHint:
+    'Last-used requires real activity records; the API does not provide them yet, so creation time is not substituted.',
   ownerMissing: 'Owner to be assigned',
   phaseReady: 'Deployed',
   phasePending: 'Deploying',
@@ -161,7 +155,8 @@ const en: Record<keyof typeof zh, string> = {
     'Runs and conversations need a scope-aware query API, and transcripts need separate content permission. Nothing is listed here before that lands.',
   publishScope: 'Audience',
   publishScopeUnknown: 'Not provided (no API yet)',
-  publishScopeGap: 'Audience configuration and enforcement APIs are not available; the portal currently authorises owner or admin access.',
+  publishScopeGap:
+    'Audience configuration and enforcement APIs are not available; the portal currently authorises owner or admin access.',
   publishWebEntry: 'Web entry',
   publishCopyEntry: 'Copy entry',
   publishEntryCopied: 'Web entry copied (no access token included)',
@@ -176,8 +171,10 @@ const en: Record<keyof typeof zh, string> = {
   deleteBlockedTitle: 'Delete digital employee',
   deleteBlockedNotice:
     'Deleting removes the chat entry and the runtime instance; how history and memory data are disposed is still to be defined by the backend.',
-  deleteBlockedFacts: 'Linked knowledge bases and skills are unlinked, their content is kept; disposal semantics for history and memory are unconfirmed.',
-  deleteBlockedAction: 'Until the disposal contract is defined, delete confirmation stays unavailable. Contact the platform team to clarify data disposal before taking an employee offline.',
+  deleteBlockedFacts:
+    'Linked knowledge bases and skills are unlinked, their content is kept; disposal semantics for history and memory are unconfirmed.',
+  deleteBlockedAction:
+    'Until the disposal contract is defined, delete confirmation stays unavailable. Contact the platform team to clarify data disposal before taking an employee offline.',
   deleteBlockedBack: 'Back to detail',
   requestsTitle: 'Requests & approvals',
   requestsDescription: 'Process digital-employee creation requests; decisions link to the resulting instance.',
