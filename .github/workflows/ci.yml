@@ -35,6 +35,7 @@ jobs:
   # The floor alone (80%) would allow slow erosion from e.g. 85% to 80%.
   coverage-ratchet:
     if: github.event_name == 'pull_request'
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
