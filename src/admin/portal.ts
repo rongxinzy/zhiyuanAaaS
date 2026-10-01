@@ -273,7 +273,9 @@ export class PortalClient {
   }
 
   async setDepartmentMembers(id: string, userIds: readonly string[]): Promise<void> {
-    const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, { userIds });
+    const { status, data } = await this.#request('PUT', `/api/v1/departments/${encodeURIComponent(id)}/members`, {
+      userIds,
+    });
     if (status !== 200) throw portalError(status, data);
   }
 
