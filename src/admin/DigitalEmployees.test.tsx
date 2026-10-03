@@ -24,6 +24,20 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   );
 }
 
+// AntD Select option picker: open the combobox, click the option whose label
+// matches optionName (model options render as "名称（id · protocol）").
+async function pickOption(combobox: HTMLElement, optionName: RegExp) {
+  fireEvent.mouseDown(combobox);
+  const option = await waitFor(() => {
+    const node = [...document.querySelectorAll('.ant-select-item-option')].find((item) =>
+      optionName.test(item.textContent ?? ''),
+    );
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  fireEvent.click(option);
+}
+
 describe('admin digital employees', () => {
   afterEach(() => {
     cleanup();
@@ -50,8 +64,29 @@ describe('admin digital employees', () => {
     employees: [{ name: 'sales-helper', memoryUser: 'sales-helper', sessions: 8, lastActive: '2026-09-29T06:25:00Z' }],
   };
 
+  // The create modal loads the AEP model catalog through the console client
+  // (gateway models only are offered; empty selection = platform default).
   const client = {
     getAccessToken: vi.fn().mockResolvedValue('aep-token'),
+    models: vi.fn().mockResolvedValue({
+      models: [
+        {
+          id: 'bench-anthropic',
+          displayName: 'Bench',
+          enabled: true,
+          sourceType: 'gateway',
+          protocol: 'anthropic',
+        },
+        {
+          id: 'bench-glm',
+          displayName: 'GLM',
+          enabled: true,
+          sourceType: 'gateway',
+          protocol: 'openai-compatible',
+        },
+      ],
+      assignments: [],
+    }),
   };
 
   const makePortal = (overrides: Partial<PortalClient> = {}) =>
@@ -192,7 +227,37 @@ describe('admin digital employees', () => {
       fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '市场写手' } });
       fireEvent.click(screen.getByRole('button', { name: '提交创建' }));
 
-      await waitFor(() => expect(portal.apply).toHaveBeenCalledWith('market-writer', '市场写手', undefined));
+      // No team and no models selected: the apply body carries neither.
+      await waitFor(() => expect(portal.apply).toHaveBeenCalledWith('market-writer', '市场写手', undefined, undefined));
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'applies with the picked models in selection order as the priority order',
+    async () => {
+      const created: PortalApplyResult = { kind: 'created', message: '数字员工已创建' };
+      const portal = makePortal({ apply: vi.fn().mockResolvedValue(created) });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /新建数字员工/ }));
+      fireEvent.change(screen.getByLabelText('标识名'), { target: { value: 'market-writer' } });
+      fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '市场写手' } });
+      const modal = await screen.findByRole('dialog');
+      // The team select comes first; the models multi-select is second.
+      const comboBoxes = within(modal).getAllByRole('combobox');
+      // Picked in reverse of the catalog order to prove the wire keeps the
+      // selection order rather than re-sorting by id.
+      await pickOption(comboBoxes[1]!, /^GLM（bench-glm）$/);
+      await pickOption(comboBoxes[1]!, /^Bench（bench-anthropic · anthropic）$/);
+      fireEvent.click(screen.getByRole('button', { name: '提交创建' }));
+
+      await waitFor(() =>
+        expect(portal.apply).toHaveBeenCalledWith('market-writer', '市场写手', undefined, [
+          'bench-glm',
+          'bench-anthropic',
+        ]),
+      );
     },
     TIMEOUT,
   );

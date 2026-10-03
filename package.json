@@ -34,7 +34,7 @@
     "test:coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
-    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.14/aep-sdk-node-0.2.14.tgz",
+    "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.2.15/aep-sdk-node-0.2.15.tgz",
     "@ant-design/icons": "6.3.4",
     "@base-ui/react": "^1.7.0",
     "antd": "6.6.5",

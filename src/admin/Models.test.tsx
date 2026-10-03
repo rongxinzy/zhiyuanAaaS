@@ -131,7 +131,8 @@ describe('admin models', () => {
       const client = makeBaseClient();
       render(<Models client={client as never} identity={administratorIdentity} />);
       fireEvent.click(await screen.findByRole('button', { name: /添加模型/ }));
-      fireEvent.change(screen.getByLabelText('模型 ID'), { target: { value: 'chat' } });
+      // No id field: the slug is server-generated from the display name. The
+      // protocol Select defaults to openai-compatible and needs no interaction.
       fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '企业对话' } });
       fireEvent.change(screen.getByLabelText('网关地址'), { target: { value: 'http://localhost:8081/v1' } });
       fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'deepseek-chat' } });
@@ -139,12 +140,37 @@ describe('admin models', () => {
       await waitFor(() =>
         expect(client.createModel).toHaveBeenCalledWith(
           expect.objectContaining({
-            id: 'chat',
+            protocol: 'openai-compatible',
             upstreamModel: 'deepseek-chat',
             sourceType: 'gateway',
             credentialId: null,
           }),
         ),
+      );
+      const body = client.createModel.mock.calls[0]![0]!;
+      expect(body).not.toHaveProperty('id');
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'creates an anthropic-protocol model through the protocol select',
+    async () => {
+      const client = makeBaseClient();
+      render(<Models client={client as never} identity={administratorIdentity} />);
+      fireEvent.click(await screen.findByRole('button', { name: /添加模型/ }));
+      fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '企业对话' } });
+      fireEvent.change(screen.getByLabelText('网关地址'), { target: { value: 'http://localhost:8081/v1' } });
+      fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'claude-sonnet' } });
+
+      const modal = await screen.findByRole('dialog');
+      // The protocol select is the first combobox; the credential one second.
+      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[0]!);
+      fireEvent.click(await screen.findByText('Anthropic'));
+
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createModel).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'anthropic' })),
       );
     },
     TIMEOUT,
@@ -156,13 +182,13 @@ describe('admin models', () => {
       const client = makeBaseClient();
       render(<Models client={client as never} identity={administratorIdentity} />);
       fireEvent.click(await screen.findByRole('button', { name: /添加模型/ }));
-      fireEvent.change(screen.getByLabelText('模型 ID'), { target: { value: 'chat' } });
       fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '企业对话' } });
       fireEvent.change(screen.getByLabelText('网关地址'), { target: { value: 'http://localhost:8081/v1' } });
       fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'deepseek-chat' } });
 
       const modal = await screen.findByRole('dialog');
-      fireEvent.mouseDown(within(modal).getByRole('combobox'));
+      // The credential connection select is the second combobox.
+      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[1]!);
       fireEvent.click(await screen.findByText('在线接入 · openai'));
 
       fireEvent.click(screen.getByRole('button', { name: '保存' }));

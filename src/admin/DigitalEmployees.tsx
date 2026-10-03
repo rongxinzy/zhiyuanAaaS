@@ -1,3 +1,4 @@
+import type { AdminModel } from '@aep/sdk-node';
 import { ArrowLeftOutlined, DeleteOutlined, MessageOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   Alert,
@@ -18,7 +19,6 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-
 import type { AdminConsoleClient, AdminIdentity } from './client.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
@@ -166,7 +166,7 @@ function EmployeePanel({ portal, client }: { readonly portal: PortalClient; read
           onChat={openChat}
         />
       ) : (
-        <EmployeeList portal={portal} onSelected={setSelected} onChat={openChat} />
+        <EmployeeList client={client} portal={portal} onSelected={setSelected} onChat={openChat} />
       )}
       <ChatHandoffModal
         handoff={handoff}
@@ -224,10 +224,12 @@ function ChatHandoffModal({
 }
 
 function EmployeeList({
+  client,
   portal,
   onSelected,
   onChat,
 }: {
+  readonly client: AdminConsoleClient;
   readonly portal: PortalClient;
   readonly onSelected: (employee: PortalEmployee) => void;
   readonly onChat: (employee: PortalEmployee) => void;
@@ -363,6 +365,7 @@ function EmployeeList({
       )}
 
       <CreateEmployeeModal
+        client={client}
         portal={portal}
         open={creating}
         onClose={() => setCreating(false)}
@@ -376,23 +379,26 @@ function EmployeeList({
   );
 }
 
-// Creation dialog: name + displayName + optional team (department scoping).
-// The portal apply API now accepts team; other inputs (owner, model,
-// knowledge, skills) remain server-side.
+// Creation dialog: name + displayName + optional team (department scoping)
+// and the LLM model list picked from the AEP catalog (selection order is
+// priority order). Knowledge and skills remain server-side.
 function CreateEmployeeModal({
+  client,
   portal,
   open,
   onClose,
   onApplied,
 }: {
+  readonly client: AdminConsoleClient;
   readonly portal: PortalClient;
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onApplied: () => void;
 }) {
-  const [form] = Form.useForm<{ name: string; displayName: string; team?: string }>();
+  const [form] = Form.useForm<{ name: string; displayName: string; team?: string; models?: string[] }>();
   const [pending, setPending] = useState(false);
   const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
+  const [models, setModels] = useState<readonly AdminModel[]>([]);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (open) {
@@ -402,10 +408,14 @@ function CreateEmployeeModal({
         .listDepartments()
         .then(setDepartments)
         .catch(() => setDepartments([]));
+      client
+        .models()
+        .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
+        .catch(() => setModels([]));
     }
-  }, [open, form, portal]);
+  }, [open, form, portal, client]);
 
-  const submit = async (values: { name: string; displayName: string; team?: string }) => {
+  const submit = async (values: { name: string; displayName: string; team?: string; models?: string[] }) => {
     setPending(true);
     setError(null);
     try {
@@ -413,6 +423,7 @@ function CreateEmployeeModal({
         values.name.trim(),
         values.displayName.trim(),
         values.team?.trim() || undefined,
+        values.models && values.models.length > 0 ? values.models : undefined,
       );
       if (result.kind === 'rejected') {
         setError(result.message);
@@ -478,8 +489,17 @@ function CreateEmployeeModal({
             options={departments.map((d) => ({ value: d.id, label: d.name }))}
           />
         </Form.Item>
+        <Form.Item name="models" label={t('createModelLabel')} tooltip={t('createModelTooltip')}>
+          <Select
+            mode="multiple"
+            placeholder={t('createModelPlaceholder')}
+            options={models.map((model) => ({
+              value: model.id,
+              label: `${model.displayName}（${model.id}${model.protocol === 'anthropic' ? ' · anthropic' : ''}）`,
+            }))}
+          />
+        </Form.Item>
       </Form>
-      <Alert type="info" showIcon title={t('createFieldGapTitle')} description={t('createFieldGap')} />
     </Modal>
   );
 }

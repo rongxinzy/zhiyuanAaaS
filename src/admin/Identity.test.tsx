@@ -159,12 +159,11 @@ describe('admin account mappings (账号关联)', () => {
     render(<Identity client={client as never} identity={administratorIdentity} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /新增来源平台/ }));
-    fireEvent.change(await screen.findByLabelText('来源标识'), { target: { value: 'wecom-directory' } });
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '企业微信通讯录' } });
+    // Only the display name is typed; the source id is server-generated.
+    fireEvent.change(await screen.findByLabelText('名称'), { target: { value: '企业微信通讯录' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() =>
       expect(client.createIdentitySource).toHaveBeenCalledWith({
-        id: 'wecom-directory',
         kind: 'directory',
         displayName: '企业微信通讯录',
       }),

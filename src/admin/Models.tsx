@@ -28,6 +28,7 @@ import {
   Modal,
   Popconfirm,
   Segmented,
+  Select,
   Space,
   Switch,
   Table,
@@ -55,7 +56,11 @@ import { modelsT } from './models-copy.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
 const ModelSourceType = { Gateway: 'gateway' } as const;
-const ModelProtocol = { OpenAiCompatible: 'openai-compatible' } as const;
+const ModelProtocol = { OpenAiCompatible: 'openai-compatible', Anthropic: 'anthropic' } as const;
+const MODEL_PROTOCOL_OPTIONS = [
+  { value: ModelProtocol.OpenAiCompatible, label: 'OpenAI-compatible' },
+  { value: ModelProtocol.Anthropic, label: 'Anthropic' },
+];
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof modelsT>[0]): string => modelsT(key, language);
 
@@ -648,8 +653,8 @@ function ModelCreateModal({
   readonly onCreated: () => Promise<void>;
 }) {
   const [form] = Form.useForm<{
-    id: string;
     displayName: string;
+    protocol: 'openai-compatible' | 'anthropic';
     endpoint: string;
     upstreamModel: string;
     credentialId?: string | null;
@@ -659,8 +664,8 @@ function ModelCreateModal({
     if (open) form.resetFields();
   }, [open, form]);
   const submit = async (values: {
-    readonly id: string;
     readonly displayName: string;
+    readonly protocol: 'openai-compatible' | 'anthropic';
     readonly endpoint: string;
     readonly upstreamModel: string;
     readonly credentialId?: string | null;
@@ -668,17 +673,16 @@ function ModelCreateModal({
     setPending(true);
     try {
       await client.createModel({
-        id: values.id.trim(),
         displayName: values.displayName.trim(),
         sourceType: ModelSourceType.Gateway,
-        protocol: ModelProtocol.OpenAiCompatible,
+        protocol: values.protocol,
         endpoint: values.endpoint.trim(),
         upstreamModel: values.upstreamModel.trim(),
         capabilities: [],
         isDefault: false,
         enabled: true,
-        // Reuse a server-only credential by reference; the secret itself
-        // is never read or entered on this page.
+        // The identifier is server-generated from the display name; for
+        // anthropic models it doubles as the gateway path prefix.
         credentialId: values.credentialId ?? null,
       });
       onClose();
@@ -704,18 +708,19 @@ function ModelCreateModal({
       <Typography.Paragraph type="secondary">{translate(language, 'addModelDescription')}</Typography.Paragraph>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         <Form.Item
-          name="id"
-          label={translate(language, 'modelId')}
-          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
-        >
-          <Input disabled={pending} />
-        </Form.Item>
-        <Form.Item
           name="displayName"
           label={translate(language, 'modelName')}
           rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
         >
           <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="protocol"
+          label={translate(language, 'modelProtocol')}
+          initialValue={ModelProtocol.OpenAiCompatible}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Select disabled={pending} options={MODEL_PROTOCOL_OPTIONS} />
         </Form.Item>
         <Form.Item
           name="endpoint"

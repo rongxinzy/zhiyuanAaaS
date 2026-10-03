@@ -208,11 +208,17 @@ export class PortalClient {
     return data as PortalKnowledgeStatus;
   }
 
-  async apply(name: string, displayName: string, team?: string): Promise<PortalApplyResult> {
+  async apply(
+    name: string,
+    displayName: string,
+    team?: string,
+    models?: readonly string[],
+  ): Promise<PortalApplyResult> {
     const { status, data } = await this.#request('POST', '/api/v1/employees', {
       name,
       displayName,
       ...(team ? { team } : {}),
+      ...(models && models.length > 0 ? { models } : {}),
     });
     if (status === 201) {
       return { kind: 'created', message: policyMessage(data, 'digital employee created') };
@@ -242,8 +248,10 @@ export class PortalClient {
     });
   }
 
-  async createDepartment(id: string, name: string): Promise<PortalDepartmentCreateResult> {
-    const { status, data } = await this.#request('POST', '/api/v1/departments', { id, name });
+  async createDepartment(name: string): Promise<PortalDepartmentCreateResult> {
+    // The department id is server-generated from the name (AEP team slug)
+    // and keys the downstream memory/knowledge provisioning.
+    const { status, data } = await this.#request('POST', '/api/v1/departments', { name });
     if (status === 200) return { kind: 'created', message: '部门创建成功' };
     return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
   }

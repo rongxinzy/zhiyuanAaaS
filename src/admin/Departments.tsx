@@ -191,7 +191,7 @@ function CreateDepartmentModal({
   readonly onClose: () => void;
   readonly onCreated: () => void;
 }) {
-  const [form] = Form.useForm<{ id: string; name: string }>();
+  const [form] = Form.useForm<{ name: string }>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -202,11 +202,11 @@ function CreateDepartmentModal({
     }
   }, [open, form]);
 
-  const submit = async (values: { id: string; name: string }) => {
+  const submit = async (values: { name: string }) => {
     setPending(true);
     setError(null);
     try {
-      const result = await portal.createDepartment(values.id.trim(), values.name.trim());
+      const result = await portal.createDepartment(values.name.trim());
       if (result.kind === 'rejected') {
         setError(result.message);
         return;
@@ -231,19 +231,6 @@ function CreateDepartmentModal({
       destroyOnClose
     >
       <Form form={form} layout="vertical" onFinish={(v) => void submit(v)}>
-        <Form.Item
-          name="id"
-          label={translate(language, 'departmentsFieldId')}
-          rules={[
-            { required: true },
-            {
-              pattern: /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/,
-              message: translate(language, 'departmentsIdPattern'),
-            },
-          ]}
-        >
-          <Input placeholder="rd-dept" />
-        </Form.Item>
         <Form.Item name="name" label={translate(language, 'departmentsFieldName')} rules={[{ required: true }]}>
           <Input placeholder="研发部" />
         </Form.Item>
