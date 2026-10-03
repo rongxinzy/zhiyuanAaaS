@@ -464,13 +464,12 @@ describe('admin resources', () => {
       render(<Resources client={client as never} tab={AdminResourceTab.Roles} />);
       fireEvent.click(await screen.findByRole('button', { name: /新增角色/ }));
       const modal = await screen.findByRole('dialog');
-      fireEvent.change(within(modal).getByLabelText('角色 ID'), { target: { value: 'model-reader' } });
+      // No id field: the role id is server-generated from the name.
       fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '模型读取者' } });
       fireEvent.click(within(modal).getByRole('checkbox', { name: /models\.read/ }));
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
       await waitFor(() =>
         expect(client.createRole).toHaveBeenCalledWith({
-          id: 'model-reader',
           name: '模型读取者',
           description: '',
           permissions: ['models.read'],
@@ -624,17 +623,18 @@ describe('admin resources', () => {
     async () => {
       const client = {
         resources: vi.fn().mockResolvedValue({ ...emptyResources }),
-        createSkill: vi.fn().mockResolvedValue(undefined),
+        // The client returns the server-generated skill id.
+        createSkill: vi.fn().mockResolvedValue('writing'),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
       fireEvent.click(await screen.findByRole('button', { name: /新增技能/ }));
       const modal = await screen.findByRole('dialog');
-      fireEvent.change(within(modal).getByLabelText('技能 ID'), { target: { value: 'writing' } });
+      // No id field: the skill id is server-generated from the name.
       fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '写作助手' } });
       fireEvent.change(within(modal).getByLabelText('描述'), { target: { value: '生成文案' } });
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
       await waitFor(() =>
-        expect(client.createSkill).toHaveBeenCalledWith({ id: 'writing', name: '写作助手', description: '生成文案' }),
+        expect(client.createSkill).toHaveBeenCalledWith({ name: '写作助手', description: '生成文案' }),
       );
     },
     TIMEOUT,

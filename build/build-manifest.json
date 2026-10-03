@@ -9,8 +9,14 @@
   "renderer": {
     "sessionGate": "dist/ui/index.html",
     "settingsPages": [
-      { "id": "account", "entrypoint": "dist/ui/index.html" },
-      { "id": "models", "entrypoint": "dist/ui/index.html" }
+      {
+        "id": "account",
+        "entrypoint": "dist/ui/index.html"
+      },
+      {
+        "id": "models",
+        "entrypoint": "dist/ui/index.html"
+      }
     ],
     "packagedDirectory": "zhiyuan-enterprise/ui"
   },
@@ -25,9 +31,9 @@
     "commit": "8766fd59da9282600c82f4082b6638212844905e"
   },
   "aepSdk": {
-    "version": "0.2.14",
-    "releaseTag": "sdk-node-v0.2.14",
-    "asset": "aep-sdk-node-0.2.14.tgz",
-    "sha256": "4aeba4d20f5d97c80bf83c3b44d5657c465ff0dd8182bdae52b1afb77ea3c73e"
+    "version": "0.2.15",
+    "releaseTag": "sdk-node-v0.2.15",
+    "asset": "aep-sdk-node-0.2.15.tgz",
+    "sha256": "563a35da064f4de2869548b8d19965b6bb9124699ba8f9ddd9897db85c6d7bba"
   }
 }

@@ -90,12 +90,12 @@ describe('portal client departments and lifecycle', () => {
 
   test('createDepartment maps 200 to created and failures to rejected', async () => {
     const ok = stubFetch(200, {});
-    expect(await client().createDepartment('rd', '研发部')).toMatchObject({ kind: 'created' });
+    expect(await client().createDepartment('研发部')).toMatchObject({ kind: 'created' });
     expect(ok.mock.calls[0]![0]).toBe('/api/v1/departments');
     vi.unstubAllGlobals();
 
     stubFetch(500, { error: 'partial: weknora down' });
-    await expect(client().createDepartment('rd', '研发部')).resolves.toMatchObject({
+    await expect(client().createDepartment('研发部')).resolves.toMatchObject({
       kind: 'rejected',
       message: 'partial: weknora down',
     });

@@ -49,8 +49,6 @@ const IdentitySourceKindOrder = [
   AdminIdentitySourceKind.Oidc,
 ] as const;
 
-const IDENTITY_SOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
-
 const NO_SOURCES: readonly AdminIdentitySource[] = [];
 const NO_ROWS: readonly MappingRow[] = [];
 const NO_USERS: readonly PlatformUser[] = [];
@@ -398,12 +396,12 @@ function SourceCreateModal({
       setFailed(false);
     }
   }, [open, form]);
-  const submit = async (values: { id: string; displayName: string; kind: AdminIdentitySourceKind }) => {
+  const submit = async (values: { displayName: string; kind: AdminIdentitySourceKind }) => {
     setPending(true);
     setFailed(false);
     try {
+      // The source id is server-generated from the display name.
       await client.createIdentitySource({
-        id: values.id.trim(),
         kind: values.kind,
         displayName: values.displayName.trim(),
       });
@@ -431,16 +429,6 @@ function SourceCreateModal({
     >
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)} disabled={pending}>
         {failed ? <Alert type="error" showIcon style={{ marginBottom: 16 }} title={copy.sourceCreateFailed} /> : null}
-        <Form.Item
-          name="id"
-          label={copy.sourceIdLabel}
-          rules={[
-            { required: true, message: copy.sourceIdInvalid },
-            { pattern: IDENTITY_SOURCE_ID_PATTERN, message: copy.sourceIdInvalid },
-          ]}
-        >
-          <Input placeholder={copy.sourceIdPlaceholder} />
-        </Form.Item>
         <Form.Item
           name="displayName"
           label={copy.sourceNameLabel}

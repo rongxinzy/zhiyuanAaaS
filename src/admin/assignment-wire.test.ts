@@ -229,6 +229,9 @@ describe('admin console assignment wire contract', () => {
 
   test('maps the admin Skill enabled compatibility flag to the state contract', async () => {
     const requests: RecordedRequest[] = [];
+    // The server mints a distinct id per create (from the posted name); the
+    // stub mirrors that so the follow-up PATCH targets the generated id.
+    let skillSeq = 0;
     const stub = http.createServer((request, response) => {
       let raw = '';
       request.setEncoding('utf8');
@@ -244,16 +247,30 @@ describe('admin console assignment wire contract', () => {
           return;
         }
         if (request.method === 'POST' && request.url === '/aep/v1/admin/skills') {
+          const created = raw ? (JSON.parse(raw) as { readonly name?: unknown }) : {};
+          skillSeq += 1;
           response.writeHead(201);
           response.end(
-            JSON.stringify({ id: 'skill-1', name: '写作', description: '生成文案', state: 'active', versions: [] }),
+            JSON.stringify({
+              id: `skill-${skillSeq}`,
+              name: String(created.name ?? ''),
+              description: '',
+              state: 'active',
+              versions: [],
+            }),
           );
           return;
         }
         if (request.method === 'PATCH' && request.url?.startsWith('/aep/v1/admin/skills/')) {
           response.writeHead(200);
           response.end(
-            JSON.stringify({ id: 'skill-1', name: '写作', description: '生成文案', state: 'withdrawn', versions: [] }),
+            JSON.stringify({
+              id: request.url.slice('/aep/v1/admin/skills/'.length),
+              name: '',
+              description: '',
+              state: 'withdrawn',
+              versions: [],
+            }),
           );
           return;
         }
@@ -277,14 +294,15 @@ describe('admin console assignment wire contract', () => {
     const client = new AdminConsoleClient(`http://127.0.0.1:${port}`, tokenStore);
 
     await client.restore();
-    await client.createSkill({ id: 'skill-1', name: '写作', description: '生成文案', enabled: true });
-    await client.updateSkill('skill-1', { enabled: false });
-    await client.createSkill({ id: 'skill-2', name: '翻译', description: '翻译文本', enabled: false });
-    await client.updateSkill('skill-1', { enabled: true });
+    const skillId = await client.createSkill({ name: '写作', description: '生成文案', enabled: true });
+    await client.updateSkill(skillId, { enabled: false });
+    await client.createSkill({ name: '翻译', description: '翻译文本', enabled: false });
+    await client.updateSkill(skillId, { enabled: true });
 
+    // The skill id is server-generated: the create body carries name only.
     expect(requests.filter((request) => request.method === 'POST')).toEqual([
-      { method: 'POST', path: '/aep/v1/admin/skills', body: { id: 'skill-1', name: '写作', description: '生成文案' } },
-      { method: 'POST', path: '/aep/v1/admin/skills', body: { id: 'skill-2', name: '翻译', description: '翻译文本' } },
+      { method: 'POST', path: '/aep/v1/admin/skills', body: { name: '写作', description: '生成文案' } },
+      { method: 'POST', path: '/aep/v1/admin/skills', body: { name: '翻译', description: '翻译文本' } },
     ]);
     expect(requests.filter((request) => request.method === 'PATCH')).toEqual([
       { method: 'PATCH', path: '/aep/v1/admin/skills/skill-1', body: { state: 'withdrawn' } },

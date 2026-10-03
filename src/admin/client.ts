@@ -326,7 +326,6 @@ export interface AdminIdentityMappingPage {
 }
 
 export interface AdminIdentitySourceCreate {
-  readonly id: string;
   readonly kind: AdminIdentitySourceKind;
   readonly displayName: string;
 }
@@ -594,14 +593,17 @@ export class AdminConsoleClient {
   }
 
   async createSkill(input: {
-    readonly id: string;
     readonly name: string;
     readonly description: string;
     readonly enabled?: boolean;
-  }): Promise<void> {
+  }): Promise<string> {
     const { enabled, ...write } = input;
-    await this.#requireClient().createSkill(write);
-    if (enabled === false) await this.#requireClient().updateSkill(input.id, { state: 'withdrawn' });
+    const created = await this.#requireClient().createSkill(write);
+    // The SDK returns the created skill as an untyped JSON object; the id is
+    // server-generated from the name.
+    const skillId = String((created as { id?: unknown }).id ?? '');
+    if (enabled === false) await this.#requireClient().updateSkill(skillId, { state: 'withdrawn' });
+    return skillId;
   }
 
   async updateSkill(
@@ -837,7 +839,7 @@ export class AdminConsoleClient {
     const source = await this.#request<JsonObject>(this.#requireClient(), {
       method: HttpMethod.Post,
       path: '/aep/v1/admin/identity-sources',
-      body: { id: input.id, kind: input.kind, displayName: input.displayName, config: {} },
+      body: { kind: input.kind, displayName: input.displayName, config: {} },
     });
     return parseIdentitySource(source);
   }

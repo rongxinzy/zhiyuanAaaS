@@ -27,9 +27,10 @@ const zh = {
   actionView: '查看',
   createTitle: '新建数字员工',
   createDescription: '提交后由门户创建策略决定结果：有权限的管理员直接创建，其他账号进入审批；两种结果分别反馈。',
-  createFieldGapTitle: '发布条件缺口',
-  createFieldGap:
-    '当前创建接口仅支持标识名与显示名称。负责人、所属团队、使用模型、知识库、技能与开放范围需接口扩展后才能在此配置，不做假表单。',
+  createModelLabel: '模型',
+  createModelTooltip:
+    '按选择顺序决定优先级：第一个为默认模型，其余可按名选用（选择，非自动故障转移）。不选则使用平台默认模型。',
+  createModelPlaceholder: '选择模型（可选，多选）',
   createSubmit: '提交创建',
   detailTabBasic: '基本配置',
   detailTabCapabilities: '知识与技能',
@@ -130,9 +131,10 @@ const en: Record<keyof typeof zh, string> = {
   createTitle: 'New digital employee',
   createDescription:
     'The portal creation policy decides the outcome: administrators with permission create directly, everyone else enters approval; each result is reported separately.',
-  createFieldGapTitle: 'Missing publish inputs',
-  createFieldGap:
-    'The creation API only accepts a name and a display name. Owner, team, model, knowledge bases, skills, and audience require API extensions before they can be configured here — no fake form fields.',
+  createModelLabel: 'Models',
+  createModelTooltip:
+    'Priority follows selection order: the first pick is the default model; the rest are selectable by name (selection, not automatic failover). Leave empty for the platform default.',
+  createModelPlaceholder: 'Pick models (optional, multiple)',
   createSubmit: 'Submit',
   detailTabBasic: 'Basics',
   detailTabCapabilities: 'Knowledge & skills',

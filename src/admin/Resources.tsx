@@ -75,7 +75,6 @@ const t = (key: AdminTranslationKey) => translate(language, key);
 
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 1024;
-const RBAC_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 
 type AdminUser = PlatformUser & { readonly email?: string | null };
 
@@ -2289,7 +2288,6 @@ function TeamsSection({
       {canWrite && editor ? (
         <TeamEditorModal
           client={client}
-          existingTeams={resources.teams}
           team={editor.id ? resources.teams.find((team) => team.id === editor.id) : undefined}
           open
           onOpenChange={(open) => {
@@ -2508,7 +2506,6 @@ function TeamEmployeesModal({
 
 function TeamEditorModal({
   client,
-  existingTeams,
   team,
   open,
   onOpenChange,
@@ -2518,7 +2515,6 @@ function TeamEditorModal({
   initialOwnerId,
 }: {
   readonly client: AdminConsoleClient;
-  readonly existingTeams: readonly Team[];
   readonly team: Team | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -2530,18 +2526,7 @@ function TeamEditorModal({
   const editing = Boolean(team);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: {
-    id?: string;
-    name: string;
-    description?: string;
-    enabled?: boolean;
-    ownerId?: string;
-  }) => {
-    const normalizedId = (values.id ?? '').trim();
-    if (!team && existingTeams.some((item) => item.id === normalizedId)) {
-      form.setFields([{ name: 'id', errors: [t('teamIdAlreadyExists')] }]);
-      return;
-    }
+  const submit = async (values: { name: string; description?: string; enabled?: boolean; ownerId?: string }) => {
     setPending(true);
     try {
       let teamId = team?.id ?? '';
@@ -2552,8 +2537,9 @@ function TeamEditorModal({
           enabled: values.enabled !== false,
         });
       else {
+        // The team id is server-generated from the name and anchors the
+        // immutable materialized path.
         const created = await client.createTeam({
-          id: normalizedId,
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
         });
@@ -2597,19 +2583,6 @@ function TeamEditorModal({
         }}
         onFinish={submit}
       >
-        {editing ? null : (
-          <Form.Item
-            name="id"
-            label={t('teamId')}
-            extra={t('rbacIdHint')}
-            rules={[
-              { required: true, whitespace: true, message: t('fieldRequired') },
-              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
-            ]}
-          >
-            <Input disabled={pending} />
-          </Form.Item>
-        )}
         <Form.Item
           name="name"
           label={t('teamName')}
@@ -2829,7 +2802,6 @@ function RolesSection({
       {canWrite && editor ? (
         <RoleEditorModal
           client={client}
-          existingRoleIds={resources.roles.map((role) => role.id)}
           role={editor.id ? resources.roles.find((role) => role.id === editor.id) : undefined}
           permissions={resources.permissions}
           open
@@ -2997,7 +2969,6 @@ function RoleDetailDrawer({
 
 function RoleEditorModal({
   client,
-  existingRoleIds,
   role,
   permissions,
   open,
@@ -3006,7 +2977,6 @@ function RoleEditorModal({
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly existingRoleIds: readonly string[];
   readonly role: Role | undefined;
   readonly permissions: readonly Permission[];
   readonly open: boolean;
@@ -3017,18 +2987,7 @@ function RoleEditorModal({
   const editing = Boolean(role);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: {
-    id?: string;
-    name: string;
-    description?: string;
-    permissions?: string[];
-    enabled?: boolean;
-  }) => {
-    const normalizedId = (values.id ?? '').trim();
-    if (!role && existingRoleIds.includes(normalizedId)) {
-      form.setFields([{ name: 'id', errors: [t('roleIdAlreadyExists')] }]);
-      return;
-    }
+  const submit = async (values: { name: string; description?: string; permissions?: string[]; enabled?: boolean }) => {
     setPending(true);
     try {
       if (role)
@@ -3038,9 +2997,9 @@ function RoleEditorModal({
           enabled: values.enabled !== false,
           permissions: values.permissions ?? [],
         });
+      // The role id is server-generated from the name.
       else
         await client.createRole({
-          id: normalizedId,
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
           permissions: values.permissions ?? [],
@@ -3082,19 +3041,6 @@ function RoleEditorModal({
         }}
         onFinish={submit}
       >
-        {editing ? null : (
-          <Form.Item
-            name="id"
-            label={t('roleId')}
-            extra={t('rbacIdHint')}
-            rules={[
-              { required: true, whitespace: true, message: t('fieldRequired') },
-              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
-            ]}
-          >
-            <Input disabled={pending} />
-          </Form.Item>
-        )}
         <Form.Item
           name="name"
           label={t('roleName')}
@@ -3325,7 +3271,6 @@ function SkillsSection({
       {canWrite && editor ? (
         <SkillEditorModal
           client={client}
-          existingSkillIds={resources.skills.map((skill) => skill.id)}
           skill={editor.id ? resources.skills.find((skill) => skill.id === editor.id) : undefined}
           open
           onOpenChange={(open) => {
@@ -3747,7 +3692,6 @@ function VersionManager({
 
 function SkillEditorModal({
   client,
-  existingSkillIds,
   skill,
   open,
   onOpenChange,
@@ -3755,7 +3699,6 @@ function SkillEditorModal({
   onError,
 }: {
   readonly client: AdminConsoleClient;
-  readonly existingSkillIds: readonly string[];
   readonly skill: AdminSkill | undefined;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -3765,12 +3708,7 @@ function SkillEditorModal({
   const editing = Boolean(skill);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: { id?: string; name: string; description?: string; enabled?: boolean }) => {
-    const normalizedId = (values.id ?? '').trim();
-    if (!skill && existingSkillIds.includes(normalizedId)) {
-      form.setFields([{ name: 'id', errors: [t('skillIdAlreadyExists')] }]);
-      return;
-    }
+  const submit = async (values: { name: string; description?: string; enabled?: boolean }) => {
     setPending(true);
     try {
       if (skill)
@@ -3779,9 +3717,9 @@ function SkillEditorModal({
           description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
         });
+      // The skill id is server-generated from the name.
       else
         await client.createSkill({
-          id: normalizedId,
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
         });
@@ -3813,26 +3751,12 @@ function SkillEditorModal({
         layout="vertical"
         preserve={false}
         initialValues={{
-          id: skill?.id ?? '',
           name: skill?.name ?? '',
           description: skill?.description ?? '',
           enabled: skill?.enabled !== false,
         }}
         onFinish={submit}
       >
-        {editing ? null : (
-          <Form.Item
-            name="id"
-            label={t('skillId')}
-            extra={t('rbacIdHint')}
-            rules={[
-              { required: true, whitespace: true, message: t('fieldRequired') },
-              { pattern: RBAC_ID_PATTERN, message: t('rbacIdHint') },
-            ]}
-          >
-            <Input disabled={pending} />
-          </Form.Item>
-        )}
         <Form.Item
           name="name"
           label={t('skillName')}

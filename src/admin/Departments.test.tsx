@@ -47,11 +47,11 @@ describe('departments management', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /创建部门/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/部门 ID|ID/), { target: { value: 'ops-dept' } });
+    // Only the name is typed: the department id is server-generated.
     fireEvent.change(within(dialog).getByLabelText(/部门名称/), { target: { value: '运维部' } });
     fireEvent.click(within(dialog).getByRole('button', { name: /确 定|OK/i }));
 
-    await waitFor(() => expect(portal.createDepartment).toHaveBeenCalledWith('ops-dept', '运维部'));
+    await waitFor(() => expect(portal.createDepartment).toHaveBeenCalledWith('运维部'));
     await waitFor(() => expect(portal.listDepartments).toHaveBeenCalledTimes(2));
   });
 
@@ -100,9 +100,7 @@ describe('departments management', () => {
     await screen.findByText('研发部');
 
     fireEvent.click(screen.getByRole('button', { name: /创建部门/ }));
-    await screen.findByLabelText(/部门 ID|ID/);
-    fireEvent.change(screen.getByLabelText(/部门 ID|ID/), { target: { value: 'ops-dept' } });
-    fireEvent.change(screen.getByLabelText(/部门名称/), { target: { value: '运维部' } });
+    fireEvent.change(await screen.findByLabelText(/部门名称/), { target: { value: '运维部' } });
     fireEvent.click(screen.getAllByRole('button', { name: /确 定|OK/i }).at(-1)!);
 
     expect(await screen.findByText('weknora: down')).toBeInTheDocument();

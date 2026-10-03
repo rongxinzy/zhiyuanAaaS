@@ -113,7 +113,6 @@ try {
   await visit('users/teams', '团队管理');
   await page.getByRole('button', { name: /新增团队$/ }).click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByLabel('团队 ID', { exact: true }).fill('e2e-team');
   await dialog.getByLabel('名称', { exact: true }).fill('E2E 业务团队');
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
@@ -132,7 +131,7 @@ try {
   await dialog.waitFor({ state: 'hidden' });
   await page.getByText('E2E 业务成员', { exact: true }).first().waitFor();
   const member = state.users.find((user) => user.username === 'e2e-member');
-  assert.deepEqual(member.teamIds, ['e2e-team']);
+  assert.equal(member.teamIds.length, 1);
   assert.deepEqual(member.roleIds, ['member']);
   const memberRow = page.getByRole('row').filter({ hasText: 'E2E 业务成员' });
   await memberRow.getByRole('button', { name: '查看', exact: true }).click();
@@ -172,7 +171,6 @@ try {
   await visit('skills', '技能管理');
   await page.getByRole('button', { name: /新增技能$/ }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel('技能 ID', { exact: true }).fill('e2e-skill');
   await dialog.getByLabel('名称', { exact: true }).fill('E2E 报表整理');
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
@@ -192,7 +190,8 @@ try {
     .getByRole('button', { name: /Close|关闭/ })
     .click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  assert.equal(state.skills[0].id, 'e2e-skill');
+  const generatedSkill = state.skills.find((skill) => skill.name === 'E2E 报表整理');
+  assert.ok(generatedSkill?.id, 'skill id must be generated server-side');
   await page.screenshot({ path: path.join(screenshots, 'skills.png'), fullPage: true, animations: 'disabled' });
   checks.push('skill registration and four detail tabs');
   await visit('system/models', '模型列表');
@@ -238,7 +237,6 @@ try {
   await visit('system/models', '模型列表');
   await page.getByRole('button', { name: /添加模型$/ }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByLabel('模型 ID', { exact: true }).fill('e2e-model');
   await dialog.getByLabel('显示名称', { exact: true }).fill('E2E 企业模型');
   await dialog.getByLabel('网关地址', { exact: true }).fill('https://gateway.example.test/v1');
   await dialog.getByLabel('上游模型', { exact: true }).fill('test-model');
@@ -262,7 +260,7 @@ try {
     .click();
   await page.getByText('已发布，等待网关应用', { exact: true }).waitFor();
   assert.ok(state.requests.some((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publish'));
-  assert.equal(state.dataPlane.desired.routes[0]?.modelId, 'e2e-model');
+  assert.ok(state.dataPlane.desired.routes[0]?.modelId);
   checks.push('catalog drift badge and publish');
   await visit('system/models/configuration', '配置生效详情');
   await page.getByText('期望路由与模型目录一致', { exact: true }).waitFor();
