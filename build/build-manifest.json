@@ -31,9 +31,9 @@
     "commit": "8766fd59da9282600c82f4082b6638212844905e"
   },
   "aepSdk": {
-    "version": "0.2.15",
-    "releaseTag": "sdk-node-v0.2.15",
-    "asset": "aep-sdk-node-0.2.15.tgz",
-    "sha256": "563a35da064f4de2869548b8d19965b6bb9124699ba8f9ddd9897db85c6d7bba"
+    "version": "0.3.0",
+    "releaseTag": "sdk-node-v0.3.0",
+    "asset": "aep-sdk-node-0.3.0.tgz",
+    "sha256": "a9896a6bb5110537f6e4840bb6c4a8773a2d2ef13912e2bbd97458b120ad559e"
   }
 }

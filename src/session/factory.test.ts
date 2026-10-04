@@ -9,9 +9,49 @@ import type {
 } from '@aep/sdk-node';
 import { describe, expect, test, vi } from 'vitest';
 
-import { createZhiyuanPasswordSession } from './factory.js';
+import { createZhiyuanAepClient, createZhiyuanPasswordSession } from './factory.js';
 
 describe('Zhiyuan password session factory', () => {
+  test('routes agent-surface paths to a configured agent control base', async () => {
+    const bases: Array<{ base: string; path: string }> = [];
+    const transport = {
+      async request<T>(base: string, request: AepRequest): Promise<AepResponse<T>> {
+        bases.push({ base, path: request.path });
+        const data = request.path.endsWith('/auth/password/login')
+          ? tokens()
+          : request.path.endsWith('/metadata')
+            ? metadata()
+            : request.path.endsWith('/heartbeat')
+              ? ({ nextHeartbeatAfterSeconds: 30 } as unknown)
+              : identity();
+        return { status: 200, headers: new Headers(), data: data as T };
+      },
+    } satisfies AepTransport;
+    const protectedStorage = {
+      read: vi.fn(async () => null),
+      write: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+    };
+    const client = createZhiyuanAepClient({
+      baseUrl: 'https://api.example.test',
+      agentControlBaseUrl: 'https://agents.example.test',
+      agentId: 'agent-1',
+      agentVersion: '2026.8.0',
+      platform: 'windows',
+      protectedStorage,
+      transport,
+    });
+
+    await client.getMetadata();
+    await client.loginWithPassword({ deploymentId: 'enterprise-1', username: 'admin', password: 'secret' });
+    await client.heartbeatUser({ status: 'online' });
+
+    const byPath = (fragment: string) => bases.find((entry) => entry.path.includes(fragment))?.base;
+    expect(byPath('/metadata')).toBe('https://api.example.test');
+    expect(byPath('/auth/password/login')).toBe('https://agents.example.test');
+    expect(byPath('/user/heartbeat')).toBe('https://agents.example.test');
+  });
+
   test('derives a safe refresh-token key for arbitrary protocol agent IDs', async () => {
     const write = vi.fn(async (_key: string, _value: Uint8Array) => undefined);
     const protectedStorage: AepProtectedStorage = {
