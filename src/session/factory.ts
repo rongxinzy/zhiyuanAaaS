@@ -6,6 +6,11 @@ import { ZhiyuanPasswordSession } from './password-session.js';
 
 export interface ZhiyuanPasswordSessionOptions {
   readonly baseUrl: string;
+  /**
+   * Optional split agent-control endpoint (session auth + /aep/v1/user/*).
+   * Omitted, every request uses baseUrl — the all-in-one deployment shape.
+   */
+  readonly agentControlBaseUrl?: string;
   readonly agentId: string;
   readonly agentVersion: string;
   readonly platform: 'windows' | 'macos' | 'linux';
@@ -22,6 +27,7 @@ export function createZhiyuanAepClient(options: ZhiyuanPasswordSessionOptions): 
   return new ZhiyuanSessionAepClient(
     {
       baseUrl: options.baseUrl,
+      ...(options.agentControlBaseUrl ? { agentControlBaseUrl: options.agentControlBaseUrl } : {}),
       agentId: options.agentId,
       agentVersion: options.agentVersion,
       platform: options.platform,

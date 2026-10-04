@@ -46,22 +46,29 @@ export async function createZhiyuanSessionRuntimeComponents(
     path.join(context.paths.userData, 'zhiyuan-enterprise', 'secrets'),
     safeStorage,
   );
-  let activeClient = (dependencies.createClient ?? createZhiyuanAepClient)({
-    baseUrl: config.aepBaseUrl,
-    agentId,
-    agentVersion: context.appVersion,
-    platform,
-    protectedStorage,
-  });
-  const client = dependencies.createClient ? activeClient : routeClient(() => activeClient);
-  const session = new ZhiyuanPasswordSession(client, (baseUrl) => {
-    activeClient = (dependencies.createClient ?? createZhiyuanAepClient)({
+  // Split AEP deployments serve the agent control protocol (session auth +
+  // /aep/v1/user/*) from their own endpoint. A configured URL wins; without
+  // one, login-time service metadata discovery supplies it — the all-in-one
+  // deployment stays on the single base URL.
+  let currentBase = config.aepBaseUrl;
+  let currentAgentControl = config.agentControlBaseUrl;
+  const buildClient = (baseUrl: string) =>
+    (dependencies.createClient ?? createZhiyuanAepClient)({
       baseUrl,
+      ...(currentAgentControl ? { agentControlBaseUrl: currentAgentControl } : {}),
       agentId,
       agentVersion: context.appVersion,
       platform,
       protectedStorage,
     });
+  let activeClient = buildClient(currentBase);
+  const client = dependencies.createClient ? activeClient : routeClient(() => activeClient);
+  const session = new ZhiyuanPasswordSession(client, (baseUrl, agentControlBaseUrl) => {
+    currentBase = baseUrl;
+    // `undefined` keeps whatever is already targeted (the packaged config or
+    // an earlier discovery); an explicit value re-targets.
+    if (agentControlBaseUrl !== undefined) currentAgentControl = agentControlBaseUrl;
+    activeClient = buildClient(currentBase);
     return activeClient;
   });
   const licenseActivation = ZhiyuanLicenseActivation.create({ session, client });

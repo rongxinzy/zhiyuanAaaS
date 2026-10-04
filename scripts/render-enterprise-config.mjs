@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const USAGE = `Usage: node scripts/render-enterprise-config.mjs --output <file> [--base-url <url>]
+const USAGE = `Usage: node scripts/render-enterprise-config.mjs --output <file> [--base-url <url>] [--agent-control-base-url <url>]
 
 Renders the resources/zhiyuan-enterprise/config.json payload injected into
 enterprise packages. The AEP base URL is read from --base-url, the first
@@ -13,7 +13,7 @@ http URLs are rendered with "allowInsecureHttp": true and https with false.
 Trailing slashes are stripped exactly like the runtime loader in
 src/enterprise-config.ts.`;
 
-export function renderEnterpriseConfig(rawBaseUrl) {
+export function renderEnterpriseConfig(rawBaseUrl, rawAgentControlBaseUrl) {
   if (typeof rawBaseUrl !== 'string' || rawBaseUrl.trim().length === 0) {
     throw new Error('Zhiyuan AEP base URL is required. Pass --base-url or set ZHIYUAN_AEP_BASE_URL.');
   }
@@ -29,15 +29,32 @@ export function renderEnterpriseConfig(rawBaseUrl) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error(`Zhiyuan AEP base URL protocol is not supported: ${url.protocol}`);
   }
-  return {
+  const config = {
     schemaVersion: 1,
     aepBaseUrl: url.toString().replace(/\/+$/, ''),
     allowInsecureHttp: url.protocol === 'http:',
   };
+  if (rawAgentControlBaseUrl !== undefined) {
+    let agentUrl;
+    try {
+      agentUrl = new URL(String(rawAgentControlBaseUrl).trim());
+    } catch (error) {
+      throw new Error(`Zhiyuan agent control base URL is invalid: ${rawAgentControlBaseUrl}`, { cause: error });
+    }
+    if (agentUrl.username || agentUrl.password || agentUrl.search || agentUrl.hash) {
+      throw new Error('Zhiyuan agent control base URL must not contain credentials, query, or fragment.');
+    }
+    if (agentUrl.protocol !== 'https:' && agentUrl.protocol !== 'http:') {
+      throw new Error(`Zhiyuan agent control base URL protocol is not supported: ${agentUrl.protocol}`);
+    }
+    config.agentControlBaseUrl = agentUrl.toString().replace(/\/+$/, '');
+  }
+  return config;
 }
 
 export function parseArguments(argv, env) {
   let baseUrl;
+  let agentControlBaseUrl;
   let output;
   const positional = [];
   for (let index = 0; index < argv.length; index += 1) {
@@ -49,6 +66,11 @@ export function parseArguments(argv, env) {
       baseUrl = readValue(argv, index, '--base-url');
     } else if (argument.startsWith('--base-url=')) {
       baseUrl = argument.slice('--base-url='.length);
+    } else if (argument === '--agent-control-base-url') {
+      index += 1;
+      agentControlBaseUrl = readValue(argv, index, '--agent-control-base-url');
+    } else if (argument.startsWith('--agent-control-base-url=')) {
+      agentControlBaseUrl = argument.slice('--agent-control-base-url='.length);
     } else if (argument === '--output' || argument === '-o') {
       index += 1;
       output = readValue(argv, index, '--output');
@@ -65,6 +87,9 @@ export function parseArguments(argv, env) {
   }
   return {
     baseUrl: baseUrl ?? positional[0] ?? env.ZHIYUAN_AEP_BASE_URL,
+    agentControlBaseUrl:
+      agentControlBaseUrl ??
+      (env.ZHIYUAN_AGENT_CONTROL_BASE_URL === '' ? undefined : env.ZHIYUAN_AGENT_CONTROL_BASE_URL),
     output,
   };
 }
@@ -90,7 +115,7 @@ function main() {
     console.log(USAGE);
     return;
   }
-  const config = renderEnterpriseConfig(parsed.baseUrl);
+  const config = renderEnterpriseConfig(parsed.baseUrl, parsed.agentControlBaseUrl);
   if (!parsed.output) {
     throw new Error('An output path is required. Pass --output <file>.');
   }

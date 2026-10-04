@@ -305,3 +305,42 @@ function identity(): CurrentIdentity {
     passwordChangeRequired: false,
   };
 }
+
+describe('agent control endpoint discovery', () => {
+  test('targets the advertised agent-control URL when rebuilding at login', async () => {
+    const initialClient = mockClient({
+      getMetadata: vi.fn(async () => ({
+        ...metadata(),
+        agentControl: { baseUrl: 'https://agents.customer.example' },
+      })),
+    });
+    const loginClient = mockClient();
+    const factoryCalls: Array<{ baseUrl: string; agentControlBaseUrl?: string | undefined }> = [];
+    const session = new ZhiyuanPasswordSession(initialClient, (baseUrl, agentControlBaseUrl) => {
+      factoryCalls.push({ baseUrl, agentControlBaseUrl });
+      return loginClient;
+    });
+
+    await expect(
+      session.login({ aepBaseUrl: 'https://aep.customer.example', username: 'admin', password: 'secret' }),
+    ).resolves.toMatchObject({ status: 'authenticated' });
+    expect(factoryCalls).toEqual([
+      { baseUrl: 'https://aep.customer.example', agentControlBaseUrl: 'https://agents.customer.example' },
+    ]);
+    expect(loginClient.loginWithPassword).toHaveBeenCalledOnce();
+  });
+
+  test('keeps the single-base shape when metadata stays silent', async () => {
+    const loginClient = mockClient();
+    const factoryCalls: Array<{ baseUrl: string; agentControlBaseUrl?: string | undefined }> = [];
+    const session = new ZhiyuanPasswordSession(mockClient(), (baseUrl, agentControlBaseUrl) => {
+      factoryCalls.push({ baseUrl, agentControlBaseUrl });
+      return loginClient;
+    });
+
+    await expect(
+      session.login({ aepBaseUrl: 'https://aep.customer.example', username: 'admin', password: 'secret' }),
+    ).resolves.toMatchObject({ status: 'authenticated' });
+    expect(factoryCalls).toEqual([{ baseUrl: 'https://aep.customer.example', agentControlBaseUrl: undefined }]);
+  });
+});

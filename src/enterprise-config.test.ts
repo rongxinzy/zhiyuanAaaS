@@ -58,6 +58,10 @@ describe('Zhiyuan enterprise configuration', () => {
   });
 });
 
+async function parseConfigFor(config: unknown): Promise<ReturnType<typeof loadZhiyuanEnterpriseConfig>> {
+  return loadZhiyuanEnterpriseConfig(writeConfig(config));
+}
+
 function writeConfig(config: unknown): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zhiyuan-enterprise-config-'));
   temporaryDirectories.push(root);
@@ -67,3 +71,52 @@ function writeConfig(config: unknown): string {
   fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify(config));
   return resources;
 }
+
+describe('agent control base URL', () => {
+  test('accepts a valid optional agent control endpoint', async () => {
+    const config = await parseConfigFor({
+      schemaVersion: 1,
+      aepBaseUrl: 'https://aep.example.test',
+      allowInsecureHttp: false,
+      agentControlBaseUrl: 'https://agents.example.test',
+    });
+    expect(config.agentControlBaseUrl).toBe('https://agents.example.test');
+  });
+
+  test('stays optional and omits the field when absent', async () => {
+    const config = await parseConfigFor({
+      schemaVersion: 1,
+      aepBaseUrl: 'https://aep.example.test',
+      allowInsecureHttp: false,
+    });
+    expect('agentControlBaseUrl' in config).toBe(false);
+  });
+
+  test('rejects insecure agent control endpoints when insecure HTTP is disabled', async () => {
+    await expect(
+      parseConfigFor({
+        schemaVersion: 1,
+        aepBaseUrl: 'https://aep.example.test',
+        allowInsecureHttp: false,
+        agentControlBaseUrl: 'http://agents.example.test',
+      }),
+    ).rejects.toThrow('insecure HTTP configuration is disabled');
+  });
+
+  test('rejects agent control URLs with credentials, query, or fragment', async () => {
+    for (const bad of [
+      'https://u:p@agents.example.test',
+      'https://agents.example.test/?x=1',
+      'https://agents.example.test/#f',
+    ]) {
+      await expect(
+        parseConfigFor({
+          schemaVersion: 1,
+          aepBaseUrl: 'https://aep.example.test',
+          allowInsecureHttp: false,
+          agentControlBaseUrl: bad,
+        }),
+      ).rejects.toThrow();
+    }
+  });
+});

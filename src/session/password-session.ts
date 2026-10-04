@@ -41,7 +41,13 @@ export class AepMetadataError extends Error {
   }
 }
 
-export type PasswordSessionClientFactory = (baseUrl: string) => PasswordSessionClient;
+/**
+ * Rebuilds the underlying client for a new API base URL. The optional
+ * second argument re-targets the agent control protocol surface (split
+ * deployments): `undefined` keeps the current target, a string sets it
+ * (empty string clears back to the single-base shape).
+ */
+export type PasswordSessionClientFactory = (baseUrl: string, agentControlBaseUrl?: string) => PasswordSessionClient;
 
 export class ZhiyuanPasswordSession {
   static readonly MODEL_TOKEN_REFRESH_WINDOW_MS = 30_000;
@@ -53,6 +59,7 @@ export class ZhiyuanPasswordSession {
   #operationTail: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<() => void | Promise<void>>();
   #modelAccessExpiresAt = 0;
+  #discoveredAgentControlBaseUrl: string | null = null;
 
   constructor(client: PasswordSessionClient, clientFactory?: PasswordSessionClientFactory) {
     this.#client = client;
@@ -110,8 +117,12 @@ export class ZhiyuanPasswordSession {
       return Promise.reject(error);
     }
     return this.#enqueue(async () => {
-      if (this.#clientFactory) this.#client = this.#clientFactory(aepBaseUrl);
+      // Metadata is fetched with the current client; discovery may surface
+      // the split agent-control endpoint, which the rebuild then targets.
       const deploymentId = await this.#resolveDeploymentId();
+      if (this.#clientFactory) {
+        this.#client = this.#clientFactory(aepBaseUrl, this.#discoveredAgentControlBaseUrl ?? undefined);
+      }
       const tokens = await this.#client.loginWithPassword({
         deploymentId,
         username: input.username,
@@ -185,6 +196,11 @@ export class ZhiyuanPasswordSession {
     if (!deploymentId) {
       throw new AepMetadataError('AEP server metadata did not include a deployment ID.');
     }
+    // Split deployments advertise the agent control endpoint through
+    // metadata; remembered so the login rebuild targets it. A configured
+    // endpoint already routes there, and re-targeting is idempotent anyway.
+    const agentControl = (metadata as { agentControl?: { baseUrl?: string } }).agentControl?.baseUrl;
+    this.#discoveredAgentControlBaseUrl = typeof agentControl === 'string' && agentControl !== '' ? agentControl : null;
     return deploymentId;
   }
 
