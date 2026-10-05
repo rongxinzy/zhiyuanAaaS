@@ -21,19 +21,23 @@ const explicitOrigin = process.env.ZHIYUAN_ADMIN_ORIGIN;
 const deploymentId = process.env.ZHIYUAN_AEP_DEPLOYMENT_ID ?? 'demo';
 const adminUsername = process.env.ZHIYUAN_AEP_ADMIN_USERNAME ?? 'admin';
 const adminPassword = requiredEnvironment('ZHIYUAN_AEP_ADMIN_PASSWORD');
-const memberRoleId = process.env.ZHIYUAN_AEP_E2E_ROLE_ID ?? 'aaas-e2e-member';
+const memberRoleIdOverride = process.env.ZHIYUAN_AEP_E2E_ROLE_ID;
 const memberRoleName = 'AaaS E2E member';
 const suffix = `real-${Date.now().toString(36)}`;
 const names = {
   user: `console-user-${suffix}`,
   display: `Console User ${suffix}`,
   imported: `console-imported-${suffix}`,
-  team: `console-team-${suffix}`,
-  role: `console-role-${suffix}`,
-  skill: `console-skill-${suffix}`,
-  model: `console-model-${suffix}`,
   credential: `Console Credential ${suffix}`,
 };
+// Roles, teams, skills, and models generate server-side slug ids from their
+// names; the E2E references everything by display name.
+const teamName = `Console Team ${suffix}`;
+const roleName = `Console Role ${suffix}`;
+const skillName = `Console Skill ${suffix}`;
+const skillNameUpdated = `Console Skill Updated ${suffix}`;
+const modelName = `Console Model ${suffix}`;
+const modelNameUpdated = `Console Model Updated ${suffix}`;
 
 let staticServer;
 let adminOrigin = explicitOrigin;
@@ -77,6 +81,48 @@ const dialog = () => page.getByRole('dialog');
 const row = (text) => page.getByRole('row').filter({ hasText: text }).first();
 const menuItem = (name) => page.getByRole('menuitem', { name, exact: true }).first();
 const tabItem = (name) => page.getByRole('tab', { name }).first();
+// Toolbar buttons carry AntD icons whose span (role="img" aria-label="plus")
+// prefixes the accessible name — "新增团队" resolves to "plus 新增团队", so an
+// exact match finds nothing. Toolbar locators therefore anchor on the
+// visible-text suffix ({ name: /新增团队$/ }); row-action buttons stay
+// text-only and keep exact matching.
+// Row "更多" dropdowns stay mounted (hidden) for every row; scope item clicks
+// to the one visible dropdown, mirroring confirmPopover's popover pattern.
+// Ant multiple-mode selects keep their dropdown open, closed dropdowns stay
+// mounted (page filters included), and the option click occasionally drops;
+// scope to the one visible dropdown and pick with verification and retry.
+const pickInDialog = async (scope, selectLabel, optionText, typeText = String(optionText)) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await scope.getByLabel(selectLabel, { exact: true }).click();
+    // Long option lists are virtualized; type to filter so the target renders.
+    await page.keyboard.type(typeText);
+    const option = page
+      .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+      .locator('.ant-select-item-option')
+      .filter({ hasText: optionText })
+      .first();
+    await option.waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
+    await option.click().catch(() => undefined);
+    await page.keyboard.press('Escape');
+    // Single selects render the value in .ant-select-content (no
+    // .ant-select-selection-item); both modes carry it inside the content node.
+    const selected = scope.locator('.ant-select-content').filter({ hasText: optionText }).first();
+    if (await selected.isVisible().catch(() => false)) return;
+  }
+  throw new Error(`Could not select ${optionText} in ${selectLabel}`);
+};
+// List searches only apply after the 查询 toolbar button; fill and apply.
+const applySearch = async (label, value) => {
+  await page.getByLabel(label, { exact: true }).fill(value);
+  const query = page.getByRole('button', { name: /查询$/ });
+  if (await query.count()) await query.click();
+};
+const dropdownItem = (label) =>
+  page
+    .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+    .locator('.ant-dropdown-menu-item')
+    .filter({ hasText: label })
+    .first();
 // Ant Design keeps closed Popconfirm overlays mounted; only confirm the visible one.
 const confirmPopover = (label) =>
   page
@@ -186,37 +232,41 @@ if (verifierError) throw verifierError;
 async function createUserAndMemberships() {
   await menuItem('用户管理').click();
   await tabItem('团队管理').click();
-  await page.getByRole('button', { name: '新增团队', exact: true }).click();
+  await page.getByRole('button', { name: /新增团队$/ }).click();
   let current = dialog();
-  await current.getByLabel('团队 ID', { exact: true }).fill(names.team);
-  await current.getByLabel('名称', { exact: true }).fill(`Console Team ${suffix}`);
+  await current.getByLabel('名称', { exact: true }).fill(teamName);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Team ${suffix}`);
+  // Filter first: failed earlier runs leave teams behind and push this one to a later page.
+  await applySearch('搜索团队名称', teamName);
+  await waitText(teamName);
 
   await tabItem('角色权限').click();
-  await page.getByRole('button', { name: '新增角色', exact: true }).click();
+  await page.getByRole('button', { name: /新增角色$/ }).click();
   current = dialog();
-  await current.getByLabel('角色 ID', { exact: true }).fill(names.role);
-  await current.getByLabel('名称', { exact: true }).fill(`Console Role ${suffix}`);
+  await current.getByLabel('名称', { exact: true }).fill(roleName);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Role ${suffix}`);
+  // Filter first: failed earlier runs leave roles behind and push this one to a later page.
+  await applySearch('搜索角色', roleName);
+  await waitText(roleName);
 
   await tabItem('用户列表').click();
-  await page.getByRole('button', { name: '新增用户', exact: true }).click();
+  await page.getByRole('button', { name: /新增用户$/ }).click();
   current = dialog();
   await current.getByLabel('用户名', { exact: true }).fill(names.user);
   await current.getByLabel('显示名称', { exact: true }).fill(names.display);
   await current.getByLabel('临时密码', { exact: true }).fill(`Temporary-${suffix}-password`);
-  await current.getByRole('checkbox', { name: new RegExp(memberRoleName) }).check();
-  await current.getByRole('checkbox', { name: /All users/ }).check();
+  // Role and team assignment moved from checkbox lists to combobox selects.
+  await pickInDialog(current, '选择角色', memberRoleName);
+  await pickInDialog(current, '选择团队', /All users/, 'All users');
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(names.display);
 
-  // Filter the user table so prior runs' disabled accounts cannot hide this row.
-  await page.getByLabel('搜索姓名或账号', { exact: true }).fill(names.user);
+  // Filter the user table immediately: prior runs' accumulated rows can push
+  // this run's user onto a later page and make waitText time out.
+  await applySearch('搜索姓名或账号', names.user);
+  await waitText(names.display);
   const userRow = row(names.user);
 
   await userRow.getByRole('button', { name: '编辑', exact: true }).click();
@@ -226,15 +276,17 @@ async function createUserAndMemberships() {
   await current.waitFor({ state: 'hidden' });
   await waitText(`${names.display} Updated`);
 
+  // Reset-password and disable live in the row's "更多" dropdown.
   await userRow.getByRole('button', { name: '更多', exact: true }).hover();
-  await page.getByRole('menuitem', { name: '重置密码', exact: true }).click();
+  await dropdownItem('重置密码').click();
   current = dialog();
   await current.getByLabel('临时密码', { exact: true }).fill(`Reset-${suffix}-password`);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
 
-  await page.getByRole('button', { name: '导入用户', exact: true }).click();
+  await page.getByRole('button', { name: /导入用户$/ }).click();
   current = dialog();
+  const memberRole = (await api('/aep/v1/admin/roles?limit=200')).roles.find((role) => role.name === memberRoleName);
   const importPayload = JSON.stringify({
     users: [
       {
@@ -242,7 +294,7 @@ async function createUserAndMemberships() {
         username: names.imported,
         displayName: `Imported ${suffix}`,
         temporaryPassword: `Imported-${suffix}-password`,
-        roleIds: [memberRoleId],
+        roleIds: [memberRole?.id],
         teamIds: ['all-users'],
       },
     ],
@@ -250,19 +302,18 @@ async function createUserAndMemberships() {
   await current
     .locator('input[type="file"]')
     .setInputFiles({ name: 'users.json', mimeType: 'application/json', buffer: Buffer.from(importPayload) });
-  await current.getByRole('button', { name: '导入用户', exact: true }).click();
+  await current.getByRole('button', { name: /导入用户$/ }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText('导入结果');
-  await waitText(`Imported ${suffix}`);
-
   await disableUserViaRow(row(names.user));
-  await page.getByLabel('搜索姓名或账号', { exact: true }).fill(names.imported);
+  // Filter before waiting: the accumulated user table paginates new rows out.
+  await applySearch('搜索姓名或账号', names.imported);
+  await waitText(`Imported ${suffix}`);
   await disableUserViaRow(row(names.imported));
 }
 
 async function disableUserViaRow(target) {
   await target.getByRole('button', { name: '更多', exact: true }).hover();
-  await page.getByRole('menuitem', { name: '停用', exact: true }).click();
+  await dropdownItem('停用').click();
   const current = dialog();
   await current.getByRole('button', { name: '确认停用', exact: true }).click();
   await current.getByText('账号已停用', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
@@ -272,15 +323,15 @@ async function disableUserViaRow(target) {
 
 async function exerciseTeamAndRole() {
   await tabItem('团队管理').click();
-  await page.getByLabel('搜索团队名称', { exact: true }).fill(names.team);
-  const teamText = `Console Team ${suffix}`;
-  await row(names.team).getByRole('button', { name: '编辑', exact: true }).click();
+  await applySearch('搜索团队名称', teamName);
+  const teamText = teamName;
+  await row(teamName).getByRole('button', { name: '编辑', exact: true }).click();
   let current = dialog();
   await current.getByLabel('名称', { exact: true }).fill(`${teamText} Updated`);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
   await waitText(`${teamText} Updated`);
-  const teamRow = row(names.team);
+  const teamRow = row(teamName);
   await teamRow.getByRole('button', { name: '停用', exact: true }).click();
   await teamRow.getByRole('button', { name: '启用', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
   await teamRow.getByRole('button', { name: '启用', exact: true }).click();
@@ -290,15 +341,15 @@ async function exerciseTeamAndRole() {
   await waitGone(`${teamText} Updated`);
 
   await tabItem('角色权限').click();
-  await page.getByLabel('搜索角色', { exact: true }).fill(names.role);
-  const roleText = `Console Role ${suffix}`;
-  await row(names.role).getByRole('button', { name: '编辑', exact: true }).click();
+  await applySearch('搜索角色', roleName);
+  const roleText = roleName;
+  await row(roleName).getByRole('button', { name: '编辑', exact: true }).click();
   current = dialog();
   await current.getByLabel('名称', { exact: true }).fill(`${roleText} Updated`);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
   await waitText(`${roleText} Updated`);
-  const roleRow = row(names.role);
+  const roleRow = row(roleName);
   await roleRow.getByRole('button', { name: '停用', exact: true }).click();
   await roleRow.getByRole('button', { name: '启用', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
   await roleRow.getByRole('button', { name: '启用', exact: true }).click();
@@ -310,21 +361,23 @@ async function exerciseTeamAndRole() {
 
 async function exerciseSkill() {
   await menuItem('技能管理').click();
-  await page.getByRole('button', { name: '新增技能', exact: true }).click();
+  await page.getByRole('button', { name: /新增技能$/ }).click();
   let current = dialog();
-  await current.getByLabel('技能 ID', { exact: true }).fill(names.skill);
-  await current.getByLabel('名称', { exact: true }).fill(`Console Skill ${suffix}`);
+  await current.getByLabel('名称', { exact: true }).fill(skillName);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Skill ${suffix}`);
-  await page.getByLabel('搜索名称或用途', { exact: true }).fill(names.skill);
-  const skillRow = row(names.skill);
+  await waitText(skillName);
+  await page.getByLabel('搜索名称或用途', { exact: true }).fill(skillName);
+  let skillRow = row(skillName);
   await skillRow.getByRole('button', { name: '编辑', exact: true }).click();
   current = dialog();
-  await current.getByLabel('名称', { exact: true }).fill(`Console Skill Updated ${suffix}`);
+  await current.getByLabel('名称', { exact: true }).fill(skillNameUpdated);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Skill Updated ${suffix}`);
+  // The name filter hides the row once it is renamed; retarget the search.
+  await page.getByLabel('搜索名称或用途', { exact: true }).fill(skillNameUpdated);
+  await waitText(skillNameUpdated);
+  skillRow = row(skillNameUpdated);
   await skillRow.getByRole('button', { name: '停用', exact: true }).click();
   await skillRow.getByRole('button', { name: '启用', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
   await skillRow.getByRole('button', { name: '启用', exact: true }).click();
@@ -350,7 +403,7 @@ async function exerciseSkill() {
 
   // Grant the skill to the created user, then revoke from the same drawer.
   await closeDrawer();
-  await page.getByRole('button', { name: '授权技能', exact: true }).click();
+  await page.getByRole('button', { name: /授权技能$/ }).click();
   current = dialog();
   await current.getByRole('combobox').click();
   await page
@@ -381,32 +434,34 @@ async function exerciseModel() {
   await menuItem('系统管理').click();
   await tabItem('模型服务').click();
   await tabItem('模型列表').click();
-  await page.getByRole('button', { name: '添加模型', exact: true }).click();
+  await page.getByRole('button', { name: /添加模型$/ }).click();
   let current = dialog();
-  await current.getByLabel('模型 ID', { exact: true }).fill(names.model);
-  await current.getByLabel('显示名称', { exact: true }).fill(`Console Model ${suffix}`);
+  await current.getByLabel('显示名称', { exact: true }).fill(modelName);
   await current.getByLabel('网关地址', { exact: true }).fill('http://127.0.0.1:8090/v1');
   await current.getByLabel('上游模型', { exact: true }).fill('deepseek-chat');
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Model ${suffix}`);
-  await page.getByPlaceholder('搜索模型名称或标识').fill(names.model);
-  const modelRow = row(names.model);
+  await waitText(modelName);
+  await page.getByPlaceholder('搜索模型名称或标识').fill(modelName);
+  let modelRow = row(modelName);
 
-  await modelRow.getByRole('button', { name: '编辑模型', exact: true }).click();
+  await modelRow.getByRole('button', { name: /编辑模型$/ }).click();
   current = dialog();
-  await current.getByLabel('显示名称', { exact: true }).fill(`Console Model Updated ${suffix}`);
+  await current.getByLabel('显示名称', { exact: true }).fill(modelNameUpdated);
   await current.getByRole('button', { name: '保存', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
-  await waitText(`Console Model Updated ${suffix}`);
+  // The name filter hides the row once it is renamed; retarget the search.
+  await page.getByPlaceholder('搜索模型名称或标识').fill(modelNameUpdated);
+  await waitText(modelNameUpdated);
+  modelRow = row(modelNameUpdated);
 
-  await modelRow.getByRole('button', { name: '分配模型', exact: true }).click();
+  await modelRow.getByRole('button', { name: /分配模型$/ }).click();
   await waitHeading('为成员分配模型');
   await page.getByRole('checkbox', { name: new RegExp(names.user) }).check();
   await page.getByRole('button', { name: '授权', exact: true }).click();
   await waitText(`Console Model Updated ${suffix}`);
 
-  await modelRow.getByRole('button', { name: '查看详情', exact: true }).click();
+  await modelRow.getByRole('button', { name: /查看详情$/ }).click();
   current = dialog();
   await current.getByRole('tab', { name: '使用权限', exact: true }).click();
   const assignmentRow = current.getByRole('row').filter({ hasText: names.user }).first();
@@ -416,7 +471,7 @@ async function exerciseModel() {
   await assignmentRow.waitFor({ state: 'detached', timeout: 15000 });
   await closeDrawer();
 
-  await modelRow.getByRole('button', { name: '操作', exact: true }).click();
+  await modelRow.getByRole('button', { name: /操作$/ }).click();
   await page.getByRole('menuitem', { name: '删除', exact: true }).click();
   current = dialog();
   await current.getByRole('button', { name: '删除', exact: true }).click();
@@ -426,7 +481,7 @@ async function exerciseModel() {
 
 async function exerciseCredential() {
   await tabItem('接入配置').click();
-  await page.getByRole('button', { name: '新建接入配置', exact: true }).click();
+  await page.getByRole('button', { name: /新建接入配置$/ }).click();
   let current = dialog();
   await current.getByLabel('名称', { exact: true }).fill(names.credential);
   await current.getByLabel('服务', { exact: true }).fill('model-gateway');
@@ -443,10 +498,10 @@ async function exerciseCredential() {
   await current.waitFor({ state: 'hidden' });
   await waitText(`${names.credential} Updated`);
 
-  await credentialRow.getByRole('button', { name: '更新密钥', exact: true }).click();
+  await credentialRow.getByRole('button', { name: /更新密钥$/ }).click();
   current = dialog();
   await current.getByLabel('新密钥', { exact: true }).fill(`rotated-${suffix}`);
-  await current.getByRole('button', { name: '更新密钥', exact: true }).click();
+  await current.getByRole('button', { name: /更新密钥$/ }).click();
   await current.waitFor({ state: 'hidden' });
 
   await credentialRow.getByRole('button', { name: '停用', exact: true }).click();
@@ -455,10 +510,30 @@ async function exerciseCredential() {
   await credentialRow.getByRole('button', { name: '启用', exact: true }).click();
   await credentialRow.getByRole('button', { name: '停用', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
 
-  await credentialRow.getByRole('button', { name: '授权', exact: true }).click();
+  await credentialRow.getByRole('button', { name: /授权$/ }).click();
   current = dialog();
-  await current.getByRole('combobox').click();
-  await page.locator('.ant-select-item-option').filter({ hasText: names.user }).first().click();
+  // Unlabeled user-picker combobox; pick with the same verify-and-retry loop.
+  let userPicked = false;
+  for (let attempt = 0; attempt < 3 && !userPicked; attempt += 1) {
+    await current.getByRole('combobox').click();
+    // The user list is virtualized; type the username to filter it.
+    await page.keyboard.type(names.user);
+    const userOption = page
+      .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+      .locator('.ant-select-item-option')
+      .filter({ hasText: names.user })
+      .first();
+    await userOption.waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
+    await userOption.click().catch(() => undefined);
+    await page.keyboard.press('Escape');
+    userPicked = await current
+      .locator('.ant-select-content')
+      .filter({ hasText: names.user })
+      .first()
+      .isVisible()
+      .catch(() => false);
+  }
+  assert.ok(userPicked, `Could not select ${names.user} in the credential grant dialog`);
   await current.getByRole('button', { name: '授权', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
 
@@ -470,7 +545,7 @@ async function exerciseCredential() {
     .getByRole('button', { name: '撤销授权', exact: true })
     .waitFor({ state: 'detached', timeout: 15000 });
 
-  await credentialRow.getByRole('button', { name: '删除', exact: true }).click();
+  await credentialRow.getByRole('button', { name: /删除$/ }).click();
   current = dialog();
   await current.getByRole('button', { name: '确认删除', exact: true }).click();
   await current.waitFor({ state: 'hidden' });
@@ -484,18 +559,18 @@ async function exerciseCredential() {
 async function exerciseAuditReadonly() {
   await menuItem('日志审计').click();
   await tabItem('操作记录').click();
-  await page.getByRole('button', { name: '查询', exact: true }).click();
+  await page.getByRole('button', { name: /查询$/ }).click();
   await tabItem('配置执行记录').click();
   await tabItem('登录日志').click();
   await waitText('登录历史查询尚未接入');
 }
 
 // Raw route editing and desired-state publishing were removed from the
-// product UI; the configuration page is verified read-only.
+// product UI; the configuration page is a read-only sync-status view.
 async function exerciseConfigurationReadonly() {
   await menuItem('系统管理').click();
   await tabItem('配置生效详情').click();
-  await waitText('当前路由（只读）');
+  await waitText('版本一致性');
 }
 
 async function assertSessionSemantics() {
@@ -525,19 +600,19 @@ async function assertApiState() {
   const models = await api('/aep/v1/admin/models');
   const credentials = await api('/aep/v1/admin/credentials');
   assert.equal(
-    teams.teams.some((item) => item.id === names.team),
+    teams.teams.some((item) => item.name === teamName),
     false,
   );
   assert.equal(
-    roles.roles.some((item) => item.id === names.role),
+    roles.roles.some((item) => item.name === roleName),
     false,
   );
   assert.equal(
-    skills.skills.some((item) => item.id === names.skill),
+    skills.skills.some((item) => item.name === skillNameUpdated),
     false,
   );
   assert.equal(
-    models.models.some((item) => item.id === names.model),
+    models.models.some((item) => item.name === modelNameUpdated),
     false,
   );
   assert.equal(
@@ -554,16 +629,17 @@ async function assertApiState() {
 
 async function ensureMemberRole() {
   const roles = await api('/aep/v1/admin/roles?limit=200');
-  const existing = roles.roles.find((role) => role.id === memberRoleId);
+  const existing = memberRoleIdOverride
+    ? roles.roles.find((role) => role.id === memberRoleIdOverride)
+    : roles.roles.find((role) => role.name === memberRoleName);
   if (existing) {
-    assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
-    assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
+    assert.equal(existing.enabled, true, `E2E role ${existing.id} must be enabled`);
+    assert.deepEqual(existing.permissions, [], `E2E role ${existing.id} must not grant permissions`);
     return;
   }
   await api('/aep/v1/admin/roles', {
     method: 'POST',
     body: {
-      id: memberRoleId,
       name: memberRoleName,
       description: 'Least-privileged role for disposable enterprise extension tests',
       permissions: [],
