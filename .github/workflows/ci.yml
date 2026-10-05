@@ -89,15 +89,13 @@ jobs:
         run: |
           node -e "const manifest = require('./build/build-manifest.json'); const commit = manifest.aepProtocol?.commit; if (!/^[0-9a-f]{40}$/.test(commit ?? '')) throw new Error('build-manifest.json must pin aepProtocol.commit to a full commit SHA'); process.stdout.write('aep_commit=' + commit + '\n')" >> "$GITHUB_OUTPUT"
 
-      # The pinned AEP compose stack cannot yet pull its object-storage image:
-      # the old pin predates AEP's switch to RustFS (rustfs/rustfs:1.0.0,
-      # 2026-10-05) and still references minio/minio, which was withdrawn
-      # from Docker Hub on 2026-09-11 (AEP issue #181 / PR #182 skip
-      # mitigation). Gate the real-service E2E steps behind the
-      # ZHIYUAN_ENABLE_AEP_E2E repository variable so the rest of the verify
-      # job keeps a trustworthy signal. Once build-manifest.json pins an AEP
-      # commit containing the RustFS swap, set the variable to 'true' to
-      # restore full coverage; no code change is needed.
+      # Real-service E2E against the pinned AEP control plane (running
+      # RustFS, rustfs/rustfs:1.0.0, since the 2026-10-05 pin bump to AEP
+      # commit 34449fe8). ZHIYUAN_ENABLE_AEP_E2E is now 'true', so these
+      # steps run on every pull_request. Two gotchas: GitHub snapshots
+      # repository variables when a run is created (a variable flip does not
+      # affect already-created runs), and these steps live in the PR-only
+      # coverage-ratchet job, so push runs to main never execute them.
       - name: Checkout AEP control plane for real-service E2E
         if: vars.ZHIYUAN_ENABLE_AEP_E2E == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
