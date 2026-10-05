@@ -138,7 +138,10 @@ async function ensureMemberRole(adminClient) {
     description: 'Least-privileged role for disposable enterprise extension tests',
     permissions: [],
   });
-  assert.ok(typeof created?.id === 'string' && created.id.length > 0, 'createRole did not return a server-generated id');
+  assert.ok(
+    typeof created?.id === 'string' && created.id.length > 0,
+    'createRole did not return a server-generated id',
+  );
   return created.id;
 }
 
