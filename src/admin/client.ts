@@ -527,6 +527,11 @@ export class AdminConsoleClient {
     return this.#listAllUsers(this.#requireClient());
   }
 
+  /** Full skill catalog (cursor-paged), parsed like the overview path. */
+  async skills(): Promise<readonly AdminSkill[]> {
+    return parseSkills(await this.#listAllSkills(this.#requireClient()));
+  }
+
   async createUser(input: {
     readonly username: string;
     readonly displayName: string;

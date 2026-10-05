@@ -1,17 +1,27 @@
-import type { AdminModel } from '@aep/sdk-node';
-import { ArrowLeftOutlined, DeleteOutlined, MessageOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import type { AdminModel, PlatformUser } from '@aep/sdk-node';
+import {
+  ArrowLeftOutlined,
+  CheckOutlined,
+  DeleteOutlined,
+  MessageOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Button,
+  Checkbox,
   Descriptions,
   Drawer,
   Empty,
   Form,
   Input,
   Modal,
+  Radio,
   Segmented,
   Select,
   Space,
+  Steps,
   Table,
   Tabs,
   Tag,
@@ -19,12 +29,13 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import type { AdminConsoleClient, AdminIdentity } from './client.js';
+import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
   chatUIBaseURL,
+  type PortalApplyInput,
   PortalClient,
   type PortalDepartment,
   type PortalEmployee,
@@ -379,9 +390,43 @@ function EmployeeList({
   );
 }
 
-// Creation dialog: name + displayName + optional team (department scoping)
-// and the LLM model list picked from the AEP catalog (selection order is
-// priority order). Knowledge and skills remain server-side.
+// Creation wizard (four steps per the admin-console wireframes): basics →
+// knowledge & skills → audience → confirm & publish. Every field maps to
+// the extended portal apply API — knowledge bases whitelist the employee's
+// retrieval (enforced server-side by the governance middleware), skills are
+// validated registrations, and the audience is an explicit choice that is
+// never defaulted to everyone. Release conditions (purpose, owner, team,
+// models, audience) are enforced per step and mirrored on the confirm step.
+type WizardValues = {
+  name: string;
+  displayName?: string;
+  description: string;
+  owner: string;
+  team: string;
+  models: string[];
+  knowledgeBases?: string[];
+  skills?: string[];
+  skillVersions: Record<string, string>;
+  scopeMode: 'restricted' | 'all';
+  scopeTeams?: string[];
+  scopeUsers?: string[];
+};
+
+const WIZARD_STEP_FIELDS: readonly (keyof WizardValues)[][] = [
+  ['name', 'displayName', 'description', 'owner', 'team', 'models'],
+  [],
+  ['scopeMode'],
+];
+
+// Newest published version of a skill, mirroring the portal's auto-pin.
+function latestPublishedVersion(skill: AdminSkill): string {
+  let latest = '';
+  for (const version of skill.versions) {
+    if (version.state === 'published') latest = version.version;
+  }
+  return latest;
+}
+
 function CreateEmployeeModal({
   client,
   portal,
@@ -395,15 +440,28 @@ function CreateEmployeeModal({
   readonly onClose: () => void;
   readonly onApplied: () => void;
 }) {
-  const [form] = Form.useForm<{ name: string; displayName: string; team?: string; models?: string[] }>();
+  const [form] = Form.useForm<WizardValues>();
+  const [step, setStep] = useState(0);
   const [pending, setPending] = useState(false);
   const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
   const [models, setModels] = useState<readonly AdminModel[]>([]);
+  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
+  const [skills, setSkills] = useState<readonly AdminSkill[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<readonly { id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [violations, setViolations] = useState<readonly { field: string; message: string }[]>([]);
+
+  const usableSkills = useMemo(
+    () => skills.filter((skill) => skill.state === 'active' && skill.versions.some((v) => v.state === 'published')),
+    [skills],
+  );
+
   useEffect(() => {
     if (open) {
       form.resetFields();
+      setStep(0);
       setError(null);
+      setViolations([]);
       portal
         .listDepartments()
         .then(setDepartments)
@@ -412,21 +470,89 @@ function CreateEmployeeModal({
         .models()
         .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
         .catch(() => setModels([]));
+      client
+        .users()
+        // Active accounts only; the platform listing returns human users
+        // and the portal re-validates that the owner is a human on apply.
+        .then((all) => setUsers(all.filter((user) => user.status === 'active')))
+        .catch(() => setUsers([]));
+      client
+        .skills()
+        .then(setSkills)
+        .catch(() => setSkills([]));
+      portal
+        .knowledgeStatus()
+        .then((status) => setKnowledgeBases(status.knowledgeBases ?? []))
+        .catch(() => setKnowledgeBases([]));
     }
   }, [open, form, portal, client]);
 
-  const submit = async (values: { name: string; displayName: string; team?: string; models?: string[] }) => {
+  const userById = (id: string) => users.find((user) => user.id === id);
+  const departmentName = (id: string) => departments.find((d) => d.id === id)?.name ?? id;
+  const knowledgeName = (id: string) => knowledgeBases.find((kb) => kb.id === id)?.name ?? id;
+  const skillById = (id: string) => usableSkills.find((skill) => skill.id === id);
+
+  const releaseChecks = (values: Partial<WizardValues>) => [
+    { label: t('checklistDescription'), ok: (values.description ?? '').trim().length > 0 },
+    { label: t('checklistOwner'), ok: Boolean(values.owner) },
+    { label: t('checklistTeam'), ok: Boolean(values.team) },
+    { label: t('checklistModels'), ok: (values.models ?? []).length > 0 },
+    {
+      label: t('checklistScope'),
+      ok: values.scopeMode === 'all' || (values.scopeTeams ?? []).length + (values.scopeUsers ?? []).length > 0,
+    },
+  ];
+
+  const next = async () => {
+    setError(null);
+    setViolations([]);
+    if (step === 2) {
+      // The audience step: restricted scope must contain at least one
+      // subject — validateFields covers scopeMode itself.
+      const scopeMode = form.getFieldValue('scopeMode') as WizardValues['scopeMode'];
+      const teams = (form.getFieldValue('scopeTeams') as string[] | undefined) ?? [];
+      const userScope = (form.getFieldValue('scopeUsers') as string[] | undefined) ?? [];
+      if (scopeMode === 'restricted' && teams.length + userScope.length === 0) {
+        setError(t('scopeRequireOne'));
+        return;
+      }
+    }
+    try {
+      await form.validateFields(WIZARD_STEP_FIELDS[step] ?? []);
+      setStep((current) => Math.min(current + 1, 3));
+    } catch {
+      // validateFields already renders the per-field messages.
+    }
+  };
+
+  const submit = async (values: WizardValues) => {
     setPending(true);
     setError(null);
+    setViolations([]);
+    const input: PortalApplyInput = {
+      name: values.name.trim(),
+      displayName: (values.displayName ?? '').trim() || values.name.trim(),
+      description: values.description.trim(),
+      team: values.team,
+      models: values.models ?? [],
+      owner: values.owner,
+      // The wizard makes the knowledge policy explicit: unchecked = no
+      // bases = the middleware denies every knowledge search.
+      knowledgeBases: values.knowledgeBases ?? [],
+      skills: (values.skills ?? []).map((id) => {
+        const skill = skillById(id);
+        return { id, version: values.skillVersions?.[id] ?? (skill ? latestPublishedVersion(skill) : '') };
+      }),
+      visibility:
+        values.scopeMode === 'all'
+          ? { mode: 'all' }
+          : { mode: 'restricted', teams: values.scopeTeams ?? [], users: values.scopeUsers ?? [] },
+    };
     try {
-      const result = await portal.apply(
-        values.name.trim(),
-        values.displayName.trim(),
-        values.team?.trim() || undefined,
-        values.models && values.models.length > 0 ? values.models : undefined,
-      );
+      const result = await portal.apply(input);
       if (result.kind === 'rejected') {
         setError(result.message);
+        setViolations(result.violations ?? []);
         return;
       }
       notify(
@@ -443,62 +569,329 @@ function CreateEmployeeModal({
     }
   };
 
+  const values = Form.useWatch([], form) as Partial<WizardValues> | undefined;
+  const checks = releaseChecks(values ?? {});
+  const allChecksPass = checks.every((check) => check.ok);
+
+  const stepItems = [
+    { key: 'basic', title: t('createStepBasic') },
+    { key: 'knowledge', title: t('createStepKnowledge') },
+    { key: 'scope', title: t('createStepScope') },
+    { key: 'confirm', title: t('createStepConfirm') },
+  ];
+
   return (
     <Modal
       open={open}
       title={t('createTitle')}
-      okText={t('createSubmit')}
-      cancelText={translate(language, 'cancel')}
-      confirmLoading={pending}
+      width={720}
       onCancel={onClose}
-      onOk={() => void form.submit()}
       destroyOnHidden
+      footer={
+        <Space>
+          <Button onClick={onClose}>{translate(language, 'cancel')}</Button>
+          {step > 0 ? (
+            <Button disabled={pending} onClick={() => setStep((current) => Math.max(current - 1, 0))}>
+              {t('createPrev')}
+            </Button>
+          ) : null}
+          {step < 3 ? (
+            <Button type="primary" onClick={() => void next()}>
+              {t('createNext')}
+            </Button>
+          ) : (
+            <Button type="primary" loading={pending} disabled={!allChecksPass} onClick={() => void form.submit()}>
+              {t('createPublish')}
+            </Button>
+          )}
+        </Space>
+      }
     >
       <Typography.Paragraph type="secondary">{t('createDescription')}</Typography.Paragraph>
-      {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} /> : null}
-      <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-        <Form.Item
-          name="name"
-          label={translate(language, 'digitalEmployeesFieldName')}
-          rules={[
-            { required: true, message: translate(language, 'fieldRequired') },
-            { pattern: EMPLOYEE_NAME_PATTERN, message: translate(language, 'digitalEmployeesInvalidName') },
-          ]}
-        >
-          <Input
-            placeholder={translate(language, 'digitalEmployeesNamePlaceholder')}
-            autoComplete="off"
-            disabled={pending}
+      <Steps size="small" current={step} items={stepItems} style={{ marginBottom: 20 }} />
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          title={error}
+          style={{ marginBottom: 16 }}
+          description={
+            violations.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {violations.map((item) => (
+                  <li key={`${item.field}:${item.message}`}>
+                    {item.field}：{item.message}
+                  </li>
+                ))}
+              </ul>
+            ) : undefined
+          }
+        />
+      ) : null}
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{ scopeMode: 'restricted', skillVersions: {}, models: [] }}
+        onFinish={(values) => void submit(values)}
+      >
+        <div style={step === 0 ? undefined : { display: 'none' }}>
+          <Form.Item
+            name="name"
+            label={translate(language, 'digitalEmployeesFieldName')}
+            rules={[
+              { required: true, message: translate(language, 'fieldRequired') },
+              { pattern: EMPLOYEE_NAME_PATTERN, message: translate(language, 'digitalEmployeesInvalidName') },
+            ]}
+          >
+            <Input
+              placeholder={translate(language, 'digitalEmployeesNamePlaceholder')}
+              autoComplete="off"
+              disabled={pending}
+            />
+          </Form.Item>
+          <Form.Item name="displayName" label={t('labelDisplayName')}>
+            <Input
+              placeholder={translate(language, 'digitalEmployeesDisplayNamePlaceholder')}
+              autoComplete="off"
+              disabled={pending}
+            />
+          </Form.Item>
+          <Form.Item
+            name="description"
+            label={t('labelDescription')}
+            rules={[
+              { required: true, message: translate(language, 'fieldRequired') },
+              { max: 500, message: t('descriptionPlaceholder') },
+            ]}
+          >
+            <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
+          </Form.Item>
+          <Form.Item
+            name="owner"
+            label={t('labelOwnerSelect')}
+            tooltip={t('ownerTooltip')}
+            rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder={t('ownerPlaceholder')}
+              disabled={pending}
+              options={users.map((user) => ({
+                value: user.id,
+                label: `${user.displayName}（${user.username}）`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="team"
+            label={t('labelTeam')}
+            tooltip={translate(language, 'digitalEmployeesTeamTooltip')}
+            rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder={translate(language, 'digitalEmployeesTeamPlaceholder')}
+              disabled={pending}
+              options={departments.map((d) => ({ value: d.id, label: d.name }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="models"
+            label={t('createModelLabel')}
+            tooltip={t('createModelTooltip')}
+            rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+          >
+            <Select
+              mode="multiple"
+              placeholder={t('createModelPlaceholder')}
+              disabled={pending}
+              options={models.map((model) => ({
+                value: model.id,
+                label: `${model.displayName}（${model.id}${model.protocol === 'anthropic' ? ' · anthropic' : ''}）`,
+              }))}
+            />
+          </Form.Item>
+        </div>
+
+        <div style={step === 1 ? undefined : { display: 'none' }}>
+          <Typography.Text strong>{t('createKnowledgeSection')}</Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+            {t('createKnowledgeNotice')}
+          </Typography.Paragraph>
+          {knowledgeBases.length === 0 ? (
+            <Typography.Text type="secondary">{t('createKnowledgeEmpty')}</Typography.Text>
+          ) : (
+            <Form.Item name="knowledgeBases" style={{ marginBottom: 8 }}>
+              <Checkbox.Group
+                disabled={pending}
+                options={knowledgeBases.map((kb) => ({ value: kb.id, label: kb.name }))}
+              />
+            </Form.Item>
+          )}
+          <Typography.Text strong>{t('createSkillsSection')}</Typography.Text>
+          {usableSkills.length === 0 ? (
+            <Typography.Paragraph type="secondary">{t('createSkillsEmpty')}</Typography.Paragraph>
+          ) : (
+            <>
+              <Form.Item name="skills" style={{ marginTop: 8, marginBottom: 8 }}>
+                <Checkbox.Group
+                  disabled={pending}
+                  options={usableSkills.map((skill) => ({ value: skill.id, label: skill.name }))}
+                />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.skills !== cur.skills}>
+                {({ getFieldValue }) => {
+                  const checked = ((getFieldValue('skills') as string[] | undefined) ?? []).filter((id) =>
+                    usableSkills.some((skill) => skill.id === id),
+                  );
+                  if (checked.length === 0) return null;
+                  return (
+                    <div className="flex flex-col gap-2" style={{ marginBottom: 8 }}>
+                      {checked.map((id) => {
+                        const skill = skillById(id);
+                        if (!skill) return null;
+                        const published = skill.versions.filter((v) => v.state === 'published');
+                        return (
+                          <Space key={id} align="center" size={8}>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {skill.name} · {t('createSkillVersionLabel')}
+                            </Typography.Text>
+                            <Form.Item
+                              name={['skillVersions', id]}
+                              initialValue={latestPublishedVersion(skill)}
+                              noStyle
+                            >
+                              <Select
+                                size="small"
+                                style={{ minWidth: 140 }}
+                                disabled={pending}
+                                options={published.map((v) => ({ value: v.version, label: v.version }))}
+                              />
+                            </Form.Item>
+                          </Space>
+                        );
+                      })}
+                    </div>
+                  );
+                }}
+              </Form.Item>
+            </>
+          )}
+        </div>
+
+        <div style={step === 2 ? undefined : { display: 'none' }}>
+          <Form.Item name="scopeMode" label={t('createScopeModeLabel')} rules={[{ required: true }]}>
+            <Radio.Group
+              disabled={pending}
+              onChange={() => {
+                setError(null);
+                setViolations([]);
+              }}
+              options={[
+                { value: 'restricted', label: t('scopeModeRestricted') },
+                { value: 'all', label: t('scopeModeAll') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.scopeMode !== cur.scopeMode}>
+            {({ getFieldValue }) =>
+              getFieldValue('scopeMode') === 'all' ? (
+                <Alert type="warning" showIcon title={t('scopeModeAllHint')} style={{ marginBottom: 16 }} />
+              ) : (
+                <>
+                  <Form.Item name="scopeTeams" label={t('scopeTeamsLabel')}>
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      placeholder={t('scopeTeamsPlaceholder')}
+                      disabled={pending}
+                      options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="scopeUsers" label={t('scopeUsersLabel')}>
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder={t('scopeUsersPlaceholder')}
+                      disabled={pending}
+                      options={users.map((user) => ({
+                        value: user.id,
+                        label: `${user.displayName}（${user.username}）`,
+                      }))}
+                    />
+                  </Form.Item>
+                </>
+              )
+            }
+          </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+            {t('scopeChannelsNote')}
+          </Typography.Paragraph>
+        </div>
+
+        <div style={step === 3 ? undefined : { display: 'none' }}>
+          <Descriptions
+            bordered
+            size="small"
+            column={1}
+            items={[
+              { key: 'name', label: translate(language, 'digitalEmployeesFieldName'), children: values?.name ?? '—' },
+              { key: 'displayName', label: t('labelDisplayName'), children: values?.displayName ?? '—' },
+              { key: 'description', label: t('labelDescription'), children: values?.description ?? '—' },
+              {
+                key: 'owner',
+                label: t('labelOwnerSelect'),
+                children: values?.owner ? `${userById(values.owner)?.displayName ?? values.owner}` : '—',
+              },
+              { key: 'team', label: t('labelTeam'), children: values?.team ? departmentName(values.team) : '—' },
+              { key: 'models', label: t('createModelLabel'), children: (values?.models ?? []).join('、') || '—' },
+              {
+                key: 'knowledge',
+                label: t('createKnowledgeSection'),
+                children:
+                  (values?.knowledgeBases ?? []).length > 0
+                    ? (values?.knowledgeBases ?? []).map((id) => knowledgeName(id)).join('、')
+                    : t('capabilitiesKnowledgeNone'),
+              },
+              {
+                key: 'skills',
+                label: t('createSkillsSection'),
+                children:
+                  (values?.skills ?? []).length > 0
+                    ? (values?.skills ?? [])
+                        .map((id) => `${skillById(id)?.name ?? id} · ${values?.skillVersions?.[id] ?? '·'}`)
+                        .join('、')
+                    : t('capabilitiesSkillsNone'),
+              },
+              {
+                key: 'scope',
+                label: t('createScopeModeLabel'),
+                children:
+                  values?.scopeMode === 'all'
+                    ? t('scopeModeAllTag')
+                    : [
+                        ...(values?.scopeTeams ?? []).map((id) => departmentName(id)),
+                        ...(values?.scopeUsers ?? []).map((id) => userById(id)?.displayName ?? id),
+                      ].join('、') || t('scopeOwnerOnly'),
+              },
+            ]}
           />
-        </Form.Item>
-        <Form.Item name="displayName" label={t('labelDisplayName')}>
-          <Input
-            placeholder={translate(language, 'digitalEmployeesDisplayNamePlaceholder')}
-            autoComplete="off"
-            disabled={pending}
-          />
-        </Form.Item>
-        <Form.Item
-          name="team"
-          label={translate(language, 'digitalEmployeesTeamLabel')}
-          tooltip={translate(language, 'digitalEmployeesTeamTooltip')}
-        >
-          <Select
-            allowClear
-            placeholder={translate(language, 'digitalEmployeesTeamPlaceholder')}
-            options={departments.map((d) => ({ value: d.id, label: d.name }))}
-          />
-        </Form.Item>
-        <Form.Item name="models" label={t('createModelLabel')} tooltip={t('createModelTooltip')}>
-          <Select
-            mode="multiple"
-            placeholder={t('createModelPlaceholder')}
-            options={models.map((model) => ({
-              value: model.id,
-              label: `${model.displayName}（${model.id}${model.protocol === 'anthropic' ? ' · anthropic' : ''}）`,
-            }))}
-          />
-        </Form.Item>
+          <div className="flex flex-col gap-1" style={{ marginTop: 12 }}>
+            {checks.map((check) => (
+              <Space key={check.label} size={6}>
+                <CheckOutlined style={{ color: check.ok ? '#52c41a' : '#ff4d4f' }} />
+                <Typography.Text type={check.ok ? 'secondary' : 'danger'}>{check.label}</Typography.Text>
+              </Space>
+            ))}
+          </div>
+          {allChecksPass ? (
+            <Alert type="success" showIcon title={t('checklistPassed')} style={{ marginTop: 12 }} />
+          ) : null}
+        </div>
       </Form>
     </Modal>
   );
@@ -631,6 +1024,16 @@ function EmployeeDetail({
                       children: employee.displayName || t('notProvided'),
                     },
                     {
+                      key: 'description',
+                      label: t('labelDescription'),
+                      children: employee.description || t('notProvided'),
+                    },
+                    {
+                      key: 'team',
+                      label: t('labelTeam'),
+                      children: employee.team || t('notProvided'),
+                    },
+                    {
                       key: 'runtime',
                       label: t('labelRuntime'),
                       children: employee.runtime || t('notProvided'),
@@ -654,7 +1057,7 @@ function EmployeeDetail({
           {
             key: 'capabilities',
             label: t('detailTabCapabilities'),
-            children: <EmptyDetails title={t('capabilitiesGapTitle')} description={t('capabilitiesGapDescription')} />,
+            children: <CapabilitiesView employee={employee} />,
           },
           {
             key: 'memory',
@@ -680,11 +1083,7 @@ function EmployeeDetail({
                     {
                       key: 'scope',
                       label: t('publishScope'),
-                      children: (
-                        <Tooltip title={t('publishScopeGap')}>
-                          <span>{t('publishScopeUnknown')}</span>
-                        </Tooltip>
-                      ),
+                      children: <VisibilityView employee={employee} />,
                     },
                     {
                       key: 'web',
@@ -739,6 +1138,87 @@ function EmptyDetails({ title, description }: { readonly title: string; readonly
         {description}
       </Typography.Paragraph>
     </Empty>
+  );
+}
+
+// Knowledge bases and skills registered at creation. null/undefined means
+// the legacy policy (nothing was configured when the employee was made);
+// an empty list is an explicit deny-all knowledge policy.
+function CapabilitiesView({ employee }: { readonly employee: PortalEmployee }) {
+  const bases = employee.knowledgeBases ?? null;
+  const skills = employee.skills ?? null;
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <Typography.Text strong>{t('capabilitiesKnowledgeTitle')}</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          {bases === null ? (
+            <Typography.Text type="secondary">{t('capabilitiesKnowledgeLegacy')}</Typography.Text>
+          ) : bases.length === 0 ? (
+            <Typography.Text type="secondary">{t('capabilitiesKnowledgeNone')}</Typography.Text>
+          ) : (
+            <Space wrap size={6}>
+              {bases.map((kb) => (
+                <Tag key={kb.id}>{kb.name || kb.id}</Tag>
+              ))}
+            </Space>
+          )}
+        </div>
+      </div>
+      <div>
+        <Typography.Text strong>{t('capabilitiesSkillsTitle')}</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          {skills === null || skills.length === 0 ? (
+            <Typography.Text type="secondary">{t('capabilitiesSkillsNone')}</Typography.Text>
+          ) : (
+            <Space wrap size={6}>
+              {skills.map((skill) => (
+                <Tag key={skill.id}>
+                  {skill.name || skill.id} · {skill.version}
+                </Tag>
+              ))}
+            </Space>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The explicit open scope from creation; null keeps the legacy
+// owner/team rule text instead of pretending an audience was configured.
+function VisibilityView({ employee }: { readonly employee: PortalEmployee }) {
+  const visibility = employee.visibility ?? null;
+  if (visibility === null) {
+    return <Typography.Text type="secondary">{t('scopeLegacy')}</Typography.Text>;
+  }
+  if (visibility.mode === 'all') {
+    return <Tag color="warning">{t('scopeModeAllTag')}</Tag>;
+  }
+  const teams = visibility.teams ?? [];
+  const users = visibility.users ?? [];
+  if (teams.length + users.length === 0) {
+    return (
+      <span>
+        <Tag>{t('scopeModeRestrictedTag')}</Tag>
+        <Typography.Text type="secondary">{t('scopeOwnerOnly')}</Typography.Text>
+      </span>
+    );
+  }
+  return (
+    <span>
+      <Tag>{t('scopeModeRestrictedTag')}</Tag>
+      <Space wrap size={6} style={{ marginLeft: 4 }}>
+        {teams.map((team) => (
+          <Tag key={`team-${team.id}`} color="blue">
+            {team.name || team.id}
+          </Tag>
+        ))}
+        {users.map((user) => (
+          <Tag key={`user-${user.id}`}>{user.name || user.id}</Tag>
+        ))}
+      </Space>
+    </span>
   );
 }
 

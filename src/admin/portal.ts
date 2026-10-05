@@ -12,9 +12,24 @@ export type PortalEmployee = {
   readonly model: string;
   readonly owner: string;
   readonly ownerId: string;
+  /** Owning department (AEP team id), empty for legacy unscoped employees. */
+  readonly team?: string;
   readonly memoryUser: string;
   readonly createdAt: string;
   readonly channels?: { readonly wecom: boolean; readonly wecomName?: string };
+  /** 用途说明 (release condition, new employees only). */
+  readonly description?: string | null;
+  /** null/undefined = legacy unrestricted policy (not configured). */
+  readonly knowledgeBases?: readonly { readonly id: string; readonly name: string }[] | null;
+  readonly skills?: readonly { readonly id: string; readonly name: string; readonly version: string }[] | null;
+  /** null/undefined = legacy owner/team rules (not explicitly configured). */
+  readonly visibility?: PortalEmployeeVisibility | null;
+};
+
+export type PortalEmployeeVisibility = {
+  readonly mode: 'all' | 'restricted' | string;
+  readonly teams: readonly { readonly id: string; readonly name: string }[];
+  readonly users: readonly { readonly id: string; readonly name: string }[];
 };
 
 export type PortalMemoryStatus = {
@@ -79,12 +94,49 @@ export class PortalError extends Error {
 }
 
 // Apply outcomes the UI distinguishes: direct create (201), parked for
-// approval (202, message carries the policy reason), or rejected (409
-// duplicate / 403 quota-policy / anything else).
+// approval (202, message carries the policy reason), or rejected (400
+// release-condition violations / 409 duplicate / 403 quota-policy /
+// anything else). Violations are field-anchored so the wizard can point
+// at the exact item.
+export type PortalApplyViolation = {
+  readonly field: string;
+  readonly message: string;
+};
+
 export type PortalApplyResult =
   | { readonly kind: 'created'; readonly message: string }
   | { readonly kind: 'pending'; readonly message: string }
-  | { readonly kind: 'rejected'; readonly status: number; readonly message: string };
+  | {
+      readonly kind: 'rejected';
+      readonly status: number;
+      readonly message: string;
+      readonly violations?: readonly PortalApplyViolation[];
+    };
+
+export type PortalApplyInput = {
+  readonly name: string;
+  readonly displayName: string;
+  /** 用途说明 — required release condition (≤500 chars). */
+  readonly description: string;
+  /** Owning department (AEP team id) — required for new employees. */
+  readonly team: string;
+  /** AEP model ids, first = default; empty = platform default. */
+  readonly models?: readonly string[];
+  /** Designated owner (AEP user id); empty = the caller (admin-only override). */
+  readonly owner?: string;
+  /** WeKnora kb ids; omitted = legacy unrestricted, [] = deny-all. */
+  readonly knowledgeBases?: readonly string[];
+  /** AEP skills pinned to published versions. */
+  readonly skills?: readonly { readonly id: string; readonly version: string }[];
+  /** Explicit open scope; the console always sends it. */
+  readonly visibility?: PortalApplyVisibility;
+};
+
+export type PortalApplyVisibility = {
+  readonly mode: 'all' | 'restricted';
+  readonly teams?: readonly string[];
+  readonly users?: readonly string[];
+};
 
 export type PortalDepartment = {
   readonly id: string;
@@ -179,10 +231,15 @@ export class PortalClient {
         model: String(employee.model ?? ''),
         owner: String(employee.owner ?? ''),
         ownerId: String(employee.ownerId ?? ''),
+        team: String(employee.team ?? ''),
         memoryUser: String(employee.memoryUser ?? ''),
         createdAt: String(employee.createdAt ?? ''),
         ...(channels ? { channels } : {}),
-      };
+        description: employee.description === undefined ? null : String(employee.description ?? ''),
+        knowledgeBases: (employee.knowledgeBases as PortalEmployee['knowledgeBases']) ?? null,
+        skills: (employee.skills as PortalEmployee['skills']) ?? null,
+        visibility: (employee.visibility as PortalEmployee['visibility']) ?? null,
+      } satisfies PortalEmployee;
     });
   }
 
@@ -208,17 +265,17 @@ export class PortalClient {
     return data as PortalKnowledgeStatus;
   }
 
-  async apply(
-    name: string,
-    displayName: string,
-    team?: string,
-    models?: readonly string[],
-  ): Promise<PortalApplyResult> {
+  async apply(input: PortalApplyInput): Promise<PortalApplyResult> {
     const { status, data } = await this.#request('POST', '/api/v1/employees', {
-      name,
-      displayName,
-      ...(team ? { team } : {}),
-      ...(models && models.length > 0 ? { models } : {}),
+      name: input.name,
+      displayName: input.displayName,
+      description: input.description,
+      team: input.team,
+      ...(input.models && input.models.length > 0 ? { models: input.models } : {}),
+      ...(input.owner ? { owner: input.owner } : {}),
+      ...(input.knowledgeBases ? { knowledgeBases: input.knowledgeBases } : {}),
+      ...(input.skills && input.skills.length > 0 ? { skills: input.skills } : {}),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
     });
     if (status === 201) {
       return { kind: 'created', message: policyMessage(data, 'digital employee created') };
@@ -226,7 +283,13 @@ export class PortalClient {
     if (status === 202) {
       return { kind: 'pending', message: policyMessage(data, 'approval required') };
     }
-    return { kind: 'rejected', status, message: errorMessage(data) ?? `HTTP ${status}` };
+    const violations = violationsOf(data);
+    return {
+      kind: 'rejected',
+      status,
+      message: errorMessage(data) ?? `HTTP ${status}`,
+      ...(violations ? { violations } : {}),
+    };
   }
 
   async usageStats(): Promise<PortalUsageStats> {
@@ -324,6 +387,19 @@ export class PortalClient {
 function errorMessage(data: unknown): string | null {
   const message = (data as { error?: unknown } | null)?.error;
   return typeof message === 'string' && message ? message : null;
+}
+
+function violationsOf(data: unknown): readonly PortalApplyViolation[] | null {
+  const violations = (data as { violations?: unknown } | null)?.violations;
+  if (!Array.isArray(violations)) return null;
+  const parsed = violations.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    return typeof record.field === 'string' && typeof record.message === 'string'
+      ? [{ field: record.field, message: record.message }]
+      : [];
+  });
+  return parsed.length > 0 ? parsed : null;
 }
 
 function policyMessage(data: unknown, fallback: string): string {

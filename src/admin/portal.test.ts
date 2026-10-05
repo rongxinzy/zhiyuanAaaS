@@ -27,18 +27,22 @@ describe('portal client', () => {
     vi.unstubAllGlobals();
   });
 
-  test('maps apply responses: 201 created, 202 pending, 409 rejected with message', async () => {
+  test('maps apply responses: 201 created, 202 pending, 409 rejected, 400 violations', async () => {
     const portal = new PortalClient(async () => null);
     const tokenless = (init: RequestInit) => !('Authorization' in (init.headers as Record<string, string>));
+    const base = { name: 'a', displayName: 'A', description: 'd', team: 'rd-dept' };
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 201 })));
-    expect(await portal.apply('a', 'A')).toMatchObject({ kind: 'created' });
+    expect(await portal.apply(base)).toMatchObject({ kind: 'created' });
 
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ policy: '需管理员审批' }), { status: 202 })),
     );
-    expect(await portal.apply('b', 'B')).toEqual({ kind: 'pending', message: '需管理员审批' });
+    expect(await portal.apply({ ...base, name: 'b', displayName: 'B' })).toEqual({
+      kind: 'pending',
+      message: '需管理员审批',
+    });
 
     vi.stubGlobal(
       'fetch',
@@ -48,16 +52,78 @@ describe('portal client', () => {
           new Response(JSON.stringify({ error: 'digital employee "b" already exists' }), { status: 409 }),
         ),
     );
-    expect(await portal.apply('b', 'B')).toEqual({
+    expect(await portal.apply({ ...base, name: 'b', displayName: 'B' })).toEqual({
       kind: 'rejected',
       status: 409,
       message: 'digital employee "b" already exists',
     });
 
-    // No session token → no Authorization header.
+    // Release-condition failures carry field-anchored violations.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: '发布条件校验未通过（2 项）',
+            violations: [
+              { field: 'knowledgeBases[0]', message: '知识库 kb-x 不存在' },
+              { field: 'team', message: '团队 nope 不存在' },
+            ],
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const rejected = await portal.apply({ ...base, knowledgeBases: ['kb-x'] });
+    expect(rejected).toEqual({
+      kind: 'rejected',
+      status: 400,
+      message: '发布条件校验未通过（2 项）',
+      violations: [
+        { field: 'knowledgeBases[0]', message: '知识库 kb-x 不存在' },
+        { field: 'team', message: '团队 nope 不存在' },
+      ],
+    });
+
+    // The extended body carries every configured field and omits the rest.
     const [input, init] = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string, RequestInit])!;
     expect(input).toBe('/api/v1/employees');
+    expect(JSON.parse((init as { body?: string }).body ?? '{}')).toEqual({
+      ...base,
+      knowledgeBases: ['kb-x'],
+    });
     expect(tokenless(init)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  test('apply spreads owner, skills, and visibility into the request body', async () => {
+    const fetchMock = stubFetch(201, {});
+    const portal = new PortalClient(async () => 'aep-token');
+
+    await portal.apply({
+      name: 'full-helper',
+      displayName: '全字段',
+      description: '整理资料',
+      team: 'sales-dept',
+      models: ['bench-glm'],
+      owner: 'u-9',
+      knowledgeBases: [],
+      skills: [{ id: 'report-writer', version: '1.2.0' }],
+      visibility: { mode: 'restricted', teams: ['sales-dept'], users: ['u-x'] },
+    });
+
+    const [, init] = fetchMock.mock.calls[0]! as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'full-helper',
+      displayName: '全字段',
+      description: '整理资料',
+      team: 'sales-dept',
+      models: ['bench-glm'],
+      owner: 'u-9',
+      knowledgeBases: [],
+      skills: [{ id: 'report-writer', version: '1.2.0' }],
+      visibility: { mode: 'restricted', teams: ['sales-dept'], users: ['u-x'] },
+    });
     vi.unstubAllGlobals();
   });
 
