@@ -391,6 +391,134 @@ describe('admin digital employees', () => {
   );
 
   test(
+    'detail capabilities and publish tabs render the configured bases, skills, and audience',
+    async () => {
+      const configured: PortalEmployee = {
+        ...employee,
+        description: '整理销售资料并辅助生成周报。',
+        team: 'sales-dept',
+        knowledgeBases: [
+          { id: 'kb-1', name: '销售知识库' },
+          { id: 'kb-2', name: '产品知识库' },
+        ],
+        skills: [{ id: 'report-writer', name: '报告撰写', version: '1.2.0' }],
+        visibility: {
+          mode: 'restricted',
+          teams: [{ id: 'sales-dept', name: '销售部' }],
+          users: [{ id: 'u-1', name: '李四' }],
+        },
+      };
+      const portal = makePortal({ listEmployees: vi.fn().mockResolvedValue([configured]) });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByText('sales-helper'));
+      fireEvent.click(await screen.findByRole('tab', { name: '知识与技能' }));
+      expect(await screen.findByText('销售知识库')).toBeInTheDocument();
+      expect(screen.getByText('产品知识库')).toBeInTheDocument();
+      expect(screen.getByText('报告撰写 · 1.2.0')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('tab', { name: '发布与使用' }));
+      expect(await screen.findByText('销售部')).toBeInTheDocument();
+      expect(screen.getByText('李四')).toBeInTheDocument();
+      expect(screen.getByText('指定范围')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'publish tab distinguishes everyone-open and legacy audiences',
+    async () => {
+      const open: PortalEmployee = {
+        ...employee,
+        visibility: { mode: 'all', teams: [], users: [] },
+      };
+      const legacy: PortalEmployee = {
+        ...employee,
+        name: 'legacy-helper',
+        displayName: '遗留员工',
+        knowledgeBases: [],
+        skills: [],
+        visibility: null,
+      };
+      const portal = makePortal({ listEmployees: vi.fn().mockResolvedValue([open, legacy]) });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByText('sales-helper'));
+      fireEvent.click(await screen.findByRole('tab', { name: '发布与使用' }));
+      expect(await screen.findByText('全员开放')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /返回/ }));
+      fireEvent.click(await screen.findByText('legacy-helper'));
+      fireEvent.click(await screen.findByRole('tab', { name: '发布与使用' }));
+      expect(await screen.findByText(/沿用负责人/)).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('tab', { name: '知识与技能' }));
+      expect(await screen.findByText(/未连接知识库/)).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'wizard submits picked knowledge bases and skills with pinned versions',
+    async () => {
+      const created: PortalApplyResult = { kind: 'created', message: '数字员工已创建' };
+      const clientWithSkills = {
+        ...client,
+        skills: vi.fn().mockResolvedValue([
+          {
+            id: 'report-writer',
+            name: '报告撰写',
+            state: 'active',
+            enabled: true,
+            versions: [
+              { version: '1.0.0', state: 'published', sha256: 'a', size: 1 },
+              { version: '1.2.0', state: 'published', sha256: 'b', size: 2 },
+              { version: '2.0.0', state: 'draft', sha256: 'c', size: 3 },
+            ],
+          },
+        ]),
+      };
+      const portal = makePortal({ apply: vi.fn().mockResolvedValue(created) });
+      render(<DigitalEmployees client={clientWithSkills as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /新建数字员工/ }));
+      fireEvent.change(await screen.findByLabelText('标识名'), { target: { value: 'kb-helper' } });
+      fireEvent.change(screen.getByLabelText('用途说明'), { target: { value: '整理资料。' } });
+      const modal = await screen.findByRole('dialog');
+      const comboBoxes = await within(modal).findAllByRole('combobox');
+      await pickOption(comboBoxes[0]!, /^李四（lisi）$/);
+      await pickOption(comboBoxes[1]!, /^研发部$/);
+      await pickOption(comboBoxes[2]!, /^GLM（bench-glm）$/);
+      fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+      // Step 2: check the knowledge base and the skill (version defaults to
+      // the latest published — the draft 2.0.0 must never be offered).
+      await screen.findAllByText('关联知识库');
+      fireEvent.click(screen.getByRole('checkbox', { name: /销售知识库/ }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /报告撰写/ }));
+      expect(await within(screen.getByRole('dialog')).findByText('1.2.0')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+      await screen.findAllByText('可用团队');
+      const scopeCombos = await within(screen.getByRole('dialog')).findAllByRole('combobox');
+      await pickOption(scopeCombos[0]!, /^研发部$/);
+      fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+      await screen.findAllByText('确认发布');
+      // The confirm summary lists resolved names, not raw ids.
+      expect(screen.getAllByText(/销售知识库/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/报告撰写 · 1\.2\.0/).length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole('button', { name: '保存并发布' }));
+
+      await waitFor(() =>
+        expect(portal.apply).toHaveBeenCalledWith(
+          expect.objectContaining({
+            knowledgeBases: ['kb-1'],
+            skills: [{ id: 'report-writer', version: '1.2.0' }],
+          }),
+        ),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
     'memory tab reports real metrics only, never a fabricated last write',
     async () => {
       const portal = makePortal();
