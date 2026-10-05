@@ -15,11 +15,12 @@ const baseUrl = process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080';
 const deploymentId = process.env.ZHIYUAN_AEP_DEPLOYMENT_ID ?? 'demo';
 const adminUsername = process.env.ZHIYUAN_AEP_ADMIN_USERNAME ?? 'admin';
 const adminPassword = requiredEnvironment('ZHIYUAN_AEP_ADMIN_PASSWORD');
-const memberRoleId = process.env.ZHIYUAN_AEP_E2E_ROLE_ID ?? 'aaas-e2e-member';
+const memberRoleIdOverride = process.env.ZHIYUAN_AEP_E2E_ROLE_ID;
+const memberRoleName = 'AaaS E2E member';
 const runId = Date.now().toString(36);
 const username = `aaas-e2e-${runId}`;
 const password = `Zhiyuan-e2e-${runId}-password`;
-const skillId = `aaas-skill-${runId}`;
+let skillId;
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'zhiyuan-aaas-e2e-'));
 
 let admin;
@@ -34,7 +35,7 @@ try {
     username: adminUsername,
     password: adminPassword,
   });
-  await ensureMemberRole(admin);
+  const memberRoleId = await ensureMemberRole(admin);
   user = await admin.createUser({
     deploymentId,
     username,
@@ -46,12 +47,12 @@ try {
   });
 
   const archive = await createSkillArchive();
-  await admin.createSkill({
-    id: skillId,
+  const skill = await admin.createSkill({
     name: `AaaS E2E ${runId}`,
     description: 'Zhiyuan Agent control backend verification',
-    enabled: true,
   });
+  assert.ok(typeof skill?.id === 'string' && skill.id.length > 0, 'createSkill did not return a server-generated id');
+  skillId = skill.id;
   await admin.uploadSkillVersion(skillId, '1.0.0', archive);
   await admin.publishSkillVersion(skillId, '1.0.0');
   assignment = await admin.createSkillAssignment({
@@ -123,18 +124,22 @@ try {
 
 async function ensureMemberRole(adminClient) {
   const page = await adminClient.listRoles({ limit: 200 });
-  const existing = page.roles.find((role) => role.id === memberRoleId);
+  const existing = memberRoleIdOverride
+    ? page.roles.find((role) => role.id === memberRoleIdOverride)
+    : page.roles.find((role) => role.name === memberRoleName);
   if (existing) {
-    assert.equal(existing.enabled, true, `E2E role ${memberRoleId} must be enabled`);
-    assert.deepEqual(existing.permissions, [], `E2E role ${memberRoleId} must not grant permissions`);
-    return;
+    assert.equal(existing.enabled, true, `E2E role ${existing.id} must be enabled`);
+    assert.deepEqual(existing.permissions, [], `E2E role ${existing.id} must not grant permissions`);
+    return existing.id;
   }
-  await adminClient.createRole({
-    id: memberRoleId,
-    name: 'AaaS E2E member',
+  assert.ok(!memberRoleIdOverride, `E2E role override ${memberRoleIdOverride} does not exist`);
+  const created = await adminClient.createRole({
+    name: memberRoleName,
     description: 'Least-privileged role for disposable enterprise extension tests',
     permissions: [],
   });
+  assert.ok(typeof created?.id === 'string' && created.id.length > 0, 'createRole did not return a server-generated id');
+  return created.id;
 }
 
 async function revokeUserSessions(adminClient, userId) {
