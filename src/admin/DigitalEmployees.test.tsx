@@ -58,6 +58,7 @@ describe('admin digital employees', () => {
     phase: 'Ready',
     runtime: 'deerflow',
     model: 'bench-glm',
+    models: ['bench-glm'],
     owner: '张三',
     ownerId: 'u1',
     memoryUser: 'sales-helper',
@@ -116,6 +117,8 @@ describe('admin digital employees', () => {
       knowledgeStatus: vi.fn().mockResolvedValue({
         knowledgeBases: [{ id: 'kb-1', name: '销售知识库', description: '' }],
       }),
+      updateEmployee: vi.fn().mockResolvedValue({ kind: 'updated' }),
+      getEmployee: vi.fn().mockResolvedValue(employee),
       ...overrides,
     }) as unknown as PortalClient;
 
@@ -514,6 +517,118 @@ describe('admin digital employees', () => {
           }),
         ),
       );
+    },
+    TIMEOUT,
+  );
+
+  // ---- configuration editor (PATCH with diff-only payloads) ----
+
+  test(
+    'edit modal submits only the changed model list and refreshes the detail',
+    async () => {
+      const configured: PortalEmployee = {
+        ...employee,
+        models: ['bench-glm'],
+        team: 'rd-dept',
+        knowledgeBases: [{ id: 'kb-1', name: '销售知识库' }],
+        skills: [],
+        visibility: { mode: 'restricted', teams: [{ id: 'rd-dept', name: '研发部' }], users: [] },
+      };
+      const portal = makePortal({
+        listEmployees: vi.fn().mockResolvedValue([configured]),
+        updateEmployee: vi.fn().mockResolvedValue({ kind: 'updated' }),
+        getEmployee: vi.fn().mockResolvedValue(configured),
+      });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByText('sales-helper'));
+      fireEvent.click(await screen.findByRole('button', { name: /编辑配置/ }));
+      const modal = await screen.findByRole('dialog');
+      // Modal combobox order: owner, team, models, scope teams, scope users.
+      const comboBoxes = await within(modal).findAllByRole('combobox');
+      await pickOption(comboBoxes[2]!, /^Bench（bench-anthropic · anthropic）$/);
+      fireEvent.click(await within(modal).findByRole('button', { name: /保存修改/ }));
+
+      // Exactly the changed field travels — the untouched knowledge policy,
+      // audience, and basics never enter the PATCH body.
+      await waitFor(() =>
+        expect(portal.updateEmployee).toHaveBeenCalledWith('sales-helper', {
+          models: ['bench-glm', 'bench-anthropic'],
+        }),
+      );
+      await waitFor(() => expect(portal.getEmployee).toHaveBeenCalledWith('sales-helper'));
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'edit keeps a legacy employee untouched: displayName-only payload and save gating',
+    async () => {
+      const legacy: PortalEmployee = {
+        ...employee,
+        name: 'legacy-helper',
+        displayName: '遗留员工',
+        team: 'rd-dept',
+        knowledgeBases: null,
+        skills: null,
+        visibility: null,
+      };
+      const portal = makePortal({ listEmployees: vi.fn().mockResolvedValue([legacy]) });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByText('legacy-helper'));
+      fireEvent.click(await screen.findByRole('button', { name: /编辑配置/ }));
+      const modal = await screen.findByRole('dialog');
+      // The legacy hints explain what an edit would convert.
+      expect(await within(modal).findByText(/沿用平台既有策略/)).toBeInTheDocument();
+      expect(await within(modal).findByText(/负责人 \/ 所属团队规则/)).toBeInTheDocument();
+
+      // No diff yet: save stays disabled instead of sending an empty patch.
+      const save = await within(modal).findByRole('button', { name: /保存修改/ });
+      expect(save).toBeDisabled();
+
+      fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '改名员工' } });
+      await waitFor(() => expect(save).toBeEnabled());
+      fireEvent.click(save);
+
+      await waitFor(() =>
+        expect(portal.updateEmployee).toHaveBeenCalledWith('legacy-helper', { displayName: '改名员工' }),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'edit empties the knowledge list into an explicit deny-all and surfaces violations',
+    async () => {
+      const configured: PortalEmployee = {
+        ...employee,
+        team: 'rd-dept',
+        knowledgeBases: [{ id: 'kb-1', name: '销售知识库' }],
+        skills: [],
+        visibility: { mode: 'restricted', teams: [{ id: 'rd-dept', name: '研发部' }], users: [] },
+      };
+      const portal = makePortal({
+        listEmployees: vi.fn().mockResolvedValue([configured]),
+        updateEmployee: vi.fn().mockResolvedValue({
+          kind: 'rejected',
+          status: 400,
+          message: '发布条件校验未通过（1 项）',
+          violations: [{ field: 'knowledgeBases', message: '知识服务暂不可用' }],
+        }),
+      });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      fireEvent.click(await screen.findByText('sales-helper'));
+      fireEvent.click(await screen.findByRole('button', { name: /编辑配置/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.click(await within(modal).findByRole('checkbox', { name: /销售知识库/ }));
+      fireEvent.click(await within(modal).findByRole('button', { name: /保存修改/ }));
+
+      // Unchecking the last base is a deliberate deny-all ([]), not "unset".
+      await waitFor(() => expect(portal.updateEmployee).toHaveBeenCalledWith('sales-helper', { knowledgeBases: [] }));
+      expect(await within(screen.getByRole('dialog')).findByText(/知识服务暂不可用/)).toBeInTheDocument();
+      expect(portal.getEmployee).not.toHaveBeenCalled();
     },
     TIMEOUT,
   );
