@@ -101,6 +101,7 @@ describe('admin digital employees', () => {
       .fn()
       .mockResolvedValue([{ id: 'u-1', username: 'lisi', displayName: '李四', status: 'active', kind: 'human' }]),
     skills: vi.fn().mockResolvedValue([]),
+    teams: vi.fn().mockResolvedValue([{ id: 'rd-dept', name: '研发部' }]),
   };
 
   const makePortal = (overrides: Partial<PortalClient> = {}) =>

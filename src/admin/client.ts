@@ -532,6 +532,14 @@ export class AdminConsoleClient {
     return parseSkills(await this.#listAllSkills(this.#requireClient()));
   }
 
+  // All AEP teams, cursor-paginated. The portal validates employee teams
+  // against AEP (not its own department records), so employee forms must
+  // offer this list — portal departments alone hide teams like rd-dept
+  // that were created directly in AEP.
+  async teams(): Promise<readonly Team[]> {
+    return this.#listAllTeams(this.#requireClient());
+  }
+
   async createUser(input: {
     readonly username: string;
     readonly displayName: string;

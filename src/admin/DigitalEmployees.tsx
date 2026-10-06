@@ -978,7 +978,11 @@ function EditEmployeeModal({
 }) {
   const [form] = Form.useForm<EditValues>();
   const [pending, setPending] = useState(false);
-  const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
+  // Team pickers use the full AEP team list, not portal departments: the
+  // portal validates employee teams against AEP, and employees created with
+  // directly-managed AEP teams (rd-dept, load teams) would otherwise show
+  // an empty team field and fail the required check on save.
+  const [teams, setTeams] = useState<readonly { id: string; name: string }[]>([]);
   const [models, setModels] = useState<readonly AdminModel[]>([]);
   const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [skills, setSkills] = useState<readonly AdminSkill[]>([]);
@@ -1045,10 +1049,10 @@ function EditEmployeeModal({
       form.resetFields();
       setError(null);
       setViolations([]);
-      portal
-        .listDepartments()
-        .then(setDepartments)
-        .catch(() => setDepartments([]));
+      client
+        .teams()
+        .then(setTeams)
+        .catch(() => setTeams([]));
       client
         .models()
         .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
@@ -1188,7 +1192,7 @@ function EditEmployeeModal({
             optionFilterProp="label"
             placeholder={translate(language, 'digitalEmployeesTeamPlaceholder')}
             disabled={pending}
-            options={departments.map((d) => ({ value: d.id, label: d.name }))}
+            options={teams.map((team) => ({ value: team.id, label: team.name }))}
           />
         </Form.Item>
         <Form.Item
@@ -1311,7 +1315,7 @@ function EditEmployeeModal({
                     allowClear
                     placeholder={t('scopeTeamsPlaceholder')}
                     disabled={pending}
-                    options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                    options={teams.map((team) => ({ value: team.id, label: team.name }))}
                   />
                 </Form.Item>
                 <Form.Item name="scopeUsers" label={t('scopeUsersLabel')}>
