@@ -10,6 +10,8 @@ export type PortalEmployee = {
   readonly phase: string;
   readonly runtime: string;
   readonly model: string;
+  /** Full ordered model list (first = default); feeds the edit form. */
+  readonly models: readonly string[];
   readonly owner: string;
   readonly ownerId: string;
   /** Owning department (AEP team id), empty for legacy unscoped employees. */
@@ -138,6 +140,32 @@ export type PortalApplyVisibility = {
   readonly users?: readonly string[];
 };
 
+// Partial configuration update (PATCH): only carried fields are replaced
+// server-side; omitted keys keep the employee's current configuration.
+// knowledgeBases mirrors the apply semantics — omitted = unchanged,
+// [] = explicit deny-all — so callers must diff against the current state
+// and omit untouched fields (never send a "full" payload for an employee
+// whose legacy policy is nil).
+export type PortalEmployeeUpdateInput = {
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly team?: string;
+  readonly owner?: string;
+  readonly models?: readonly string[];
+  readonly knowledgeBases?: readonly string[];
+  readonly skills?: readonly { readonly id: string; readonly version: string }[];
+  readonly visibility?: PortalApplyVisibility;
+};
+
+export type PortalUpdateResult =
+  | { readonly kind: 'updated' }
+  | {
+      readonly kind: 'rejected';
+      readonly status: number;
+      readonly message: string;
+      readonly violations?: readonly PortalApplyViolation[];
+    };
+
 export type PortalDepartment = {
   readonly id: string;
   readonly name: string;
@@ -220,27 +248,7 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/employees');
     if (status !== 200) throw portalError(status, data);
     const items = (data as { employees?: unknown[] } | null)?.employees ?? [];
-    return items.map((raw) => {
-      const employee = raw as Record<string, unknown>;
-      const channels = employee.channels as PortalEmployee['channels'];
-      return {
-        name: String(employee.name ?? ''),
-        displayName: String(employee.displayName ?? ''),
-        phase: String(employee.phase ?? ''),
-        runtime: String(employee.runtime ?? ''),
-        model: String(employee.model ?? ''),
-        owner: String(employee.owner ?? ''),
-        ownerId: String(employee.ownerId ?? ''),
-        team: String(employee.team ?? ''),
-        memoryUser: String(employee.memoryUser ?? ''),
-        createdAt: String(employee.createdAt ?? ''),
-        ...(channels ? { channels } : {}),
-        description: employee.description === undefined ? null : String(employee.description ?? ''),
-        knowledgeBases: (employee.knowledgeBases as PortalEmployee['knowledgeBases']) ?? null,
-        skills: (employee.skills as PortalEmployee['skills']) ?? null,
-        visibility: (employee.visibility as PortalEmployee['visibility']) ?? null,
-      } satisfies PortalEmployee;
-    });
+    return items.map((raw) => parseEmployee(raw));
   }
 
   // Sidebar service-status probes (the portal holds the OpenViking root key
@@ -263,6 +271,36 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/knowledge/status');
     if (status !== 200) throw portalError(status, data);
     return data as PortalKnowledgeStatus;
+  }
+
+  // Single-employee detail (same authorization as the list/chat rules).
+  // Throws PortalError so callers can distinguish 403 (out of scope) from
+  // transport failures.
+  async getEmployee(name: string): Promise<PortalEmployee> {
+    const { status, data } = await this.#request('GET', `/api/v1/employees/${encodeURIComponent(name)}`);
+    if (status !== 200) throw portalError(status, data);
+    return parseEmployee((data as { employee?: unknown } | null)?.employee);
+  }
+
+  async updateEmployee(name: string, input: PortalEmployeeUpdateInput): Promise<PortalUpdateResult> {
+    const { status, data } = await this.#request('PATCH', `/api/v1/employees/${encodeURIComponent(name)}`, {
+      ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.team !== undefined ? { team: input.team } : {}),
+      ...(input.owner !== undefined ? { owner: input.owner } : {}),
+      ...(input.models !== undefined ? { models: input.models } : {}),
+      ...(input.knowledgeBases !== undefined ? { knowledgeBases: input.knowledgeBases } : {}),
+      ...(input.skills !== undefined ? { skills: input.skills } : {}),
+      ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+    });
+    if (status === 200) return { kind: 'updated' };
+    const violations = violationsOf(data);
+    return {
+      kind: 'rejected',
+      status,
+      message: errorMessage(data) ?? `HTTP ${status}`,
+      ...(violations ? { violations } : {}),
+    };
   }
 
   async apply(input: PortalApplyInput): Promise<PortalApplyResult> {
@@ -387,6 +425,32 @@ export class PortalClient {
 function errorMessage(data: unknown): string | null {
   const message = (data as { error?: unknown } | null)?.error;
   return typeof message === 'string' && message ? message : null;
+}
+
+// One summarize() row from the portal → PortalEmployee. null-vs-absent is
+// preserved for every optional policy field (legacy = null).
+function parseEmployee(raw: unknown): PortalEmployee {
+  const employee = raw as Record<string, unknown>;
+  const channels = employee.channels as PortalEmployee['channels'];
+  const models = Array.isArray(employee.models) ? employee.models.map((id) => String(id)) : [];
+  return {
+    name: String(employee.name ?? ''),
+    displayName: String(employee.displayName ?? ''),
+    phase: String(employee.phase ?? ''),
+    runtime: String(employee.runtime ?? ''),
+    model: String(employee.model ?? ''),
+    models,
+    owner: String(employee.owner ?? ''),
+    ownerId: String(employee.ownerId ?? ''),
+    team: String(employee.team ?? ''),
+    memoryUser: String(employee.memoryUser ?? ''),
+    createdAt: String(employee.createdAt ?? ''),
+    ...(channels ? { channels } : {}),
+    description: employee.description === undefined ? null : String(employee.description ?? ''),
+    knowledgeBases: (employee.knowledgeBases as PortalEmployee['knowledgeBases']) ?? null,
+    skills: (employee.skills as PortalEmployee['skills']) ?? null,
+    visibility: (employee.visibility as PortalEmployee['visibility']) ?? null,
+  } satisfies PortalEmployee;
 }
 
 function violationsOf(data: unknown): readonly PortalApplyViolation[] | null {

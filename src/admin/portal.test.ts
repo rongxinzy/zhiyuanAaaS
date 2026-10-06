@@ -138,6 +138,63 @@ describe('portal client', () => {
     vi.unstubAllGlobals();
   });
 
+  test('updateEmployee sends only carried fields and maps 200/400', async () => {
+    const fetchMock = stubFetch(200, { employee: { name: 'a' } });
+    const portal = new PortalClient(async () => 'aep-token');
+
+    // The empty knowledge list must serialize as [] (deny-all), while
+    // omitted fields stay out of the body entirely.
+    expect(await portal.updateEmployee('a', { models: ['bench-qwen'], knowledgeBases: [] })).toEqual({
+      kind: 'updated',
+    });
+    const [input, init] = fetchMock.mock.calls[0]! as unknown as [string, RequestInit];
+    expect(input).toBe('/api/v1/employees/a');
+    expect((init as RequestInit).method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({ models: ['bench-qwen'], knowledgeBases: [] });
+    vi.unstubAllGlobals();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: '发布条件校验未通过（1 项）',
+            violations: [{ field: 'models', message: '使用模型为必填发布条件' }],
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    expect(await portal.updateEmployee('a', { models: [] })).toEqual({
+      kind: 'rejected',
+      status: 400,
+      message: '发布条件校验未通过（1 项）',
+      violations: [{ field: 'models', message: '使用模型为必填发布条件' }],
+    });
+    vi.unstubAllGlobals();
+  });
+
+  test('getEmployee parses the detail row including the ordered model list', async () => {
+    const fetchMock = stubFetch(200, {
+      employee: {
+        name: 'a',
+        displayName: 'A',
+        phase: 'Ready',
+        models: ['bench-qwen', 'bench-anthropic'],
+        knowledgeBases: null,
+        visibility: null,
+      },
+    });
+    const portal = new PortalClient(async () => 'aep-token');
+
+    const employee = await portal.getEmployee('a');
+    expect(employee.models).toEqual(['bench-qwen', 'bench-anthropic']);
+    expect(employee.knowledgeBases).toBeNull();
+    expect(employee.visibility).toBeNull();
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/employees/a');
+    vi.unstubAllGlobals();
+  });
+
   test('decideRequest posts the reject reason', async () => {
     const fetchMock = stubFetch(200, {});
     const portal = new PortalClient(async () => 'aep-token');

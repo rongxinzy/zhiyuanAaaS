@@ -89,8 +89,19 @@ const zh = {
   labelCreatedAt: '创建时间',
   labelModel: '使用模型',
   labelOwner: '负责人',
-  editGapTitle: '配置编辑暂未开放',
-  editGapDescription: '数字员工暂无配置更新接口；负责人、团队、模型与开放范围的编辑需门户接口支持后开放。',
+  editTitle: '编辑配置',
+  editSave: '保存修改',
+  editDescription:
+    '仅提交有变化的字段。未改动的配置保持原样：未显式配置的知识库 / 开放范围沿用既有策略，不会被悄悄转为显式配置。',
+  editKnowledgeLegacyHint:
+    '当前知识库未显式配置（沿用平台既有策略）。勾选任一知识库即建立显式白名单；全部取消勾选则显式禁止知识检索。',
+  editScopeLegacyHint: '当前开放范围沿用负责人 / 所属团队规则。调整本节任一选项将转为显式配置。',
+  editSaved: '配置已更新',
+  editNoChanges: '没有检测到变更',
+  editSaveDisabled: '没有检测到变更，无需保存。',
+  editSkillUnavailable: '已停用或无已发布版本；保存前请取消勾选。',
+  editModelUnavailable: '当前使用，目录中不可用',
+  editRefreshFailed: '保存成功，但刷新详情失败，请返回列表重进。',
   runsGapTitle: '运行记录暂未接入',
   runsGapDescription: '运行与对话记录需要按范围查询的接口；正文查看需独立内容权限。接入前此页不展示任何记录。',
   publishScope: '使用范围',
@@ -235,9 +246,20 @@ const en: Record<keyof typeof zh, string> = {
   labelCreatedAt: 'Created',
   labelModel: 'Model',
   labelOwner: 'Owner',
-  editGapTitle: 'Editing not available yet',
-  editGapDescription:
-    'There is no update API for digital employees; editing owner, team, model, or audience opens once the portal provides it.',
+  editTitle: 'Edit configuration',
+  editSave: 'Save changes',
+  editDescription:
+    'Only changed fields are submitted. Untouched configuration keeps its current shape: knowledge / audience policies that were never set explicitly stay legacy instead of silently becoming explicit.',
+  editKnowledgeLegacyHint:
+    'Knowledge bases are not explicitly configured (platform default policy). Checking any base establishes an explicit whitelist; unchecking everything explicitly denies knowledge retrieval.',
+  editScopeLegacyHint:
+    'The audience currently follows the owner / team rules. Changing any option in this section makes it explicit.',
+  editSaved: 'Configuration updated',
+  editNoChanges: 'No changes detected',
+  editSaveDisabled: 'No changes detected — nothing to save.',
+  editSkillUnavailable: 'Withdrawn or no published version; uncheck before saving.',
+  editModelUnavailable: 'in use, unavailable in catalog',
+  editRefreshFailed: 'Saved, but refreshing the detail failed — go back and reopen.',
   runsGapTitle: 'Run history not wired',
   runsGapDescription:
     'Runs and conversations need a scope-aware query API, and transcripts need separate content permission. Nothing is listed here before that lands.',

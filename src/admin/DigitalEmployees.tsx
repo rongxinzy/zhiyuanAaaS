@@ -3,6 +3,7 @@ import {
   ArrowLeftOutlined,
   CheckOutlined,
   DeleteOutlined,
+  EditOutlined,
   MessageOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -39,6 +40,7 @@ import {
   PortalClient,
   type PortalDepartment,
   type PortalEmployee,
+  type PortalEmployeeUpdateInput,
   type PortalRequest,
   portalChatBaseURL,
 } from './portal.js';
@@ -175,6 +177,7 @@ function EmployeePanel({ portal, client }: { readonly portal: PortalClient; read
           client={client}
           onBack={() => setSelected(null)}
           onChat={openChat}
+          onUpdated={setSelected}
         />
       ) : (
         <EmployeeList client={client} portal={portal} onSelected={setSelected} onChat={openChat} />
@@ -897,6 +900,443 @@ function CreateEmployeeModal({
   );
 }
 
+// Configuration editor: one form pre-filled from the employee's current
+// spec, submitting only what changed. The diff is what preserves the
+// nil-vs-empty policy semantics — an untouched legacy knowledge/audience
+// policy is omitted from the PATCH instead of being silently rewritten as
+// explicit, while emptying the knowledge list is a deliberate deny-all.
+type EditValues = {
+  displayName: string;
+  description: string;
+  owner: string;
+  team: string;
+  models: string[];
+  knowledgeBases: string[];
+  skills: string[];
+  skillVersions: Record<string, string>;
+  scopeMode: 'restricted' | 'all';
+  scopeTeams: string[];
+  scopeUsers: string[];
+};
+
+function sameStrings(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+// Diff the form against the pre-fill state; only changed fields enter the
+// PATCH body. Returns null when nothing changed (the save button gates on
+// this, so the null case never submits).
+function buildEmployeeUpdate(
+  values: Partial<EditValues>,
+  initial: EditValues,
+  latestVersion: (id: string) => string,
+): PortalEmployeeUpdateInput | null {
+  const update: Record<string, unknown> = {};
+  if ((values.displayName ?? '') !== initial.displayName) update.displayName = values.displayName ?? '';
+  if ((values.description ?? '') !== initial.description) update.description = values.description ?? '';
+  if ((values.owner ?? '') !== initial.owner) update.owner = values.owner ?? '';
+  if ((values.team ?? '') !== initial.team) update.team = values.team ?? '';
+  if (!sameStrings(values.models, initial.models)) update.models = values.models ?? [];
+  if (!sameStrings(values.knowledgeBases, initial.knowledgeBases)) {
+    update.knowledgeBases = values.knowledgeBases ?? [];
+  }
+  const checked = values.skills ?? [];
+  const versions = values.skillVersions ?? {};
+  const versionChanged = checked.some((id) => (versions[id] ?? '') !== (initial.skillVersions[id] ?? ''));
+  if (!sameStrings(checked, initial.skills) || versionChanged) {
+    update.skills = checked.map((id) => ({ id, version: versions[id] ?? latestVersion(id) }));
+  }
+  const scopeChanged =
+    (values.scopeMode ?? 'restricted') !== initial.scopeMode ||
+    !sameStrings(values.scopeTeams, initial.scopeTeams) ||
+    !sameStrings(values.scopeUsers, initial.scopeUsers);
+  if (scopeChanged) {
+    update.visibility =
+      (values.scopeMode ?? 'restricted') === 'all'
+        ? { mode: 'all' }
+        : { mode: 'restricted', teams: values.scopeTeams ?? [], users: values.scopeUsers ?? [] };
+  }
+  return Object.keys(update).length > 0 ? (update as PortalEmployeeUpdateInput) : null;
+}
+
+function EditEmployeeModal({
+  employee,
+  client,
+  portal,
+  open,
+  onClose,
+  onSaved,
+}: {
+  readonly employee: PortalEmployee;
+  readonly client: AdminConsoleClient;
+  readonly portal: PortalClient;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onSaved: () => void | Promise<void>;
+}) {
+  const [form] = Form.useForm<EditValues>();
+  const [pending, setPending] = useState(false);
+  const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
+  const [models, setModels] = useState<readonly AdminModel[]>([]);
+  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
+  const [skills, setSkills] = useState<readonly AdminSkill[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<readonly { id: string; name: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [violations, setViolations] = useState<readonly { field: string; message: string }[]>([]);
+
+  const usableSkills = useMemo(
+    () => skills.filter((skill) => skill.state === 'active' && skill.versions.some((v) => v.state === 'published')),
+    [skills],
+  );
+
+  const currentSkills = employee.skills ?? [];
+  // Current-but-unavailable registrations stay visible (checked, pinned
+  // version rendered as text) so saving another field can never silently
+  // drop them — the server rejects the save until the user unchecks.
+  const skillOptions = useMemo(() => {
+    const usable = new Set(usableSkills.map((skill) => skill.id));
+    const stale = currentSkills
+      .filter((skill) => !usable.has(skill.id))
+      .map((skill) => ({ id: skill.id, name: skill.name || skill.id, stale: true }));
+    return [...usableSkills.map((skill) => ({ id: skill.id, name: skill.name, stale: false })), ...stale];
+  }, [usableSkills, currentSkills]);
+  const skillIsUsable = (id: string) => usableSkills.some((skill) => skill.id === id);
+
+  // Current model ids absent from the catalog (decommissioned upstream)
+  // stay selectable so the user can see and remove them.
+  const currentModels = employee.models.length > 0 ? employee.models : employee.model ? [employee.model] : [];
+  const modelOptions = useMemo(() => {
+    const catalog = new Set(models.map((model) => model.id));
+    return [
+      ...models.map((model) => ({
+        value: model.id,
+        label: `${model.displayName}（${model.id}${model.protocol === 'anthropic' ? ' · anthropic' : ''}）`,
+      })),
+      ...currentModels
+        .filter((id) => !catalog.has(id))
+        .map((id) => ({ value: id, label: `${id}（${t('editModelUnavailable')}）` })),
+    ];
+  }, [models, currentModels]);
+
+  const initial = useMemo<EditValues>(() => {
+    const visibility = employee.visibility ?? null;
+    return {
+      displayName: employee.displayName,
+      description: employee.description ?? '',
+      owner: employee.ownerId,
+      team: employee.team ?? '',
+      models: [...currentModels],
+      knowledgeBases: employee.knowledgeBases?.map((kb) => kb.id) ?? [],
+      skills: currentSkills.map((skill) => skill.id),
+      skillVersions: Object.fromEntries(currentSkills.map((skill) => [skill.id, skill.version])),
+      // Legacy audience pre-fills with the owning team so an untouched
+      // form diffs to "no change"; touching anything converts to explicit.
+      scopeMode: visibility?.mode === 'all' ? 'all' : 'restricted',
+      scopeTeams: visibility ? visibility.teams.map((team) => team.id) : employee.team ? [employee.team] : [],
+      scopeUsers: visibility ? visibility.users.map((user) => user.id) : [],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee]);
+
+  useEffect(() => {
+    if (open) {
+      form.resetFields();
+      setError(null);
+      setViolations([]);
+      portal
+        .listDepartments()
+        .then(setDepartments)
+        .catch(() => setDepartments([]));
+      client
+        .models()
+        .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
+        .catch(() => setModels([]));
+      client
+        .users()
+        .then((all) => setUsers(all.filter((user) => user.status === 'active')))
+        .catch(() => setUsers([]));
+      client
+        .skills()
+        .then(setSkills)
+        .catch(() => setSkills([]));
+      portal
+        .knowledgeStatus()
+        .then((status) => setKnowledgeBases(status.knowledgeBases ?? []))
+        .catch(() => setKnowledgeBases([]));
+    }
+  }, [open, form, portal, client]);
+
+  const latestFor = (id: string) => {
+    const skill = usableSkills.find((entry) => entry.id === id);
+    return skill ? latestPublishedVersion(skill) : (initial.skillVersions[id] ?? '');
+  };
+
+  const values = Form.useWatch([], form) as Partial<EditValues> | undefined;
+  const update = useMemo(() => {
+    // useWatch reports undefined until the form store is live; an empty
+    // read must count as "no change", not "everything cleared".
+    if (!values || Object.keys(values).length === 0) return null;
+    return buildEmployeeUpdate(values, initial, latestFor);
+    // latestFor closes over catalog state already captured in values/initial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values, initial, usableSkills]);
+
+  const submit = async (values: EditValues) => {
+    const payload = buildEmployeeUpdate(values, initial, latestFor);
+    if (!payload) return;
+    if (
+      payload.visibility?.mode === 'restricted' &&
+      (payload.visibility.teams ?? []).length + (payload.visibility.users ?? []).length === 0
+    ) {
+      setError(t('scopeRequireOne'));
+      return;
+    }
+    setPending(true);
+    setError(null);
+    setViolations([]);
+    try {
+      const result = await portal.updateEmployee(employee.name, payload);
+      if (result.kind === 'rejected') {
+        setError(result.message);
+        setViolations(result.violations ?? []);
+        return;
+      }
+      notify(AdminNotificationKind.Success, t('editSaved'));
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      title={`${t('editTitle')} · ${employee.displayName || employee.name}`}
+      width={720}
+      onCancel={onClose}
+      destroyOnHidden
+      footer={
+        <Space>
+          <Button onClick={onClose}>{translate(language, 'cancel')}</Button>
+          <Button type="primary" loading={pending} disabled={!update} onClick={() => void form.submit()}>
+            {t('editSave')}
+          </Button>
+        </Space>
+      }
+    >
+      <Typography.Paragraph type="secondary">{t('editDescription')}</Typography.Paragraph>
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          title={error}
+          style={{ marginBottom: 16 }}
+          description={
+            violations.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {violations.map((item) => (
+                  <li key={`${item.field}:${item.message}`}>
+                    {item.field}：{item.message}
+                  </li>
+                ))}
+              </ul>
+            ) : undefined
+          }
+        />
+      ) : null}
+      <Form form={form} layout="vertical" initialValues={initial} onFinish={(values) => void submit(values)}>
+        <Typography.Text strong>{t('createStepBasic')}</Typography.Text>
+        <Form.Item name="displayName" label={t('labelDisplayName')} style={{ marginTop: 8 }}>
+          <Input autoComplete="off" disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="description"
+          label={t('labelDescription')}
+          rules={[{ max: 500, message: t('descriptionPlaceholder') }]}
+        >
+          <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
+        </Form.Item>
+        <Form.Item
+          name="owner"
+          label={t('labelOwnerSelect')}
+          tooltip={t('ownerTooltip')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Select
+            showSearch
+            optionFilterProp="label"
+            placeholder={t('ownerPlaceholder')}
+            disabled={pending}
+            options={users.map((user) => ({
+              value: user.id,
+              label: `${user.displayName}（${user.username}）`,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item
+          name="team"
+          label={t('labelTeam')}
+          tooltip={translate(language, 'digitalEmployeesTeamTooltip')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Select
+            showSearch
+            optionFilterProp="label"
+            placeholder={translate(language, 'digitalEmployeesTeamPlaceholder')}
+            disabled={pending}
+            options={departments.map((d) => ({ value: d.id, label: d.name }))}
+          />
+        </Form.Item>
+        <Form.Item
+          name="models"
+          label={t('createModelLabel')}
+          tooltip={t('createModelTooltip')}
+          rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
+        >
+          <Select mode="multiple" placeholder={t('createModelPlaceholder')} disabled={pending} options={modelOptions} />
+        </Form.Item>
+
+        <Typography.Text strong>{t('createKnowledgeSection')}</Typography.Text>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+          {t('createKnowledgeNotice')}
+        </Typography.Paragraph>
+        {employee.knowledgeBases == null ? (
+          <Alert type="info" showIcon title={t('editKnowledgeLegacyHint')} style={{ marginBottom: 8 }} />
+        ) : null}
+        {knowledgeBases.length === 0 ? (
+          <Typography.Text type="secondary">{t('createKnowledgeEmpty')}</Typography.Text>
+        ) : (
+          <Form.Item name="knowledgeBases" style={{ marginBottom: 8 }}>
+            <Checkbox.Group
+              disabled={pending}
+              options={knowledgeBases.map((kb) => ({ value: kb.id, label: kb.name }))}
+            />
+          </Form.Item>
+        )}
+
+        <Typography.Text strong>{t('createSkillsSection')}</Typography.Text>
+        {skillOptions.length === 0 ? (
+          <Typography.Paragraph type="secondary">{t('createSkillsEmpty')}</Typography.Paragraph>
+        ) : (
+          <>
+            <Form.Item name="skills" style={{ marginTop: 8, marginBottom: 8 }}>
+              <Checkbox.Group
+                disabled={pending}
+                options={skillOptions.map((skill) => ({
+                  value: skill.id,
+                  label: skill.stale ? `${skill.name}（${t('editSkillUnavailable')}）` : skill.name,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.skills !== cur.skills}>
+              {({ getFieldValue }) => {
+                const checked = ((getFieldValue('skills') as string[] | undefined) ?? []).filter((id) =>
+                  skillOptions.some((skill) => skill.id === id),
+                );
+                if (checked.length === 0) return null;
+                return (
+                  <div className="flex flex-col gap-2" style={{ marginBottom: 8 }}>
+                    {checked.map((id) => {
+                      if (!skillIsUsable(id)) {
+                        const name = skillOptions.find((skill) => skill.id === id)?.name ?? id;
+                        const pinned = initial.skillVersions[id] ?? '—';
+                        return (
+                          <Space key={id} size={8}>
+                            <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                              {name} · {t('createSkillVersionLabel')} {pinned}
+                            </Typography.Text>
+                          </Space>
+                        );
+                      }
+                      const skill = usableSkills.find((entry) => entry.id === id);
+                      if (!skill) return null;
+                      const published = skill.versions.filter((v) => v.state === 'published');
+                      return (
+                        <Space key={id} align="center" size={8}>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {skill.name} · {t('createSkillVersionLabel')}
+                          </Typography.Text>
+                          <Form.Item
+                            name={['skillVersions', id]}
+                            initialValue={initial.skillVersions[id] || latestPublishedVersion(skill)}
+                            noStyle
+                          >
+                            <Select
+                              size="small"
+                              style={{ minWidth: 140 }}
+                              disabled={pending}
+                              options={published.map((v) => ({ value: v.version, label: v.version }))}
+                            />
+                          </Form.Item>
+                        </Space>
+                      );
+                    })}
+                  </div>
+                );
+              }}
+            </Form.Item>
+          </>
+        )}
+
+        <Typography.Text strong>{t('createScopeModeLabel')}</Typography.Text>
+        {employee.visibility == null ? (
+          <Alert type="info" showIcon title={t('editScopeLegacyHint')} style={{ marginTop: 8, marginBottom: 8 }} />
+        ) : null}
+        <Form.Item name="scopeMode" style={{ marginTop: 8 }}>
+          <Radio.Group
+            disabled={pending}
+            onChange={() => {
+              setError(null);
+              setViolations([]);
+            }}
+            options={[
+              { value: 'restricted', label: t('scopeModeRestricted') },
+              { value: 'all', label: t('scopeModeAll') },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item noStyle shouldUpdate={(prev, cur) => prev.scopeMode !== cur.scopeMode}>
+          {({ getFieldValue }) =>
+            getFieldValue('scopeMode') === 'all' ? (
+              <Alert type="warning" showIcon title={t('scopeModeAllHint')} style={{ marginBottom: 16 }} />
+            ) : (
+              <>
+                <Form.Item name="scopeTeams" label={t('scopeTeamsLabel')}>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder={t('scopeTeamsPlaceholder')}
+                    disabled={pending}
+                    options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                  />
+                </Form.Item>
+                <Form.Item name="scopeUsers" label={t('scopeUsersLabel')}>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder={t('scopeUsersPlaceholder')}
+                    disabled={pending}
+                    options={users.map((user) => ({
+                      value: user.id,
+                      label: `${user.displayName}（${user.username}）`,
+                    }))}
+                  />
+                </Form.Item>
+              </>
+            )
+          }
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
 // Deletion is intentionally blocked: the portal exposes DELETE, but the
 // disposal semantics for conversation history and memory data are not
 // defined by any contract. The design (admin-console-design §8 and the
@@ -947,14 +1387,17 @@ function EmployeeDetail({
   client,
   onBack,
   onChat,
+  onUpdated,
 }: {
   readonly employee: PortalEmployee;
   readonly portal: PortalClient;
   readonly client: AdminConsoleClient;
   readonly onBack: () => void;
   readonly onChat: (employee: PortalEmployee) => void;
+  readonly onUpdated: (employee: PortalEmployee) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
   // The real web entry for this employee on the portal host. It never
   // contains an access token — sessions are minted by the portal itself.
   const entryURL = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}`;
@@ -972,6 +1415,9 @@ function EmployeeDetail({
           <PhaseTag phase={employee.phase} />
         </Space>
         <Space>
+          <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>
+            {t('editTitle')}
+          </Button>
           <Button type="primary" icon={<MessageOutlined />} onClick={() => void onChat(employee)}>
             {t('actionChat')}
           </Button>
@@ -1050,7 +1496,6 @@ function EmployeeDetail({
                     },
                   ]}
                 />
-                <Alert type="info" showIcon title={t('editGapTitle')} description={t('editGapDescription')} />
               </div>
             ),
           },
@@ -1127,6 +1572,21 @@ function EmployeeDetail({
       />
 
       <DeleteBlockedModal employee={deleting ? employee : null} onClose={() => setDeleting(false)} />
+      <EditEmployeeModal
+        employee={employee}
+        client={client}
+        portal={portal}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={async () => {
+          setEditing(false);
+          try {
+            onUpdated(await portal.getEmployee(employee.name));
+          } catch {
+            notify(AdminNotificationKind.Error, t('editRefreshFailed'));
+          }
+        }}
+      />
     </div>
   );
 }
