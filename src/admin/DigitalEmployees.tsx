@@ -808,6 +808,8 @@ function CreateEmployeeModal({
                     <Select
                       mode="multiple"
                       allowClear
+                      showSearch
+                      optionFilterProp="label"
                       placeholder={t('scopeTeamsPlaceholder')}
                       disabled={pending}
                       options={departments.map((d) => ({ value: d.id, label: d.name }))}
@@ -1313,6 +1315,8 @@ function EditEmployeeModal({
                   <Select
                     mode="multiple"
                     allowClear
+                    showSearch
+                    optionFilterProp="label"
                     placeholder={t('scopeTeamsPlaceholder')}
                     disabled={pending}
                     options={teams.map((team) => ({ value: team.id, label: team.name }))}
