@@ -248,3 +248,7 @@ must cover the two-path request chain and must not expose provider credentials.
 - Before opening a PR run `git diff --check`, the relevant tests, and inspect
   `git status` for unrelated changes. Never discard existing user changes.
 - `gh` commands must be executed from Git Bash, not PowerShell.
+
+## 跨仓协作规范
+
+提交、PR 标题与说明、review、bug fix 验证遵循 [DEVOPS.md](DEVOPS.md)。本仓已有专项安全、设计与发布门继续执行。

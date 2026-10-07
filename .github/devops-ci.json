@@ -1,0 +1,12 @@
+{
+  "workflows": [
+    {
+      "name": "CI",
+      "path": ".github/workflows/ci.yml"
+    },
+    {
+      "name": "CodeQL",
+      "path": ".github/workflows/codeql.yml"
+    }
+  ]
+}
