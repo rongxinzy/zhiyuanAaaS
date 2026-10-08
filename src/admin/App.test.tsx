@@ -128,12 +128,12 @@ describe('Ant Design admin shell', () => {
     expect(alert).toHaveTextContent('无法获取部署信息，请确认企业管控服务可用后重试。');
     expect(screen.getByRole('button', { name: '登录' })).not.toBeDisabled();
   });
-  test('renders seven business entries without legacy navigation', async () => {
+  test('renders eight business entries without legacy navigation', async () => {
     authenticated();
     render(<AdminApp />);
     await screen.findByRole('heading', { name: '概览' });
-    expect(screen.getAllByRole('menuitem')).toHaveLength(7);
-    for (const name of ['概览', '数字员工', '知识库', '技能管理', '用户管理', '日志审计', '系统管理'])
+    expect(screen.getAllByRole('menuitem')).toHaveLength(8);
+    for (const name of ['概览', '数字员工', '知识库', '技能管理', '用户管理', '模型网关', '日志审计', '系统管理'])
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     for (const name of ['资源管理', '身份对齐', '平台运维', '数据平面'])
       expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument();
@@ -148,7 +148,8 @@ describe('Ant Design admin shell', () => {
       },
     });
     render(<AdminApp />);
-    expect(await screen.findByRole('menuitem', { name: '系统管理' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: '模型网关' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '系统管理' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: '用户管理' })).not.toBeInTheDocument();
     await act(async () => {
       window.location.hash = 'users';
@@ -165,6 +166,69 @@ describe('Ant Design admin shell', () => {
     fireEvent.click(screen.getByRole('tab', { name: '登录会话' }));
     expect(await screen.findByText('session-content')).toBeInTheDocument();
     expect(window.location.hash).toBe('#users/sessions');
+  });
+  test('moves all model service content into one top-level underline tab list', async () => {
+    authenticated();
+    render(<AdminApp />);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '模型网关' }));
+    expect(await screen.findByText('model-content')).toBeInTheDocument();
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['模型列表', '接入配置', '配置生效详情']);
+    expect(screen.getByRole('tab', { name: '模型列表' }).closest('.ant-tabs')).not.toHaveClass('ant-tabs-card');
+    fireEvent.click(screen.getByRole('tab', { name: '接入配置' }));
+    expect(await screen.findByText('credentials-content')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#model-gateway/connections');
+    fireEvent.click(screen.getByRole('tab', { name: '配置生效详情' }));
+    expect(await screen.findByText('configuration-content')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#model-gateway/configuration');
+    fireEvent.click(screen.getByRole('menuitem', { name: '系统管理' }));
+    await screen.findByRole('tab', { name: '渠道接入' });
+    expect(screen.queryByRole('tab', { name: '模型服务' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '模型列表' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '渠道接入' })).toHaveAttribute('aria-selected', 'true');
+  });
+  test.each([
+    ['models', 'model-content'],
+    ['models/connections', 'credentials-content'],
+    ['models/configuration', 'configuration-content'],
+    ['system/models', 'model-content'],
+    ['system/models/catalog', 'model-content'],
+    ['system/models/connections', 'credentials-content'],
+    ['system/models/configuration', 'configuration-content'],
+    ['system/connections', 'credentials-content'],
+    ['system/configuration', 'configuration-content'],
+  ])('preserves the legacy model service link %s', async (route, content) => {
+    authenticated();
+    window.location.hash = route;
+    render(<AdminApp />);
+    expect(await screen.findByText(content)).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '模型网关' })).toHaveClass('ant-menu-item-selected');
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  });
+  test.each([
+    ['models.read', '模型列表', 'model-content'],
+    ['credentials.read', '接入配置', 'credentials-content'],
+    ['data_plane.write', '配置生效详情', 'configuration-content'],
+  ])('defaults the gateway to the first permitted tab for %s', async (permission, label, content) => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: [permission] },
+    });
+    window.location.hash = 'model-gateway';
+    render(<AdminApp />);
+    expect(await screen.findByText(content)).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    expect(screen.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
+  });
+  test('rejects gateway tabs without permission, including legacy links', async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: ['models.read'] },
+    });
+    window.location.hash = 'system/models/connections';
+    render(<AdminApp />);
+    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
+    expect(screen.queryByText('credentials-content')).not.toBeInTheDocument();
   });
   test('renders the deployment settings surface under system settings', async () => {
     authenticated();
