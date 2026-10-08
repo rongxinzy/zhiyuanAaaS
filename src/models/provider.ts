@@ -7,6 +7,7 @@ import {
   type ProviderModelPiRuntimeConfig,
   type ProviderModelPiThinkingLevel,
   type ProviderModelPiThinkingLevelMap,
+  ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION,
   type ZhiyuanManagedProviderSource,
 } from '../host-contract.js';
 import type { ZhiyuanPasswordSession } from '../session/password-session.js';
@@ -14,6 +15,9 @@ import type { ZhiyuanPasswordSession } from '../session/password-session.js';
 export const ZHIYUAN_MODEL_PROVIDER_KEY = 'custom_enterprise';
 export const ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME = 'Zhiyuan';
 export const ZHIYUAN_MODEL_POLL_INTERVAL_MS = 30_000;
+
+/** Host capability version that accepts anthropic managed models (per-model baseUrl + apiFormat passthrough). */
+const HOST_MANAGED_PROVIDER_ANTHROPIC_API_VERSION = 2;
 
 interface TimerHandle {
   unref?(): void;
@@ -27,6 +31,8 @@ export interface ZhiyuanModelProviderDependencies {
   readonly requireEntitlement?: boolean;
   readonly onEntitlementChange?: (listener: () => void) => () => void;
   readonly refreshEntitlement?: () => Promise<unknown>;
+  /** Host managed-provider capability version; hosts below v2 only receive OpenAI-compatible models. */
+  readonly hostManagedProviderApiVersion?: number;
 }
 
 export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
@@ -40,6 +46,7 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
   readonly #requireEntitlement: boolean;
   readonly #onEntitlementChange: ((listener: () => void) => () => void) | null;
   readonly #refreshEntitlement: (() => Promise<unknown>) | null;
+  readonly #hostManagedProviderApiVersion: number;
   #entitlementUnsubscribe: (() => void) | null = null;
   readonly #listeners = new Set<() => void>();
   #sessionUnsubscribe: (() => void) | null = null;
@@ -55,6 +62,8 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
     this.#requireEntitlement = dependencies.requireEntitlement === true;
     this.#onEntitlementChange = dependencies.onEntitlementChange ?? null;
     this.#refreshEntitlement = dependencies.refreshEntitlement ?? null;
+    this.#hostManagedProviderApiVersion =
+      dependencies.hostManagedProviderApiVersion ?? ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION;
   }
 
   async snapshot(): Promise<ProviderConfig> {
@@ -70,9 +79,12 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
       userEnabled: true,
       apiKey: entitlementToken ?? connection.apiKey,
       baseUrl: connection.baseUrl,
+      // The provider-level format stays openai even for mixed catalogs: the host
+      // gates anthropic proxying off the per-model piRuntime api, while OpenAI
+      // models require an openai provider format to use the managed proxy.
       apiFormat: 'openai',
       displayName: ZHIYUAN_MODEL_PROVIDER_DISPLAY_NAME,
-      models: models.map(toProviderModel),
+      models: models.map((model) => toProviderModel(model, connection)),
     };
   }
 
@@ -90,7 +102,14 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
 
   async #readModels(): Promise<AgentModel[]> {
     const { models } = await this.#session.listAgentModels();
-    return models.filter(isGatewayModel).sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
+    return models
+      .filter(isGatewayModel)
+      .filter(
+        (model) =>
+          this.#hostManagedProviderApiVersion >= HOST_MANAGED_PROVIDER_ANTHROPIC_API_VERSION ||
+          model.protocol === 'openai-compatible',
+      )
+      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
   }
 
   #startWatching(): void {
@@ -138,20 +157,49 @@ export class ZhiyuanModelProvider implements ZhiyuanManagedProviderSource {
 }
 
 function isGatewayModel(model: AgentModel): boolean {
-  return model.enabled && model.sourceType === 'gateway' && model.protocol === 'openai-compatible';
+  return (
+    model.enabled &&
+    model.sourceType === 'gateway' &&
+    (model.protocol === 'openai-compatible' || model.protocol === 'anthropic')
+  );
 }
 
-function toProviderModel(model: AgentModel): NonNullable<ProviderConfig['models']>[number] {
+function toProviderModel(
+  model: AgentModel,
+  connection: ModelConnection,
+): NonNullable<ProviderConfig['models']>[number] {
   const capabilities = mapCapabilities(model.capabilities);
-  const piRuntime = mapPiRuntime(model);
-  return {
+  const base = {
     id: model.id,
     name: model.displayName,
     ...(capabilities.imageInput === ModelCapabilityStatus.Supported ? { supportsImage: true } : {}),
     ...(Object.keys(capabilities).length > 0 ? { capabilities } : {}),
     ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+  };
+  if (model.protocol === 'anthropic') {
+    return {
+      ...base,
+      baseUrl: deriveAnthropicModelBaseUrl(connection.baseUrl, model.id),
+      piRuntime: { api: 'anthropic-messages' as const },
+    };
+  }
+  const piRuntime = mapPiRuntime(model);
+  return {
+    ...base,
     ...(piRuntime ? { piRuntime } : {}),
   };
+}
+
+/**
+ * Anthropic gateway routes live under a per-model path prefix: the model's
+ * base URL is the gateway origin plus the model id (model ids share the
+ * gateway slug alphabet). The OpenAI metadata connection reports
+ * `<origin>/v1`, so strip trailing slashes and a trailing `/v1` segment.
+ */
+function deriveAnthropicModelBaseUrl(connectionBaseUrl: string, modelId: string): string {
+  const normalized = connectionBaseUrl.trim().replace(/\/+$/, '');
+  const origin = normalized.endsWith('/v1') ? normalized.slice(0, -'/v1'.length) : normalized;
+  return `${origin}/${modelId}`;
 }
 
 type AepReasoningAwareAgentModel = Omit<AgentModel, 'reasoningCompatibility'> & {

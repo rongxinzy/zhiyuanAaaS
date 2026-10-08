@@ -133,9 +133,11 @@ registration, local user-data directory, and the public runtime.
   mechanism. Do not create a second model runtime or a parallel provider UI.
 - AEP manages model catalog, assignment, authorization, and short-lived model
   access. Actual inference remains on the direct custom-provider -> Higress path.
-- Only enabled and assigned OpenAI-compatible models may be exposed in an
-  enterprise build. Community/local provider configuration stays hidden and
-  unauthorized model references must be rejected.
+- Enabled and assigned gateway models are exposed as-is in their wire protocol
+  (OpenAI-compatible or Anthropic). Anthropic models require host
+  managed-provider capability v2; older hosts automatically fall back to
+  OpenAI-compatible models only. Community/local provider configuration stays
+  hidden and unauthorized model references must be rejected.
 - Preserve streaming, multi-turn context, tool calls, and provider
   `reasoning_content`. Reasoning compatibility is model metadata; do not
   hard-code behavior from a model name. Providers may support different

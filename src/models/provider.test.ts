@@ -191,6 +191,103 @@ describe('ZhiyuanModelProvider', () => {
     await expect(provider.snapshot()).rejects.toThrow('outage');
     expect(provider.exclusive).toBe(true);
   });
+
+  test('projects anthropic gateway models with per-model base URLs on a v2 host', async () => {
+    const client = mockClient({
+      listAgentModels: vi.fn(async () => ({
+        models: [model({ id: 'bench-anthropic', displayName: 'Bench Anthropic', protocol: 'anthropic' })],
+      })),
+    });
+    const provider = new ZhiyuanModelProvider(await authenticatedSession(client), {
+      hostManagedProviderApiVersion: 2,
+    });
+
+    const snapshot = await provider.snapshot();
+
+    expect(snapshot.apiFormat).toBe('openai');
+    expect(snapshot.models).toEqual([
+      {
+        id: 'bench-anthropic',
+        name: 'Bench Anthropic',
+        baseUrl: 'https://gateway.example/bench-anthropic',
+        piRuntime: { api: 'anthropic-messages' },
+      },
+    ]);
+  });
+
+  test('keeps default-first ordering across protocols in a mixed catalog', async () => {
+    const client = mockClient({
+      listAgentModels: vi.fn(async () => ({
+        models: [
+          model({ id: 'openai-secondary', isDefault: false }),
+          model({ id: 'bench-anthropic', protocol: 'anthropic', isDefault: false }),
+          model({ id: 'openai-default', displayName: 'OpenAI Default', isDefault: true }),
+        ],
+      })),
+    });
+    const provider = new ZhiyuanModelProvider(await authenticatedSession(client), {
+      hostManagedProviderApiVersion: 2,
+    });
+
+    const snapshot = await provider.snapshot();
+
+    expect(snapshot.models?.map((entry) => entry.id)).toEqual([
+      'openai-default',
+      'openai-secondary',
+      'bench-anthropic',
+    ]);
+  });
+
+  test('withholds anthropic models from hosts below managed provider capability v2', async () => {
+    const client = mockClient({
+      listAgentModels: vi.fn(async () => ({
+        models: [
+          model({ id: 'openai-default' }),
+          model({ id: 'bench-anthropic', protocol: 'anthropic' }),
+        ],
+      })),
+    });
+    const explicitV1 = new ZhiyuanModelProvider(await authenticatedSession(client), {
+      hostManagedProviderApiVersion: 1,
+    });
+    const defaulted = new ZhiyuanModelProvider(await authenticatedSession(client));
+
+    for (const provider of [explicitV1, defaulted]) {
+      const snapshot = await provider.snapshot();
+      expect(snapshot.models?.map((entry) => entry.id)).toEqual(['openai-default']);
+    }
+  });
+
+  test('derives anthropic per-model base URLs from the gateway origin', async () => {
+    const listAgentModels = vi.fn(async () => ({
+      models: [model({ id: 'bench-anthropic', protocol: 'anthropic' })],
+    }));
+    const withTrailingSlash = new ZhiyuanModelProvider(
+      await authenticatedSession(
+        mockClient({
+          listAgentModels,
+          getModelConnection: vi.fn(async () => ({ ...connection(), baseUrl: 'https://gateway.example/v1/' })),
+        }),
+      ),
+      { hostManagedProviderApiVersion: 2 },
+    );
+    const withoutV1Segment = new ZhiyuanModelProvider(
+      await authenticatedSession(
+        mockClient({
+          listAgentModels,
+          getModelConnection: vi.fn(async () => ({ ...connection(), baseUrl: 'https://gateway.example' })),
+        }),
+      ),
+      { hostManagedProviderApiVersion: 2 },
+    );
+
+    expect((await withTrailingSlash.snapshot()).models?.[0]?.baseUrl).toBe(
+      'https://gateway.example/bench-anthropic',
+    );
+    expect((await withoutV1Segment.snapshot()).models?.[0]?.baseUrl).toBe(
+      'https://gateway.example/bench-anthropic',
+    );
+  });
 });
 
 async function authenticatedSession(client: PasswordSessionClient): Promise<ZhiyuanPasswordSession> {
