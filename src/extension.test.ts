@@ -229,17 +229,41 @@ describe('Zhiyuan enterprise extension contract', () => {
     expect(registerSessionGate).not.toHaveBeenCalled();
   });
 
-  test('fails closed for an incompatible managed provider capability', async () => {
+  test('fails closed for a managed provider capability below the supported version', async () => {
     const extension = createZhiyuanEnterpriseExtension();
 
     await expect(
       extension.initialize(
         hostContext(null, null, null, {
-          apiVersion: 2,
+          apiVersion: 0,
           registerSource: vi.fn(),
         } as never),
       ),
     ).rejects.toThrow('managed provider capability API version is not supported');
+  });
+
+  test('accepts the managed provider capability v2 and registers the source', async () => {
+    const unregister = vi.fn();
+    const registerSource = vi.fn((_provider: ZhiyuanManagedProviderSource) => unregister);
+    const session = passwordSession();
+    const extension = new ZhiyuanAaaSExtension({
+      createSession: vi.fn(async () => session),
+      warn: vi.fn(),
+    });
+
+    await expect(
+      extension.initialize(
+        hostContext(null, null, null, {
+          apiVersion: 2,
+          registerSource,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(registerSource).toHaveBeenCalledOnce();
+    expect(registerSource.mock.calls[0]?.[0]?.providerKey).toBe('custom_enterprise');
+
+    await extension.dispose();
+    expect(unregister).toHaveBeenCalledOnce();
   });
 
   test('fails closed for an incompatible managed Skill capability', async () => {
