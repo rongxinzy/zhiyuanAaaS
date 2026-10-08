@@ -34,6 +34,14 @@ try {
   assert.match(css, /\.admin-shell/, 'Admin CSS must include the application layout.');
   assert.match(css, /\.admin-sidebar/, 'Admin CSS must include desktop navigation.');
   assert.match(css, /\.admin-login/, 'Admin CSS must include the login surface.');
+  // The workbench surface is plain antd: the Tea theme belongs to the
+  // desktop renderer bundle only and must never leak into the admin build.
+  assert.doesNotMatch(css, /\.tea-theme-/, 'Admin CSS must not include the Tea theme.');
+  const chunks = await fs.readdir(path.join(root, 'assets'));
+  assert.ok(
+    chunks.some((asset) => /^Workbench-.*\.js$/.test(asset)),
+    'Admin bundle must include the workbench chunk.',
+  );
   console.log(JSON.stringify({ status: 'passed', origin: `http://127.0.0.1:${port}`, assets }));
 } finally {
   child.kill();
