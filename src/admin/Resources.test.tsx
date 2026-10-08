@@ -358,6 +358,66 @@ describe('admin resources', () => {
   );
 
   test(
+    'routes the signed-in account to the self-service password change',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'admin-1', displayName: '管理员', username: 'admin', status: 'active' }],
+        }),
+        changePassword: vi.fn().mockResolvedValue({ status: 'authenticated' }),
+        resetUserPassword: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('管理员')).toBeInTheDocument();
+      openRowMenu('更多');
+      expect(await screen.findByRole('menuitem', { name: /修改密码/ })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /重置密码/ })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('menuitem', { name: /修改密码/ }));
+      const modal = await screen.findByRole('dialog');
+      expect(within(modal).queryByText('首次登录时要求修改密码')).not.toBeInTheDocument();
+      fireEvent.change(within(modal).getByLabelText('当前密码'), { target: { value: 'current-password-1' } });
+      fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: 'fresh-password-12' } });
+      fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: 'fresh-password-12' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.changePassword).toHaveBeenCalledWith({
+          currentPassword: 'current-password-1',
+          newPassword: 'fresh-password-12',
+        }),
+      );
+      expect(client.resetUserPassword).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'keeps the self-service dialog open when the change fails',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'admin-1', displayName: '管理员', username: 'admin', status: 'active' }],
+        }),
+        changePassword: vi.fn().mockRejectedValue(new Error('denied')),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('管理员')).toBeInTheDocument();
+      openRowMenu('更多');
+      fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('当前密码'), { target: { value: 'wrong-password-1' } });
+      fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: 'fresh-password-12' } });
+      fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: 'fresh-password-12' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      expect(await within(modal).findByRole('alert')).toHaveTextContent('密码修改失败');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'imports users from a JSON envelope and refreshes the list',
     async () => {
       const client = {
