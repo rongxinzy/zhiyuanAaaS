@@ -148,6 +148,8 @@ function navigate(route: string) {
   window.location.hash = route;
 }
 const t = (key: Parameters<typeof translate>[1]) => translate('zh', key);
+const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MAX_LENGTH = 1024;
 
 export function AdminApp() {
   const [mode, setMode] = useState<AdminThemeMode>(initialAdminTheme);
@@ -299,6 +301,15 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           </Form>
         </Card>
       </main>
+    );
+  if (session.identity?.passwordChangeRequired)
+    return (
+      <ForcedPasswordChange
+        client={client}
+        themeControl={themeControl}
+        onChanged={setSession}
+        onSwitchAccount={() => void signOut()}
+      />
     );
   const identity = session.identity;
   // One login, two modes: accounts with admin-console access get the admin
@@ -489,6 +500,93 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         </Layout.Content>
       </Layout>
     </Layout>
+  );
+}
+
+function ForcedPasswordChange({
+  client,
+  themeControl,
+  onChanged,
+  onSwitchAccount,
+}: {
+  client: AdminConsoleClient;
+  themeControl: ReactNode;
+  onChanged: (session: AdminSession) => void;
+  onSwitchAccount: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <main className="admin-login">
+      <div className="admin-login-theme">{themeControl}</div>
+      <Card className="admin-login-card">
+        <Typography.Text type="secondary">ZHIYUAN · {c.brand}</Typography.Text>
+        <Typography.Title level={2}>{c.passwordChangeTitle}</Typography.Title>
+        <Typography.Paragraph type="secondary">{c.passwordChangeHint}</Typography.Paragraph>
+        {failed && <Alert type="error" showIcon title={t('passwordChangeFailed')} style={{ marginBottom: 20 }} />}
+        <Form
+          layout="vertical"
+          requiredMark={false}
+          disabled={pending}
+          onFinish={async (values: { currentPassword: string; newPassword: string; confirmNewPassword: string }) => {
+            setPending(true);
+            setFailed(false);
+            try {
+              onChanged(
+                await client.changePassword({
+                  currentPassword: values.currentPassword,
+                  newPassword: values.newPassword,
+                }),
+              );
+            } catch {
+              setFailed(true);
+            } finally {
+              setPending(false);
+            }
+          }}
+        >
+          <Form.Item
+            label={t('currentPassword')}
+            name="currentPassword"
+            rules={[{ required: true, message: t('requiredFields') }]}
+          >
+            <Input.Password autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item
+            label={t('newPassword')}
+            name="newPassword"
+            rules={[
+              { required: true, message: t('requiredFields') },
+              { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordChangePolicy') },
+            ]}
+          >
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            label={t('confirmNewPassword')}
+            name="confirmNewPassword"
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: t('requiredFields') },
+              ({ getFieldValue }) => ({
+                validator: (_, value: string) =>
+                  !value || getFieldValue('newPassword') === value
+                    ? Promise.resolve()
+                    : Promise.reject(new Error(t('newPasswordMismatch'))),
+              }),
+            ]}
+          >
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block loading={pending}>
+            {t('changePassword')}
+          </Button>
+          <Button type="link" block disabled={pending} onClick={onSwitchAccount} style={{ marginTop: 8 }}>
+            {c.switchAccount}
+          </Button>
+        </Form>
+      </Card>
+    </main>
   );
 }
 

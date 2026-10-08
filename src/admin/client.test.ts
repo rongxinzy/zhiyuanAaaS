@@ -328,6 +328,23 @@ describe('admin session client identity', () => {
     expect(sessionReads).toBe(2);
     expect(client.sessionId).toBe('test-session');
   });
+
+  test('changePassword rotates the restricted session and reloads the identity', async () => {
+    const rotated = { ...loginTokens, sessionId: 'rotated-session' };
+    const { client, requests } = await signedInClient({
+      'POST /aep/v1/auth/password/change': { body: rotated },
+    });
+    const session = await client.changePassword({
+      currentPassword: 'temporary-password-1',
+      newPassword: 'new-password-123',
+    });
+    expect(session.status).toBe('authenticated');
+    expect(client.sessionId).toBe('rotated-session');
+    expect(requests.find((request) => request.path === '/aep/v1/auth/password/change')?.body).toEqual({
+      currentPassword: 'temporary-password-1',
+      newPassword: 'new-password-123',
+    });
+  });
 });
 
 describe('admin deployment settings', () => {
