@@ -55,6 +55,7 @@ import {
   persistAdminTheme,
   subscribeToSystemTheme,
 } from './theme.js';
+import { workbenchT } from './workbench-copy.js';
 
 const Resources = lazy(() => import('./Resources.js').then((m) => ({ default: m.Resources })));
 const Identity = lazy(() => import('./Identity.js').then((m) => ({ default: m.Identity })));
@@ -80,6 +81,7 @@ const DeploymentSettings = lazy(() =>
   })),
 );
 const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
+const Workbench = lazy(() => import('./Workbench.js').then((m) => ({ default: m.Workbench })));
 
 const modules = [
   {
@@ -222,6 +224,13 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     window.addEventListener('hashchange', change);
     return () => window.removeEventListener('hashchange', change);
   }, []);
+  useEffect(() => {
+    // Non-admin accounts only have the workbench: funnel every other hash
+    // into it so admin deep links cannot render an empty shell.
+    if (session?.status === AdminConsoleStatus.Forbidden && (route.split('/')[0] ?? '') !== 'workbench') {
+      navigate('workbench');
+    }
+  }, [session, route]);
   const signOut = async () => {
     setPending(true);
     try {
@@ -291,19 +300,27 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         </Card>
       </main>
     );
-  if (session.status === AdminConsoleStatus.Forbidden)
+  const identity = session.identity;
+  // One login, two modes: accounts with admin-console access get the admin
+  // shell (plus a workbench switch in the header); everybody else lands in
+  // the employee workbench — no 403 wall.
+  const adminAccess = session.status === AdminConsoleStatus.Authenticated;
+  const [page = 'overview', subpage, detailTab] = route.split('/');
+  if (!adminAccess || page === 'workbench') {
     return (
-      <Result
-        status="403"
-        title={c.forbidden}
-        subTitle={session.identity?.user.displayName}
-        extra={<Button onClick={() => void signOut()}>{c.switchAccount}</Button>}
+      <Workbench
+        client={client}
+        identity={identity}
+        canManage={adminAccess}
+        route={page === 'workbench' ? route : 'workbench'}
+        themeControl={themeControl}
+        onSignOut={() => void signOut()}
+        signingOut={pending}
       />
     );
-  const identity = session.identity;
+  }
   const allowed = (permission: P) => hasAdminPermission(identity, permission);
   const visible = modules.filter((m) => m.permissions.length === 0 || m.permissions.some(allowed));
-  const [page = 'overview', subpage, detailTab] = route.split('/');
   const selected = modules.find((m) => m.key === page);
   const accessible = visible.some((m) => m.key === page);
   const enterprise = identity?.deployment?.name ?? identity?.enterprise?.name ?? identity?.deploymentId ?? c.enterprise;
@@ -452,6 +469,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             {enterprise}
           </Typography.Text>
           <Space wrap>
+            <Button onClick={() => navigate('workbench')}>{workbenchT('switchToWorkbench')}</Button>
             {themeControl}
             <Typography.Text className="admin-user">{identity?.user.displayName}</Typography.Text>
             <Button aria-label={c.signOut} icon={<LogoutOutlined />} loading={pending} onClick={() => void signOut()}>

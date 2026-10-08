@@ -12,6 +12,15 @@ export const state = {
       roleIds: ['admin'],
       teamIds: [],
     },
+    {
+      id: 'user-1',
+      username: 'zhang',
+      displayName: '张三',
+      email: null,
+      status: 'active',
+      roleIds: ['member'],
+      teamIds: ['sales-dept'],
+    },
   ],
   teams: [],
   roles: [{ id: 'member', name: '企业成员', enabled: true, builtIn: true, permissions: [] }],
@@ -35,6 +44,25 @@ export const state = {
       memoryUser: 'sales-helper',
       createdAt: '2026-09-29T00:00:00Z',
       channels: { wecom: true, wecomName: 'E2E 企业微信' },
+      accessReason: { kind: 'all' },
+    },
+  ],
+  // The portal session identity switches with the login username ("zhang"
+  // is a regular member); the admin flows stay the default.
+  sessionUserId: 'admin-1',
+  // Workbench-visible requests (own-requests view), separate from the
+  // admin approval queue so the console flows keep their fixture shape.
+  workbenchRequests: [
+    {
+      id: 'req-wb-seed',
+      employeeName: 'sales-data-assistant',
+      ownerId: 'user-1',
+      owner: '张三',
+      displayName: '销售数据助理',
+      state: 'pending',
+      reason: '',
+      createdAt: '2026-10-08T02:00:00Z',
+      deploy: { exists: false, phase: '' },
     },
   ],
   employeeRequests: [],
@@ -98,6 +126,31 @@ async function route(method, pathname, rawBody, response, query) {
     const input = jsonBody(rawBody);
     if (state.employees.some((employee) => employee.name === input.name))
       return writeJson(response, 409, { error: '名称已存在' });
+    // Regular users park for approval (the workbench submitted page); the
+    // admin console keeps its direct-create 201.
+    if (state.sessionUserId !== 'admin-1') {
+      const parked = {
+        id: `req-wb-${state.nextId++}`,
+        employeeName: input.name,
+        ownerId: state.sessionUserId,
+        owner: sessionUser().displayName,
+        displayName: input.displayName ?? input.name,
+        state: 'pending',
+        reason: '',
+        createdAt: new Date().toISOString(),
+        deploy: { exists: false, phase: '' },
+        // Round-trip the applicant's own fields so the detail page proves
+        // the apply payload traveled (not a fixture constant).
+        description: input.description ?? '',
+        team: input.team ?? '',
+        note: input.note ?? '',
+      };
+      state.workbenchRequests.push(parked);
+      return writeJson(response, 202, {
+        request: { id: parked.id, state: 'pending', employeeName: input.name },
+        policy: 'policy mode approval: request parked for administrator approval',
+      });
+    }
     state.employees.push({
       ...input,
       phase: 'Pending',
@@ -109,6 +162,42 @@ async function route(method, pathname, rawBody, response, query) {
       createdAt: new Date().toISOString(),
     });
     return writeJson(response, 201, { message: '已创建，等待部署' });
+  }
+  if (method === 'GET' && pathname === '/api/v1/me') {
+    const user = sessionUser();
+    return writeJson(response, 200, {
+      user: { id: user.id, displayName: user.displayName, kind: 'human' },
+      teams: [{ id: 'sales-dept', name: '销售团队' }],
+      quota: { limit: 2, used: 0, owned: 0, pending: 0 },
+      policyMode: 'approval',
+      defaultModel: 'bench-glm',
+    });
+  }
+  if (method === 'GET' && pathname === '/api/v1/requests/mine') {
+    const stateFilter = query.get('state');
+    const mine = state.workbenchRequests.filter(
+      (item) =>
+        item.ownerId === state.sessionUserId && (!stateFilter || stateFilter === 'all' || item.state === stateFilter),
+    );
+    return writeJson(response, 200, { requests: mine });
+  }
+  if (method === 'GET' && pathname.startsWith('/api/v1/requests/')) {
+    const id = decodeURIComponent(pathname.slice('/api/v1/requests/'.length));
+    const parked = state.workbenchRequests.find((item) => item.id === id);
+    if (!parked) return writeJson(response, 404, { error: `request ${id} not found` });
+    return writeJson(response, 200, {
+      request: {
+        ...parked,
+        decidedAt: null,
+        decidedBy: '',
+        decidedByName: '',
+        description: parked.description || '整理团队销售数据，辅助制作周报。',
+        teamId: parked.team || 'sales-dept',
+        teamName: '销售团队',
+        note: parked.note || '',
+        model: 'bench-glm',
+      },
+    });
   }
   if (method === 'GET' && pathname === '/api/v1/requests')
     return writeJson(response, 200, { requests: state.employeeRequests });
@@ -184,6 +273,10 @@ async function route(method, pathname, rawBody, response, query) {
     return writeJson(response, 200, {});
   }
   if (pathname === '/aep/v1/auth/password/login' && method === 'POST') {
+    // The session identity follows the username (zhang = regular member);
+    // everything else falls back to the admin.
+    const input = jsonBody(rawBody);
+    state.sessionUserId = state.users.find((user) => user.username === input.username)?.id ?? 'admin-1';
     return writeJson(response, 200, {
       accessToken: 'e2e-access',
       refreshToken: 'e2e-refresh',
@@ -210,12 +303,13 @@ async function route(method, pathname, rawBody, response, query) {
     });
   }
   if (pathname === '/aep/v1/user/me' && method === 'GET') {
+    const user = sessionUser();
     return writeJson(response, 200, {
-      user: { id: 'admin-1', displayName: '管理员', email: null },
+      user: { id: user.id, displayName: user.displayName, email: user.email ?? null, teamIds: user.teamIds ?? [] },
       deployment: { id: 'demo', name: '演示部署' },
       deploymentId: 'demo',
       sessionId: 'e2e-session',
-      roles: ['admin'],
+      roles: user.roleIds ?? [],
       permissions: [],
       sessionExpiresAt: '2027-01-01T00:00:00Z',
       passwordChangeRequired: false,
@@ -581,6 +675,10 @@ function createAssignment(response, collection, input, resourceType) {
 function jsonBody(raw) {
   if (!raw || (Buffer.isBuffer(raw) && raw.length === 0)) return {};
   return JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : raw);
+}
+
+function sessionUser() {
+  return state.users.find((user) => user.id === state.sessionUserId) ?? state.users[0];
 }
 
 function readBody(request) {

@@ -26,6 +26,19 @@ export type PortalEmployee = {
   readonly skills?: readonly { readonly id: string; readonly name: string; readonly version: string }[] | null;
   /** null/undefined = legacy owner/team rules (not explicitly configured). */
   readonly visibility?: PortalEmployeeVisibility | null;
+  /** Workbench roster: why the caller can see this employee. */
+  readonly accessReason?: PortalEmployeeAccess | undefined;
+};
+
+// accessReason.kind mirrors the portal's canAccessEmployee branch order:
+// owner | all | team | user | legacy-team | admin. team carries the
+// granting team (spec name snapshot when present); legacy-team ids resolve
+// client-side against the caller's /api/v1/me teams.
+export type PortalEmployeeAccess = {
+  readonly kind: string;
+  readonly teamId?: string;
+  readonly teamName?: string;
+  readonly userId?: string;
 };
 
 export type PortalEmployeeVisibility = {
@@ -83,6 +96,55 @@ export type PortalRequest = {
   readonly state: string;
   readonly reason: string;
   readonly createdAt: string;
+  /** Deployment leg (workbench list rows; absent on the admin queue). */
+  readonly deploy?: PortalRequestDeploy;
+};
+
+// The deployment leg of a request, kept separate from the approval state:
+// exists/phase come from the employee CR; pending and rejected requests
+// carry exists=false without probing the cluster.
+export type PortalRequestDeploy = {
+  readonly exists: boolean;
+  readonly phase: string;
+  readonly message?: string;
+  readonly createdAt?: string | null;
+};
+
+// One request with the decoded spec snapshot, for the workbench detail page
+// (审批状态 and 部署状态 display separately, per the wireframes).
+export type PortalRequestDetail = {
+  readonly id: string;
+  readonly employeeName: string;
+  readonly displayName: string;
+  readonly ownerId: string;
+  readonly owner: string;
+  readonly state: string;
+  readonly reason: string;
+  readonly createdAt: string;
+  readonly decidedAt: string | null;
+  readonly decidedBy: string;
+  readonly decidedByName: string;
+  readonly description: string;
+  readonly teamId: string;
+  readonly teamName: string;
+  readonly note: string;
+  readonly model: string;
+  readonly deploy: PortalRequestDeploy;
+};
+
+// The workbench caller's own profile (/api/v1/me): identity, team names,
+// and quota. quota.used = owned + pending (same formula as the apply gate).
+export type PortalMe = {
+  readonly user: { readonly id: string; readonly displayName: string; readonly kind: string };
+  readonly teams: readonly PortalDepartment[];
+  readonly quota: {
+    readonly limit: number;
+    readonly used: number;
+    readonly owned: number;
+    readonly pending: number;
+  };
+  readonly policyMode: string;
+  readonly defaultModel: string;
 };
 
 export class PortalError extends Error {
@@ -93,6 +155,16 @@ export class PortalError extends Error {
     super(message);
     this.name = 'PortalError';
   }
+}
+
+// Mirrors the portal's own apply-time validation (portal/api.go namePattern):
+// keep both in step or the server rejects with a 400 the UI could have caught.
+export const EMPLOYEE_NAME_PATTERN = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
+
+// The workbench treats a 401 as "sign in again" (expired session), distinct
+// from transport or permission failures.
+export function isSessionExpired(error: unknown): boolean {
+  return error instanceof PortalError && error.status === 401;
 }
 
 // Apply outcomes the UI distinguishes: direct create (201), parked for
@@ -107,7 +179,7 @@ export type PortalApplyViolation = {
 
 export type PortalApplyResult =
   | { readonly kind: 'created'; readonly message: string }
-  | { readonly kind: 'pending'; readonly message: string }
+  | { readonly kind: 'pending'; readonly message: string; readonly requestId?: string }
   | {
       readonly kind: 'rejected';
       readonly status: number;
@@ -132,6 +204,8 @@ export type PortalApplyInput = {
   readonly skills?: readonly { readonly id: string; readonly version: string }[];
   /** Explicit open scope; the console always sends it. */
   readonly visibility?: PortalApplyVisibility;
+  /** 补充说明 — optional applicant context (≤500 chars), stored on the CR. */
+  readonly note?: string;
 };
 
 export type PortalApplyVisibility = {
@@ -314,12 +388,20 @@ export class PortalClient {
       ...(input.knowledgeBases ? { knowledgeBases: input.knowledgeBases } : {}),
       ...(input.skills && input.skills.length > 0 ? { skills: input.skills } : {}),
       ...(input.visibility ? { visibility: input.visibility } : {}),
+      ...(input.note ? { note: input.note } : {}),
     });
     if (status === 201) {
       return { kind: 'created', message: policyMessage(data, 'digital employee created') };
     }
     if (status === 202) {
-      return { kind: 'pending', message: policyMessage(data, 'approval required') };
+      // The workbench navigates straight to the submitted page, so the
+      // parked request id rides along when the portal returns it.
+      const requestId = (data as { request?: { id?: unknown } } | null)?.request?.id ?? null;
+      return {
+        kind: 'pending',
+        message: policyMessage(data, 'approval required'),
+        ...(typeof requestId === 'string' && requestId ? { requestId } : {}),
+      };
     }
     const violations = violationsOf(data);
     return {
@@ -340,13 +422,7 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/departments');
     if (status !== 200) throw portalError(status, data);
     const items = (data as { departments?: unknown[] } | null)?.departments ?? [];
-    return items.map((raw) => {
-      const d = raw as Record<string, unknown>;
-      return {
-        id: String(d.id ?? ''),
-        name: String(d.name ?? ''),
-      };
-    });
+    return items.map(parseDepartment);
   }
 
   async createDepartment(name: string): Promise<PortalDepartmentCreateResult> {
@@ -398,18 +474,68 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', `/api/v1/requests${query}`);
     if (status !== 200) throw portalError(status, data);
     const items = (data as { requests?: unknown[] } | null)?.requests ?? [];
-    return items.map((raw) => {
-      const request = raw as Record<string, unknown>;
-      return {
-        id: String(request.id ?? ''),
-        employeeName: String(request.employeeName ?? ''),
-        owner: String(request.owner ?? ''),
-        displayName: String(request.displayName ?? ''),
-        state: String(request.state ?? ''),
-        reason: String(request.reason ?? ''),
-        createdAt: String(request.createdAt ?? ''),
-      };
-    });
+    return items.map(parseRequest);
+  }
+
+  // The workbench's own-requests view: every state by default, scoped
+  // server-side to the caller (administrators included).
+  async myRequests(state?: string): Promise<readonly PortalRequest[]> {
+    const query = state && state !== 'all' ? `?state=${encodeURIComponent(state)}` : '';
+    const { status, data } = await this.#request('GET', `/api/v1/requests/mine${query}`);
+    if (status !== 200) throw portalError(status, data);
+    const items = (data as { requests?: unknown[] } | null)?.requests ?? [];
+    return items.map(parseRequest);
+  }
+
+  async getRequest(id: string): Promise<PortalRequestDetail> {
+    const { status, data } = await this.#request('GET', `/api/v1/requests/${encodeURIComponent(id)}`);
+    if (status !== 200) throw portalError(status, data);
+    const raw = ((data as { request?: unknown } | null)?.request ?? {}) as Record<string, unknown>;
+    return {
+      id: String(raw.id ?? ''),
+      employeeName: String(raw.employeeName ?? ''),
+      displayName: String(raw.displayName ?? ''),
+      ownerId: String(raw.ownerId ?? ''),
+      owner: String(raw.owner ?? ''),
+      state: String(raw.state ?? ''),
+      reason: String(raw.reason ?? ''),
+      createdAt: String(raw.createdAt ?? ''),
+      decidedAt: raw.decidedAt == null ? null : String(raw.decidedAt),
+      decidedBy: String(raw.decidedBy ?? ''),
+      decidedByName: String(raw.decidedByName ?? ''),
+      description: String(raw.description ?? ''),
+      teamId: String(raw.teamId ?? ''),
+      teamName: String(raw.teamName ?? ''),
+      note: String(raw.note ?? ''),
+      model: String(raw.model ?? ''),
+      deploy: parseDeploy(raw.deploy),
+    };
+  }
+
+  // The workbench first paint: identity, team names and quota.
+  async me(): Promise<PortalMe> {
+    const { status, data } = await this.#request('GET', '/api/v1/me');
+    if (status !== 200) throw portalError(status, data);
+    const raw = (data ?? {}) as Record<string, unknown>;
+    const user = (raw.user ?? {}) as Record<string, unknown>;
+    const quota = (raw.quota ?? {}) as Record<string, unknown>;
+    const teams = Array.isArray(raw.teams) ? raw.teams : [];
+    return {
+      user: {
+        id: String(user.id ?? ''),
+        displayName: String(user.displayName ?? ''),
+        kind: String(user.kind ?? ''),
+      },
+      teams: teams.map(parseDepartment),
+      quota: {
+        limit: Number(quota.limit ?? 0),
+        used: Number(quota.used ?? 0),
+        owned: Number(quota.owned ?? 0),
+        pending: Number(quota.pending ?? 0),
+      },
+      policyMode: String(raw.policyMode ?? ''),
+      defaultModel: String(raw.defaultModel ?? ''),
+    };
   }
 
   async decideRequest(id: string, decision: 'approve' | 'reject', reason?: string): Promise<void> {
@@ -433,6 +559,7 @@ function parseEmployee(raw: unknown): PortalEmployee {
   const employee = raw as Record<string, unknown>;
   const channels = employee.channels as PortalEmployee['channels'];
   const models = Array.isArray(employee.models) ? employee.models.map((id) => String(id)) : [];
+  const access = employee.accessReason as Record<string, unknown> | undefined;
   return {
     name: String(employee.name ?? ''),
     displayName: String(employee.displayName ?? ''),
@@ -450,7 +577,49 @@ function parseEmployee(raw: unknown): PortalEmployee {
     knowledgeBases: (employee.knowledgeBases as PortalEmployee['knowledgeBases']) ?? null,
     skills: (employee.skills as PortalEmployee['skills']) ?? null,
     visibility: (employee.visibility as PortalEmployee['visibility']) ?? null,
+    accessReason: access
+      ? {
+          kind: String(access.kind ?? ''),
+          ...(access.teamId !== undefined ? { teamId: String(access.teamId ?? '') } : {}),
+          ...(access.teamName !== undefined ? { teamName: String(access.teamName ?? '') } : {}),
+          ...(access.userId !== undefined ? { userId: String(access.userId ?? '') } : {}),
+        }
+      : undefined,
   } satisfies PortalEmployee;
+}
+
+function parseDeploy(raw: unknown): PortalRequestDeploy {
+  const deploy = (raw ?? {}) as Record<string, unknown>;
+  return {
+    exists: Boolean(deploy.exists),
+    phase: String(deploy.phase ?? ''),
+    ...(deploy.message !== undefined ? { message: String(deploy.message ?? '') } : {}),
+    ...(deploy.createdAt !== undefined
+      ? { createdAt: deploy.createdAt == null ? null : String(deploy.createdAt) }
+      : {}),
+  };
+}
+
+function parseRequest(raw: unknown): PortalRequest {
+  const request = raw as Record<string, unknown>;
+  return {
+    id: String(request.id ?? ''),
+    employeeName: String(request.employeeName ?? ''),
+    owner: String(request.owner ?? ''),
+    displayName: String(request.displayName ?? ''),
+    state: String(request.state ?? ''),
+    reason: String(request.reason ?? ''),
+    createdAt: String(request.createdAt ?? ''),
+    ...(request.deploy !== undefined ? { deploy: parseDeploy(request.deploy) } : {}),
+  };
+}
+
+function parseDepartment(raw: unknown): PortalDepartment {
+  const department = raw as Record<string, unknown>;
+  return {
+    id: String(department.id ?? ''),
+    name: String(department.name ?? ''),
+  };
 }
 
 function violationsOf(data: unknown): readonly PortalApplyViolation[] | null {
