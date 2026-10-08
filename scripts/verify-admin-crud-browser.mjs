@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import { createAdminFixture, state } from './admin-browser-fixture.mjs';
 
 // Browser plugin not available: use the repository's Playwright workflow.
-// Login -> seven business areas -> real form interaction -> API fixture changes.
+// Login -> eight business areas -> real form interaction -> API fixture changes.
 // These fixtures test browser/API contracts, not production service behavior.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const screenshots = process.env.ZHIYUAN_ADMIN_SCREENSHOTS ?? '/tmp/zhiyuan-admin-antd-qa';
@@ -62,13 +62,13 @@ try {
   await page.getByLabel('密码', { exact: true }).fill('e2e-test-password');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.getByRole('heading', { name: '概览', exact: true }).waitFor();
-  assert.equal(await page.getByRole('menuitem').count(), 7);
+  assert.equal(await page.getByRole('menuitem').count(), 8);
   await page.screenshot({
     path: path.join(screenshots, 'overview.png'),
     fullPage: true,
     animations: 'disabled',
   });
-  checks.push('explicit login, seven business entries, overview');
+  checks.push('explicit login, eight business entries, overview');
 
   async function visit(route, expected) {
     await page.goto(`${origin}/#${route}`);
@@ -194,13 +194,19 @@ try {
   assert.ok(generatedSkill?.id, 'skill id must be generated server-side');
   await page.screenshot({ path: path.join(screenshots, 'skills.png'), fullPage: true, animations: 'disabled' });
   checks.push('skill registration and four detail tabs');
-  await visit('system/models', '模型列表');
+  await page.getByRole('menuitem', { name: '模型网关', exact: true }).click();
+  await page.getByRole('tab', { name: '模型列表', exact: true }).waitFor();
+  assert.match(page.url(), /#model-gateway$/);
+  assert.equal(await page.getByRole('tablist').count(), 1);
+  assert.equal(await page.locator('.admin-page > div > div > .ant-tabs-card').count(), 0);
+  assert.equal(await page.getByRole('tab').count(), 3);
   await page.screenshot({
     path: path.join(screenshots, 'models.png'),
     fullPage: true,
     animations: 'disabled',
   });
-  await visit('system/models/connections', '接入配置');
+  await page.getByRole('tab', { name: '接入配置', exact: true }).click();
+  assert.match(page.url(), /#model-gateway\/connections$/);
   await page.getByRole('button', { name: /新建接入配置$/ }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('名称', { exact: true }).fill('E2E 模型接入');
@@ -234,7 +240,7 @@ try {
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(state.credentials[0].maskedValue, 'e2e-rotated-***');
   checks.push('credential create and rotation failure/retry, no secret echo');
-  await visit('system/models', '模型列表');
+  await visit('model-gateway/catalog', '模型列表');
   await page.getByRole('button', { name: /添加模型$/ }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('显示名称', { exact: true }).fill('E2E 企业模型');
@@ -262,9 +268,42 @@ try {
   assert.ok(state.requests.some((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publish'));
   assert.ok(state.dataPlane.desired.routes[0]?.modelId);
   checks.push('catalog drift badge and publish');
-  await visit('system/models/configuration', '配置生效详情');
+  await page.getByRole('tab', { name: '配置生效详情', exact: true }).click();
+  assert.match(page.url(), /#model-gateway\/configuration$/);
   await page.getByText('期望路由与模型目录一致', { exact: true }).waitFor();
+  for (const themeMode of ['light', 'dark']) {
+    await page.evaluate((mode) => localStorage.setItem('zhiyuan.admin.theme', mode), themeMode);
+    await page.reload({ waitUntil: 'networkidle' });
+    for (const [viewportName, width] of [
+      ['desktop', 1440],
+      ['narrow', 760],
+    ]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const [tab, label] of [
+        ['catalog', '模型列表'],
+        ['connections', '接入配置'],
+        ['configuration', '配置生效详情'],
+      ]) {
+        await visit(`model-gateway/${tab}`, label);
+        assert.equal(await page.getByRole('tablist').count(), 1);
+        assert.equal(await page.locator('.admin-page .ant-tabs-card').count(), 0);
+        const activeTab = page.getByRole('tab', { name: label, exact: true });
+        assert.equal(await activeTab.getAttribute('aria-selected'), 'true');
+        await activeTab.focus();
+        await page.screenshot({
+          path: path.join(screenshots, `model-gateway-${tab}-${themeMode}-${viewportName}.png`),
+          fullPage: true,
+          animations: 'disabled',
+        });
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
+  await page.reload({ waitUntil: 'networkidle' });
+  checks.push('model gateway: three top-level underline tabs, light/dark, desktop/narrow, keyboard focus');
   await visit('system/channels', 'E2E 企业微信');
+  assert.equal(await page.getByRole('tab', { name: '模型服务', exact: true }).count(), 0);
   await visit('system/services', '服务状态');
   await page.screenshot({
     path: path.join(screenshots, 'services.png'),

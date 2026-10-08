@@ -10,7 +10,7 @@ import { requiredEnvironment } from './e2e-environment.mjs';
 
 // This verifier needs a running AEP control service. It starts an ephemeral
 // static Admin Console unless ZHIYUAN_ADMIN_ORIGIN points at one already running.
-// The console is the Ant Design rewrite: seven business entries in the side
+// The console is the Ant Design rewrite: eight business entries in the side
 // navigation, hash routes, Modal/Drawer/Select/Popconfirm interactions, and a
 // session that survives reloads and is cleared only by explicit sign-out.
 // Control-event publishing and raw data-plane route editing were removed from
@@ -165,8 +165,8 @@ try {
   assert.equal(loginOutcome, 'authenticated', 'Admin Console rejected a successful AEP authentication response');
   assert.equal(
     await page.getByRole('menuitem').count(),
-    7,
-    'The redesigned console must expose exactly seven business entries',
+    8,
+    'The redesigned console must expose exactly eight business entries',
   );
 
   await createUserAndMemberships();
@@ -185,7 +185,7 @@ try {
       origin: adminOrigin,
       prefix: suffix,
       checks: [
-        'browser login and seven business entries',
+        'browser login and eight business entries',
         'reload restores the persisted session; explicit sign-out clears it',
         'user create/update/password reset/RBAC/import/disable',
         'team and role create/update/enable/disable/delete',
@@ -431,8 +431,7 @@ async function exerciseSkill() {
 }
 
 async function exerciseModel() {
-  await menuItem('系统管理').click();
-  await tabItem('模型服务').click();
+  await menuItem('模型网关').click();
   await tabItem('模型列表').click();
   await page.getByRole('button', { name: /添加模型$/ }).click();
   let current = dialog();
@@ -568,7 +567,7 @@ async function exerciseAuditReadonly() {
 // Raw route editing and desired-state publishing were removed from the
 // product UI; the configuration page is a read-only sync-status view.
 async function exerciseConfigurationReadonly() {
-  await menuItem('系统管理').click();
+  await menuItem('模型网关').click();
   await tabItem('配置生效详情').click();
   await waitText('版本一致性');
 }

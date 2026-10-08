@@ -83,9 +83,10 @@ const activeSession = (id: string, revokedAt: string | null = null) => ({
   revokedAt,
 });
 
-describe('admin resources', () => {
-  afterEach(() => cleanup());
+// Include the CSV tests outside the describe block in React root teardown.
+afterEach(() => cleanup());
 
+describe('admin resources', () => {
   test(
     'renders users and disables an account through the dedicated confirmation',
     async () => {
@@ -1171,6 +1172,8 @@ test(
         teamIds: ['team-1'],
       }),
     ]);
+    expect(await screen.findByText(/已创建用户: 1 \/ 已拒绝: 0/)).toBeInTheDocument();
+    await waitFor(() => expect(client.resources).toHaveBeenCalledTimes(2));
   },
   TIMEOUT,
 );
@@ -1183,19 +1186,14 @@ test(
       importUsers: vi.fn(),
     };
     render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
-    fireEvent.click((await screen.findAllByRole('button', { name: /导入用户/ }))[0]!);
+    fireEvent.click(await screen.findByRole('button', { name: /导入用户/ }));
     const modal = await screen.findByRole('dialog');
     const csvBody = '显示名称\n张三';
     const file = new File([csvBody], 'users.csv', { type: 'text/csv' });
     Object.defineProperty(file, 'text', { value: () => Promise.resolve(csvBody) });
     fireEvent.change(fileInput(modal), { target: { files: [file] } });
-    fireEvent.click(
-      within(modal)
-        .getAllByRole('button', { name: /导入用户/ })
-        .at(-1)!,
-    );
-    await waitFor(() => expect(client.importUsers).not.toHaveBeenCalled());
-    expect(modal.textContent).toMatch(/用户名|username|失败|error/i);
+    fireEvent.click(within(modal).getByRole('button', { name: /导入用户/ }));
+    expect(await within(modal).findByRole('alert')).toHaveTextContent('用户导入失败');
     expect(client.importUsers).not.toHaveBeenCalled();
   },
   TIMEOUT,
