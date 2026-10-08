@@ -28,6 +28,14 @@ export type PortalEmployee = {
   readonly visibility?: PortalEmployeeVisibility | null;
   /** Workbench roster: why the caller can see this employee. */
   readonly accessReason?: PortalEmployeeAccess | undefined;
+  /**
+   * Set while the platform failover watcher is serving this employee from a
+   * fallback model (the default model failed its health probe). null/absent
+   * = the default model is serving.
+   */
+  readonly modelFailover?:
+    | { readonly original: string; readonly active: string; readonly switchedAt: string }
+    | null;
 };
 
 // accessReason.kind mirrors the portal's canAccessEmployee branch order:

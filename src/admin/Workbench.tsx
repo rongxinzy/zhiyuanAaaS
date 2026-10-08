@@ -4,7 +4,13 @@
 // shell. The shell reuses the admin layout classes (plain antd tokens —
 // deliberately no Tea theme), and the roster follows the 员工工作台
 // wireframes: 数字员工 / 用途 / 权限来源 / 状态 / 开始使用.
-import { LogoutOutlined, PlusOutlined, ReloadOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  LogoutOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 import { Alert, Button, Card, Col, Empty, Layout, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
@@ -245,7 +251,22 @@ function WorkbenchHome({
               },
               {
                 title: t('colStatus'),
-                render: (_, employee) => phaseTag(employee.phase),
+                render: (_, employee) => (
+                  <Space size={4} wrap>
+                    {phaseTag(employee.phase)}
+                    {employee.modelFailover ? (
+                      <Tooltip
+                        title={t('failoverWarningHint')
+                          .replace('{original}', employee.modelFailover.original)
+                          .replace('{active}', employee.modelFailover.active)}
+                      >
+                        <Tag color="warning" icon={<WarningOutlined />}>
+                          {t('failoverWarning')}
+                        </Tag>
+                      </Tooltip>
+                    ) : null}
+                  </Space>
+                ),
               },
               {
                 title: t('colAction'),

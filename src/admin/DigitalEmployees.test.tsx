@@ -134,6 +134,27 @@ describe('admin digital employees', () => {
   };
 
   test(
+    'warns on the model cell while a failover is serving the employee',
+    async () => {
+      const failing = {
+        ...employee,
+        name: 'failover-helper',
+        displayName: '切换助手',
+        modelFailover: { original: 'bench-qwen38-fast', active: 'bench-qwen', switchedAt: '2026-10-08T12:30:00Z' },
+      };
+      const portal = makePortal({
+        listEmployees: vi.fn().mockResolvedValue([employee, failing]),
+      });
+      render(<DigitalEmployees client={client as never} portal={portal} />);
+
+      expect(await screen.findByText('failover-helper')).toBeInTheDocument();
+      // Exactly the affected row carries the warning tag.
+      expect(screen.getAllByText('故障切换')).toHaveLength(1);
+    },
+    TIMEOUT,
+  );
+
+  test(
     'opens chat in a new tab after the silent session handoff',
     async () => {
       const portal = makePortal();

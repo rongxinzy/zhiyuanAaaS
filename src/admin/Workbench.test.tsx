@@ -48,6 +48,29 @@ function renderWorkbench(portal = workbenchPortal(), overrides: Record<string, u
 }
 
 describe('workbench shell and roster', () => {
+  test('an active model failover is warned on the affected roster row', async () => {
+    const portal = workbenchPortal({
+      listEmployees: vi.fn().mockResolvedValue([
+        employee({
+          name: 'sales-helper',
+          displayName: '销售助理',
+          modelFailover: {
+            original: 'bench-qwen38-fast',
+            active: 'bench-qwen',
+            switchedAt: '2026-10-08T12:30:00Z',
+          },
+        }),
+        employee({ name: 'calm-helper', displayName: '稳定助理' }),
+      ]),
+    });
+    renderWorkbench(portal);
+
+    expect(await screen.findByText('备用模型运行中')).toBeInTheDocument();
+    // Only the affected row warns.
+    expect(screen.getAllByText('备用模型运行中')).toHaveLength(1);
+  });
+
+
   test('renders purposes, access reasons and phases from the roster API', async () => {
     const portal = workbenchPortal({
       me: vi.fn().mockResolvedValue({
