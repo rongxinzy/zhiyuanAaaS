@@ -241,10 +241,7 @@ describe('ZhiyuanModelProvider', () => {
   test('withholds anthropic models from hosts below managed provider capability v2', async () => {
     const client = mockClient({
       listAgentModels: vi.fn(async () => ({
-        models: [
-          model({ id: 'openai-default' }),
-          model({ id: 'bench-anthropic', protocol: 'anthropic' }),
-        ],
+        models: [model({ id: 'openai-default' }), model({ id: 'bench-anthropic', protocol: 'anthropic' })],
       })),
     });
     const explicitV1 = new ZhiyuanModelProvider(await authenticatedSession(client), {
@@ -281,12 +278,8 @@ describe('ZhiyuanModelProvider', () => {
       { hostManagedProviderApiVersion: 2 },
     );
 
-    expect((await withTrailingSlash.snapshot()).models?.[0]?.baseUrl).toBe(
-      'https://gateway.example/bench-anthropic',
-    );
-    expect((await withoutV1Segment.snapshot()).models?.[0]?.baseUrl).toBe(
-      'https://gateway.example/bench-anthropic',
-    );
+    expect((await withTrailingSlash.snapshot()).models?.[0]?.baseUrl).toBe('https://gateway.example/bench-anthropic');
+    expect((await withoutV1Segment.snapshot()).models?.[0]?.baseUrl).toBe('https://gateway.example/bench-anthropic');
   });
 });
 
