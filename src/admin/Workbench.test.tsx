@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { type PortalEmployee, PortalError, type PortalMe } from './portal.js';
 import { workbenchClient, workbenchIdentity, workbenchMe, workbenchPortal } from './test-fixtures.js';
@@ -65,9 +65,13 @@ describe('workbench shell and roster', () => {
     });
     renderWorkbench(portal);
 
-    expect(await screen.findByText('备用模型运行中')).toBeInTheDocument();
-    // Only the affected row warns.
-    expect(screen.getAllByText('备用模型运行中')).toHaveLength(1);
+    await screen.findByText('销售助理');
+    // Pin the warning to the affected row: counting matches alone would not
+    // catch an inverted render condition (warning on the healthy row).
+    const affected = screen.getByText('销售助理').closest('tr')!;
+    const healthy = screen.getByText('稳定助理').closest('tr')!;
+    expect(within(affected).getByText('备用模型运行中')).toBeInTheDocument();
+    expect(within(healthy).queryByText('备用模型运行中')).toBeNull();
   });
 
 

@@ -386,9 +386,14 @@ describe('admin models', () => {
       };
       render(<Models client={client as never} identity={administratorIdentity} />);
 
-      expect(await screen.findByText('正常')).toBeInTheDocument();
-      expect(screen.getByText('凭据失效')).toBeInTheDocument();
-      expect(screen.getByText('访问被拒（可能限流）')).toBeInTheDocument();
+      await screen.findByText('主力模型');
+      // Pin each verdict to its own row: a plain string match would not
+      // catch a swapped status->copy mapping.
+      const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
+      expect(within(rowOf('主力模型')).getByText('正常')).toBeInTheDocument();
+      expect(within(rowOf('过期凭据模型')).getByText('凭据失效')).toBeInTheDocument();
+      expect(within(rowOf('限流模型')).getByText('访问被拒（可能限流）')).toBeInTheDocument();
+      expect(within(rowOf('主力模型')).queryByText('凭据失效')).toBeNull();
     },
     TIMEOUT,
   );

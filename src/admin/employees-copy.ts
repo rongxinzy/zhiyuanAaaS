@@ -14,7 +14,7 @@ const zh = {
   colStatus: '状态',
   colModel: '模型',
   failoverTag: '故障切换',
-  failoverHint: '默认模型 {original} 探测故障，已临时切换到 {active}；原模型恢复后将自动切回。',
+  failoverHint: '默认模型 {original} 当前不可用，已临时切换到 {active}；原模型恢复后将自动切回。',
   colLastUsed: '最近使用',
   lastUsedUnknown: '暂未统计',
   lastUsedHint: '最近使用需要真实活动记录；当前接口未提供，不用创建时间替代。',
@@ -170,7 +170,7 @@ const en: Record<keyof typeof zh, string> = {
   colModel: 'Model',
   failoverTag: 'Failover',
   failoverHint:
-    'The default model {original} failed its health probe; temporarily serving from {active}. It switches back automatically once the original recovers.',
+    'The default model {original} is currently unavailable; temporarily serving from {active}. It switches back automatically once the original recovers.',
   colLastUsed: 'Last used',
   lastUsedUnknown: 'No data yet',
   lastUsedHint:

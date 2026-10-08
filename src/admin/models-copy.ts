@@ -7,7 +7,7 @@ import type { AdminLanguage } from './i18n.js';
 
 const zh = {
   modelsListTitle: '模型列表',
-  modelsListDescription: '配置模型、可用范围，并区分保存、应用与检测结果。',
+  modelsListDescription: '配置模型、可用范围，并区分保存、应用与运行健康。',
   colModel: '模型',
   colUpstream: '上游模型',
   colManageState: '管理状态',
@@ -66,9 +66,9 @@ const zh = {
   accessHint: '使用权限只允许调用模型，不交付上游密钥。',
   associatedGapTitle: '关联数字员工暂未接入',
   associatedGapDescription: '数字员工与模型的关联关系需要门户员工接口；接入后在此展示受配置变更影响的数字员工。',
-  statusAlertTitle: '保存、应用、检测分别判断',
+  statusAlertTitle: '保存、应用、运行健康分别判断',
   statusAlertDescription:
-    '保存成功只证明配置持久化；网关回报版本后才算已应用；实际调用检测通过才算检测成功。旧版本检测结果不能证明新配置可用。',
+    '保存成功只证明配置持久化；网关回报版本后才算已应用；探针检测为“正常”才代表端点、凭据与上游模型当前可用，且只反映最近一轮探测。',
   statusTimelineSaved: '期望状态已保存',
   statusTimelineApplied: '网关已应用',
   statusTimelineNotApplied: '尚未确认应用',
@@ -108,7 +108,7 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   modelsListTitle: 'Models',
-  modelsListDescription: 'Configure models and audiences; keep save, apply, and detection results separate.',
+  modelsListDescription: 'Configure models and audiences; keep save, apply, and runtime health separate.',
   colModel: 'Model',
   colUpstream: 'Upstream model',
   colManageState: 'Managed state',
@@ -124,7 +124,7 @@ const en: Record<keyof typeof zh, string> = {
   healthUnreachable: 'Unreachable',
   healthError: 'Probe error',
   healthCheckedAt: 'Last probe: ',
-  healthNever: 'The prober has not classified this model yet (runs every 2 minutes).',
+  healthNever: 'The prober has not classified this model yet (runs every 2 minutes by default).',
   healthHint: 'The prober calls the upstream directly: endpoint reachability, credential validity, and upstream model availability.',
   configPending: 'Pending apply',
   configApplying: 'Applying',
@@ -171,9 +171,9 @@ const en: Record<keyof typeof zh, string> = {
   associatedGapTitle: 'Linked digital employees not wired',
   associatedGapDescription:
     'The model-to-employee relationship needs the portal employee API; once wired, employees affected by config changes are listed here.',
-  statusAlertTitle: 'Save, apply, and detect are judged separately',
+  statusAlertTitle: 'Save, apply, and runtime health are judged separately',
   statusAlertDescription:
-    "A successful save only persists configuration; applied requires the gateway-reported revision; detected requires a real invocation. A previous revision's test result does not validate the new config.",
+    "A successful save only persists configuration; applied requires the gateway-reported revision; \"healthy\" means the probe verified endpoint, credential, and upstream model in its latest round.",
   statusTimelineSaved: 'Desired state saved',
   statusTimelineApplied: 'Applied by gateway',
   statusTimelineNotApplied: 'Application unconfirmed',

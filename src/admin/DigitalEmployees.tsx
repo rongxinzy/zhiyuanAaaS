@@ -1378,7 +1378,24 @@ function EmployeeDetail({
             label: t('labelOwner'),
             children: employee.owner || employee.ownerId || t('ownerMissing'),
           },
-          { key: 'model', label: t('labelModel'), children: employee.model || t('notProvided') },
+          {
+            key: 'model',
+            label: t('labelModel'),
+            children: (
+              <Space size={4} wrap>
+                <span>{employee.model || t('notProvided')}</span>
+                {employee.modelFailover ? (
+                  <Tooltip
+                    title={t('failoverHint')
+                      .replace('{original}', employee.modelFailover.original)
+                      .replace('{active}', employee.modelFailover.active)}
+                  >
+                    <Tag color="warning">{t('failoverTag')}</Tag>
+                  </Tooltip>
+                ) : null}
+              </Space>
+            ),
+          },
           {
             key: 'lastUsed',
             label: t('colLastUsed'),

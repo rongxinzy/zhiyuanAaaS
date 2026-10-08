@@ -15,7 +15,7 @@ const zh = {
   colAccess: '权限来源',
   colStatus: '状态',
   failoverWarning: '备用模型运行中',
-  failoverWarningHint: '默认模型 {original} 探测故障，已临时切换为 {active}；原模型恢复后将自动切回。',
+  failoverWarningHint: '默认模型 {original} 当前不可用，已临时切换为 {active}；原模型恢复后将自动切回。',
   colAction: '操作',
   actionStart: '开始使用',
   startUnavailable: '员工尚未发布完成，暂时不能使用。',
@@ -135,7 +135,7 @@ const en: Record<keyof typeof zh, string> = {
   colStatus: 'Status',
   failoverWarning: 'Running on fallback',
   failoverWarningHint:
-    'The default model {original} failed its health probe; temporarily switched to {active}. It restores automatically once the original recovers.',
+    'The default model {original} is currently unavailable; temporarily switched to {active}. It restores automatically once the original recovers.',
   colAction: 'Actions',
   actionStart: 'Start',
   startUnavailable: 'This employee is not published yet and cannot be used.',

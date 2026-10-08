@@ -314,7 +314,7 @@ export function Models({
       title: t('colTestState'),
       key: 'test',
       width: 170,
-      render: (_: unknown, model: AdminModel) => <HealthStateCell model={model} t={t} />,
+      render: (_: unknown, model: AdminModel) => <HealthStateCell model={model} />,
     },
     {
       title: translate(language, 'actions'),
@@ -534,13 +534,7 @@ const HEALTH_PRESENTATION: Record<string, { color: string; copy: Parameters<type
 
 // HealthStateCell renders the active-probe verdict: endpoint reachability,
 // credential validity, and upstream model availability.
-function HealthStateCell({
-  model,
-  t,
-}: {
-  model: AdminModel & ModelHealthFields;
-  t: (key: Parameters<typeof modelsT>[0]) => string;
-}) {
+function HealthStateCell({ model }: { model: AdminModel & ModelHealthFields }) {
   const presentation = HEALTH_PRESENTATION[model.healthStatus ?? 'unknown'] ?? {
     color: 'default',
     copy: 'healthUnknown' as const,

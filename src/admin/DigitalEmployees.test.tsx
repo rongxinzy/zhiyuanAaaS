@@ -147,9 +147,13 @@ describe('admin digital employees', () => {
       });
       render(<DigitalEmployees client={client as never} portal={portal} />);
 
-      expect(await screen.findByText('failover-helper')).toBeInTheDocument();
-      // Exactly the affected row carries the warning tag.
-      expect(screen.getAllByText('故障切换')).toHaveLength(1);
+      await screen.findByText('failover-helper');
+      // Pin the tag to the affected row (a count alone would miss an
+      // inverted render condition).
+      const affected = screen.getByText('切换助手').closest('tr')!;
+      const healthy = screen.getByText('销售助理').closest('tr')!;
+      expect(within(affected).getByText('故障切换')).toBeInTheDocument();
+      expect(within(healthy).queryByText('故障切换')).toBeNull();
     },
     TIMEOUT,
   );
