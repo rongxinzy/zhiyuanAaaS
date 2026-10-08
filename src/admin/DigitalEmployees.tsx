@@ -30,12 +30,13 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
 import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
-  chatUIBaseURL,
+  EMPLOYEE_NAME_PATTERN,
   type PortalApplyInput,
   PortalClient,
   type PortalDepartment,
@@ -54,10 +55,6 @@ const DigitalEmployeesTab = {
   Requests: 'requests',
 } as const;
 type DigitalEmployeesTab = (typeof DigitalEmployeesTab)[keyof typeof DigitalEmployeesTab];
-
-// Mirrors the portal's own apply-time validation (portal/api.go namePattern):
-// keep both in step or the server rejects with a 400 the UI could have caught.
-const EMPLOYEE_NAME_PATTERN = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
 
 export function DigitalEmployees({
   client,
@@ -128,45 +125,14 @@ function wecomTag(employee: PortalEmployee) {
   return employee.channels?.wecom ? <Tag variant="filled">{translate(language, 'wecomBadge')}</Tag> : null;
 }
 
-// Popup blockers routinely reject window.open calls made after an await,
-// and a click that dispatched the call is not evidence the conversation
-// opened. When the automatic open does not succeed, the console surfaces a
-// state-specific handoff: with a minted session a plain token-free link the
-// user can click, otherwise clear feedback plus retry. The access token is
-// handed to the portal at most once and is never rendered or logged.
-type ChatHandoff =
-  | { readonly employee: PortalEmployee; readonly kind: 'blocked' }
-  | { readonly employee: PortalEmployee; readonly kind: 'blocked-no-session' }
-  | { readonly employee: PortalEmployee; readonly kind: 'no-session' };
-
 // The portal authorizes every call (owner or admin); the console renders
 // whatever the portal returns, surfacing failures as inline alerts.
 function EmployeePanel({ portal, client }: { readonly portal: PortalClient; readonly client: AdminConsoleClient }) {
   const [selected, setSelected] = useState<PortalEmployee | null>(null);
-  const [handoff, setHandoff] = useState<ChatHandoff | null>(null);
-
-  // Silent handoff: mint the portal session and select the employee in the
-  // background (cookies land on the shared host), then open the chat UI in a
-  // new tab — no portal entry page flashing in between. Falls back to the
-  // fragment-token handoff when the background mint fails.
-  const openChat = async (employee: PortalEmployee) => {
-    setHandoff(null);
-    if (await portal.mintChatSession(employee.name)) {
-      const opened = window.open(`${chatUIBaseURL()}/workspace`, '_blank', 'noopener');
-      if (opened) return;
-      setHandoff({ employee, kind: 'blocked' });
-      return;
-    }
-    const token = await client.getAccessToken();
-    if (!token) {
-      setHandoff({ employee, kind: 'no-session' });
-      return;
-    }
-    const href = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}#token=${encodeURIComponent(token)}`;
-    const opened = window.open(href, '_blank', 'noopener');
-    if (opened) return;
-    setHandoff({ employee, kind: 'blocked-no-session' });
-  };
+  // Silent handoff (shared with the workbench): mint the portal session in
+  // the background, then open the chat UI in a new tab, with the
+  // popup-blocked fallbacks handled by the modal.
+  const { handoff, openChat, retry, close } = useChatHandoff({ client, portal });
 
   return (
     <>
@@ -182,58 +148,8 @@ function EmployeePanel({ portal, client }: { readonly portal: PortalClient; read
       ) : (
         <EmployeeList client={client} portal={portal} onSelected={setSelected} onChat={openChat} />
       )}
-      <ChatHandoffModal
-        handoff={handoff}
-        onRetry={() => {
-          if (handoff) void openChat(handoff.employee);
-        }}
-        onClose={() => setHandoff(null)}
-      />
+      <ChatHandoffModal handoff={handoff} onRetry={retry} onClose={close} />
     </>
-  );
-}
-
-function ChatHandoffModal({
-  handoff,
-  onRetry,
-  onClose,
-}: {
-  readonly handoff: ChatHandoff | null;
-  readonly onRetry: () => void;
-  readonly onClose: () => void;
-}) {
-  return (
-    <Modal open={handoff !== null} title={t('chatBlockedTitle')} footer={null} onCancel={onClose} destroyOnHidden>
-      {handoff?.kind === 'blocked' ? (
-        <>
-          <Alert type="info" showIcon title={t('chatBlockedMinted')} style={{ marginBottom: 16 }} />
-          <Button
-            type="primary"
-            icon={<MessageOutlined />}
-            href={`${chatUIBaseURL()}/workspace`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {t('chatOpenLink')}
-          </Button>
-        </>
-      ) : handoff ? (
-        <>
-          <Alert
-            type={handoff.kind === 'no-session' ? 'error' : 'warning'}
-            showIcon
-            title={handoff.kind === 'no-session' ? t('chatNoSession') : t('chatBlockedFallback')}
-            style={{ marginBottom: 16 }}
-          />
-          <Space>
-            <Button type="primary" onClick={onRetry}>
-              {t('chatRetry')}
-            </Button>
-            <Button onClick={onClose}>{translate(language, 'cancel')}</Button>
-          </Space>
-        </>
-      ) : null}
-    </Modal>
   );
 }
 
