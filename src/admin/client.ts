@@ -574,6 +574,18 @@ export class AdminConsoleClient {
     await this.#requireClient().resetUserPassword(userId, input);
   }
 
+  // Self-service change on a restricted (passwordChangeRequired) session; the
+  // SDK stores the rotated unrestricted tokens before the identity is reloaded.
+  async changePassword(input: {
+    readonly currentPassword: string;
+    readonly newPassword: string;
+  }): Promise<AdminSession> {
+    const client = this.#requireClient();
+    const tokens = await client.changePassword(input.currentPassword, input.newPassword);
+    this.#sessionId = tokens.sessionId ?? null;
+    return this.#identitySession(client);
+  }
+
   async replaceUserRBAC(
     userId: string,
     input: { readonly roleIds: readonly string[]; readonly teamIds: readonly string[] },

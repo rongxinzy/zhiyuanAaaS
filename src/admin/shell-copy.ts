@@ -33,6 +33,8 @@ const copy = {
     licenses: '产品授权',
     signIn: '登录企业管理后台',
     signInHint: '使用企业账号登录，按已获权限管理用户、数字员工和服务。',
+    passwordChangeTitle: '设置新密码后继续',
+    passwordChangeHint: '当前账号被要求首次登录时修改密码。设置新密码后即可进入管理后台。',
     signOut: '退出登录',
     switchAccount: '切换账号',
     forbidden: '没有管理权限',
@@ -98,6 +100,9 @@ const copy = {
     licenses: 'License',
     signIn: 'Sign in to enterprise administration',
     signInHint: 'Manage users, digital employees and services with your authorized enterprise account.',
+    passwordChangeTitle: 'Set a new password to continue',
+    passwordChangeHint:
+      'Your account requires a password change on first sign-in. Set a new password to enter the console.',
     signOut: 'Sign out',
     switchAccount: 'Switch account',
     forbidden: 'Access denied',

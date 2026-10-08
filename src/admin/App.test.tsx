@@ -291,4 +291,58 @@ describe('Ant Design admin shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '管理后台' }));
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
+  test('forces a password change before entering the console when the session requires it', async () => {
+    const changePassword = vi
+      .spyOn(AdminConsoleClient.prototype, 'changePassword')
+      .mockResolvedValue({ status: 'authenticated', identity: administratorIdentity });
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, passwordChangeRequired: true },
+    });
+    render(<AdminApp />);
+    expect(await screen.findByRole('heading', { name: '设置新密码后继续' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'temporary-password-1' } });
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-123' } });
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await waitFor(() =>
+      expect(changePassword).toHaveBeenCalledWith({
+        currentPassword: 'temporary-password-1',
+        newPassword: 'new-password-123',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
+    // Let pending antd Button loading frames settle before teardown; stragglers
+    // touch `window` after jsdom is gone and fail loaded CI runners as
+    // unhandled errors.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+  });
+  test('blocks a mismatched confirmation and keeps the forced change form on failure', async () => {
+    const changePassword = vi
+      .spyOn(AdminConsoleClient.prototype, 'changePassword')
+      .mockRejectedValue(new Error('denied'));
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, passwordChangeRequired: true },
+    });
+    render(<AdminApp />);
+    fireEvent.change(await screen.findByLabelText('当前密码'), { target: { value: 'temporary-password-1' } });
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-123' } });
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-456' } });
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await screen.findAllByText('两次输入的新密码不一致。');
+    expect(changePassword).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('密码修改失败');
+    expect(screen.getByRole('heading', { name: '设置新密码后继续' })).toBeInTheDocument();
+    // Same settle flush as the success path: keep antd Button loading frames
+    // inside the live jsdom window.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+  });
 });
