@@ -58,6 +58,8 @@ export interface ProviderConfig {
   models?: Array<{
     id: string;
     name: string;
+    /** Per-model endpoint override (e.g. managed gateway per-model route prefixes). */
+    baseUrl?: string;
     supportsImage?: boolean;
     capabilities?: Partial<ModelCapabilities>;
     contextWindow?: number;
@@ -171,7 +173,8 @@ export interface ZhiyuanManagedProviderSource {
 }
 
 export interface ZhiyuanManagedProviderHostCapability {
-  readonly apiVersion: typeof ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION;
+  /** Negotiated host version: any version >= ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION is accepted. */
+  readonly apiVersion: number;
   registerSource(source: ZhiyuanManagedProviderSource): () => void;
 }
 

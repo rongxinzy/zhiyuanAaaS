@@ -117,11 +117,16 @@ export class ZhiyuanPasswordSession {
       return Promise.reject(error);
     }
     return this.#enqueue(async () => {
-      // Metadata is fetched with the current client; discovery may surface
-      // the split agent-control endpoint, which the rebuild then targets.
-      const deploymentId = await this.#resolveDeploymentId();
+      // Re-target the entered server before discovery: metadata must come
+      // from the deployment the user typed, not the previously configured
+      // one. `undefined` keeps the current agent-control target until
+      // discovery re-confirms it for this base URL.
       if (this.#clientFactory) {
-        this.#client = this.#clientFactory(aepBaseUrl, this.#discoveredAgentControlBaseUrl ?? undefined);
+        this.#client = this.#clientFactory(aepBaseUrl, undefined);
+      }
+      const deploymentId = await this.#resolveDeploymentId();
+      if (this.#clientFactory && this.#discoveredAgentControlBaseUrl) {
+        this.#client = this.#clientFactory(aepBaseUrl, this.#discoveredAgentControlBaseUrl);
       }
       const tokens = await this.#client.loginWithPassword({
         deploymentId,

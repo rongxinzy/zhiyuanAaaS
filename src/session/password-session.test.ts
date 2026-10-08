@@ -307,13 +307,8 @@ function identity(): CurrentIdentity {
 }
 
 describe('agent control endpoint discovery', () => {
-  test('targets the advertised agent-control URL when rebuilding at login', async () => {
-    const initialClient = mockClient({
-      getMetadata: vi.fn(async () => ({
-        ...metadata(),
-        agentControl: { baseUrl: 'https://agents.customer.example' },
-      })),
-    });
+  test('discovers metadata from the entered server, not the previously configured one', async () => {
+    const initialClient = mockClient();
     const loginClient = mockClient();
     const factoryCalls: Array<{ baseUrl: string; agentControlBaseUrl?: string | undefined }> = [];
     const session = new ZhiyuanPasswordSession(initialClient, (baseUrl, agentControlBaseUrl) => {
@@ -324,7 +319,30 @@ describe('agent control endpoint discovery', () => {
     await expect(
       session.login({ aepBaseUrl: 'https://aep.customer.example', username: 'admin', password: 'secret' }),
     ).resolves.toMatchObject({ status: 'authenticated' });
+    expect(initialClient.getMetadata).not.toHaveBeenCalled();
+    expect(loginClient.getMetadata).toHaveBeenCalledOnce();
+    expect(factoryCalls).toEqual([{ baseUrl: 'https://aep.customer.example', agentControlBaseUrl: undefined }]);
+  });
+
+  test('targets the advertised agent-control URL when rebuilding at login', async () => {
+    const initialClient = mockClient();
+    const loginClient = mockClient({
+      getMetadata: vi.fn(async () => ({
+        ...metadata(),
+        agentControl: { baseUrl: 'https://agents.customer.example' },
+      })),
+    });
+    const factoryCalls: Array<{ baseUrl: string; agentControlBaseUrl?: string | undefined }> = [];
+    const session = new ZhiyuanPasswordSession(initialClient, (baseUrl, agentControlBaseUrl) => {
+      factoryCalls.push({ baseUrl, agentControlBaseUrl });
+      return loginClient;
+    });
+
+    await expect(
+      session.login({ aepBaseUrl: 'https://aep.customer.example', username: 'admin', password: 'secret' }),
+    ).resolves.toMatchObject({ status: 'authenticated' });
     expect(factoryCalls).toEqual([
+      { baseUrl: 'https://aep.customer.example', agentControlBaseUrl: undefined },
       { baseUrl: 'https://aep.customer.example', agentControlBaseUrl: 'https://agents.customer.example' },
     ]);
     expect(loginClient.loginWithPassword).toHaveBeenCalledOnce();
