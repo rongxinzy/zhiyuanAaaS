@@ -84,7 +84,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
     }
     if (
       managedProviderCapability &&
-      managedProviderCapability.apiVersion !== ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION
+      managedProviderCapability.apiVersion < ZHIYUAN_MANAGED_PROVIDER_CAPABILITY_API_VERSION
     ) {
       throw new Error('Zhiyuan managed provider capability API version is not supported.');
     }
@@ -103,6 +103,7 @@ export class ZhiyuanAaaSExtension implements ZhiyuanEnterpriseExtension {
       if (managedProviderCapability) {
         this.#unregisterManagedProvider = managedProviderCapability.registerSource(
           new ZhiyuanModelProvider(session, {
+            hostManagedProviderApiVersion: managedProviderCapability.apiVersion,
             getEntitlementToken: () => runtime.licenseActivation?.entitlement()?.entitlementToken ?? null,
             requireEntitlement: runtime.licenseActivation !== null && runtime.licenseActivation !== undefined,
             ...(runtime.licenseActivation
