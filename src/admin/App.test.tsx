@@ -36,6 +36,14 @@ describe('Ant Design admin shell', () => {
     window.location.hash = '';
     vi.spyOn(PortalClient.prototype, 'listEmployees').mockResolvedValue([]);
     vi.spyOn(PortalClient.prototype, 'listRequests').mockResolvedValue([]);
+    vi.spyOn(PortalClient.prototype, 'myRequests').mockResolvedValue([]);
+    vi.spyOn(PortalClient.prototype, 'me').mockResolvedValue({
+      user: { id: 'user-1', displayName: '张三', kind: 'human' },
+      teams: [],
+      quota: { limit: 2, used: 0, owned: 0, pending: 0 },
+      policyMode: 'approval',
+      defaultModel: 'bench-glm',
+    });
     localStorage.clear();
     vi.spyOn(AdminConsoleClient.prototype, 'restore').mockResolvedValue({
       status: 'signed-out',
@@ -183,14 +191,40 @@ describe('Ant Design admin shell', () => {
     await waitFor(() => expect(AdminConsoleClient.prototype.overview).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText('暂无法获取')).not.toBeInTheDocument());
   });
-  test('allows forbidden users to clear session and switch account', async () => {
+  test('routes forbidden users into the workbench instead of a 403 wall', async () => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
       status: 'forbidden',
       identity: administratorIdentity,
     });
     render(<AdminApp />);
-    fireEvent.click(await screen.findByRole('button', { name: '切换账号' }));
+    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    expect(screen.queryByText('没有管理权限')).not.toBeInTheDocument();
+    // No admin sidebar for employees.
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#workbench'));
+    // Signing out from the workbench header returns to the login screen.
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     expect(await screen.findByRole('heading', { name: '登录企业管理后台' })).toBeInTheDocument();
     expect(AdminConsoleClient.prototype.logout).toHaveBeenCalledOnce();
+  });
+  test('funnels admin deep links into the workbench for forbidden users', async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'forbidden',
+      identity: administratorIdentity,
+    });
+    window.location.hash = 'employees';
+    render(<AdminApp />);
+    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#workbench'));
+  });
+  test('lets administrators switch between the console and the workbench', async () => {
+    authenticated();
+    render(<AdminApp />);
+    await screen.findByRole('heading', { name: '概览' });
+    fireEvent.click(screen.getByRole('button', { name: '工作台' }));
+    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#workbench');
+    fireEvent.click(screen.getByRole('button', { name: '管理后台' }));
+    expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
 });
