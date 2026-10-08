@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { PortalClient, PortalError } from './portal.js';
+import { isSessionExpired, PortalClient, PortalError } from './portal.js';
 
 function stubFetch(status: number, body: unknown) {
   const fetchMock = vi
@@ -298,6 +298,151 @@ describe('portal client departments and lifecycle', () => {
 
     stubFetch(200, { configured: true, healthy: true, knowledgeBases: [] });
     await expect(client().knowledgeStatus()).resolves.toMatchObject({ configured: true });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('workbench client surface', () => {
+  function client() {
+    return new PortalClient(async () => 'aep-token');
+  }
+
+  test('parses /me with named teams and quota', async () => {
+    const fetchMock = stubFetch(200, {
+      user: { id: 'user-1', displayName: '张三', kind: 'human' },
+      teams: [
+        { id: 'sales-dept', name: '销售部' },
+        { id: 'ghost', name: '' },
+      ],
+      quota: { limit: 2, used: 1, owned: 1, pending: 0 },
+      policyMode: 'approval',
+      defaultModel: 'bench-glm',
+    });
+    const me = await client().me();
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/me');
+    expect(me).toEqual({
+      user: { id: 'user-1', displayName: '张三', kind: 'human' },
+      teams: [
+        { id: 'sales-dept', name: '销售部' },
+        { id: 'ghost', name: '' },
+      ],
+      quota: { limit: 2, used: 1, owned: 1, pending: 0 },
+      policyMode: 'approval',
+      defaultModel: 'bench-glm',
+    });
+    vi.unstubAllGlobals();
+  });
+
+  test('myRequests hits the own-requests endpoint with the state filter', async () => {
+    const fetchMock = stubFetch(200, {
+      requests: [
+        {
+          id: 'req-1',
+          employeeName: 'sales-helper',
+          owner: '张三',
+          displayName: '销售数据助理',
+          state: 'approved',
+          reason: '',
+          createdAt: '2026-10-08T02:00:00Z',
+          deploy: { exists: true, phase: 'Ready' },
+        },
+      ],
+    });
+    const requests = await client().myRequests('approved');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/requests/mine?state=approved');
+    expect(requests[0]).toMatchObject({
+      id: 'req-1',
+      state: 'approved',
+      deploy: { exists: true, phase: 'Ready' },
+    });
+    vi.unstubAllGlobals();
+
+    const all = stubFetch(200, { requests: [] });
+    await client().myRequests();
+    expect(all.mock.calls[0]![0]).toBe('/api/v1/requests/mine');
+    vi.unstubAllGlobals();
+  });
+
+  test('getRequest parses the decoded detail and surfaces 404', async () => {
+    stubFetch(200, {
+      request: {
+        id: 'req-9',
+        employeeName: 'sales-helper',
+        displayName: '销售数据助理',
+        ownerId: 'user-1',
+        owner: '张三',
+        state: 'pending',
+        reason: '',
+        createdAt: '2026-10-08T02:00:00Z',
+        decidedAt: null,
+        decidedBy: '',
+        decidedByName: '',
+        description: '整理销售数据。',
+        teamId: 'sales-dept',
+        teamName: '销售部',
+        note: '仅使用销售团队可见资料。',
+        model: 'bench-glm',
+        deploy: { exists: false, phase: '', message: '' },
+      },
+    });
+    const detail = await client().getRequest('req-9');
+    expect(detail).toMatchObject({
+      id: 'req-9',
+      state: 'pending',
+      decidedAt: null,
+      teamName: '销售部',
+      note: '仅使用销售团队可见资料。',
+      deploy: { exists: false, phase: '' },
+    });
+    vi.unstubAllGlobals();
+
+    stubFetch(404, { error: 'request req-x not found' });
+    const failure = await client()
+      .getRequest('req-x')
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PortalError);
+    expect(isSessionExpired(failure)).toBe(false);
+    expect(isSessionExpired(new PortalError(401, 'expired'))).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  test('parses accessReason on roster rows and tolerates its absence', async () => {
+    stubFetch(200, {
+      employees: [
+        {
+          name: 'sales-helper',
+          phase: 'Ready',
+          accessReason: { kind: 'team', teamId: 'sales-dept', teamName: '销售部' },
+        },
+        { name: 'legacy-helper', phase: 'Ready' },
+      ],
+    });
+    const employees = await client().listEmployees();
+    expect(employees[0]!.accessReason).toEqual({ kind: 'team', teamId: 'sales-dept', teamName: '销售部' });
+    expect(employees[1]!.accessReason).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  test('apply sends the note only when present and returns the parked request id', async () => {
+    const fetchMock = stubFetch(202, { policy: '需管理员审批', request: { id: 'req-42', state: 'pending' } });
+    const result = await client().apply({
+      name: 'sales-data-assistant',
+      displayName: '销售数据助理',
+      description: '整理销售数据。',
+      team: 'sales-dept',
+      visibility: { mode: 'restricted', teams: ['sales-dept'] },
+      note: '仅使用销售团队可见资料。',
+    });
+    expect(result).toEqual({ kind: 'pending', message: '需管理员审批', requestId: 'req-42' });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body.note).toBe('仅使用销售团队可见资料。');
+    expect(body.visibility).toEqual({ mode: 'restricted', teams: ['sales-dept'] });
+    vi.unstubAllGlobals();
+
+    const withoutNote = stubFetch(201, {});
+    await client().apply({ name: 'a', displayName: 'A', description: 'd', team: 'rd-dept' });
+    const bare = JSON.parse((withoutNote.mock.calls[0]![1] as RequestInit).body as string) as Record<string, unknown>;
+    expect('note' in bare).toBe(false);
     vi.unstubAllGlobals();
   });
 });
