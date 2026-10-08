@@ -561,16 +561,11 @@ function ForcedPasswordChange({
           layout="vertical"
           requiredMark={false}
           disabled={pending}
-          onFinish={async (values: { currentPassword: string; newPassword: string; confirmNewPassword: string }) => {
+          onFinish={async (values: { newPassword: string; confirmNewPassword: string }) => {
             setPending(true);
             setFailed(false);
             try {
-              onChanged(
-                await client.changePassword({
-                  currentPassword: values.currentPassword,
-                  newPassword: values.newPassword,
-                }),
-              );
+              onChanged(await client.changePassword({ newPassword: values.newPassword }));
             } catch {
               setFailed(true);
             } finally {
@@ -578,13 +573,6 @@ function ForcedPasswordChange({
             }
           }}
         >
-          <Form.Item
-            label={t('currentPassword')}
-            name="currentPassword"
-            rules={[{ required: true, message: t('requiredFields') }]}
-          >
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
           <Form.Item
             label={t('newPassword')}
             name="newPassword"

@@ -334,14 +334,10 @@ describe('admin session client identity', () => {
     const { client, requests } = await signedInClient({
       'POST /aep/v1/auth/password/change': { body: rotated },
     });
-    const session = await client.changePassword({
-      currentPassword: 'temporary-password-1',
-      newPassword: 'new-password-123',
-    });
+    const session = await client.changePassword({ newPassword: 'new-password-123' });
     expect(session.status).toBe('authenticated');
     expect(client.sessionId).toBe('rotated-session');
     expect(requests.find((request) => request.path === '/aep/v1/auth/password/change')?.body).toEqual({
-      currentPassword: 'temporary-password-1',
       newPassword: 'new-password-123',
     });
   });

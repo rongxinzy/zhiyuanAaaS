@@ -1841,16 +1841,16 @@ function SelfPasswordChangeModal({
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
-  const [form] = Form.useForm<{ currentPassword: string; newPassword: string; confirmNewPassword: string }>();
+  const [form] = Form.useForm<{ newPassword: string; confirmNewPassword: string }>();
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const submit = async (values: { currentPassword: string; newPassword: string }) => {
+  const submit = async (values: { newPassword: string }) => {
     setPending(true);
     setFailed(false);
     try {
       // The self-service endpoint rotates this console session in place; the
       // admin reset endpoint would revoke it and sign the operator out.
-      await client.changePassword({ currentPassword: values.currentPassword, newPassword: values.newPassword });
+      await client.changePassword({ newPassword: values.newPassword });
       onOpenChange(false);
       notify(AdminNotificationKind.Success, t('passwordChangeSucceeded'));
     } catch {
@@ -1875,13 +1875,6 @@ function SelfPasswordChangeModal({
       <Typography.Paragraph type="secondary">{t('selfPasswordChangeDescription')}</Typography.Paragraph>
       {failed ? <Alert type="error" showIcon title={t('passwordChangeFailed')} style={{ marginBottom: 16 }} /> : null}
       <Form form={form} layout="vertical" preserve={false} autoComplete="off" onFinish={submit}>
-        <Form.Item
-          name="currentPassword"
-          label={t('currentPassword')}
-          rules={[{ required: true, message: t('requiredFields') }]}
-        >
-          <Input.Password autoComplete="current-password" disabled={pending} />
-        </Form.Item>
         <Form.Item
           name="newPassword"
           label={t('newPassword')}
