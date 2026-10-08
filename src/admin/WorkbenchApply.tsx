@@ -33,6 +33,15 @@ type ApplyFormValues = {
   note?: string;
 };
 
+// Friendly label for the violation fields a submitter can realistically
+// trigger; unrecognized keys fall back to the message alone so internal
+// field names (visibility.teams[0], …) never render in front of employees.
+function violationLabel(field: string): string | null {
+  if (field === 'models') return t('fieldModels');
+  if (field.startsWith('visibility')) return t('labelScope');
+  return null;
+}
+
 export function WorkbenchApply({
   portal,
   navigate,
@@ -105,6 +114,12 @@ export function WorkbenchApply({
         else navigate('workbench/requests');
         return;
       }
+      if (result.status === 401) {
+        // The session expired while the form was open: show the localized
+        // sign-in-again prompt instead of the portal's raw 401 body.
+        setSubmitFailed(t('sessionExpired'));
+        return;
+      }
       if (result.violations?.length) {
         const fieldMap: Record<string, keyof ApplyFormValues> = {
           name: 'name',
@@ -154,11 +169,10 @@ export function WorkbenchApply({
           title={t('violationsTitle')}
           description={
             <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-              {violations.map((violation, index) => (
-                <li key={index}>
-                  {violation.field === 'models' ? t('fieldModels') : violation.field}：{violation.message}
-                </li>
-              ))}
+              {violations.map((violation, index) => {
+                const label = violationLabel(violation.field);
+                return <li key={index}>{label ? `${label}：${violation.message}` : violation.message}</li>;
+              })}
             </ul>
           }
           style={{ marginBottom: 16 }}
@@ -257,6 +271,12 @@ export function WorkbenchSubmitted({
   const [revision, refresh] = useState(0);
 
   useEffect(() => {
+    if (!requestId) {
+      // Truncated deep link (#workbench/submitted without an id): show the
+      // not-found state instead of requesting /api/v1/requests/.
+      setNotFound(true);
+      return;
+    }
     let live = true;
     setNotFound(false);
     setFailed(false);

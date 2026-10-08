@@ -125,10 +125,11 @@ describe('workbench apply form', () => {
         apply: vi.fn().mockResolvedValue({
           kind: 'rejected',
           status: 400,
-          message: '发布条件校验未通过（2 项）',
+          message: '发布条件校验未通过（3 项）',
           violations: [
             { field: 'team', message: '团队 rd-dept 不存在' },
             { field: 'models', message: '平台默认模型 bench-glm 当前不可用' },
+            { field: 'visibility.teams[0]', message: '团队 ghost 不存在' },
           ],
         }),
       }),
@@ -138,7 +139,24 @@ describe('workbench apply form', () => {
 
     expect(await screen.findByText('团队 rd-dept 不存在')).toBeInTheDocument();
     expect(screen.getByText(/平台默认模型 bench-glm 当前不可用/)).toBeInTheDocument();
+    // Unanchored violations render with a friendly label and never leak the
+    // internal field path (visibility.teams[0]) to the employee.
+    expect(screen.getByText('期望服务对象：团队 ghost 不存在')).toBeInTheDocument();
+    expect(screen.queryByText(/visibility\.teams/)).not.toBeInTheDocument();
     expect(screen.getByText('请修正以下问题：')).toBeInTheDocument();
+  });
+
+  test('turns an expired-session apply into the localized re-login prompt', async () => {
+    renderApply(
+      workbenchPortal({
+        apply: vi.fn().mockResolvedValue({ kind: 'rejected', status: 401, message: 'missing bearer token or session' }),
+      }),
+    );
+    await fillBasics();
+    fireEvent.click(screen.getByRole('button', { name: '提交申请' }));
+
+    expect(await screen.findByText('登录状态已过期，请重新登录后再操作。')).toBeInTheDocument();
+    expect(screen.queryByText('missing bearer token or session')).not.toBeInTheDocument();
   });
 
   test('shows the server message for conflicts that carry no violations', async () => {
@@ -214,5 +232,13 @@ describe('workbench submitted page', () => {
     expect(await screen.findByText('已通过')).toBeInTheDocument();
     expect(screen.getByText(/审批人：李四/)).toBeInTheDocument();
     expect(screen.getAllByText('已发布').length).toBeGreaterThan(0);
+  });
+
+  test('renders not-found for a truncated submitted link without fetching', async () => {
+    const getRequest = vi.fn();
+    render(<WorkbenchSubmitted portal={workbenchPortal({ getRequest })} requestId="" navigate={vi.fn()} />);
+
+    expect(await screen.findByText('申请不存在或无权查看。')).toBeInTheDocument();
+    expect(getRequest).not.toHaveBeenCalled();
   });
 });
