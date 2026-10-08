@@ -151,6 +151,9 @@ const translations = {
     changePassword: '修改密码',
     passwordChangeFailed: '密码修改失败，请确认当前密码正确且新密码符合要求后重试。',
     passwordChangePolicy: '新密码需要 12 到 1024 个字符。',
+    changePasswordTitle: '修改我的密码',
+    selfPasswordChangeDescription: '修改当前登录账号的密码，修改成功后当前会话保持有效。',
+    passwordChangeSucceeded: '密码已修改。',
     unavailable: '企业服务暂时不可用，请稍后重试。',
     accessDeniedTitle: '没有管理权限',
     accessDeniedDescription: '当前账号没有企业控制台所需的管理员角色。',
@@ -774,6 +777,10 @@ const translations = {
     passwordChangeFailed:
       'The password could not be changed. Check your current password and the new password requirements, then try again.',
     passwordChangePolicy: 'The new password must contain 12 to 1024 characters.',
+    changePasswordTitle: 'Change my password',
+    selfPasswordChangeDescription:
+      'Change the password of the account you are signed in with. Your current session stays active.',
+    passwordChangeSucceeded: 'Password changed.',
     unavailable: 'The enterprise service is unavailable. Try again later.',
     accessDeniedTitle: 'Administrator access required',
     accessDeniedDescription: 'This account does not have an administrator role.',
