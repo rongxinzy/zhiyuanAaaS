@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { type PortalEmployee, PortalError, type PortalMe } from './portal.js';
 import { workbenchClient, workbenchIdentity, workbenchMe, workbenchPortal } from './test-fixtures.js';
@@ -48,6 +48,33 @@ function renderWorkbench(portal = workbenchPortal(), overrides: Record<string, u
 }
 
 describe('workbench shell and roster', () => {
+  test('an active model failover is warned on the affected roster row', async () => {
+    const portal = workbenchPortal({
+      listEmployees: vi.fn().mockResolvedValue([
+        employee({
+          name: 'sales-helper',
+          displayName: '销售助理',
+          modelFailover: {
+            original: 'bench-qwen38-fast',
+            active: 'bench-qwen',
+            switchedAt: '2026-10-08T12:30:00Z',
+          },
+        }),
+        employee({ name: 'calm-helper', displayName: '稳定助理' }),
+      ]),
+    });
+    renderWorkbench(portal);
+
+    await screen.findByText('销售助理');
+    // Pin the warning to the affected row: counting matches alone would not
+    // catch an inverted render condition (warning on the healthy row).
+    const affected = screen.getByText('销售助理').closest('tr')!;
+    const healthy = screen.getByText('稳定助理').closest('tr')!;
+    expect(within(affected).getByText('备用模型运行中')).toBeInTheDocument();
+    expect(within(healthy).queryByText('备用模型运行中')).toBeNull();
+  });
+
+
   test('renders purposes, access reasons and phases from the roster API', async () => {
     const portal = workbenchPortal({
       me: vi.fn().mockResolvedValue({

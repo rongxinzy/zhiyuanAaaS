@@ -406,6 +406,31 @@ describe('workbench client surface', () => {
     vi.unstubAllGlobals();
   });
 
+  test('parses modelFailover on roster rows and normalizes null/absent', async () => {
+    stubFetch(200, {
+      employees: [
+        {
+          name: 'failover-helper',
+          phase: 'Ready',
+          modelFailover: { original: 'bench-qwen38-fast', active: 'bench-qwen', switchedAt: '2026-10-08T12:30:00Z' },
+        },
+        { name: 'calm-helper', phase: 'Ready', modelFailover: null },
+        { name: 'legacy-helper', phase: 'Ready' },
+        { name: 'broken-helper', phase: 'Ready', modelFailover: { original: 'only-original' } },
+      ],
+    });
+    const employees = await client().listEmployees();
+    expect(employees[0]!.modelFailover).toEqual({
+      original: 'bench-qwen38-fast',
+      active: 'bench-qwen',
+      switchedAt: '2026-10-08T12:30:00Z',
+    });
+    expect(employees[1]!.modelFailover).toBeNull();
+    expect(employees[2]!.modelFailover).toBeNull();
+    expect(employees[3]!.modelFailover).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
   test('parses accessReason on roster rows and tolerates its absence', async () => {
     stubFetch(200, {
       employees: [

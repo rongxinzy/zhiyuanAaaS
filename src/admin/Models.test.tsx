@@ -334,8 +334,66 @@ describe('admin models', () => {
       expect(await screen.findByText('deepseek-chat')).toBeInTheDocument();
       expect(screen.getByText('状态未知')).toBeInTheDocument();
       expect(screen.queryByText('已应用')).not.toBeInTheDocument();
-      // Detection stays honestly "not tested" — no invocation API exists.
-      expect(screen.getAllByText('未检测').length).toBeGreaterThan(0);
+      // Without probe data the health cell stays honestly "not probed".
+      expect(screen.getAllByText('未探测').length).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'probe health renders per model: healthy, rejected credential, denied access',
+    async () => {
+      const client = {
+        ...makeBaseClient(),
+        models: vi.fn().mockResolvedValue({
+          models: [
+            {
+              id: 'fast',
+              displayName: '主力模型',
+              endpoint: 'http://10.0.0.1:8080/v1',
+              upstreamModel: 'qwen',
+              enabled: true,
+              isDefault: true,
+              healthStatus: 'healthy',
+              healthCheckedAt: '2026-10-08T12:00:00Z',
+              healthDetail: 'upstream catalog lists qwen',
+            },
+            {
+              id: 'stale',
+              displayName: '过期凭据模型',
+              endpoint: 'http://10.0.0.2/v1',
+              upstreamModel: 'glm',
+              enabled: true,
+              isDefault: false,
+              healthStatus: 'credential_invalid',
+              healthCheckedAt: '2026-10-08T12:00:00Z',
+              healthDetail: 'HTTP 401: unauthorized',
+            },
+            {
+              id: 'limited',
+              displayName: '限流模型',
+              endpoint: 'http://10.0.0.3/v1',
+              upstreamModel: 'glm',
+              enabled: true,
+              isDefault: false,
+              healthStatus: 'denied',
+              healthCheckedAt: '2026-10-08T12:00:00Z',
+              healthDetail: 'HTTP 403: slow down',
+            },
+          ],
+          assignments: [],
+        }),
+      };
+      render(<Models client={client as never} identity={administratorIdentity} />);
+
+      await screen.findByText('主力模型');
+      // Pin each verdict to its own row: a plain string match would not
+      // catch a swapped status->copy mapping.
+      const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
+      expect(within(rowOf('主力模型')).getByText('正常')).toBeInTheDocument();
+      expect(within(rowOf('过期凭据模型')).getByText('凭据失效')).toBeInTheDocument();
+      expect(within(rowOf('限流模型')).getByText('访问被拒（可能限流）')).toBeInTheDocument();
+      expect(within(rowOf('主力模型')).queryByText('凭据失效')).toBeNull();
     },
     TIMEOUT,
   );
