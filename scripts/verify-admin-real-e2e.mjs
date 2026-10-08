@@ -567,7 +567,7 @@ async function exerciseAuditReadonly() {
 // Raw route editing and desired-state publishing were removed from the
 // product UI; the configuration page is a read-only sync-status view.
 async function exerciseConfigurationReadonly() {
-  await menuItem('系统管理').click();
+  await menuItem('模型网关').click();
   await tabItem('配置生效详情').click();
   await waitText('版本一致性');
 }
