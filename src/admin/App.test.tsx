@@ -249,6 +249,12 @@ describe('Ant Design admin shell', () => {
       }),
     );
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
+    // Let pending antd Button loading frames settle before teardown; stragglers
+    // touch `window` after jsdom is gone and fail loaded CI runners as
+    // unhandled errors.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
   });
   test('blocks a mismatched confirmation and keeps the forced change form on failure', async () => {
     const changePassword = vi
@@ -269,5 +275,10 @@ describe('Ant Design admin shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('密码修改失败');
     expect(screen.getByRole('heading', { name: '设置新密码后继续' })).toBeInTheDocument();
+    // Same settle flush as the success path: keep antd Button loading frames
+    // inside the live jsdom window.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
   });
 });
