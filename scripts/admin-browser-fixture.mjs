@@ -139,6 +139,11 @@ async function route(method, pathname, rawBody, response, query) {
         reason: '',
         createdAt: new Date().toISOString(),
         deploy: { exists: false, phase: '' },
+        // Round-trip the applicant's own fields so the detail page proves
+        // the apply payload traveled (not a fixture constant).
+        description: input.description ?? '',
+        team: input.team ?? '',
+        note: input.note ?? '',
       };
       state.workbenchRequests.push(parked);
       return writeJson(response, 202, {
@@ -186,10 +191,10 @@ async function route(method, pathname, rawBody, response, query) {
         decidedAt: null,
         decidedBy: '',
         decidedByName: '',
-        description: '整理团队销售数据，辅助制作周报。',
-        teamId: 'sales-dept',
+        description: parked.description || '整理团队销售数据，辅助制作周报。',
+        teamId: parked.team || 'sales-dept',
         teamName: '销售团队',
-        note: '仅使用销售团队可见资料。',
+        note: parked.note || '',
         model: 'bench-glm',
       },
     });

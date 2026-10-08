@@ -90,6 +90,9 @@ try {
   await page.getByRole('button', { name: '查看申请', exact: true }).click();
   await page.getByRole('heading', { name: /申请详情/ }).waitFor();
   await page.getByText('尚未开始', { exact: true }).first().waitFor();
+  // Both fields are echoed from the apply payload (the fixture stores what
+  // was submitted), not from fixture constants.
+  await page.getByText('整理测试数据，辅助生成周报。', { exact: true }).waitFor();
   await page.getByText('仅使用销售团队可见资料。', { exact: true }).waitFor();
   await page.screenshot({
     path: path.join(screenshots, 'workbench-detail.png'),

@@ -84,7 +84,10 @@ describe('workbench shell and roster', () => {
     expect(screen.getByText('部署中')).toBeInTheDocument();
     expect(screen.getByText('休眠中', { exact: false })).toBeInTheDocument();
     // Rows whose employee is not usable yet cannot start a conversation.
-    const startButtons = screen.getAllByRole('button', { name: '开始使用' });
+    // Query by text, not role+name: accessible-name computation over this
+    // tooltip-wrapped table button is pathologically slow under coverage
+    // (measured 24s+ for one query); the assertion stays identical.
+    const startButtons = screen.getAllByText('开始使用').map((el) => el.closest('button')!);
     expect(startButtons).toHaveLength(3);
     expect(startButtons[0]).toBeEnabled();
     expect(startButtons[1]).toBeDisabled();
@@ -98,7 +101,7 @@ describe('workbench shell and roster', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue({} as Window);
     renderWorkbench(portal);
 
-    fireEvent.click(await screen.findByRole('button', { name: '开始使用' }));
+    fireEvent.click((await screen.findByText('开始使用')).closest('button')!);
 
     await waitFor(() => expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper'));
     expect(open).toHaveBeenCalledWith(expect.stringContaining('/workspace'), '_blank', 'noopener');
