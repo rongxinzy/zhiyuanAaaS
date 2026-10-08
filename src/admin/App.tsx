@@ -32,6 +32,7 @@ import {
   theme,
 } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import { Network } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import {
   AdminConsoleClient,
@@ -83,6 +84,13 @@ const DeploymentSettings = lazy(() =>
 const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
 const Workbench = lazy(() => import('./Workbench.js').then((m) => ({ default: m.Workbench })));
 
+const ModelGatewayRoute = {
+  Page: 'model-gateway',
+  Catalog: 'catalog',
+  Connections: 'connections',
+  Configuration: 'configuration',
+} as const;
+
 const modules = [
   {
     key: 'overview',
@@ -115,6 +123,12 @@ const modules = [
     permissions: [P.UsersRead, P.TeamsRead, P.RolesRead, P.IdentityRead],
   },
   {
+    key: ModelGatewayRoute.Page,
+    label: translate('zh', 'modelGateway'),
+    icon: <Network size={14} aria-hidden="true" />,
+    permissions: [P.ModelsRead, P.CredentialsRead, P.DataPlaneWrite],
+  },
+  {
     key: 'audit',
     label: c.audit,
     icon: <AuditOutlined />,
@@ -124,7 +138,7 @@ const modules = [
     key: 'system',
     label: c.system,
     icon: <SettingOutlined />,
-    permissions: [P.ModelsRead, P.CredentialsRead, P.LicensesRead, P.DataPlaneWrite, P.DeploymentRead],
+    permissions: [P.LicensesRead, P.DeploymentRead],
   },
 ] as const;
 const legacyRoutes: Record<string, string> = {
@@ -132,14 +146,17 @@ const legacyRoutes: Record<string, string> = {
   identity: 'users/accounts',
   'digital-employees': 'employees',
   memory: 'system/services',
-  models: 'system/models',
+  models: ModelGatewayRoute.Page,
   events: 'audit',
   operations: 'system/licenses',
 };
 function readRoute() {
   const raw = window.location.hash.replace(/^#\/?/, '') || 'overview';
-  if (raw === 'system/connections') return 'system/models/connections';
-  if (raw === 'system/configuration') return 'system/models/configuration';
+  if (raw === 'system/connections') return `${ModelGatewayRoute.Page}/${ModelGatewayRoute.Connections}`;
+  if (raw === 'system/configuration') return `${ModelGatewayRoute.Page}/${ModelGatewayRoute.Configuration}`;
+  if (raw === 'system/models' || raw.startsWith('system/models/')) {
+    return raw.replace('system/models', ModelGatewayRoute.Page);
+  }
   if (raw === 'resources/skills') return 'skills';
   const [first = 'overview', ...rest] = raw.split('/');
   return `${legacyRoutes[first] ?? first}${rest.length ? `/${rest.join('/')}` : ''}`;
@@ -305,7 +322,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   // shell (plus a workbench switch in the header); everybody else lands in
   // the employee workbench — no 403 wall.
   const adminAccess = session.status === AdminConsoleStatus.Authenticated;
-  const [page = 'overview', subpage, detailTab] = route.split('/');
+  const [page = 'overview', subpage] = route.split('/');
   if (!adminAccess || page === 'workbench') {
     return (
       <Workbench
@@ -399,14 +416,30 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     case 'audit':
       content = <Events {...props} />;
       break;
-    case 'system':
+    case ModelGatewayRoute.Page:
       content = tabs([
         {
-          key: 'models',
-          label: c.models,
-          permission: [P.ModelsRead, P.CredentialsRead, P.DataPlaneWrite],
-          children: <ModelServices {...props} tab={detailTab} />,
+          key: ModelGatewayRoute.Catalog,
+          label: c.modelList,
+          permission: P.ModelsRead,
+          children: <Models {...props} />,
         },
+        {
+          key: ModelGatewayRoute.Connections,
+          label: c.connections,
+          permission: P.CredentialsRead,
+          children: <Credentials {...props} />,
+        },
+        {
+          key: ModelGatewayRoute.Configuration,
+          label: c.configuration,
+          permission: P.DataPlaneWrite,
+          children: <ConfigurationStatus {...props} />,
+        },
+      ]);
+      break;
+    case 'system':
+      content = tabs([
         {
           key: 'channels',
           label: c.channels,
@@ -489,49 +522,6 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         </Layout.Content>
       </Layout>
     </Layout>
-  );
-}
-
-function ModelServices({
-  client,
-  identity,
-  tab,
-}: {
-  client: AdminConsoleClient;
-  identity: AdminIdentity | undefined;
-  tab: string | undefined;
-}) {
-  const props = { client, identity };
-  const items = [
-    {
-      key: 'catalog',
-      label: c.modelList,
-      permission: P.ModelsRead,
-      children: <Models {...props} />,
-    },
-    {
-      key: 'connections',
-      label: c.connections,
-      permission: P.CredentialsRead,
-      children: <Credentials {...props} />,
-    },
-    {
-      key: 'configuration',
-      label: c.configuration,
-      permission: P.DataPlaneWrite,
-      children: <ConfigurationStatus {...props} />,
-    },
-  ].filter((item) => hasAdminPermission(identity, item.permission));
-  const active = tab ?? items[0]?.key;
-  if (!active || !items.some((item) => item.key === active)) return <Result status="403" title={c.forbidden} />;
-  return (
-    <Tabs
-      type="card"
-      activeKey={active}
-      onChange={(key) => navigate(`system/models/${key}`)}
-      items={items}
-      destroyOnHidden
-    />
   );
 }
 
@@ -697,9 +687,9 @@ function Overview({
     },
     {
       key: 'models',
-      label: c.models,
+      label: t('modelGateway'),
       permission: P.ModelsRead,
-      route: 'system/models',
+      route: ModelGatewayRoute.Page,
     },
   ] as const;
   return (
