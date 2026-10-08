@@ -376,13 +376,11 @@ describe('admin resources', () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /修改密码/ }));
       const modal = await screen.findByRole('dialog');
       expect(within(modal).queryByText('首次登录时要求修改密码')).not.toBeInTheDocument();
-      fireEvent.change(within(modal).getByLabelText('当前密码'), { target: { value: 'current-password-1' } });
       fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: 'fresh-password-12' } });
       fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: 'fresh-password-12' } });
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
       await waitFor(() =>
         expect(client.changePassword).toHaveBeenCalledWith({
-          currentPassword: 'current-password-1',
           newPassword: 'fresh-password-12',
         }),
       );
@@ -407,7 +405,6 @@ describe('admin resources', () => {
       openRowMenu('更多');
       fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }));
       const modal = await screen.findByRole('dialog');
-      fireEvent.change(within(modal).getByLabelText('当前密码'), { target: { value: 'wrong-password-1' } });
       fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: 'fresh-password-12' } });
       fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: 'fresh-password-12' } });
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));

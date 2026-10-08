@@ -144,12 +144,11 @@ const translations = {
     requiredFields: '请填写用户名和密码。',
     signInFailed: '登录失败，请检查账号信息或稍后重试。',
     signInMetadataFailed: '无法获取部署信息，请确认企业管控服务可用后重试。',
-    currentPassword: '当前密码',
     newPassword: '新密码',
     confirmNewPassword: '确认新密码',
     newPasswordMismatch: '两次输入的新密码不一致。',
     changePassword: '修改密码',
-    passwordChangeFailed: '密码修改失败，请确认当前密码正确且新密码符合要求后重试。',
+    passwordChangeFailed: '密码修改失败，请确认新密码符合要求后重试。',
     passwordChangePolicy: '新密码需要 12 到 1024 个字符。',
     changePasswordTitle: '修改我的密码',
     selfPasswordChangeDescription: '修改当前登录账号的密码，修改成功后当前会话保持有效。',
@@ -769,13 +768,11 @@ const translations = {
     signInFailed: 'Sign-in failed. Check your account details or try again later.',
     signInMetadataFailed:
       'Could not retrieve the deployment from the server. Check that the control service is reachable and try again.',
-    currentPassword: 'Current password',
     newPassword: 'New password',
     confirmNewPassword: 'Confirm new password',
     newPasswordMismatch: 'The two new passwords do not match.',
     changePassword: 'Change password',
-    passwordChangeFailed:
-      'The password could not be changed. Check your current password and the new password requirements, then try again.',
+    passwordChangeFailed: 'The password could not be changed. Check the new password requirements and try again.',
     passwordChangePolicy: 'The new password must contain 12 to 1024 characters.',
     changePasswordTitle: 'Change my password',
     selfPasswordChangeDescription:

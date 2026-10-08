@@ -5,6 +5,7 @@ import {
   AEP_PROTOCOL_VERSION,
   AepClient,
   type AepTokenStore,
+  type AepTokens,
   type CredentialAssignment,
   type CredentialAssignmentWrite,
   type CredentialCreate,
@@ -574,14 +575,18 @@ export class AdminConsoleClient {
     await this.#requireClient().resetUserPassword(userId, input);
   }
 
-  // Self-service change on a restricted (passwordChangeRequired) session; the
-  // SDK stores the rotated unrestricted tokens before the identity is reloaded.
-  async changePassword(input: {
-    readonly currentPassword: string;
-    readonly newPassword: string;
-  }): Promise<AdminSession> {
+  // Self-service change on a restricted (passwordChangeRequired) session. The
+  // pinned SDK release still requires a current password, so this call goes
+  // through the handwritten transport path (see #request); the rotated tokens
+  // are stored by hand before the identity is reloaded.
+  async changePassword(input: { readonly newPassword: string }): Promise<AdminSession> {
     const client = this.#requireClient();
-    const tokens = await client.changePassword(input.currentPassword, input.newPassword);
+    const tokens = await this.#request<AepTokens>(client, {
+      method: HttpMethod.Post,
+      path: '/aep/v1/auth/password/change',
+      body: { newPassword: input.newPassword },
+    });
+    await this.#tokenStore.set(tokens);
     this.#sessionId = tokens.sessionId ?? null;
     return this.#identitySession(client);
   }

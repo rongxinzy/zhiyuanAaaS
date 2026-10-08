@@ -302,13 +302,11 @@ describe('Ant Design admin shell', () => {
     render(<AdminApp />);
     expect(await screen.findByRole('heading', { name: '设置新密码后继续' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'temporary-password-1' } });
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-123' } });
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-123' } });
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
     await waitFor(() =>
       expect(changePassword).toHaveBeenCalledWith({
-        currentPassword: 'temporary-password-1',
         newPassword: 'new-password-123',
       }),
     );
@@ -329,8 +327,7 @@ describe('Ant Design admin shell', () => {
       identity: { ...administratorIdentity, passwordChangeRequired: true },
     });
     render(<AdminApp />);
-    fireEvent.change(await screen.findByLabelText('当前密码'), { target: { value: 'temporary-password-1' } });
-    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-123' } });
+    fireEvent.change(await screen.findByLabelText('新密码'), { target: { value: 'new-password-123' } });
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-456' } });
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
     await screen.findAllByText('两次输入的新密码不一致。');
