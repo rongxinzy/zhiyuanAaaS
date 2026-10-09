@@ -541,9 +541,7 @@ function HealthStateCell({ model }: { model: AdminModel & ModelHealthFields }) {
   };
   const lines = [
     t('healthHint'),
-    model.healthCheckedAt
-      ? `${t('healthCheckedAt')}${formatDateTime(model.healthCheckedAt)}`
-      : t('healthNever'),
+    model.healthCheckedAt ? `${t('healthCheckedAt')}${formatDateTime(model.healthCheckedAt)}` : t('healthNever'),
     model.healthDetail ?? undefined,
   ].filter((line): line is string => Boolean(line));
   return (

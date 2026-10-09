@@ -125,7 +125,8 @@ const en: Record<keyof typeof zh, string> = {
   healthError: 'Probe error',
   healthCheckedAt: 'Last probe: ',
   healthNever: 'The prober has not classified this model yet (runs every 2 minutes by default).',
-  healthHint: 'The prober calls the upstream directly: endpoint reachability, credential validity, and upstream model availability.',
+  healthHint:
+    'The prober calls the upstream directly: endpoint reachability, credential validity, and upstream model availability.',
   configPending: 'Pending apply',
   configApplying: 'Applying',
   configApplied: 'Applied',
@@ -173,7 +174,7 @@ const en: Record<keyof typeof zh, string> = {
     'The model-to-employee relationship needs the portal employee API; once wired, employees affected by config changes are listed here.',
   statusAlertTitle: 'Save, apply, and runtime health are judged separately',
   statusAlertDescription:
-    "A successful save only persists configuration; applied requires the gateway-reported revision; \"healthy\" means the probe verified endpoint, credential, and upstream model in its latest round.",
+    'A successful save only persists configuration; applied requires the gateway-reported revision; "healthy" means the probe verified endpoint, credential, and upstream model in its latest round.',
   statusTimelineSaved: 'Desired state saved',
   statusTimelineApplied: 'Applied by gateway',
   statusTimelineNotApplied: 'Application unconfirmed',
