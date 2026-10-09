@@ -300,6 +300,146 @@ describe('portal client departments and lifecycle', () => {
     await expect(client().knowledgeStatus()).resolves.toMatchObject({ configured: true });
     vi.unstubAllGlobals();
   });
+
+  test('managed knowledge client uses fixed routes, strict DTOs, and safe multipart transport', async () => {
+    const portal = new PortalClient(async () => 'aep-token');
+    stubFetch(200, {
+      deploymentId: 'deploy-a',
+      tenantId: '10000',
+      tenant: 'verified',
+      embeddingModel: { state: 'configured', id: 'embed-a', availability: 'unverified' },
+      storage: 'unverified',
+      parser: 'unverified',
+    });
+    await expect(portal.managedKnowledgeReadiness()).resolves.toMatchObject({
+      embeddingModel: { state: 'configured', availability: 'unverified' },
+    });
+    vi.unstubAllGlobals();
+
+    const base = {
+      id: 'kb/a',
+      name: 'Policies',
+      description: '',
+      tenant_id: 10000,
+      embedding_model_id: 'embed-a',
+      type: 'document',
+    };
+    const fetchMock = stubFetch(200, { data: [base] });
+    await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([{ ...base, tenant_id: '10000' }]);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
+    vi.unstubAllGlobals();
+
+    const document = {
+      id: 'doc-1',
+      knowledge_base_id: 'kb/a',
+      name: 'Policy',
+      file_name: 'policy.pdf',
+      parse_status: 'pending',
+      created_at: '2026-10-09T00:00:00Z',
+    };
+    const pageFetch = stubFetch(200, { data: [document], total: 1, page: 1, pageSize: 10 });
+    await expect(
+      portal.listManagedKnowledgeDocuments('kb/a', { page: 1, pageSize: 10, keyword: 'policy & guide' }),
+    ).resolves.toMatchObject({ data: [document], total: 1 });
+    expect(pageFetch.mock.calls[0]![0]).toBe(
+      '/api/v1/knowledge/managed/bases/kb%2Fa/documents?page=1&page_size=10&keyword=policy+%26+guide',
+    );
+    vi.unstubAllGlobals();
+
+    const uploadFetch = stubFetch(202, { data: document, operationId: 'op-upload-1' });
+    const file = new File(['policy'], 'policy.pdf', { type: 'application/pdf' });
+    await expect(portal.uploadManagedKnowledgeDocument('kb/a', file)).resolves.toMatchObject({
+      operationId: 'op-upload-1',
+      data: document,
+    });
+    const [, init] = uploadFetch.mock.calls[0]!;
+    expect(uploadFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb%2Fa/documents/file');
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer aep-token' });
+    expect((init as RequestInit).headers).not.toHaveProperty('Content-Type');
+    expect((init as RequestInit).body).toBeInstanceOf(FormData);
+    vi.unstubAllGlobals();
+  });
+
+  test('managed knowledge preserves structured errors and rejects cross-base documents', async () => {
+    const portal = new PortalClient(async () => null);
+    stubFetch(409, {
+      error: {
+        code: 'KNOWLEDGE_BASE_IN_USE',
+        message: 'Still referenced',
+        operationId: 'op-delete-2',
+        resourceId: 'kb-1',
+      },
+    });
+    await expect(portal.deleteManagedKnowledgeBase('kb-1')).rejects.toMatchObject({
+      status: 409,
+      code: 'KNOWLEDGE_BASE_IN_USE',
+      message: 'Still referenced',
+      operationId: 'op-delete-2',
+      resourceId: 'kb-1',
+    });
+    vi.unstubAllGlobals();
+
+    stubFetch(200, {
+      data: [
+        {
+          id: 'doc-1',
+          knowledge_base_id: 'another-kb',
+          name: 'x',
+          file_name: 'x.txt',
+          parse_status: 'completed',
+          created_at: '',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    await expect(portal.listManagedKnowledgeDocuments('kb-1', { page: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    vi.unstubAllGlobals();
+
+    stubFetch(403, { error: 'forbidden' });
+    await expect(portal.listManagedKnowledgeBases()).rejects.toMatchObject({ status: 403, message: 'forbidden' });
+    vi.unstubAllGlobals();
+  });
+
+  test('managed knowledge mutations keep DTOs allowlisted and operation IDs visible', async () => {
+    const portal = new PortalClient(async () => null);
+    const data = {
+      id: 'kb-1',
+      name: 'Handbook',
+      description: 'Public docs',
+      tenant_id: '10000',
+      embedding_model_id: 'embed-1',
+      type: 'document',
+    };
+    const createFetch = stubFetch(201, { data, operationId: 'op-create-1' });
+    await expect(portal.createManagedKnowledgeBase({ name: 'Handbook', description: 'Public docs' })).resolves.toEqual({
+      data,
+      operationId: 'op-create-1',
+    });
+    expect(createFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
+    expect(JSON.parse(String((createFetch.mock.calls[0]![1] as RequestInit).body))).toEqual({
+      name: 'Handbook',
+      description: 'Public docs',
+    });
+    vi.unstubAllGlobals();
+
+    const updateFetch = stubFetch(200, { data: { ...data, name: 'Handbook v2' }, operationId: 'op-update-1' });
+    await expect(portal.updateManagedKnowledgeBase('kb/1', { name: 'Handbook v2' })).resolves.toMatchObject({
+      operationId: 'op-update-1',
+      data: { name: 'Handbook v2' },
+    });
+    expect(updateFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb%2F1');
+    expect(JSON.parse(String((updateFetch.mock.calls[0]![1] as RequestInit).body))).toEqual({ name: 'Handbook v2' });
+    vi.unstubAllGlobals();
+
+    const deleteFetch = stubFetch(200, { deleted: true, operationId: 'op-delete-1' });
+    await expect(portal.deleteManagedKnowledgeBase('kb-1')).resolves.toEqual({ operationId: 'op-delete-1' });
+    expect(deleteFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1');
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('workbench client surface', () => {

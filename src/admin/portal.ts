@@ -157,11 +157,57 @@ export class PortalError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
+    readonly operationId?: string,
+    readonly resourceId?: string,
   ) {
     super(message);
     this.name = 'PortalError';
   }
 }
+
+export type ManagedKnowledgeReadiness = {
+  readonly deploymentId: string;
+  readonly tenantId: string;
+  readonly tenant: 'verified';
+  readonly embeddingModel: {
+    readonly state: 'not_configured' | 'unavailable' | 'configured';
+    readonly id: string;
+    readonly availability: 'unverified';
+  };
+  readonly storage: 'unverified';
+  readonly parser: 'unverified';
+};
+
+export type ManagedKnowledgeBase = {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly tenant_id: string;
+  readonly embedding_model_id: string;
+  readonly type: string;
+};
+
+export type ManagedKnowledgeDocument = {
+  readonly id: string;
+  readonly knowledge_base_id: string;
+  readonly name: string;
+  readonly file_name: string;
+  readonly parse_status: string;
+  readonly created_at: string;
+};
+
+export type ManagedKnowledgePage = {
+  readonly data: readonly ManagedKnowledgeDocument[];
+  readonly total: number;
+  readonly page: number;
+  readonly pageSize: number;
+};
+
+export type ManagedKnowledgeMutation<T> = {
+  readonly data: T;
+  readonly operationId: string;
+};
 
 // Mirrors the portal's own apply-time validation (portal/api.go namePattern):
 // keep both in step or the server rejects with a 400 the UI could have caught.
@@ -289,15 +335,17 @@ export class PortalClient {
     path: string,
     body?: unknown,
     extraHeaders?: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
   ): Promise<{ readonly status: number; readonly data: unknown }> {
     const headers: Record<string, string> = { ...extraHeaders };
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const token = await this.#tokenProvider();
     if (token) headers.Authorization = `Bearer ${token}`;
     const response = await fetch(path, {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
+      ...(signal ? { signal } : {}),
     });
     const data: unknown = await response.json().catch(() => null);
     return { status: response.status, data };
@@ -351,6 +399,121 @@ export class PortalClient {
     const { status, data } = await this.#request('GET', '/api/v1/knowledge/status');
     if (status !== 200) throw portalError(status, data);
     return data as PortalKnowledgeStatus;
+  }
+
+  async managedKnowledgeReadiness(signal?: AbortSignal): Promise<ManagedKnowledgeReadiness> {
+    const { status, data } = await this.#request(
+      'GET',
+      '/api/v1/knowledge/managed/readiness',
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    return parseManagedReadiness(data);
+  }
+
+  async listManagedKnowledgeBases(signal?: AbortSignal): Promise<readonly ManagedKnowledgeBase[]> {
+    const { status, data } = await this.#request(
+      'GET',
+      '/api/v1/knowledge/managed/bases',
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const items = objectOf(data)?.data;
+    if (!Array.isArray(items)) throw invalidManagedResponse();
+    return items.map(parseManagedKnowledgeBase);
+  }
+
+  async getManagedKnowledgeBase(id: string, signal?: AbortSignal): Promise<ManagedKnowledgeBase> {
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    return parseManagedKnowledgeBase(objectOf(data)?.data);
+  }
+
+  async createManagedKnowledgeBase(input: {
+    readonly name: string;
+    readonly description: string;
+  }): Promise<ManagedKnowledgeMutation<ManagedKnowledgeBase>> {
+    const { status, data } = await this.#request('POST', '/api/v1/knowledge/managed/bases', input);
+    if (status !== 201) throw portalError(status, data);
+    return parseManagedMutation(data, parseManagedKnowledgeBase);
+  }
+
+  async updateManagedKnowledgeBase(
+    id: string,
+    input: { readonly name?: string; readonly description?: string },
+  ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeBase>> {
+    const { status, data } = await this.#request(
+      'PATCH',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}`,
+      input,
+    );
+    if (status !== 200) throw portalError(status, data);
+    return parseManagedMutation(data, parseManagedKnowledgeBase);
+  }
+
+  async deleteManagedKnowledgeBase(id: string): Promise<{ readonly operationId: string }> {
+    const { status, data } = await this.#request('DELETE', `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}`);
+    if (status !== 200) throw portalError(status, data);
+    const record = objectOf(data);
+    if (record?.deleted !== true || !nonEmptyString(record.operationId)) throw invalidManagedResponse();
+    return { operationId: record.operationId };
+  }
+
+  async listManagedKnowledgeDocuments(
+    id: string,
+    query: { readonly page: number; readonly pageSize: number; readonly keyword?: string },
+    signal?: AbortSignal,
+  ): Promise<ManagedKnowledgePage> {
+    const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
+    if (query.keyword) params.set('keyword', query.keyword);
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents?${params.toString()}`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const record = objectOf(data);
+    if (
+      !Array.isArray(record?.data) ||
+      !isFiniteNumber(record.total) ||
+      !isFiniteNumber(record.page) ||
+      !isFiniteNumber(record.pageSize)
+    ) {
+      throw invalidManagedResponse();
+    }
+    return {
+      data: record.data.map((item) => parseManagedKnowledgeDocument(item, id)),
+      total: record.total,
+      page: record.page,
+      pageSize: record.pageSize,
+    };
+  }
+
+  async uploadManagedKnowledgeDocument(
+    id: string,
+    file: File,
+  ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeDocument>> {
+    const form = new FormData();
+    form.append('file', file);
+    const { status, data } = await this.#request(
+      'POST',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents/file`,
+      form,
+    );
+    if (status !== 202) throw portalError(status, data);
+    return parseManagedMutation(data, (value) => parseManagedKnowledgeDocument(value, id));
   }
 
   // Single-employee detail (same authorization as the list/chat rules).
@@ -555,7 +718,9 @@ export class PortalClient {
 }
 
 function errorMessage(data: unknown): string | null {
-  const message = (data as { error?: unknown } | null)?.error;
+  const error = (data as { error?: unknown } | null)?.error;
+  if (typeof error === 'string' && error) return error;
+  const message = objectOf(error)?.message;
   return typeof message === 'string' && message ? message : null;
 }
 
@@ -663,7 +828,90 @@ function policyMessage(data: unknown, fallback: string): string {
 }
 
 function portalError(status: number, data: unknown): PortalError {
-  return new PortalError(status, errorMessage(data) ?? `HTTP ${status}`);
+  const error = objectOf(data)?.error;
+  const details = objectOf(error);
+  return new PortalError(
+    status,
+    errorMessage(data) ?? `HTTP ${status}`,
+    nonEmptyString(details?.code) ? details.code : undefined,
+    nonEmptyString(details?.operationId) ? details.operationId : undefined,
+    nonEmptyString(details?.resourceId) ? details.resourceId : undefined,
+  );
+}
+
+function objectOf(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function invalidManagedResponse(): PortalError {
+  return new PortalError(502, '知识库服务返回了无法识别的数据。', 'INVALID_RESPONSE');
+}
+
+function parseManagedReadiness(value: unknown): ManagedKnowledgeReadiness {
+  const record = objectOf(value);
+  const model = objectOf(record?.embeddingModel);
+  if (
+    !nonEmptyString(record?.deploymentId) ||
+    !nonEmptyString(record.tenantId) ||
+    record.tenant !== 'verified' ||
+    !model ||
+    !['not_configured', 'unavailable', 'configured'].includes(String(model.state)) ||
+    typeof model.id !== 'string' ||
+    model.availability !== 'unverified' ||
+    record.storage !== 'unverified' ||
+    record.parser !== 'unverified'
+  ) {
+    throw invalidManagedResponse();
+  }
+  return record as unknown as ManagedKnowledgeReadiness;
+}
+
+function parseManagedKnowledgeBase(value: unknown): ManagedKnowledgeBase {
+  const record = objectOf(value);
+  if (
+    !record ||
+    !nonEmptyString(record.id) ||
+    typeof record.name !== 'string' ||
+    typeof record.description !== 'string' ||
+    (typeof record.tenant_id !== 'string' && typeof record.tenant_id !== 'number') ||
+    !nonEmptyString(record.embedding_model_id) ||
+    typeof record.type !== 'string'
+  ) {
+    throw invalidManagedResponse();
+  }
+  return { ...record, tenant_id: String(record.tenant_id) } as ManagedKnowledgeBase;
+}
+
+function parseManagedKnowledgeDocument(value: unknown, expectedBaseId: string): ManagedKnowledgeDocument {
+  const record = objectOf(value);
+  if (
+    !record ||
+    !nonEmptyString(record.id) ||
+    record.knowledge_base_id !== expectedBaseId ||
+    typeof record.name !== 'string' ||
+    typeof record.file_name !== 'string' ||
+    typeof record.parse_status !== 'string' ||
+    typeof record.created_at !== 'string'
+  ) {
+    throw invalidManagedResponse();
+  }
+  return record as unknown as ManagedKnowledgeDocument;
+}
+
+function parseManagedMutation<T>(value: unknown, parse: (data: unknown) => T): ManagedKnowledgeMutation<T> {
+  const record = objectOf(value);
+  if (!record || !nonEmptyString(record.operationId)) throw invalidManagedResponse();
+  return { data: parse(record.data), operationId: record.operationId };
 }
 
 // The chat entry lives on the portal origin (not proxied): the browser must

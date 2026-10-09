@@ -1,4 +1,4 @@
-import { ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -18,9 +18,9 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import type { AdminConsoleClient } from './client.js';
 import { type AdminLanguage, translate } from './i18n.js';
+import { KnowledgeManagement } from './KnowledgeManagement.js';
 import {
   PortalClient,
-  PortalError,
   type PortalKnowledgeStatus,
   type PortalMemorySearchResult,
   type PortalMemoryStatus,
@@ -653,10 +653,8 @@ function MemorySearchBox({
 }
 
 // ---------------------------------------------------------------------------
-// KnowledgeView — knowledge-base business page. Lists what the portal
-// actually reports; document management is handed off to the configured
-// knowledge system (the URL comes from the API, never guessed, and never
-// carries a secret).
+// KnowledgeView keeps the existing shell route and delegates management to
+// the portal's fixed, tenant-managed knowledge API.
 // ---------------------------------------------------------------------------
 
 export function KnowledgeView({
@@ -668,207 +666,5 @@ export function KnowledgeView({
   readonly portal?: PortalClient | undefined;
 }) {
   const resolvedPortal = useResolvedPortal(client, portal);
-  const [status, setStatus] = useState<PortalKnowledgeStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [forbidden, setForbidden] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setForbidden(false);
-    try {
-      setStatus(await resolvedPortal.knowledgeStatus());
-    } catch (cause) {
-      setStatus(null);
-      if (cause instanceof PortalError && cause.status === 403) setForbidden(true);
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [resolvedPortal]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const header = (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <Typography.Title level={4} style={{ marginBottom: 4 }}>
-          {t('knowledgeTitle')}
-        </Typography.Title>
-        <Typography.Text type="secondary">{t('knowledgeDescription')}</Typography.Text>
-      </div>
-      <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
-        {translate(language, 'statusRefresh')}
-      </Button>
-    </div>
-  );
-
-  if (error) {
-    return (
-      <div className="flex w-full flex-col gap-4">
-        {header}
-        {forbidden ? (
-          <Alert
-            type="warning"
-            showIcon
-            title={t('knowledgeForbiddenTitle')}
-            description={t('knowledgeForbiddenHint')}
-          />
-        ) : (
-          <>
-            <Alert type="error" showIcon title={`${t('knowledgeUnhealthyTitle')}：${error}`} />
-            <div>
-              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
-                {t('knowledgeRetry')}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  if (!status) {
-    return (
-      <div className="flex w-full flex-col gap-4">
-        {header}
-        <Typography.Text type="secondary">{translate(language, 'statusLoading')}</Typography.Text>
-      </div>
-    );
-  }
-
-  if (!status.configured) {
-    return (
-      <div className="flex w-full flex-col gap-4">
-        {header}
-        <Alert
-          type="warning"
-          showIcon
-          title={t('knowledgeUnconfiguredTitle')}
-          description={t('knowledgeUnconfiguredHint')}
-        />
-      </div>
-    );
-  }
-
-  // The handoff target must be a plain http(s) URL that the portal
-  // actually reported — the console's WeKnora proxy port, derived from the
-  // hostname the user typed. Health only proves the service answered a
-  // probe; the knowledge system's own login still applies.
-  const manageDocsURL = safeExternalURL(status.uiURL ?? '');
-  const manageDocsDisabled = !manageDocsURL || !status.healthy;
-  const manageDocs = (
-    <Tooltip title={manageDocsURL ? t('knowledgeDocsNote') : t('knowledgeDocsInvalid')}>
-      <Button
-        type="primary"
-        ghost
-        size="small"
-        icon={<ExportOutlined />}
-        {...(manageDocsURL ? { href: manageDocsURL, target: '_blank', rel: 'noopener noreferrer' } : {})}
-        disabled={manageDocsDisabled}
-      >
-        {t('knowledgeManageDocs')}
-      </Button>
-    </Tooltip>
-  );
-
-  // Plain const (not useMemo): early returns above would skip hook calls
-  // and break the hook order on state transitions.
-  const columns = [
-    {
-      title: t('knowledgeColName'),
-      key: 'name',
-      render: (_: unknown, kb: PortalKnowledgeStatus['knowledgeBases'][number]) => (
-        <Space orientation="vertical" size={0}>
-          <Typography.Text strong>{kb.name}</Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {kb.id}
-          </Typography.Text>
-        </Space>
-      ),
-    },
-    {
-      title: t('knowledgeColDescription'),
-      dataIndex: 'description',
-      key: 'description',
-      render: (value: string) => value || '—',
-    },
-    {
-      title: t('knowledgeColDocs'),
-      dataIndex: 'documentCount',
-      key: 'documentCount',
-      render: (value: number | undefined) => value ?? t('knowledgeNotCounted'),
-    },
-    {
-      title: t('knowledgeColProcessState'),
-      key: 'process',
-      render: () => (
-        <Tooltip title={t('knowledgeProcessStateHint')}>
-          <span>{t('knowledgeNotCounted')}</span>
-        </Tooltip>
-      ),
-    },
-    {
-      title: t('knowledgeColScope'),
-      key: 'scope',
-      render: () => t('knowledgeScopeUnknown'),
-    },
-    {
-      title: t('knowledgeColUpdatedAt'),
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      render: (value: string | undefined) => (value ? formatDateTime(value) : '—'),
-    },
-    {
-      title: t('knowledgeColActions'),
-      key: 'actions',
-      align: 'right' as const,
-      render: () => manageDocs,
-    },
-  ];
-
-  return (
-    <div className="flex w-full flex-col gap-4">
-      {header}
-      {!status.healthy ? (
-        <Alert
-          type="error"
-          showIcon
-          title={t('knowledgeUnhealthyTitle')}
-          description={
-            <Space>
-              <span>{`${t('labelServiceUrl')}：${safeExternalURL(status.uiURL ?? '') ?? t('notProvided')}`}</span>
-              <Button size="small" loading={loading} onClick={() => void load()}>
-                {t('knowledgeRetry')}
-              </Button>
-            </Space>
-          }
-        />
-      ) : null}
-      {status.configured && !manageDocsURL ? <Alert type="warning" showIcon title={t('knowledgeDocsInvalid')} /> : null}
-      <Table
-        rowKey="id"
-        size="middle"
-        dataSource={status.knowledgeBases}
-        columns={columns}
-        pagination={{ hideOnSinglePage: true }}
-        locale={{
-          emptyText: (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('knowledgeEmptyTitle')}>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                {t('knowledgeEmptyHint')}
-              </Typography.Paragraph>
-              {manageDocs}
-            </Empty>
-          ),
-        }}
-      />
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {t('knowledgeDocsNote')}
-      </Typography.Text>
-    </div>
-  );
+  return <KnowledgeManagement portal={resolvedPortal} />;
 }
