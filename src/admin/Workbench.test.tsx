@@ -74,7 +74,6 @@ describe('workbench shell and roster', () => {
     expect(within(healthy).queryByText('备用模型运行中')).toBeNull();
   });
 
-
   test('renders purposes, access reasons and phases from the roster API', async () => {
     const portal = workbenchPortal({
       me: vi.fn().mockResolvedValue({
