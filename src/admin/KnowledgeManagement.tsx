@@ -303,6 +303,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
       const result = editing
         ? await portal.updateManagedKnowledgeBase(editing.id, values)
         : await portal.createManagedKnowledgeBase(values);
+      if (editing) setDetail(result.data);
       setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`);
       setEditorOpen(false);
       await loadBases();

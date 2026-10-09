@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import type { UploadFile } from 'antd';
 import { ConfigProvider } from 'antd';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
@@ -128,5 +128,98 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByText('没有权限访问知识库管理。')).toBeInTheDocument();
     expect(screen.queryByText('暂无文档')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /新建知识库/ })).toBeDisabled();
+  });
+
+  test('keeps a referenced knowledge base selected when protected delete is rejected', async () => {
+    const portal = makePortal({
+      deleteManagedKnowledgeBase: vi.fn().mockRejectedValue(new PortalError(409, 'in use', 'KNOWLEDGE_BASE_IN_USE')),
+    });
+    render(<KnowledgeManagement portal={portal} />);
+
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /删除/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+
+    expect(await screen.findByText('受保护：仍有关联，不能删除。')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    expect(portal.deleteManagedKnowledgeBase).toHaveBeenCalledWith(base.id);
+  });
+
+  test('creates a registered knowledge base and displays the returned operation id', async () => {
+    const created = { ...base, id: 'kb-created-1', name: 'New research', description: 'Created in console' };
+    const portal = makePortal({
+      listManagedKnowledgeBases: vi.fn().mockResolvedValueOnce([base]).mockResolvedValue([base, created]),
+      getManagedKnowledgeBase: vi.fn().mockResolvedValueOnce(base).mockResolvedValue(created),
+      createManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: created, operationId: 'kbop-create-test' }),
+    });
+    render(<KnowledgeManagement portal={portal} />);
+
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /新建知识库/ }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('名称'), { target: { value: 'New research' } });
+    fireEvent.change(within(dialog).getByLabelText('描述'), { target: { value: 'Created in console' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
+
+    expect(await screen.findByRole('heading', { name: 'New research' })).toBeInTheDocument();
+    expect(await screen.findByText(/kbop-create-test/)).toBeInTheDocument();
+    expect(portal.createManagedKnowledgeBase).toHaveBeenCalledWith({
+      name: 'New research',
+      description: 'Created in console',
+    });
+  });
+
+  test('updates the selected detail from the server response after editing', async () => {
+    const updated = { ...base, name: 'Renamed research', description: 'Updated details' };
+    const portal = makePortal({
+      listManagedKnowledgeBases: vi.fn().mockResolvedValueOnce([base]).mockResolvedValue([updated]),
+      updateManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: updated, operationId: 'kbop-update-test' }),
+    });
+    render(<KnowledgeManagement portal={portal} />);
+
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /编辑/ }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('名称'), { target: { value: 'Renamed research' } });
+    fireEvent.change(within(dialog).getByLabelText('描述'), { target: { value: 'Updated details' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Renamed research' })).toBeInTheDocument();
+    expect(screen.getAllByText('Updated details').some((element) => element.tagName === 'DIV')).toBe(true);
+    expect(portal.updateManagedKnowledgeBase).toHaveBeenCalledWith(base.id, {
+      name: 'Renamed research',
+      description: 'Updated details',
+    });
+  });
+
+  test('shows accepted upload and the server-provided pending parse state', async () => {
+    const doc = {
+      id: 'doc-uploaded',
+      knowledge_base_id: base.id,
+      name: 'spec',
+      file_name: 'spec.txt',
+      parse_status: 'pending',
+      created_at: '2026-10-09T00:00:00Z',
+    };
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi
+        .fn()
+        .mockResolvedValueOnce({ data: [], total: 0, page: 1, pageSize: 10 })
+        .mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      uploadManagedKnowledgeDocument: vi.fn().mockResolvedValue({ data: doc, operationId: 'kbop-upload-success' }),
+    });
+    const { container } = render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    const input = container.querySelector('input[type="file"]')!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['spec'], 'spec.txt', { type: 'text/plain' })],
+    });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
+
+    expect(await screen.findByText(/文件已受理/)).toBeInTheDocument();
+    expect(await screen.findByText(/排队中 · pending/)).toBeInTheDocument();
+    expect(portal.uploadManagedKnowledgeDocument).toHaveBeenCalledTimes(1);
   });
 });
