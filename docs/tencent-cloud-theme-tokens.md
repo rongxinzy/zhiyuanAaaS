@@ -1,5 +1,13 @@
 # 腾讯云控制台主题 Token
 
+## 适用范围
+
+本文是腾讯云 Tea Design 的主题采集记录和参考资料，不是知远 Admin Console 的设计或开发规范。
+Web 管理端使用 Ant Design，组件和 token 规则以 [DESIGN.md](../DESIGN.md) 与
+[AGENTS.md](../AGENTS.md) 为准，主题由 `src/admin/App.tsx` 的根 ConfigProvider 提供。
+不要根据本文在 Admin Console 中引入 Tea CSS、shadcn 组件或另一套主题映射。
+`src/ui` 的样式资产与 Web 管理端分别构建；修改 renderer 时应单独核对它的入口和宿主主题契约。
+
 ## 采集范围
 
 采集时间：2026-09-03（Asia/Shanghai）
@@ -54,7 +62,8 @@
 
 ## Semantic Colors
 
-The admin console exposes the Tea text and status roles through semantic utility tokens:
+The shared `src/ui/index.css` reference assets map Tea text and status roles to semantic utility tokens.
+These aliases are not loaded by the Ant Design Admin Console:
 
 ```css
 --tertiary-foreground: var(--tea-color-text-tertiary);
@@ -66,7 +75,8 @@ The admin console exposes the Tea text and status roles through semantic utility
 --info-soft: var(--tea-color-bg-brand-lighten-default);
 ```
 
-Use `text-muted-foreground` for secondary descriptions and compact empty states. Use `text-tertiary-foreground` for metadata such as identifiers, usernames, versions, timestamps, and eyebrows. Status components use Tea-backed `success`, `warning`, `info`, or `destructive` variants instead of neutral badges.
+The aliases above describe the Tea/shadcn mapping only. Admin Console descriptions use AntD Typography and AntD tokens;
+status components use AntD Tag and Alert, as specified in DESIGN.md. Do not copy these utility classes into Admin pages.
 
 ```css
 --tea-color-bg-brand-default: #0052d9;
@@ -253,6 +263,6 @@ The following computed values differed on the sampled pages; the VPC page used a
 ## Implementation Notes
 
 - The dominant brand color is `#0052d9`; active brand states use `#0034b5` and focus states use `#699ef5`.
-- The console uses a compact 12px body baseline, 14px medium body text, 30px medium controls, and 40px large controls.
+- The observed Tencent Cloud console uses a compact 12px body baseline, 14px medium body text, 30px medium controls, and 40px large controls.
 - Default card radius is `0px`; the available `8px` radius is the main rounded variant.
 - The extracted values are computed values observed in the authenticated console, not a guarantee of an official public design-system API. Revalidate after the remote stylesheet version changes.
