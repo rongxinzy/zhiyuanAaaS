@@ -59,7 +59,9 @@
 
 权限先保持现有管理员管理，不默认授予普通成员管理权。团队知识管理员是否纳入完整交付仍需用户确认；无论管理模式如何，请求者检索/预览/下载隔离不能省略。Wiki、外部数据源同步、迁移复制和引擎全部高级设置尚不在已确认范围；若要求也纳入，先核查接口与依赖并增加工作轮次，不能承诺六轮覆盖上游所有模块。
 
-当前证据（2026-10-09）：AaaS 提交 `79bd3ef` 的 PR #165 checks 全部通过，包括 verify、coverage-ratchet、CodeQL 和 ci-gate；这是阶段 A 与计划提交的门禁，不代表未来产品代码已通过。Luna 的传输修复位于独立工作树 `D:/rongxin/aep-governance-knowledge-proxy` 的 `fix/knowledge-proxy-transport` 分支，仅修改 `portal/knowledge.go` 与 `portal/services_test.go`；portal 模块 `go test -count=1 ./...` 和 diff 检查已通过，尚未提交、推送或部署，不等于第 1 轮全部完成。
+当前证据（2026-10-09）：AaaS 提交 `374339b` 的 PR #165 checks 全部通过，包括 verify、coverage-ratchet、CodeQL 和 ci-gate；这是阶段 A 与计划提交的门禁，不代表未来产品代码已通过。治理仓库独立工作树 `D:/rongxin/aep-governance-knowledge-proxy` 已统一为 `feat/knowledge-phase-a`；第 1 轮后端检查点已保存为本地提交 `75016c9`，包含专用管理接口、企业/上游空间校验、库归属登记和持久操作审计。该检查点 Portal 全量测试、`go vet ./...` 与 diff 检查通过；仍在同步最新主干并补失败路径回归，尚未推送或部署，不等于第 1 轮全部完成。
+
+第 2 轮前待明确 UI 规则：实际管理台与产品文档采用 Ant Design，但本分支 `AGENTS.md` / `DESIGN.md` 仍要求旧的 shadcn 组件。已向用户提出沿用现有 Ant Design 的选择；确认前不更换组件库或改写这两份规则。当前本地知识引擎模型目录为空，创建库依赖受管 Embedding 模型引用；模型、存储及解析依赖未完整验证时，不将 readiness 显示为全部就绪。
 
 证明知识管理能力可以脱离 WeKnora UI，通过服务端 HTTP 调用完成最小闭环，为后续治理 API 和原生页面提供可复现证据。本阶段不交付生产管理 API、不改页面、不宣称企业用户权限已实现，不复制上游前端。
 
