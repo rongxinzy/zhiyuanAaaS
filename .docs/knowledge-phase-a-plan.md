@@ -1,5 +1,7 @@
 # WeKnora 原生接入：阶段 A 计划
 
+本文件是本次开发计划，按用户要求存放在 `.docs` 并随分支提交；不修改 `AGENTS.md` / `DESIGN.md`，不替代产品需求正文。管理台按用户明确要求使用 Ant Design。
+
 关联：[Issue #158](https://github.com/rongxinzy/zhiyuanAaaS/issues/158)。本文件是技术实施与验证记录；产品范围以 [FR-KB-03 / ER-AC-11 / K1](https://github.com/rongxinzy/zhiyuan-docs/blob/main/product/README.md) 为唯一正文。
 
 ## PR 合并目标调整（2026-10-09）
@@ -61,7 +63,7 @@
 
 当前证据（2026-10-09）：AaaS 提交 `374339b` 的 PR #165 checks 全部通过，包括 verify、coverage-ratchet、CodeQL 和 ci-gate；这是阶段 A 与计划提交的门禁，不代表未来产品代码已通过。治理仓库独立工作树 `D:/rongxin/aep-governance-knowledge-proxy` 已统一为 `feat/knowledge-phase-a`；第 1 轮后端检查点已保存为本地提交 `75016c9`，包含专用管理接口、企业/上游空间校验、库归属登记和持久操作审计。该检查点 Portal 全量测试、`go vet ./...` 与 diff 检查通过；仍在同步最新主干并补失败路径回归，尚未推送或部署，不等于第 1 轮全部完成。
 
-第 2 轮前待明确 UI 规则：实际管理台与产品文档采用 Ant Design，但本分支 `AGENTS.md` / `DESIGN.md` 仍要求旧的 shadcn 组件。已向用户提出沿用现有 Ant Design 的选择；确认前不更换组件库或改写这两份规则。当前本地知识引擎模型目录为空，创建库依赖受管 Embedding 模型引用；模型、存储及解析依赖未完整验证时，不将 readiness 显示为全部就绪。
+第 2 轮 UI 规则已确认（2026-10-09）：用户明确使用 Ant Design，不是 shadcn；本次以用户明确指示为准，沿用当前管理台组件、图标和主题，不迁移组件库，也不改 `AGENTS.md` / `DESIGN.md`。当前本地知识引擎模型目录为空，创建库依赖受管 Embedding 模型引用；模型、存储及解析依赖未完整验证时，不将 readiness 显示为全部就绪。
 
 第 1 轮部署子任务交接条件：后端补测与覆盖率门禁通过后，Luna 准备独立的治理组件更新入口，先完成只读计划和构建，不直接覆盖桌面现有更新脚本。使用明确的 governance 工作树路径与源码 SHA，检查工作区并记录当前 Portal 镜像、容器、拉取策略及相关配置；保留现有五组件更新入口与 Secret/PVC/数据库数据。新入口仅更新本轮需要的 Portal，不无故重建 operator 或知识引擎。更新前准备镜像及回滚记录；部分 rollout 失败也必须尝试恢复已改组件，而非仅在全部 rollout 完成后启用回滚。新知识配置列出企业、上游空间、Secret 字段和受管模型引用的来源及差异供核对，禁止在记录中写凭据；数据库变更明确说明为新增元数据表、回滚镜像不会撤销 DDL。主代理核对方案后，才执行独立本地环境的临时库/合成资料真实 API 验证；只清理本轮创建的测试资源，不自动接管已有库。
 
