@@ -31,6 +31,17 @@ export const state = {
   credentials: [],
   credentialAssignments: [],
   licenses: [],
+  knowledgeBases: [
+    {
+      id: 'kb-1',
+      name: 'E2E 产品资料',
+      description: '测试知识库',
+      tenant_id: '10000',
+      embedding_model_id: 'embedding-e2e',
+      type: 'document',
+    },
+  ],
+  knowledgeDocuments: [],
   controlEvents: [],
   employees: [
     {
@@ -201,19 +212,89 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === 'GET' && pathname === '/api/v1/requests')
     return writeJson(response, 200, { requests: state.employeeRequests });
+  if (method === 'GET' && pathname === '/api/v1/knowledge/managed/readiness')
+    return writeJson(response, 200, {
+      deploymentId: 'demo',
+      tenantId: '10000',
+      tenant: 'verified',
+      embeddingModel: { state: 'configured', id: 'embedding-e2e', availability: 'unverified' },
+      storage: 'unverified',
+      parser: 'unverified',
+    });
+  if (method === 'GET' && pathname === '/api/v1/knowledge/managed/bases')
+    return writeJson(response, 200, { data: state.knowledgeBases });
+  if (method === 'POST' && pathname === '/api/v1/knowledge/managed/bases') {
+    const input = jsonBody(rawBody);
+    const base = {
+      id: `kb-e2e-${state.nextId++}`,
+      name: input.name,
+      description: input.description ?? '',
+      tenant_id: '10000',
+      embedding_model_id: 'embedding-e2e',
+      type: 'document',
+    };
+    state.knowledgeBases.push(base);
+    return writeJson(response, 201, { data: base, operationId: `kbop-create-${state.nextId}` });
+  }
+  if (pathname.startsWith('/api/v1/knowledge/managed/bases/')) {
+    const basePath = '/api/v1/knowledge/managed/bases/';
+    const suffix = pathname.slice(basePath.length);
+    const isDocuments = suffix.endsWith('/documents');
+    const isFileUpload = suffix.endsWith('/documents/file');
+    const encodedId = isFileUpload
+      ? suffix.slice(0, -'/documents/file'.length)
+      : isDocuments
+        ? suffix.slice(0, -'/documents'.length)
+        : suffix;
+    const id = decodeURIComponent(encodedId);
+    const base = state.knowledgeBases.find((item) => item.id === id);
+    if (!base)
+      return writeJson(response, 404, {
+        error: { code: 'KNOWLEDGE_BASE_NOT_FOUND', message: 'Knowledge base not found' },
+      });
+    if (isFileUpload && method === 'POST') {
+      const payload = rawBody.toString('utf8');
+      const fileName = payload.match(/filename="([^"]+)"/)?.[1] ?? 'upload.txt';
+      const document = {
+        id: `doc-${state.nextId++}`,
+        knowledge_base_id: id,
+        name: fileName,
+        file_name: fileName,
+        parse_status: 'pending',
+        created_at: new Date().toISOString(),
+      };
+      state.knowledgeDocuments.push(document);
+      return writeJson(response, 202, { data: document, operationId: `kbop-upload-${state.nextId}` });
+    }
+    if (isDocuments && method === 'GET') {
+      const page = Math.max(1, Number.parseInt(query.get('page') ?? '1', 10));
+      const pageSize = Math.max(1, Number.parseInt(query.get('page_size') ?? '10', 10));
+      const documents = state.knowledgeDocuments.filter((item) => item.knowledge_base_id === id);
+      const start = (page - 1) * pageSize;
+      return writeJson(response, 200, {
+        data: documents.slice(start, start + pageSize),
+        total: documents.length,
+        page,
+        pageSize,
+      });
+    }
+    if (method === 'GET') return writeJson(response, 200, { data: base });
+    if (method === 'PATCH') {
+      Object.assign(base, jsonBody(rawBody));
+      return writeJson(response, 200, { data: base, operationId: `kbop-update-${state.nextId}` });
+    }
+    if (method === 'DELETE') {
+      state.knowledgeBases = state.knowledgeBases.filter((item) => item.id !== id);
+      state.knowledgeDocuments = state.knowledgeDocuments.filter((item) => item.knowledge_base_id !== id);
+      return writeJson(response, 200, { deleted: true, operationId: `kbop-delete-${state.nextId}` });
+    }
+  }
   if (method === 'GET' && pathname === '/api/v1/knowledge/status')
     return writeJson(response, 200, {
       configured: true,
       healthy: true,
       url: 'https://knowledge.example.test',
-      knowledgeBases: [
-        {
-          id: 'kb-1',
-          name: 'E2E 产品资料',
-          description: '测试知识库',
-          documentCount: 5,
-        },
-      ],
+      knowledgeBases: state.knowledgeBases.map((item) => ({ ...item, documentCount: 5 })),
     });
   if (method === 'GET' && pathname === '/api/v1/memory/status')
     return writeJson(response, 200, {

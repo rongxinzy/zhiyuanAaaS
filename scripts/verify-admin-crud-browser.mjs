@@ -29,6 +29,9 @@ try {
     env: {
       ...process.env,
       ZHIYUAN_ADMIN_PORT: String(port),
+      // The browser contract test does not exercise the legacy upstream UI
+      // proxy; bind it to an ephemeral port instead of assuming 5174 is free.
+      ZHIYUAN_ADMIN_WEKNORA_PORT: '0',
       ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
       ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
     },
@@ -104,6 +107,23 @@ try {
     fullPage: true,
     animations: 'disabled',
   });
+  assert.ok(
+    state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Knowledge page must load its native managed registry, not the legacy status proxy',
+  );
+  await page.getByRole('button', { name: /新建知识库/ }).click();
+  const knowledgeDialog = page.getByRole('dialog');
+  await knowledgeDialog.getByLabel('名称', { exact: true }).fill('E2E 新建知识库');
+  await knowledgeDialog.getByLabel('描述', { exact: true }).fill('浏览器契约验证');
+  await knowledgeDialog.getByRole('button', { name: '保存', exact: true }).click();
+  await knowledgeDialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'E2E 新建知识库', exact: true }).waitFor();
+  assert.ok(state.knowledgeBases.some((item) => item.name === 'E2E 新建知识库'));
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Create knowledge base must call the fixed managed API',
+  );
+  checks.push('native managed knowledge registry and create operation');
   await visit('users', '管理员');
   await page.screenshot({
     path: path.join(screenshots, 'users.png'),
