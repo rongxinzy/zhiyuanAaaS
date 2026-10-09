@@ -26,7 +26,7 @@
 
 ## 目标与边界
 
-第 2 轮代码验收（2026-10-09）：Luna 实现并提交 AaaS `fdbbaf4`，推送在同一分支。知远知识页现通过固定 managed API 提供登记库列表/详情/新建/编辑/关联保护删除、TXT/PDF 上传、真实分页及解析状态；补中英文文案、受限 `PortalClient`、结构化和旧错误兼容、操作编号、有限轮询/取消、陈旧响应保护及不确定写入防重试。主代理复验相关 3 个测试文件 34/34、类型检查、`verify:admin`、7 文件 Biome、Ant Design 6.6.5 lint（0 项）和 diff 检查；Luna 全量复验 46 个文件、438 项通过。fdbbaf4 的 AaaS GitHub CI 尚待返回。**未部署、未进行真实 managed API / 浏览器验收，用户未验收。** 两个 PR 仍为 Draft。
+第 2 轮代码验收（2026-10-09）：Luna 实现 AaaS 原生知识管理页（Ant Design），通过固定 managed API 提供知识库列表/详情/新建/编辑/关联保护删除、TXT/PDF 上传、分页及解析状态，并覆盖操作编号、错误兼容、有限轮询/取消、陈旧响应及不确定写入防重试。CI 首轮暴露旧浏览器 fixture 仍依赖 legacy status API 和全仓覆盖率下降；已补 managed API fixture/E2E 并增加创建、编辑同步、上传、受保护删除测试。复验发现并修复 PATCH 成功后详情未同步的真实 UI bug。最终本地全量 coverage 442/442，行覆盖率 81.55%（main 81.48%）；typecheck、Biome、`git diff --check` 通过。AaaS `aa507fb` 的 verify、coverage-ratchet、CodeQL、DevOps gate 全部通过。**仅代码与 mock 浏览器 E2E 验收完成；未部署，真实 managed API/TXT/PDF 解析及用户本地验收仍未完成。** PR #165 与关联治理 PR #45 继续保持 Draft。
 
 ### 产品化执行顺序与 Luna 交接（2026-10-09）
 
@@ -67,7 +67,7 @@
 
 第 2 轮 UI 规则已确认（2026-10-09）：用户明确使用 Ant Design，不是 shadcn；本次以用户明确指示为准，沿用当前管理台组件、图标和主题，不迁移组件库，也不改 `AGENTS.md` / `DESIGN.md`。当前本地知识引擎模型目录为空，创建库依赖受管 Embedding 模型引用；模型、存储及解析依赖未完整验证时，不将 readiness 显示为全部就绪。
 
-第 1 轮部署基础复验（2026-10-09）：治理提交 `1a2d123` 已普通推送，verify、coverage-ratchet、ci-gate 全部通过。独立更新入口 `scripts/update-local-portal.ps1` 的 31 个测试由主代理复验通过，涵盖固定本地 kubeconfig、部署/回滚、脱敏记录与 Windows/WSL 换行转换（真实内容修改和未跟踪文件仍拒绝）。实际运行 `plan`、`build`、`prepare` 成功：Windows Go 交叉构建、WSL 全量 Portal 测试、`go vet` 通过，匹配镜像已导入本地 containerd；**未执行 deploy，运行服务和数据库未更新**。当前还缺显式租户、Embedding 模型引用及 API Key Secret 字段选择；数据库回退保护需另行核对，不能用未受保护的会话/token dump 代替。第 2 轮页面代码已交 Luna 实施，真实 managed API 与浏览器验收仍待匹配配置和部署，不能标为全部完成。
+第 1 轮部署基础复验（2026-10-09）：治理提交 `1a2d123` 已普通推送，verify、coverage-ratchet、ci-gate 全部通过。独立更新入口 `scripts/update-local-portal.ps1` 的 31 个测试由主代理复验通过，涵盖固定本地 kubeconfig、部署/回滚、脱敏记录与 Windows/WSL 换行转换（真实内容修改和未跟踪文件仍拒绝）。实际运行 `plan`、`build`、`prepare` 成功：Windows Go 交叉构建、WSL 全量 Portal 测试、`go vet` 通过，匹配镜像已导入本地 containerd；**未执行 deploy，运行服务和数据库未更新**。当前还缺显式租户、Embedding 模型引用及 API Key Secret 字段选择；数据库回退保护需另行核对，不能用未受保护的会话/token dump 代替。第 2 轮本地 mock 浏览器与 GitHub CI 已通过，但真实 managed API 与 TXT/PDF 解析验收仍待匹配配置和部署，不能标为全部完成。
 
 第 1 轮部署子任务交接条件：后端补测与覆盖率门禁通过后，Luna 准备独立的治理组件更新入口，先完成只读计划和构建，不直接覆盖桌面现有更新脚本。使用明确的 governance 工作树路径与源码 SHA，检查工作区并记录当前 Portal 镜像、容器、拉取策略及相关配置；保留现有五组件更新入口与 Secret/PVC/数据库数据。新入口仅更新本轮需要的 Portal，不无故重建 operator 或知识引擎。更新前准备镜像及回滚记录；部分 rollout 失败也必须尝试恢复已改组件，而非仅在全部 rollout 完成后启用回滚。新知识配置列出企业、上游空间、Secret 字段和受管模型引用的来源及差异供核对，禁止在记录中写凭据；数据库变更明确说明为新增元数据表、回滚镜像不会撤销 DDL。主代理核对方案后，才执行独立本地环境的临时库/合成资料真实 API 验证；只清理本轮创建的测试资源，不自动接管已有库。
 
