@@ -33,9 +33,7 @@ export type PortalEmployee = {
    * fallback model (the default model failed its health probe). null/absent
    * = the default model is serving.
    */
-  readonly modelFailover?:
-    | { readonly original: string; readonly active: string; readonly switchedAt: string }
-    | null;
+  readonly modelFailover?: { readonly original: string; readonly active: string; readonly switchedAt: string } | null;
 };
 
 // accessReason.kind mirrors the portal's canAccessEmployee branch order:

@@ -2,6 +2,26 @@
 
 关联：[Issue #158](https://github.com/rongxinzy/zhiyuanAaaS/issues/158)。本文件是技术实施与验证记录；产品范围以 [FR-KB-03 / ER-AC-11 / K1](https://github.com/rongxinzy/zhiyuan-docs/blob/main/product/README.md) 为唯一正文。
 
+## PR 合并目标调整（2026-10-09）
+
+用户要求 PR #165 不以阶段 A 探针作为合并交付：必须把企业知识库能力实际接入知远，本地更新可查看，并通过 CI 后才考虑合并。下文阶段 A 是已完成的技术证据，不是最终产品交付。
+
+产品化实施清单：
+
+| 工作包 | 必须交付的可用行为 | 当前状态 |
+| --- | --- | --- |
+| 治理 API | 知远会话鉴权，明确操作白名单，逐库/文档授权，受控凭据，查询参数与专用上传流，安全错误输出 | 未实现 |
+| 库与资料管理 | 知远内建库/编辑/受保护删除，文件/URL/文本导入，分页筛选，真实处理状态，重试/取消、启停、删除 | 未实现 |
+| 内容运营 | 分块/来源预览与受控原文件下载，标签、文件夹和 FAQ 管理，批量操作逐资源授权 | 未实现 |
+| 检索与员工使用 | 在知远内测试检索，显示命中来源，关联员工，员工与请求者授权交集，撤销后拒绝 | 员工绑定已有基础，其余未完整接入 |
+| 审计与依赖预检 | 记录真实操作者、资源和结果；模型、存储、解析失败均有可操作反馈 | 未实现 |
+| 本地交付 | 配套后端与管理台镜像/配置更新，真实浏览器闭环、错误/权限拒绝、可访问入口与截图 | 尚无原生页面效果 |
+| 合并门禁 | 适用 CI 全部通过、正式 approval、用户本地验收；保留 Draft 直到满足条件 | 等待 |
+
+范围只包含企业知识库，不复制上游 Agent、聊天、Skill、渠道和长期记忆模块。产品化涉及治理仓库，按既有规则建立关联 PR；只读 PoC 不能代替其中任一工作包。
+
+权限实施前需明确：仅企业管理员管理，还是同时允许团队知识管理员管理各自授权资料。当前代理为管理员专用，现有本地 Secret 只有 API Key、无管理账号配置；不能以放宽管理员代理权限替代用户/团队映射，也不能默认复用一个服务身份即完成多租户隔离。
+
 ## 目标与边界
 
 证明知识管理能力可以脱离 WeKnora UI，通过服务端 HTTP 调用完成最小闭环，为后续治理 API 和原生页面提供可复现证据。本阶段不交付生产管理 API、不改页面、不宣称企业用户权限已实现，不复制上游前端。
@@ -102,6 +122,8 @@ Node.js 24 下执行 `npm run verify:knowledge:api`。验证器只接受服务�
 | `ZHIYUAN_ADMIN_WEKNORA_PORT=0 npm run verify:admin` | 通过；本机既有代理占用默认端口，临时测试使用随机端口，不改部署 |
 | `npx biome check scripts/verify-knowledge-api.mjs scripts/verify-knowledge-api.test.mjs package.json` | 通过 |
 | `git diff --check` | 通过 |
-| `npm run check` | **未通过**：在 `lint` 被基线已有 5 项格式问题阻挡，涉及 `Models.tsx`、`Workbench.tsx`、`models-copy.ts`、`portal.ts`；与 `origin/main` 核对这些文件无 diff，本 PR 不混入无关格式修复 |
+| `ZHIYUAN_ADMIN_WEKNORA_PORT=0 npm run check` | **通过（2026-10-09 复验）**：修复 `Models.tsx`、`Workbench.tsx`、`Workbench.test.tsx`、`models-copy.ts`、`portal.ts` 的纯格式问题后，lint、类型检查、435 个测试、构建与管理台验证全部通过；不改变业务行为 |
+
+首次运行曾被基线格式问题阻挡；用户要求 CI 通过后，已纳入上述最小格式修复。GitHub CI 以本次提交实际运行结果为准，本地检查不替代远端门禁。
 
 下一阶段前需补齐真实范围拒绝测试；PR 合并前仍须满足当前 CI 与维护者正式 approval，不以核心闭环成功替代门禁。

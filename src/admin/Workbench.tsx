@@ -4,13 +4,7 @@
 // shell. The shell reuses the admin layout classes (plain antd tokens —
 // deliberately no Tea theme), and the roster follows the 员工工作台
 // wireframes: 数字员工 / 用途 / 权限来源 / 状态 / 开始使用.
-import {
-  LogoutOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  RobotOutlined,
-  WarningOutlined,
-} from '@ant-design/icons';
+import { LogoutOutlined, PlusOutlined, ReloadOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Empty, Layout, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
