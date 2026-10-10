@@ -673,6 +673,21 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === 'GET' && pathname === '/aep/v1/admin/events')
     return writeJson(response, 200, { items: [], nextCursor: null });
+  if (method === 'GET' && pathname === '/aep/v1/admin/audit/authentication')
+    return writeJson(response, 200, {
+      items: [
+        {
+          cursor: '1',
+          userId: 'user-1',
+          eventType: 'login.failed',
+          outcome: 'failure',
+          reason: 'invalid_credentials',
+          sourceHash: 'fixture-source-hash',
+          createdAt: '2026-10-10T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
   if (method === 'GET' && pathname === '/aep/v1/admin/control-events')
     return writeJson(response, 200, {
       items: state.controlEvents,
