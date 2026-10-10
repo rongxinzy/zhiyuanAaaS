@@ -3278,7 +3278,7 @@ function SkillsSection({
                 </Button>
                 <Popconfirm
                   title={rc.deleteSkillConfirm}
-                  description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
+                  description={rc.deleteSkillImpact}
                   okText={t('delete')}
                   cancelText={t('cancel')}
                   okButtonProps={{ danger: true }}
