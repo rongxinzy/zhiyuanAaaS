@@ -1,503 +1,227 @@
-# DESIGN.md
+# Admin Console 设计与开发规范
 
-知远企业控制台（Web 管理端）前端设计标准。本文件改编自主应用的 `DESIGN.md`，作为本项目 admin console（`src/admin` + `src/ui`）的**项目级约束**：所有新增和修改的 UI 代码必须遵守。与 `AGENTS.md` 的组件库规则配套使用。
+本文件约束知远企业控制台的 Web 管理端（`src/admin`），与 [AGENTS.md](AGENTS.md) 配套使用。
+组件、主题与交互写法以现有业务页面的 **Ant Design** 实现为基准。
+`src/ui` 的企业 renderer 独立构建，其样式、宿主主题和共享组件规则不自动适用于 Web 管理端。
 
-## Agent 入口
+## Agent 入口与源码职责
 
-没有本项目上下文时，按以下顺序建立上下文，再开始写 UI：
+开始修改 Admin Console 前，依次阅读：
 
-1. 先读本文件和 `AGENTS.md`，再读 `src/ui/tea-theme.css`、`src/ui/index.css`、`src/admin/theme.ts`。
-2. 页面行为看 `src/admin/App.tsx`；资源、模型、事件页面分别看 `src/admin/Resources.tsx`、`src/admin/Models.tsx`、`src/admin/Events.tsx`。
-3. 可复用组件只从 `src/ui/components/ui/*` 选择；组件的默认尺寸、状态和 token 映射以组件源码为准，本文件规定使用场景。
-4. 用户可见文案先在 `src/admin/i18n.ts` 增加中英文键，再在 JSX 中使用 `translate`；禁止为了完成视觉稿直接写裸文案。
-5. 修改后至少运行 `npm run typecheck`、`npm test`、`npm run verify:admin` 和 `git diff --check`，并在浅色、深色两套主题下检查桌面与窄视口。
+1. 本文件、`AGENTS.md` 和 [DEVOPS.md](DEVOPS.md)。
+2. `src/admin/App.tsx`、`src/admin/main.tsx`、`src/admin/admin.css`、`src/admin/theme.ts`。
+3. 受影响的业务页面及 `src/admin/components/*` 中已有的业务组合组件。
+4. `src/admin/i18n.ts`、相关测试，以及 `scripts/verify-admin-console.mjs` 的构建边界检查。
 
-源码职责边界：
+| 文件/目录 | 职责 |
+| --------- | ---- |
+| `src/admin/App.tsx` | 根 ConfigProvider、明暗算法、主题 seed、会话门控、shell、导航、权限和路由 |
+| `src/admin/theme.ts` | 浅色、深色、跟随系统的状态、持久化与系统主题监听 |
+| `src/admin/main.tsx` | Web 入口；加载 `antd/dist/reset.css` 和 `src/admin/admin.css` |
+| `src/admin/admin.css` | Admin 布局、业务组合样式与 `--ant-*` 变量消费 |
+| `src/admin/components/*` | 基于 AntD 的业务组合，如列表查询、重置、导出按钮组 |
+| `src/admin/Resources.tsx` | 用户、团队、角色、Skill 等资源管理 |
+| `src/admin/Models.tsx` | 模型目录、创建、配置与授权 |
+| `src/admin/Operations.tsx` | 接入配置、配置生效状态及相关平台操作 |
+| `src/admin/Events.tsx` | 控管事件与审计查询 |
+| `src/admin/i18n.ts` | 用户可见的中英文文案 |
+| `src/ui/*` | 企业 renderer 的独立入口与样式资产；不作为 Admin 主题来源 |
 
-| 文件/目录 | 唯一职责 |
-| --------- | -------- |
-| `src/ui/tea-theme.css` | Tea Design 的完整 Color、Shadow、Border、Space、Font、Typography 和组件 token；不在组件中覆写 |
-| `src/ui/index.css` | Tea token 到 shadcn/Tailwind 语义 token 的桥接，以及 admin console 的全局边界规则 |
-| `src/ui/components/ui/*` | 可复用的视觉和交互原语；新增页面优先组合它们 |
-| `src/admin/theme.ts` | 浅色、深色、跟随系统的主题状态、媒体查询和持久化；不引入第二套 `useTheme` 实现 |
-| `src/admin/App.tsx` | 会话门控、全局 shell、导航和主题切换 |
-| `src/admin/Resources.tsx` | 用户、Team、Role、Skill、Skill 授权五个资源页签 |
-| `src/admin/Models.tsx` | 企业模型列表、创建和授权模型 |
-| `src/admin/Events.tsx` | 控管事件发布和审计查询 |
+当需求与规则冲突时，优先级为：用户明确需求 > 本文件的项目规则 > 现有组件实现 > 单个页面的历史写法。
+发现文档与业务实现冲突时，应明确指出并同步修正规范，不能默默引入另一套设计系统。
+已有页面的零散硬编码不是新页面复制它们的理由；应优先使用同一 ConfigProvider 派生的 token。
 
-当设计要求与实现发生冲突时，优先级为：用户明确需求 > 本文件的项目规则 > 现有组件实现 > 单个页面的历史写法。修复历史写法时同步更新组件或 token，不要在页面中叠加一次性覆盖。
+## 运行环境与边界
 
-## 与主应用的适配说明
-
-admin console 是**纯浏览器应用**，不是 Electron 桌面应用。因此本文件在主应用标准的基础上做了以下裁剪，阅读时以本文件为准：
-
-- **无 IPC、无 Node 能力。** 一切数据经 `/aep` HTTP API 获取。禁止依赖 `window.electronAPI`、`ipcRenderer`、`process`、Node 模块等桌面运行时能力，能力探测不得假设其存在。
-- **主题单真源。** Tea Design 的完整明暗主题变量位于 `src/ui/tea-theme.css`，包含 Color、Shadow、Border、Space、Font、Typography 及组件状态变量；`src/ui/index.css` 只负责将它们桥接到 shadcn/Tailwind 语义 token。
-- **无聊天输入框。** 主应用的「输入框是主角」等对话产品范式不适用于管理台，已移除；保留通用的连续性、加载态、空状态规则。
-- **无 framer-motion。** 本仓库未引入动画库，动效一律用 CSS transition / animation（含 `tw-animate-css` 工具类）实现。
-
-## 技能参考
-
-涉及 UI 实现时，**必须参考以下技能**，并确保当前 AI assistant 已加载：
-
-1. **`shadcn`** — shadcn/ui 组件用法、样式规则、表单、组合、图标。本仓库 shadcn 组件安装于 `src/ui/components/ui/*`。
-
-### 技能安装方法
-
-本企业版只使用 `shadcn` 技能。技能安装在项目开发环境中，不属于应用运行时依赖，也不会进入前端 bundle 或修改 `package.json`。
-
-如果当前 AI assistant 已经提供并加载 `shadcn` 技能，不需要重复安装。技能缺失时，在项目根目录执行以下任一命令：
-
-```bash
-# pnpm
-pnpm dlx skills add shadcn/ui
-
-# npm
-npx skills add shadcn/ui
-
-# yarn
-yarn dlx skills add shadcn/ui
-
-# bun
-bunx skills add shadcn/ui
-```
-
-安装完成后，由支持 Skills 的 AI assistant 自动加载该技能；不要把技能目录复制进本仓库，也不要把技能包加入前端 bundle。安装失败时，先确认当前目录是项目根目录、包管理器可用，以及技能名称为 `shadcn/ui`，再继续 UI 实现。
-
-官方说明：<https://ui.shadcn.com/docs/skills>
-
-**使用规则：**
-
-- 任何新增 UI 组件，首先查上述技能是否有现成的 shadcn 组件可用，**禁止自造轮子**。
-- 组合现有组件时遵循 shadcn 技能的样式范式（`FieldGroup` + `Field` 而不用 `space-y-*`；Button 的 `variant`/`size` 枚举等）。
-- 所有面向用户的文本通过 `src/admin/i18n.ts` 的翻译字典走 i18n，键同时补充 `zh` / `en` 两套，不写裸文案。
-- 页面 key、API 路径、事件类型、主题模式等字符串常量必须定义为 `as const` 对象（参照 `App.tsx` 的 `AdminPage`、`theme.ts` 的 `AdminThemeMode`），禁止裸字符串字面量。
-
-## 运行环境
-
-- **目标浏览器：** Chromium ≥130（`vite.admin.config.ts` 的 build target）。使用 CSS custom properties 与现代 CSS，不承诺旧版浏览器兼容；Safari / Firefox 非首要目标，允许优雅降级。
-- **主题三态：** 浅色 / 深色 / 跟随系统，实现于 `src/admin/theme.ts`（`.dark` class + `theme-mode` attribute + `prefers-color-scheme` + localStorage）。主题等浏览器偏好持久化必须用 try/catch 容忍存储被禁用（该文件即范式）。
-- **布局面向桌面浏览器：** 以 ≥1280px 视口为一等公民，窗口可任意缩放；窄视口提供导航折叠和横向滚动等基本响应式行为，hover 交互仍按桌面鼠标假设设计。
-- **明暗两套外观下都成立。** 所有设计决策必须同时在浅色与深色主题下验证。
+- Admin Console 是纯浏览器应用，通过 `/aep` HTTP API 通信；不得使用 Electron IPC、Node 模块或 `process`。
+- 浏览器目标以 `vite.admin.config.ts` 为准，当前为 Chromium ≥130；桌面视口为主要使用场景，窄视口仍须可操作。
+- 主题只保留浅色、深色、跟随系统。浏览器存储被禁用时仍须正常渲染。
+- 复用现有 `antd` 依赖，不为 Admin 安装 shadcn 组件或强制加载 shadcn 技能。
+- 不从 `src/ui/components/ui/*` 导入 Admin 视觉原语，不在 Admin 入口加载 `src/ui/index.css` 或 `src/ui/tea-theme.css`。
+- `scripts/verify-admin-console.mjs` 明确检查 Admin CSS 不包含 Tea 主题。仓库中的 Tea/shadcn 文件和
+  [腾讯云 token 采集记录](docs/tencent-cloud-theme-tokens.md) 不是 Web 管理端的规范。
+- 技能可辅助设计审查，但必须服从本文件的组件和主题边界；不为加载技能修改应用依赖。
 
 ## 设计方向
 
-以 **Kimi、Codex 这一代 AI 产品的质感**为基准：中性、克制、内容优先。
+管理界面应克制、清晰、内容优先。用间距、标题和业务分组建立层级，避免渐变、发光、装饰性动画和重复容器。
+浅色与深色是同一套 AntD 主题的两个外观，不另建页面专属配色。
+主要动作清晰可见，状态有文字说明，错误能定位到具体操作；数据缺失不能伪装为成功或零值。
 
-- **界面退后，内容向前。** 界面骨架由中性灰构成，颜色只出现在该出现的地方（品牌强调、状态语义）。不做炫技的渐变、发光、彩色装饰。
-- **用留白和字重建立层级，而不是用颜色和边框。** 分组靠间距，强调靠字重，分隔优先用空白，其次用 1px 细线，最后才是阴影。
-- **暗色与亮色是同一套设计的两个面。** 主题只保留：浅色 / 深色 / 跟随系统。不再新增彩色主题。
+## 组件与主题单真源
 
-### 质感目标：轻盈、流畅、有呼吸感
+### 根 ConfigProvider
 
-在"克制"的底色之上，产品应当感觉**轻盈、流畅、有呼吸感**——这与克制不矛盾，它靠节奏和留白实现，不靠加特效：
+复用 `src/admin/App.tsx` 的唯一根主题配置，当前配置如下：
 
-- **轻盈** = 视觉重量低 + 动效质量感小。视觉重量由本文件的色彩/边框/字重规则保证；动效质量感小意味着小幅度、短距离、快速到位的运动，没有沉重的大位移和迟缓的过渡。
-- **流畅** = 轨迹连续，没有断裂点。流畅的反义词不是"慢"，是"断"：硬切、闪屏、中途重挂载都是断裂。具体规则见「交互手感」。
-- **呼吸感** = 节奏。内容按次序落位而不是整屏同时砸出来；留白有疏密；进行中的状态有缓慢的生命迹象（脉冲、微光）。一屏的呼吸感由一处编排好的节奏提供，不是到处都在动。
-- **不呆板** = 微交互覆盖。每个可交互元素对 hover/press 都有即时、轻微的回应（见「动效语言」）。微交互单个不起眼，合在一起是"做得用心"的直觉。
-
-## 页面壳层
-
-admin console 的主结构固定为“左侧导航 + 顶部行 + 内容区”，新增页面必须落在这个结构内，不另起一套 shell：
-
-```text
-main: min-h-full / bg-background
-├── aside (desktop: hidden below md, w-56, bg-sidebar, border-r)
-│   ├── brand row (h-14, border-b)
-│   ├── workspace navigation
-│   ├── control-plane note (底部对齐)
-│   └── account row + sign-out
-└── content column (min-w-0, flex-1, overflow-clip)
-    ├── header (h-14, bg-card, border-b)
-    ├── mobile navigation (below md, horizontal, border-b)
-    └── PageTransition + page content
+```tsx
+<ConfigProvider
+  theme={{
+    algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    cssVar: { key: 'zhiyuan-admin' },
+    token: { colorPrimary: '#1677ff', borderRadius: 6, fontSize: 14 },
+  }}
+>
+  {/* 现有 Admin 页面 */}
+</ConfigProvider>
 ```
+
+以上 seed 值只在根配置集中定义。需要调整时，在同一处修改，并验证所有受影响业务页；
+不要将它们复制到页面、局部 ConfigProvider、CSS 颜色常量或另一个 token 文件。
+主题其余颜色、尺寸、圆角与状态由 AntD 当前算法和组件 token 派生。
+
+### Token 消费方式
+
+- React 自定义区域使用 `const { token } = theme.useToken()`；优先复用 AntD 组件自身的样式。
+- `admin.css` 使用现有 `--ant-*` CSS 变量，与根 `cssVar` 配置保持一致。
+- 不在 JSX 中按主题拼接两套配色，不用 `dark:` 颜色覆盖，也不引入 Tea → shadcn 的语义映射。
+- Tailwind 可以保留现有布局工具类；不要使用默认颜色刻度或 `bg-card`、`text-muted-foreground` 等
+  依赖另一套主题桥接的颜色类来定义 Admin 表面。
+
+| 语义 | AntD token | 使用位置 |
+| ---- | ---------- | -------- |
+| 页面画布 | `colorBgLayout` | shell 内容背景、登录画布 |
+| 容器表面 | `colorBgContainer` | Card、表格和普通输入控件的默认表面 |
+| 浮层表面 | `colorBgElevated` | Select 菜单、Dropdown、Tooltip 等浮层 |
+| 次级填充 | `colorFillAlter` / `colorFillSecondary` | 自定义代码区域、次级信息区 |
+| 主文本 | `colorText` | 标题与正文 |
+| 次文本 | `colorTextSecondary` | 说明、单位、元信息 |
+| 边框 | `colorBorder` / `colorBorderSecondary` | 控件边框与弱分隔线 |
+| 强调 | `colorPrimary` / `colorPrimaryText` | 主动作、链接、曲线与活动指示 |
+| 状态 | `colorSuccess` / `colorWarning` / `colorError` / `colorInfo` | 业务状态、错误和提示 |
+| 字体 | `fontFamily` / `fontFamilyCode` | 自定义正文与代码区域 |
+| 尺寸与间距 | `fontSize*`、`padding*`、`margin*`、`controlHeight*` | 自定义排版和布局 |
+| 圆角与阴影 | `borderRadius*`、`boxShadow*` | 自定义容器与浮层 |
+
+CSS 对应写法如 `var(--ant-color-bg-container)`、`var(--ant-color-bg-elevated)`。
+优先按语义选 token，避免把所有背景都设为同一个值。
+
+### Card、Select 与浮层
+
+- 使用 `antd` 的 Card。默认浅色卡片为白色，与 `colorBgLayout` 的页面画布区分；
+  不将卡片设为透明或页面背景色。深色使用算法派生的容器表面，不手写深色值。
+- 使用 AntD Select 及其 options、loading、disabled 等状态，不替换为原生 `<select>` 或 shadcn Select。
+- 保留 Select 默认轮廓、尺寸、箭头、焦点反馈和菜单浮层；同一工具栏内的选择器保持同构。
+- 菜单使用 `colorBgElevated`，不强制与 Card 颜色相同；深色浮层可比普通容器更亮。
+- 保留 AntD disabled 的填充与文字样式，不通过整块 `opacity` 或 `pointer-events: none` 替代组件状态。
+- 不为“修复背景色”编写全局 `.ant-*` 颜色覆盖；先检查入口样式、ConfigProvider 和 token 来源。
+
+### 自定义图表与代码块
+
+图表库只负责图表绘制，周边控件仍使用 AntD。线条、坐标、网格、提示浮层分别消费状态色、
+`colorTextSecondary`、`colorBorderSecondary`、`colorBgElevated` 等 token。
+代码块使用 `fontFamilyCode` 和次级填充，长命令可横向滚动，键盘用户可以进入并滚动区域。
+禁止把缺失值当作零绘图或计价；示例数据必须有显式标识，不能冒充实际观测结果。
+
+### 禁止事项
+
+- 在页面中新增 hex、rgb、hsl 配色或 Tailwind 默认颜色刻度，包括硬写白底和黑底。
+- 创建页面级主题、第二套 localStorage 主题键、`useTheme` 或系统主题监听。
+- 自造 Button、Tag、Modal、Tabs、Select、Form 字段等已有 AntD 组件。
+- 使用背景色、边框和阴影叠加层层嵌套 Card。
+- 为设计规则引入 Web 字体、动画库或另一个组件库。
+
+## 页面壳层、导航与排版
+
+### 固定壳层
+
+复用 `App.tsx` 的 Layout：左侧导航 + 顶部行 + 内容区。登录、工作台和管理台的会话门控不另起实现。
+布局类由 `admin.css` 管理；不要用 renderer 的 shell 类或 CSS reset 覆盖 Admin。
+
+当前一级目的地为概览、数字员工、知识库、技能管理、用户管理、模型网关、日志审计、系统管理。
+实际可见项由 `App.tsx` 的权限规则决定。增加或移动目的地时同时更新路由、兼容映射、权限、文案与测试；
+不恢复旧版“四个/五个目的地”或把模型服务重新放回系统管理。
+模型目录、接入配置、配置生效详情属于模型网关；新增同级功能继续使用同一组最上级下划线页签。
+不得为了视觉调整改变页面归属或扩大权限。
+
+窄视口采用当前 shell 支持的导航方式。新增折叠入口时使用 AntD Drawer/Menu，并复用同一选中状态与权限过滤。
+内容区必须允许收缩，长 ID、用户名、版本与 endpoint 使用省略或换行；
+表格允许局部横向滚动，不能撑宽整页。不要在文档里宣称尚未实现的窄屏布局已经存在。
 
 ### 页面模板
 
-- 内容页使用 `section.flex-1.flex-col.overflow-y-auto.bg-background.p-4.sm:p-6`。
-- 内容内层使用 `w-full` 充分利用桌面主区域；页面标题、说明和操作行使用 `gap-4`，页面区块使用 `gap-6`。仅在需要控制阅读宽度的长文案区域单独设置上限。
-- 页面眉标使用 `text-xs text-tertiary-foreground`，页面标题使用 `text-lg font-semibold leading-snug`，说明使用 `mt-1.5 text-sm text-muted-foreground`。
-- 页面右上角的刷新是无文字图标按钮：`size="icon"`、`aria-label`、`title`，图标 `size-4`；不添加边框或阴影。
-- 内容卡片使用 `Card`，卡片之间用 `gap-4`；不要用卡片包裹卡片，也不要把整页背景做成浮动卡片。
-- 列表型页面优先使用 `Table`；信息型或可操作实体优先使用 `Card`。表格容器使用 `overflow-hidden rounded-lg border border-border bg-card`。
-
-### 导航与响应式
-
-- 导航有五个一级目的地：概览、资源管理、企业模型、事件与审计、平台运维。增加目的地前必须同时更新 `AdminPage`、`navigation`、i18n 和测试。
-- 桌面端使用左侧 `aside`；窄视口隐藏 aside，在顶部行显示品牌标记、主题切换和图标化退出登录，并在其下显示横向滚动的一级导航。
-- 一级导航和移动导航必须表达同一个 `page` 状态，不能维护两套选中逻辑。
-- 资源管理的二级页签固定为：用户、Team、Role、Skill、Skill 授权。使用线性页签，不改成胶囊分段控件。
-- 所有横向内容必须允许收缩：外层用 `min-w-0`，长 ID、用户名、版本和 endpoint 使用 `truncate` 或 `break-all`，不能撑宽 shell。
-- `md` 断点只改变导航布局；内容宽度、颜色、字重、控件语义在两种视口保持一致。
-
-### 页面职责与信息结构
-
-| 页面 | 首屏结构 | 数据/操作规则 |
-| ---- | -------- | -------------- |
-| 概览 | 页面标题行、5 个统计卡片、连接状态卡片 | 统计数据加载时卡片原地显示 Skeleton；刷新按钮只刷新概览，不改变导航状态 |
-| 资源管理 | 页面标题行、线性二级页签、当前资源列表 | 用户、Team、Role、Skill 使用表格；Skill 授权为空时显示 Empty + 授权 CTA；状态用 Badge 表达 |
-| 企业模型 | 页面标题行、添加模型按钮、模型卡片列表 | 添加模型通过 Dialog；模型启用状态用 success/outline Badge；模型授权进入可返回的子页面，并按用户、角色、团队筛选和搜索 |
-| 事件与审计 | 发布控管事件卡片、审计查询卡片、审计结果 | 发布和查询使用 Field + Input + Button；结果为空显示 Empty；事件成功后保留 event id 并提供投递查询 |
-| 平台运维 | 页面标题行、License/用户会话/凭证/Data Plane 线性页签、当前记录列表 | License 支持导入和撤销；会话只读查询；凭证支持元数据 CRUD、轮换和 User/Role/Team 授权；Data Plane 支持期望状态发布与运行状态查询；敏感值不在列表中展示 |
-
-页面新增区块必须说明它属于哪个页面职责、它消耗哪个 API 数据、它的 loading/error/empty/success 状态，以及完成后如何回到当前页面上下文。不要把 API 字段、网络错误或后端状态直接当作视觉规则。
-
-### 顶部图标按钮的尺寸陷阱
-
-图标按钮的 hover 背景必须覆盖完整按钮，而不是只包住图标。统一使用 `size="icon"`（当前为 `size-8`）和显式 `size-4` 图标；必要时补 `p-0`。`src/ui/index.css` 的 admin 全局按钮规则禁止用 `width: auto` 覆盖尺寸 utility，否则 icon button 会退化为“图标宽、按钮高”的窄条。所有新增全局按钮规则都必须检查 `size-*`、`w-*`、`w-full` 是否仍能生效。
-
-## 色彩
-
-### 事实来源（单真源）
-
-颜色只允许通过 Tea Design 变量或其语义别名使用。真源是 `src/ui/tea-theme.css`：
-
-- `:root` / `.tea-theme-light` / `[theme-mode='light']` 提供完整浅色主题。
-- `.dark` / `.tea-theme-dark` / `[theme-mode='dark'][theme-enable='true']` 提供完整深色主题。
-- `src/ui/index.css` 的 `:root` / `.dark` 只定义 `--background`、`--primary`、`--border` 等兼容 shadcn 的语义别名，`@theme inline` 再桥接为 Tailwind 工具类。
-
-### 主题运行契约
-
-- 组件只使用 `background`、`card`、`muted`、`primary`、`sidebar-*` 等语义类；不要在 JSX 中判断主题后拼接两套颜色 class。
-- 主题切换统一调用 `applyAdminTheme` / `persistAdminTheme`，状态枚举统一使用 `AdminThemeMode`。不要创建第二个 `useTheme`、第二个 localStorage key 或第二套 `matchMedia` 监听。
-- `applyAdminTheme` 在 `document.documentElement` 上维护 `.dark`、`theme-mode` 和 `theme-enable`；Tea 变量根据这些选择器自动切换。
-- `system` 模式必须继续监听 `prefers-color-scheme`；主题存储失败时仍应正常渲染。
-- 修改 token 时同时检查浅色和深色的对比度，特别是 `primary-foreground`、`sidebar-primary-foreground`、状态文本和 `border`。
-
-组件一律通过 shadcn 语义 utility（`bg-card`、`text-muted-foreground`、`border-border` 等）消费颜色，不得绕过 token。
-
-**禁止：**
-
-- 在组件中直接写 hex / rgb / hsl 色值（如 `bg-[#3B82F6]`、`text-gray-500`、`bg-white`）。
-- 使用 Tailwind 默认彩色刻度（`blue-*`、`gray-*`、`slate-*` 等）。
-- 新增一次性颜色。需要新颜色时，先确认 Tea Design 是否已有对应的 Color token；优先使用 `--tea-color-*`，否则在 `src/ui/index.css` 的明暗语义映射中增加别名，再通过 `@theme inline` 桥接后使用。
-
-### 色板角色
-
-| 角色     | Token                              | 用途                                                   |
-| -------- | ---------------------------------- | ------------------------------------------------------ |
-| 画布     | `background`                       | 应用底层背景                                           |
-| 表面     | `card`（次要表面 `secondary`）     | 卡片、侧边栏、输入框底色                               |
-| 浮起表面 | `muted` / `accent`                 | hover 态、次级填充                                     |
-| 覆盖层   | `popover`                          | 弹层、下拉、浮窗                                       |
-| 侧边栏   | `sidebar` 系列                     | 侧边栏专用表面、边框、激活态                           |
-| 主文本   | `foreground`                       | 正文、标题                                             |
-| 次文本   | `muted-foreground`                 | 辅助说明、表头、占位符、搜索无匹配结果及紧凑空态       |
-| 淡色文本 | `tertiary-foreground`              | 用户名、资源 ID、版本、时间戳、eyebrow 等元信息       |
-| 边框     | `border` / `input`                 | 分隔线、控件描边                                       |
-| 强调     | `primary` / `primary-foreground`   | 唯一的品牌强调色，用于主按钮、激活态、链接、focus ring |
-| 状态     | `destructive` / `success` / `warning` / `info` | 危险、成功、警告、信息只使用 Tea 对应的 `--tea-color-function-*`、`--tea-color-bg-*`、`--tea-color-text-*` token |
-
-侧边栏必须通过 `sidebar` 语义 token 直接消费 Tea 的 `--menu-*` 组件变量：默认表面使用 `--menu-bg`，hover 使用 `--menu-item-bg-hover` / `--menu-item-text-hover`，选中态使用 `--menu-item-bg-active` / `--menu-item-text-active`。浅色主题的选中背景固定为 `#e5ecff`，选中文字和图标沿用侧边栏默认文本 `--menu-text-default`；深色主题的选中背景固定为 `#282e40`，选中文字和图标保持白色 Tea 前景。选中态的文字颜色不因背景调整而改变，选中项不增加可见边框、不加粗，文字和图标继承同一选中前景色。
-
-### Tea 色值参考（Light / Dark）
-
-完整变量见 `src/ui/tea-theme.css`。组件代码使用语义别名，不直接依赖下面的具体色值：
-
-| 角色 | Tea token | 浅色观测值 |
-| ---- | --------- | ---------- |
-| 品牌默认 | `--tea-color-bg-brand-default` | `#0052d9` |
-| 品牌 hover | `--tea-color-bg-brand-hover` | `#266fe8` |
-| 品牌 active | `--tea-color-bg-brand-active` | `#0034b5` |
-| 品牌 focus | `--tea-color-bg-brand-focus` | `#699ef5` |
-| 选中背景 | `--menu-item-bg-active` | `#e5ecff`（浅色） / `#282e40`（深色） |
-| 页面背景 | `--tea-color-bg-page-default` | `#f7f8fb` |
-| 容器背景 | `--tea-color-bg-container-default` | `#fff` |
-| 主文本 | `--tea-color-text-primary` | `rgba(0,0,0,0.9)` |
-| 次文本 | `--tea-color-text-secondary` | `rgba(0,0,0,0.7)` |
-| 主边框 | `--tea-color-border-primary-default` | `#e6e9ef` |
-| 错误默认 | `--tea-color-function-error-default` | `#f64041` |
-
-> 深色值由同一组 Tea token 在 `.dark` 主题块中提供；禁止在组件中用 `dark:` 写第二套颜色。
-
-### 删除确认操作
-
-- 不可撤销删除的确认按钮使用 `destructive` token（填充色、浅色前景）；hover 可使用同色系更深一档反馈。
-- 取消按钮使用 `text-muted-foreground`，无可见边线、无阴影；hover 仅使用中性表面背景反馈。
-- 删除确认说明使用一句简短文案并保持单行；省略"此操作不可撤销"等重复说明。模型名等动态文本过长时截断，不得撑高确认框。
-- 删除、撤销、下架、取消等破坏性确认一律使用共享 `AlertDialog` 及其 `AlertDialogFooter`，不得在页面内覆写底部背景、分隔线、左右宽度或按钮布局。确认框底部保持与内容同一表面，两个等宽按钮列，间距 `gap-4`、左右内边距 `px-5`，按钮填满各自列。
-
-规则：
-
-1. **强调色唯一。** 一个屏幕内，`primary` 只出现在一个主要动作和少数激活态上。禁止用强调色给普通图标、普通文本"提色"。
-2. **状态色不装饰。** 红/绿/黄只表达危险、成功、警告。
-3. **层级公式：** 背景每浮起一层（background → card → muted → popover），明暗差异缩小一档；不要跳档制造高反差色块。
-4. 明暗主题共用同一套 token 名，组件代码不得出现 `dark:` 前缀的单独配色——差异必须在 `src/ui/tea-theme.css` 和 `src/ui/index.css` 的 token 层解决。模态遮罩使用 `bg-overlay`，不在组件中写黑色透明度。
-5. **搜索空结果使用次文本。** 关键词无匹配、无可选项等紧凑空态使用 `text-sm text-muted-foreground`，不使用主文本、状态色或额外边框；完整空状态页面再按空状态组件规范处理。
-
-6. **文本层级按语义区分。** 辅助说明和表头使用 `text-muted-foreground`；资源 ID、用户名、版本、时间戳和 eyebrow 等元信息使用 `text-tertiary-foreground`，不通过 opacity 临时降低颜色。
-7. **状态组件使用语义变体。** `Badge` 和 `Alert` 支持 `success`、`warning`、`info`、`destructive` 变体；启用、连接和操作成功使用 `success`，权限或不可用提示使用 `warning`，错误和危险操作使用 `destructive`，默认/已标记类信息使用 `info`。
-
-## 字体
-
-### 字体族
-
-- **界面字体：** 使用 Tea 的 `--tea-font-family-default`，通过 `--font-sans` 暴露给 Tailwind。禁止引入 Web 字体文件——浏览器端尤其如此，避免额外下载与 FOUT。
-- **代码字体：** 使用 Tea 的 `--tea-font-family-code`，通过 `--font-mono` 暴露给 Tailwind。所有代码块、行内代码、终端、diff 统一使用。
-- 全局统一，禁止在组件上用 `font-family` 覆盖（组件库内部对 `--font-sans` 的引用除外）。
-
-### 字号刻度
-
-字号必须来自 Tea 的 `--tea-font-size-*` 或 `--tea-typography-*`，Tailwind 的常用字号已在 `src/ui/index.css` 中桥接：
-
-| 档位 | 类名        | Tea 字号 token | 尺寸 | 用途 |
-| ---- | ----------- | -------------- | ---- | ---- |
-| 辅助 | `text-xs`   | `--tea-font-size-300` | 12px | 时间戳、badge、caption |
-| 次要 | `text-sm`   | `--tea-font-size-350` | 14px | 正文、按钮、列表项、表格 |
-| 强调 | `text-base` | `--tea-font-size-400` | 16px | 区块标题、面板标题 |
-| 页面 | `text-lg`   | `--tea-font-size-450` | 18px | 页面级标题、空状态主标题 |
-| 展示 | `text-xl`   | `--tea-font-size-500` | 20px | 登录页等展示场景 |
-| 大标题 | `text-2xl` | `--tea-font-size-600` | 24px | 需要明确强调的页面标题 |
-
-> 标题角色优先使用 Tea 的 `--tea-typography-heading-*`，正文角色优先使用 `--tea-typography-body-*`；不要新增 22px 等 Tea 未提供的字号。
-
-### 字重
-
-只允许 Tea 提供的两档：
-
-| 字重 | 类名            | Tea token | 用途 |
-| ---- | --------------- | --------- | ---- |
-| 400  | `font-normal`   | `--tea-font-weight-regular` | 正文、按钮、导航、标签、Tab、表头、Badge、数据值 |
-| 600  | `font-medium` / `font-semibold` | `--tea-font-weight-medium` | 页面/区块/卡片/弹层标题、品牌字标、hero 与展示型数据 |
-
-除标题、品牌字标、hero 与展示型数据外，一律使用 400；激活态通过 Tea 的状态色和背景表达，不通过加粗表达。禁止 `font-bold`（700）及以上，也禁止自行引入 500。
-
-### 行高
-
-| 场景         | Tea token | 说明 |
-| ------------ | --------- | ---- |
-| 默认正文     | `--tea-typography-body-default` | 12px / 20px |
-| 中号正文     | `--tea-typography-body-md` | 14px / 22px |
-| 标题         | `--tea-typography-heading-4` 至 `heading-1` | 按标题层级选择 |
-| 代码块       | `--tea-font-line-height-500` | 20px 基准 |
-
-## 圆角
-
-圆角必须来自 Tea 的 `--tea-border-radius-*`。`--radius` 对应 Tea 的 `--tea-border-radius-default`（0px），Tailwind 刻度在 `@theme inline` 中直接映射 Tea 档位：
-
-| 圆角  | 类名             | Tea token | 实际值 | 用途 |
-| ----- | ---------------- | --------- | ------ | ---- |
-| 小    | `rounded-sm`     | `--tea-border-radius-150` | 6px | badge、行内代码块、小图标按钮 |
-| 中    | `rounded-md`     | `--tea-border-radius-200` | 8px | 按钮、输入框、下拉项 |
-| 默认  | `rounded-lg`     | `--tea-border-radius-300` | 12px | 卡片、面板、导航项 |
-| 大    | `rounded-xl`     | `--tea-border-radius-400` | 16px | 对话框、大型弹层、代码块容器 |
-| 全圆  | `rounded-full`   | `--tea-border-radius-full` | 9999px | 头像、分段控件滑块 |
-
-规则：
-
-1. 同一容器内，子元素圆角 ≤ 父元素圆角，视觉上保持同心。
-2. 禁止任意值圆角（`rounded-[7px]` 等）；刻度不满足时优先改设计，其次扩展 `@theme` 刻度。
-3. 主应用中主输入框（hero prompt input）`rounded-3xl` 的例外是聊天产品特征，管理台不适用。
-
-## 阴影
-
-阴影必须来自 Tea 的 `--tea-shadow-*`。Tailwind 的 `shadow-sm` 至 `shadow-xl` 已在 `src/ui/index.css` 中桥接，不能使用 Tailwind 默认阴影值：
-
-| 级别         | 类名         | 用途                     |
-| ------------ | ------------ | ------------------------ |
-| `shadow-sm`  | 极轻的浮起感 | 默认、hint               |
-| `shadow-md`  | 卡片级       | 卡片、控制柄滑块         |
-| `shadow-lg`  | 悬浮级       | hover 浮起、sticky 栏    |
-| `shadow-xl`  | 弹层级       | 对话框、modal            |
-| `shadow-2xl` | 映射到 Tea `shadow-xl` | popover、tooltip |
-
-> Tea 的阴影由 `--tea-size-*`、`--tea-shadow-*-*` 和 `--tea-shadow-*` 组合而成。确需新增阴影时，先在 `src/ui/tea-theme.css` 的明暗主题块中补齐对应变量，不得手写 `shadow-[...]` 任意值。
-
-规则：
-
-1. **边框优先，阴影殿后。** 浅色主题下能用一个 1px `border` 说清的层级，不用阴影。阴影只用于"真正浮在内容之上"的元素（弹层、对话框）。
-2. 暗色主题慎用阴影（深色上阴影不可见），层级用表面色明度差 + 边框表达。
-3. 普通按钮、输入框**不加阴影**。
-
-## 间距与填充
-
-- 以 Tea 的 `--tea-space-100`（4px）为基准网格，`@theme inline` 的 `--spacing` 指向该 token。只使用 Tailwind 标准间距刻度（`p-1`=4px … `p-6`=24px），更大或特殊间距直接引用对应的 `--tea-space-*` 语义值。禁止 `p-[13px]` 这类任意值。
-- 约定俗成的填充模式：
-
-| 场景         | 模式                                                              |
-| ------------ | ----------------------------------------------------------------- |
-| 侧边栏分组   | 水平 `px-3`，组内项间距 `space-y-0.5`，组间 `space-y-2` 或 `mt-2` |
-| 导航/列表项  | `px-3 py-1.5`，圆角 `rounded-lg`                                  |
-| 按钮（默认） | 组件库默认（`h-9 px-4`），小号 `h-8 px-3`                         |
-| 图标按钮     | `h-8 w-8`，图标 `h-4 w-4`                                         |
-| 卡片         | `p-4`；密集卡片 `p-3`                                             |
-| 对话框       | 内容区 `p-6`， footer `px-6 py-4`                                 |
-| 表格单元格   | `px-3 py-2`；表头 `text-xs` 或 `text-sm` + `text-muted-foreground` |
-| 表单行距     | `space-y-4`                                                       |
-
-- 图标与文字并排时间距 `gap-1.5`（紧凑）或 `gap-2`（默认）。
-
-## 边框
-
-- **宽度一律使用 Tea 的 `--tea-border-width-default`**（当前为 1px；使用 `border`，不显式写 `border-1`）。唯一允许 2px+ 的地方是 focus ring 和个别进度条，并应使用 `--tea-border-width-50`。
-- 颜色只用 token：常规 `border-border`，更弱的分隔 `border-border/50` 或表面色差，输入框 `border-input`。
-- hover 不改变边框宽度（避免布局抖动），只改 Tea 的 Border color token 或背景 token。
-- **所有浮层必须有边框。** Popover、Dropdown、Select、HoverCard 与 Dialog 使用 `border border-border`，不得以 `ring` 模拟边框或用 `border-0` 移除。
-- 模态遮罩用 `bg-overlay`（只变暗、**不使用 backdrop-blur**），其值来自 Tea 的 `--tea-color-bg-mask-default`。
-
-## 透明度
-
-透明度只用于**状态**，不用于**配色**：
-
-| 场景                       | 做法                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| 禁用态                     | `opacity-50`（配合 `pointer-events-none`）                                                          |
-| 非激活的分段选项           | `opacity-50` + 激活时恢复（参见下方范例）                                                           |
-| 骨架屏加载                 | `Skeleton` 组件（`animate-pulse`）                                                                  |
-| 模态遮罩                   | `bg-overlay`，只变暗、**不使用 backdrop-blur**                                                       |
-| 其余一切"让颜色变浅"的需求 | **禁止用 opacity 实现**，改用对应的弱档 token（`muted-foreground`、`border`、`primary-foreground`） |
-
-原因：opacity 会让元素与背后的内容混色，在明暗两套主题下表现不一致；token 才能在两套主题中各自取到正确的值。
-
-## 动效
-
-- 时长：普通交互 **100–250ms**；具备明确语义过程的动态图标 **400–600ms**，统一 `ease-out`。超过 600ms 的动画需要理由。
-- 可动属性默认只有 `opacity` 和 `transform`；禁止动画化 width/height/top/left（布局抖动）。唯一的现有例外是 `TabsIndicator` 的活动下划线：它可根据 Base UI 的 `--active-tab-width` 过渡自身宽度，因为该元素不参与内容布局。
-- 入场动画优先用 `tw-animate-css` 工具类（本仓库已引入）：`animate-in`、`fade-in`、`slide-in-from-bottom-2`、`zoom-in-95` 等，组合使用（如 `animate-in fade-in slide-in-from-bottom-2`）。需要自定义时在 `@theme` 补 keyframes，不内联。
-- 实现手段只有 CSS（transition / animation）。本仓库没有 framer-motion，不要为动效引入 JS 动画库。
-- 必须遵守 `prefers-reduced-motion`：给自定义动画补 `motion-reduce:animate-none` 或等效处理；`tw-animate-css` 已内置时验证即可。
-
-### 动效语言
-
-动效分三档，各自的幅度和时长不得混用：
-
-| 档位 | 场景 | 幅度 | 时长 |
-| ---- | ---- | ---- | ---- |
-| 微交互 | hover / press / focus / 状态切换 | 位移 1–2px；背景或阴影换一档；简单图标形变 | 100–200ms |
-| 语义动态图标 | 文件写入、对勾绘制、器件脉冲等可读的单次过程 | 仅图标内部 `opacity` / `transform`；一次完成、不循环 | 400–600ms |
-| 过渡 | 视图切换、展开收起、弹层进出 | 位移 4–28px；opacity | 150–250ms |
-| 入场编排 | 页面/区块首次出现 | `fade-in` + `slide-in-from-bottom-2`（8px），错峰 delay 60–100ms 递增 | 单层 ≤250ms |
-
-规则：
-
-1. **按压有反馈。** 按钮和可点卡片 active 态下沉 `translate-y-px`（组件库 Button 已内置）；可点卡片可加 `active:scale-[0.99]`。
-2. **hover 反馈必须可感知。** 背景换一档（`hover:bg-accent` / `hover:bg-muted`）或阴影升一档（`shadow-sm → shadow-md`），二选一但要看得出差别；对比度不足 3% 的"假 hover"视同没有。
-3. **缩放只用于小元素。** 图标、按钮、缩略图可以 `scale`（hover ≤1.02）；**含正文文本的卡片禁止 scale**——高分屏下缩放会使文字瞬时发虚，浮起感改用阴影 + 背景表达。
-4. **入场错峰有节制。** 同一屏幕至多一组错峰编排，2–4 层，delay 步进 60–100ms，总延迟 ≤400ms——用户永远不应该"等"内容出现。其余页面内容直接渲染，不要到处加入场动画。
-5. **循环动画只表达状态。** 缓慢的循环（`animate-pulse`、`Spinner`）只允许用于进行中的状态指示（连接中、刷新中、登录中），一屏至多一处；禁止与状态无关的装饰性循环动画（飘浮、流光、无限摆动）。
-6. **一屏一个重点。** 同一屏幕同时进行的编排动画至多一处；其余元素保持安静。动效的总预算是固定的，花在一个地方才被感知，到处都动等于没有动。
-7. **语义动态图标不等于普通 hover。** 只有动画本身表达明确过程时才可使用 400–600ms；鼠标悬停期间不重复播放，离开后复位。导航、普通按钮仍使用微交互档，不得借此整体放慢。
-
-正误对照：
-
-- ✅ 概览卡片 `animate-in fade-in slide-in-from-bottom-2` 错峰；Tab 切换指示滑动；按钮 `active:translate-y-px`
-- ❌ 整屏内容无过渡瞬间出现；三层以上的错峰或总延迟 >400ms
-- ❌ 对含文字的卡片做 `scale` hover；对比度 <3% 的 hover 变色
-- ❌ 装饰性循环动画；一屏多处同时脉冲/流光
-- ❌ 为动画引入 framer-motion 等新依赖
-
-## 交互手感
-
-「手感」是交互轨迹、UI 与动效的综合感受。基准仍是 Kimi、Codex 这一代产品：它们的共性不是某个具体动画，而是**连续性**——用户的每个动作都落在一条不间断的轨迹上。管理台没有对话输入框，主线是**侧边栏导航与主内容区的对应关系**：点一个页签，主内容区就抵达一个明确的场所。
-
-### 规则
-
-1. **导航必须有目的地。** 点击一个导航项必须让主面板抵达一个对应的场所（概览、资源、模型、事件），不允许只改变侧栏状态而主面板无响应。没有目的地的导航等于没有导航。
-2. **视图切换走"退出-进入"序列，禁止硬切。** 旧内容退出（opacity，≤150ms）→ 新内容进入（opacity + 位移，≤250ms）。本仓库用 CSS 实现：容器内 `animate-in fade-in slide-in-from-bottom-2 duration-200`；`prefers-reduced-motion` 下退化为瞬时切换。同一屏幕内只做一次编排好的过渡，不做多元素各自为政的散落动画。
-3. **异步标识替换不得打断界面。** 前端先生成稳定 id 并全程用作 React key；后端真实 id 返回后只建立映射，不替换 key。禁止在刷新、轮询等连续体验中途 remount 组件树（滚动位置、动画、局部状态会全部重置，用户感知为"闪一下"）。
-4. **加载态用骨架屏，不用全屏 Spinner。** 原地内容加载（表格、列表、卡片）渲染目标区域的 `Skeleton`；预计 <200ms 的加载直接渲染结果，不展示任何加载态，避免闪屏。全屏 Spinner 仅保留给应用级启动（登录恢复会话时）。
-5. **空状态是邀请，不是死端。** 每个空状态必须给出下一步动作（CTA 按钮或明确的操作指引），禁止只有一行灰字的死端画面。
-6. **主要动作不靠 hover 显形。** 新建、启用/停用等主操作常显（可用低对比度呈现，hover 提亮）；hover 才出现的隐藏入口只允许用于删除等低频危险动作。
-7. **切换不得静默丢状态。** 页签、筛选切换时若有未提交内容或进行中的操作，要么保留现场，要么明确告知；不允许无提示地清空用户正在看的内容。
-
-### 反面清单
-
-- 条件渲染直接换掉整棵视图树，硬切无过渡
-- 轮询/刷新时 React `key` 变化触发整树 remount
-- 快机器上全屏 Spinner 一闪而过，比不显示更糟
-- 关键入口 `opacity-0` 藏到 hover 才出现，用户找不到
-- 表格重新加载时整页闪烁而不是原地骨架屏
-
-## 控件质感基准
-
-### 切换/分段控件
-
-新做开关、分段控件、Tab 切换时参照以下语言（源自主应用侧边栏模式切换控件）：
-
-1. **全宽胶囊轨道**：轨道用中性灰（`bg-muted` + 1px 边框），与背景分得开但不抢眼。
-2. **滑动滑块**：全圆角滑块带 `shadow-md` 级投影，200ms ease 滑动，方向感清晰。
-3. **状态用文字表达，不用色块**：选中侧 `font-normal text-foreground`，未选侧 `font-normal text-muted-foreground opacity-50`；不通过加粗或强调色染色。
-4. **整行可点**：点击目标是整个控件区域，不只是滑块。
-
-### 线性页签
-
-资源管理等内容分区使用 RongxinAI 风格的线性页签：
-
-1. **底部分割线**：页签容器与内容区域之间使用 `border-b border-border`，不使用胶囊轨道。
-2. **活动下划线**：使用共享 Tabs 的 `TabsIndicator`，颜色使用 `primary` token，活动项保持 `font-normal`。
-3. **切换滑动**：指示条根据 Base UI 的 `--active-tab-left` / `--active-tab-width` 移动，过渡为 200ms `ease-in-out`；`prefers-reduced-motion` 下取消过渡。
-4. **非活动项**：使用 `text-muted-foreground`，hover 时提升为 `text-foreground`，不使用额外状态色。
-
-### 工具栏触发按钮
-
-下拉选择器、菜单触发器、工具栏动作按钮一律使用以下语言：
-
-1. **静止时融入工具栏**：ghost 风格——无边框、无背景、无阴影。
-2. **hover 用背景表达**：`hover:bg-accent`，200ms 内过渡；不用边框、阴影或颜色变化做 hover 信号。
-3. **下拉触发器带尾部箭头**：`ChevronDown`（`h-3.5 w-3.5 text-muted-foreground`），表明"点开有菜单"；纯动作按钮（如「+」）只放图标，不加箭头。
-4. **内容从左到右**：可选的前置图标（`size-4`）→ `text-sm` 文字 → 尾部箭头；文字过长用 `max-w` + `truncate` 截断。
-5. **成对出现时必须同构**：同一工具栏里的多个选择器共享完全相同的尺寸、间距与状态样式。
-
-禁止：给工具栏触发按钮加 `border`（包括 `border-input`）、用 `rounded-full` 胶囊、用阴影作为 hover 反馈——这些是已被否决的变体。
+- 标题行复用已有 `.admin-page-heading` 或相邻业务页的 Row/Space 组合。
+- 标题使用 `Typography.Title`；级别和字号与相邻页面一致，说明使用 `Typography.Text type="secondary"`。
+- 主操作使用 `Button type="primary"`，次操作使用默认 Button；图标动作使用 `icon` 属性并提供可读名称。
+- Card 使用 `title`、`extra` 与 children，不使用 shadcn 的 CardHeader/CardContent 写法。
+- 列表使用 AntD Table 的 columns、dataSource、rowKey 和 loading；信息详情优先使用 Descriptions。
+- 不将整页装进一个浮动 Card，也不嵌套 Card 制造重复层级。
+
+### 字体、间距、圆角与边框
+
+- 保留根主题的 `fontSize: 14`，标题与正文优先由 Typography 选择，不套用 Tea 字号、字重或零圆角规则。
+- 自定义区域读取 `fontFamily`、`fontFamilyCode`、`fontSize*`、`fontWeightStrong`，不增加字体文件。
+- 新增布局优先使用 Row/Col、Space、Flex 的标准能力，以及 token 的 margin/padding 档位。
+  既有 shell 的布局值以 `admin.css` 为准，不为对齐组件重置整页间距。
+- 圆角、控件高度、边框宽度与阴影保留 AntD 默认或根主题派生值。自定义区域使用对应 token。
+- hover 不改变边框宽度；不新增任意色值、阴影或全局按钮尺寸覆盖。
 
 ## 组件组合契约
 
-| 需求 | 必选组件/写法 | 约束 |
-| ---- | ------------- | ---- |
-| 普通主动作 | `Button` 默认 variant | 主按钮一个屏幕最多一个；文字 400；需要图标时使用 Lucide + `data-icon="inline-start"` |
-| 次要动作 | `Button variant="outline"` | 用于取消、刷新旁的次要操作和不改变页面主任务的动作 |
-| 工具栏/低强调动作 | `Button variant="ghost"` | 无边框、无阴影；hover 使用 muted/accent；危险动作显式使用 destructive 文本 |
-| 纯图标动作 | `Button size="icon"` | 必须有 `aria-label`，有悬停提示时加 `title`；按钮 `size-8`，图标 `size-4`，不要让全局规则覆盖宽度 |
-| 状态标签 | `Badge` | 仅使用 `success`、`warning`、`info`、`destructive`、`outline`、`secondary` 等已有变体；不手写色值 |
-| 页面错误/操作错误 | `Alert variant="destructive"` | 包含图标和翻译后的短说明；不要用 toast 替代页面内错误上下文 |
-| 表单 | `FieldGroup` + `Field` + `FieldLabel` + `Input` | 标签必须可关联输入；字段错误使用 `FieldError`；提交期间控件 disabled 并显示 `Spinner` |
-| 详情容器 | `Card` / `CardHeader` / `CardTitle` / `CardContent` | 使用 card 表面和 1px border；不要嵌套卡片制造层层浮层 |
-| 数据列表 | `Table` + `TableHeader` + `TableHead` + `TableBody` | 表头 400、次文本；操作列右对齐；动态数据行使用稳定 key |
-| 空数据 | `Empty` 组合 | 至少包含图标、标题、说明；有可执行下一步时在 `EmptyContent` 放 CTA |
-| 不可逆动作 | `AlertDialog` | 说明简短；取消为 outline/ghost，确认使用 destructive；pending 时禁止关闭和重复提交 |
-| 内容分区 | `Tabs` + `TabsList` + `TabsTrigger` | 资源管理使用 `variant="line"` + `TabsIndicator`，不要用默认胶囊轨道 |
+| 需求 | AntD 组件/写法 | 约束 |
+| ---- | -------------- | ---- |
+| 主动作 | `Button type="primary"` | 一个明确的主要动作；异步使用 loading 并阻止重复提交 |
+| 次动作 | 默认 `Button` | 延续相邻业务页的轮廓样式，不强制全部改成 ghost |
+| 低强调或行内动作 | `Button type="text"` / `type="link"` | 删除等危险动作使用 danger 和确认流程 |
+| 纯图标动作 | `Button icon={...}` | `aria-label`，必要时 title 或 Tooltip；保留完整点击和焦点区域 |
+| 状态标签 | `Tag` | 使用 AntD 语义预设；状态同时有文本 |
+| 页面错误与提示 | `Alert` 的 `type` 选择 error/info/warning/success | 使用 title、description、showIcon；页面错误可提供重试 |
+| 表单 | `Form` + `Form.Item` + `Input/Select/InputNumber` | label 关联输入，rules 校验，保留错误说明 |
+| 开关 | `Switch` | 关联标签，保留 checked、disabled、loading 和键盘行为 |
+| 详情容器 | `Card` + `Descriptions` | 不嵌套卡片；长内容可换行 |
+| 列表 | `Table` | 稳定 rowKey，局部滚动；加载、错误和空结果明确区分 |
+| 空数据 | `Empty` | 提供下一步动作或说明，未接入与无数据区分 |
+| 编辑弹层 | `Modal` / `Drawer` | 表单校验、焦点、Escape 与提交中行为按组件契约处理 |
+| 不可逆动作 | `Popconfirm` / 确认 Modal | 清楚说明影响，防止重复提交，失败可恢复 |
+| 内容页签 | `Tabs` 默认 line 类型 | 同级内容使用同一层下划线，不套用 TabsIndicator 或胶囊轨道 |
+| 少量互斥选项 | `Segmented` / `Radio.Group` | 只用于业务选项，不替代最上级页签 |
+| 计价说明等折叠内容 | `Collapse` | 使用 items API，保留可访问性与展开状态 |
+| 查询/重置/导出 | 已有 `ListQueryActions` | 复用页面注入的操作与鉴权，导出不可绕过权限 |
 
-Button 当前支持的标准 variant 为 `default`、`outline`、`secondary`、`ghost`、`destructive`、`link`；标准 size 为 `default`、`xs`、`sm`、`lg`、`icon`、`icon-xs`、`icon-sm`、`icon-lg`。新增变体前先证明现有语义无法表达需求，并同步补本表、组件测试和明暗主题映射。
+新增控件优先使用 `@ant-design/icons`；现有导航中的 Lucide 图标可保留，不能为统一图标擅自改已有页面。
+装饰图标使用 `aria-hidden`；不要让图标内部英文名称混入按钮的可访问名称。
+不使用 emoji、手绘 SVG 或 Unicode 符号代替现有图标。
 
-### 图标规则
+## 主题运行契约
 
-- 图标统一来自 `lucide-react`，普通装饰图标加 `aria-hidden="true"`，动作图标按钮通过按钮的 `aria-label` 表达含义。
-- 文字按钮的图标使用 `data-icon="inline-start"` 或 `data-icon="inline-end"`，由 Button 的间距规则统一布局；不要手写图标与文字的 margin。
-- 装饰图标默认 `size-4`，登录/品牌标记可使用 `size-5`，弹层媒体图标按组件默认尺寸；图标颜色使用 `text-muted-foreground` 或当前语义色。
-- 不用 emoji、手绘 SVG 或 Unicode 符号代替已有 Lucide 图标。
+- 切换统一调用 `applyAdminTheme` / `persistAdminTheme`，枚举使用 `AdminThemeMode`。
+- `theme.ts` 在 documentElement 上维护 `.dark`、`theme-mode` 和 `theme-enable`；
+  根 ConfigProvider 根据同一状态选择算法，这些属性不代表 Admin 加载了 Tea CSS。
+- system 模式持续监听 `prefers-color-scheme`；存储读写必须容忍被禁用。
+- 对比相邻业务页检查 Card、Select、菜单、Tooltip、Table、Modal 的背景、边框、焦点与 disabled 状态。
+- 不覆盖 AntD Menu 的选中颜色为 Tea 色值；导航状态由同一主题的 Menu 组件 token 表达。
 
-## 交互状态
+## 交互、异步状态与动效
 
-所有可交互元素必须具备完整状态链，缺一不可：
+1. 导航必须对应真实目的地；URL、选中项和内容一致，兼容旧路由。
+2. 加载尽量保留当前布局，使用 Table loading、Skeleton 或组件 loading；应用级会话恢复可使用 Spin。
+3. 加载失败显示错误与可执行重试，不伪装为空列表；未知指标显示“未提供”，不填造数值。
+4. 空状态说明原因和下一步；主要动作常显，不仅在 hover 时出现。
+5. 操作使用稳定 React key；刷新与轮询不通过随意 remount 清空滚动位置和输入。
+6. 切换筛选、页签或弹层时，不静默丢弃未提交内容；保存成功、部分失败与尚未生效明确区分。
+7. 需要权限或后端配置能力的动作不能仅靠前端展示假成功；未接通的保存禁用并解释原因。
 
-- **hover**：背景变浅一档（`hover:bg-accent` / `hover:bg-muted`）或文字变深一档；200ms 内过渡。
-- **active/pressed**：可省略，由 hover 延续。
-- **focus-visible**：统一 focus ring（组件库默认 `outline-ring/50`），颜色取 `ring` token，不得移除焦点样式而不提供替代。
-- **disabled**：`opacity-50` + 禁止指针事件，不改变配色结构。
-- **loading**：异步动作（刷新、登录）进行中按钮转入 pending 态（`disabled` + `Spinner`），避免重复提交。
+保留 AntD 自身的 hover、focus、pressed、弹层和 Tabs 动效，不以另一套组件的动画覆盖它们。
+新增自定义动画使用 CSS 和 AntD 的 motion token（如 `motionDurationFast/Mid/Slow`），
+尊重 `prefers-reduced-motion`；不要为普通页面切换强制加入退出/进入序列或动画库。
+避免布局属性动画、含正文卡片缩放和无业务意义的循环动画。
 
-## 可访问性与内容
+## 文案、可访问性与安全
 
-### 全局操作通知
+- 所有新增用户可见文本加入 `src/admin/i18n.ts` 的 zh/en 字典，检查双语长度。
+- 页面 key、API 路径、事件类型和主题模式沿用项目的 `as const` 枚举模式。
+- 字段使用 Form.Item label、稳定 id 与校验说明；不可只依赖红色边框。
+- 不移除 AntD 焦点样式。Modal、Drawer、Select、Switch、Tabs 均检查键盘操作。
+- 状态同时有文字或图标，不能只靠颜色；表格保留表头，长值不撑宽布局。
+- 不在 UI、日志、截图或测试 fixture 中暴露真实密码、provider key、模型令牌与其他密钥。
 
-- 所有跨页面的操作成功、失败、撤销、发布和登录反馈统一使用 `AdminNotificationViewport`；禁止各页面自行制作悬浮提示。
-- 通知固定在页面顶部正中，使用深色圆角表面；成功配绿色图标、失败配红色图标，文本必须简短且走 `i18n.ts`。
-- 入场仅使用从上方滑入和淡入（200ms）；成功 3 秒后消失，失败 5 秒后消失，同时仅显示最新一条。
-- 通知使用 `role="status"` 与 `aria-live="polite"`。字段格式、必填项等可修正错误应使用原生表单校验气泡（或对应 `FieldError`），一次只定位第一个错误字段，不得重复占用表单高度。
+操作成功和失败复用 `src/admin/notifications.tsx` 的 `notify` / `AdminNotificationViewport`。
+当前 viewport 使用 AntD Alert，成功 3 秒、失败 5 秒后消失，只显示最新一条，带 status 与 aria-live。
+不要另写深色悬浮提示或引入第二套 toast。字段错误留在 Form.Item；页面加载错误留在对应区域。
 
-- 每个页面只有一个清晰的页面级标题；区块标题用 `h2` 或组件提供的标题语义，不用普通 `div` 冒充层级。
-- 输入必须有 `FieldLabel` 和稳定 `id`；错误使用 `aria-invalid`、`FieldError` 和 `role="alert"`，不能只依赖红色边框。
-- 图标按钮必须有可读的 `aria-label`；有视觉上不明显的图标动作时同时提供 `title`。装饰图标使用 `aria-hidden`。
-- 弹层必须使用 `Dialog` / `AlertDialog`，保留焦点管理、Escape 关闭和关闭按钮；不可逆操作在 pending 时不可重复提交。
-- 表格必须有表头；右对齐的操作列只对齐操作，不改变其他列的阅读方向。
-- 所有状态不能只靠颜色表达，至少同时有文字、图标或结构差异；颜色仅作为 Tea 语义的辅助信号。
-- 中英文文案长度都要检查。动态 ID、用户名、endpoint 和时间戳不得导致按钮、表格或卡片溢出。
+## 验证与提交
 
-## 验证流程
-
-提交 UI 变更前执行：
+UI 变更至少执行：
 
 ```text
 npm run typecheck
@@ -506,35 +230,22 @@ npm run verify:admin
 git diff --check
 ```
 
-视觉检查至少覆盖：
+涉及表单、路由或壳层时，运行相应浏览器回归（如 `npm run verify:admin:e2e`），区分 fixture 与真实后端验证。
+视觉检查覆盖桌面、窄视口、浅色、深色，以及 loading/error/empty/success/disabled/focus 状态。
+检查卡片与画布区分、Select 菜单浮层、控件尺寸及主题切换后的一致性；不要只检查 JSX 类名。
+无法登录或缺少真实数据时，报告未覆盖的范围，不宣称完成业务验收。
 
-1. Chromium 桌面视口（约 1280px 或更宽）：侧边栏、顶部行、内容最大宽度、分割线对齐。
-2. 窄视口（低于 `md`）：品牌标记、主题按钮、退出按钮、横向导航和页签不溢出。
-3. 浅色主题：选中导航背景 `#e5ecff`，选中文字仍为侧边栏默认文本；页面背景、卡片、边框层级清楚。
-4. 深色主题：选中导航背景 `#282e40`；状态色、文本和边框仍有足够对比度。
-5. 交互状态：hover、focus-visible、pressed、disabled、loading、error、empty、dialog open/close；检查图标按钮的 hover 填充是否完整包裹图标。
+仅修改设计/开发文档时，核对说明与当前源码、相对链接、`git diff --check` 和 PR 文件范围即可。
+说明未运行运行时测试的原因；不要把其他工作树的 UI 检查冒充本次文档变更的验证。
+提交、PR 标题、描述与评审继续遵循 DEVOPS.md，使用 Conventional Commits，并填写改动、原因、实际验证。
 
-浏览器级验证无法完成登录时，不要伪造已验证的页面结果；仍需运行组件测试和 `verify:admin`，并在交付说明中明确未覆盖的认证后页面。
+提交 UI 前检查：
 
-## 落地检查清单
-
-提交 UI 代码前逐项自查：
-
-- [ ] 没有直接写死的色值 / Tailwind 默认彩色刻度；全部走 `src/ui/index.css` 的语义 token 及其桥接工具类
-- [ ] 没有 `dark:` 前缀的单独配色（主题差异在 Tea token 层解决）
-- [ ] 没有 Electron / Node 运行时依赖（`window.electronAPI`、`ipcRenderer`、`process`、Node 模块）
-- [ ] 字号使用 Tea 字号档位；除标题、品牌字标、hero 与展示型数据外，所有文字均使用 400
-- [ ] 圆角、阴影只用本文件定义的刻度，无任意值
-- [ ] 边框 1px，颜色用 token
-- [ ] 透明度只用于状态，配色变浅一律换 token
-- [ ] 普通交互动效 ≤250ms；语义动态图标 400–600ms；默认只动 opacity/transform，唯一例外是不参与布局的 `TabsIndicator` 宽度过渡；幅度符合「动效语言」规范；CSS 实现，未引入 JS 动画库
-- [ ] hover 反馈可感知（非 <3% 的假 hover）；含文字卡片未用 scale；自定义动画遵守 reduced-motion
-- [ ] 入场错峰至多一组、≤4 层、总延迟 ≤400ms；循环动画只用于状态指示且一屏一处
-- [ ] 视图切换有退出-进入序列，无硬切；reduced-motion 下退化正常
-- [ ] 异步 id 替换不触发 key 变化和中途 remount
-- [ ] 原地加载用骨架屏，无全屏 Spinner 闪屏
-- [ ] 空状态有 CTA；主要动作常显，不靠 hover 显形
-- [ ] 每个可交互元素有 hover / focus / disabled（含异步 loading）状态
-- [ ] 亮色与暗色两种外观下都看过效果
-- [ ] 所有用户可见文本走 i18n.ts 字典，zh / en 两键同补
-- [ ] 组件优先使用 shadcn/ui（`src/ui/components/ui/*`），未自造轮子
+- [ ] 组件来自 AntD 或已有 Admin 业务组合，未自造基础控件。
+- [ ] 使用唯一根 ConfigProvider，颜色与尺寸消费 AntD token。
+- [ ] Card、Select、浮层与相邻业务页一致；没有页面级配色或透明卡片。
+- [ ] 没有引入 renderer 的 Tea/shadcn 样式或 Electron/Node 能力。
+- [ ] 导航、权限、路由兼容和页面归属正确，同级页签使用统一下划线。
+- [ ] 双语文案、键盘焦点、加载、错误、空数据及禁用状态完整。
+- [ ] 桌面与窄视口、浅色与深色实际检查过，长内容无整页溢出。
+- [ ] 必需检查通过，验证说明与本次变更范围一致。

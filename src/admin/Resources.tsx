@@ -25,6 +25,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  DatePicker,
   Descriptions,
   Drawer,
   Dropdown,
@@ -47,13 +48,14 @@ import {
   theme,
   Upload,
 } from 'antd';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { runBatch } from './batch.js';
 import {
   type AdminConsoleClient,
   type AdminIdentity,
   type AdminIdentitySource,
   AdminPermission,
+  AdminRequestError,
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
@@ -67,14 +69,21 @@ import { ListQueryActions } from './components/ListQueryActions.js';
 import { formatTimestamp } from './format.js';
 import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
+import { PortalClient, PortalError } from './portal.js';
 import { resourcesCopy as rc } from './resources-copy.js';
 import { SessionClientCell, SessionClientDetail } from './session-client.js';
 
 const language: AdminLanguage = 'zh';
 const t = (key: AdminTranslationKey) => translate(language, key);
 
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 1024;
+// New passwords reject edge whitespace; the prompt names the cause instead of
+// silently trimming a secret the operator may have pasted deliberately.
+const edgeWhitespaceRule = {
+  validator: (_: unknown, value: string) =>
+    !value || value === value.trim() ? Promise.resolve() : Promise.reject(new Error(t('passwordEdgeWhitespace'))),
+};
 
 type AdminUser = PlatformUser & { readonly email?: string | null };
 
@@ -104,6 +113,8 @@ interface ResourcesProps {
   readonly client: AdminConsoleClient;
   readonly tab: AdminResourceTab;
   readonly identity?: AdminIdentity | undefined;
+  /** Test seam: injected portal client (defaults to a bearer client). */
+  readonly portal?: PortalClient | undefined;
 }
 
 const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false, align: 'center' } as const;
@@ -118,7 +129,8 @@ const EMPTY_RESOURCES: AdminResources = {
   assignments: [],
 };
 
-export function Resources({ client, tab, identity }: ResourcesProps) {
+export function Resources({ client, tab, identity, portal }: ResourcesProps) {
+  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
   const [resources, setResources] = useState<AdminResources | null>(null);
   const [modelResources, setModelResources] = useState<ModelResources>({
     models: [],
@@ -236,6 +248,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             <SkillsSection
               canAssign={hasAdminPermission(identity, AdminPermission.SkillsAssign)}
               client={client}
+              portal={resolvedPortal}
               resources={view}
               canWrite={canMutate}
               loading={loading}
@@ -411,7 +424,12 @@ function buildAccessRows(input: {
     const subject = subjectKeys.get(`${assignment.subjectType}:${assignment.subjectId}`);
     if (!subject) continue;
     const skill = skills.get(assignment.skillId);
-    const effective = skill !== undefined && accountActive && skillEffective(skill);
+    // An expired grant authorizes nothing: the manifest already filters those
+    // rows out, so showing this one as effective would contradict the server.
+    const expiresAt = assignment.expiresAt;
+    const expired =
+      typeof expiresAt === 'string' && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= Date.now();
+    const effective = skill !== undefined && accountActive && skillEffective(skill) && !expired;
     rows.push({
       key: `skill:${assignment.id}`,
       resourceType: 'skill',
@@ -424,11 +442,13 @@ function buildAccessRows(input: {
       effective,
       reason: effective
         ? null
-        : skill === undefined
-          ? rc.accessStateUnknown
-          : !accountActive
-            ? rc.accessUserDisabled
-            : rc.accessResourceDisabled,
+        : expired
+          ? rc.accessGrantExpired
+          : skill === undefined
+            ? rc.accessStateUnknown
+            : !accountActive
+              ? rc.accessUserDisabled
+              : rc.accessResourceDisabled,
     });
   }
   for (const assignment of modelResources.assignments) {
@@ -1700,13 +1720,13 @@ function UserEditorModal({
             label={t('temporaryPassword')}
             extra={t('passwordPolicy')}
             rules={[
-              { required: true, message: t('passwordPolicy') },
               { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
+              edgeWhitespaceRule,
             ]}
           >
             <Input.Password
               autoComplete="new-password"
-              placeholder={t('temporaryPasswordPlaceholder')}
+              placeholder={t('defaultPasswordPlaceholder')}
               disabled={pending}
             />
           </Form.Item>
@@ -1816,6 +1836,7 @@ function PasswordResetModal({
           rules={[
             { required: true, message: t('passwordPolicy') },
             { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
+            edgeWhitespaceRule,
           ]}
         >
           <Input.Password
@@ -1882,6 +1903,7 @@ function SelfPasswordChangeModal({
           rules={[
             { required: true, message: t('passwordChangePolicy') },
             { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordChangePolicy') },
+            edgeWhitespaceRule,
           ]}
         >
           <Input.Password autoComplete="new-password" disabled={pending} />
@@ -3175,8 +3197,148 @@ function RoleEditorModal({
 // Skills
 // ---------------------------------------------------------------------------
 
+type SkillEmployeeRef = {
+  readonly key: string;
+  readonly name: string;
+  readonly displayName: string;
+  readonly version: string;
+};
+
+type SkillEmployeesState =
+  | { readonly status: 'loading' }
+  | {
+      readonly status: 'ready';
+      readonly bySkill: ReadonlyMap<string, readonly SkillEmployeeRef[]>;
+      readonly unconfigured: number;
+    }
+  | { readonly status: 'unavailable'; readonly forbidden: boolean };
+
+// One portal read backs the list column, the detail tab and the delete dialog.
+// The portal authorises the call and returns every employee, so the console
+// groups them by Skill locally. A failed or forbidden read is never rendered as
+// "nobody uses it".
+function useSkillEmployees(portal: PortalClient): SkillEmployeesState {
+  const [state, setState] = useState<SkillEmployeesState>({ status: 'loading' });
+  const ticket = useRef(0);
+  useEffect(() => {
+    ticket.current += 1;
+    const current = ticket.current;
+    setState({ status: 'loading' });
+    portal
+      .listEmployees()
+      .then((employees) => {
+        if (current !== ticket.current) return;
+        const bySkill = new Map<string, SkillEmployeeRef[]>();
+        let unconfigured = 0;
+        for (const employee of employees) {
+          // null/undefined = no explicit skill policy yet; [] = an explicit
+          // "no skills". Only a listed Skill counts as enabled.
+          if (employee.skills === null || employee.skills === undefined) {
+            unconfigured += 1;
+            continue;
+          }
+          for (const skill of employee.skills) {
+            const refs = bySkill.get(skill.id) ?? [];
+            refs.push({
+              key: employee.name,
+              name: employee.name,
+              displayName: employee.displayName,
+              version: skill.version ?? '',
+            });
+            bySkill.set(skill.id, refs);
+          }
+        }
+        setState({ status: 'ready', bySkill, unconfigured });
+      })
+      .catch((error: unknown) => {
+        if (current !== ticket.current) return;
+        setState({ status: 'unavailable', forbidden: error instanceof PortalError && error.status === 403 });
+      });
+    return () => {
+      // A later load (or unmount) invalidates this response.
+      ticket.current += 1;
+    };
+  }, [portal]);
+  return state;
+}
+
+// Presentational: one Skill's employee bindings for the shared read state.
+function SkillEmployees({
+  state,
+  skillId,
+  variant,
+}: {
+  readonly state: SkillEmployeesState;
+  readonly skillId: string;
+  readonly variant: 'compact' | 'table';
+}) {
+  if (state.status === 'loading') return <Spin size="small" />;
+  if (state.status === 'unavailable') {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        title={state.forbidden ? rc.skillEmployeesForbidden : rc.skillEmployeesUnavailable}
+      />
+    );
+  }
+  const refs = state.bySkill.get(skillId) ?? [];
+  if (refs.length === 0) {
+    return <Typography.Text type="secondary">{rc.skillEmployeesNone}</Typography.Text>;
+  }
+  const count = (
+    <Typography.Text type="secondary">{rc.skillEmployeesCount.replace('{count}', String(refs.length))}</Typography.Text>
+  );
+  const unconfigured =
+    state.unconfigured > 0 ? (
+      <Typography.Text type="secondary">
+        {rc.skillEmployeesUnconfigured.replace('{count}', String(state.unconfigured))}
+      </Typography.Text>
+    ) : null;
+  if (variant === 'table') {
+    return (
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+        {count}
+        <Table<SkillEmployeeRef>
+          rowKey="key"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...refs]}
+          columns={[
+            { title: rc.skillEmployeeColumnName, key: 'name', render: (_, ref) => ref.displayName || ref.name },
+            {
+              title: rc.skillEmployeeColumnId,
+              key: 'id',
+              render: (_, ref) => <Typography.Text type="secondary">{ref.name}</Typography.Text>,
+            },
+            { title: rc.skillEmployeeColumnVersion, key: 'version', render: (_, ref) => ref.version || '—' },
+          ]}
+        />
+        {unconfigured}
+      </Space>
+    );
+  }
+  return (
+    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+      {count}
+      <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          {refs.map((ref) => (
+            <li key={ref.key}>
+              {ref.displayName || ref.name}
+              {ref.version ? ` · ${ref.version}` : ''}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {unconfigured}
+    </Space>
+  );
+}
+
 function SkillsSection({
   client,
+  portal,
   resources,
   canWrite,
   canAssign,
@@ -3184,14 +3346,15 @@ function SkillsSection({
   onRefresh,
   onChanged,
   onError,
-}: SectionProps & { readonly canAssign: boolean }) {
+}: SectionProps & { readonly canAssign: boolean; readonly portal: PortalClient }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const [grant, setGrant] = useState<{ readonly skillId?: string } | null>(null);
-  const [blockedSkill, setBlockedSkill] = useState<AdminSkill | null>(null);
+  const [forceSkill, setForceSkill] = useState<AdminSkill | null>(null);
   const { pending, run } = useMutationRunner(onChanged, onError);
+  const employeeState = useSkillEmployees(portal);
   const rows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return resources.skills.filter((skill) => {
@@ -3205,7 +3368,33 @@ function SkillsSection({
   const assignmentsFor = (skillId: string) => resources.assignments.filter((item) => item.skillId === skillId);
   const latestPublished = (skill: AdminSkill) =>
     skill.versions.find((version) => version.state === 'published')?.version ?? null;
-  const blockedRefs = blockedSkill ? assignmentsFor(blockedSkill.id) : [];
+  const forceRefs = forceSkill ? assignmentsFor(forceSkill.id) : [];
+  // The server refuses to delete a Skill that is still referenced; surface that
+  // as an explicit forced delete instead of the generic failure notice.
+  const remove = (skill: AdminSkill) =>
+    run(async () => {
+      try {
+        await client.deleteSkill(skill.id);
+      } catch (error) {
+        if (error instanceof AdminRequestError && error.code === 'SKILL_IN_USE') {
+          setForceSkill(skill);
+          return;
+        }
+        if (error instanceof AdminRequestError && error.status === 404) {
+          // A stale row (deleted elsewhere, or a double click): say so and
+          // refresh, instead of the generic "service unavailable" notice.
+          notify(AdminNotificationKind.Error, rc.skillDeleteGone);
+          await onChanged();
+          return;
+        }
+        throw error;
+      }
+    });
+  const forceRemove = (skill: AdminSkill) =>
+    run(async () => {
+      await client.deleteSkill(skill.id, true);
+      setForceSkill(null);
+    });
   const columns: TableProps<AdminSkill>['columns'] = [
     {
       title: t('skill'),
@@ -3228,13 +3417,27 @@ function SkillsSection({
       },
     },
     { title: t('status'), key: 'status', render: (_, skill) => <EnabledBadge enabled={skill.enabled} /> },
-    { title: rc.skillEmployees, key: 'employees', render: () => <UnknownText>{rc.notCollected}</UnknownText> },
+    {
+      title: rc.skillEmployees,
+      key: 'employees',
+      render: (_, skill) => {
+        if (employeeState.status === 'loading') return <Spin size="small" />;
+        if (employeeState.status === 'unavailable') {
+          return <UnknownText>{rc.skillEmployeesUnknown}</UnknownText>;
+        }
+        const count = (employeeState.bySkill.get(skill.id) ?? []).length;
+        return count === 0 ? (
+          <Typography.Text type="secondary">{rc.skillEmployeesCellNone}</Typography.Text>
+        ) : (
+          <Typography.Text>{rc.skillEmployeesCellCount.replace('{count}', String(count))}</Typography.Text>
+        );
+      },
+    },
     {
       title: t('actions'),
       key: 'actions',
       align: 'right',
       render: (_, skill) => {
-        const refs = assignmentsFor(skill.id);
         return (
           <Space size={0} wrap>
             <Button type="link" size="small" disabled={pending} onClick={() => setDetailSkillId(skill.id)}>
@@ -3257,28 +3460,18 @@ function SkillsSection({
                 >
                   {skill.enabled ? t('disable') : t('enable')}
                 </Button>
-                {refs.length > 0 ? (
-                  <Button type="link" size="small" danger disabled={pending} onClick={() => setBlockedSkill(skill)}>
+                <Popconfirm
+                  title={rc.deleteSkillConfirm}
+                  description={rc.deleteSkillImpact}
+                  okText={t('delete')}
+                  cancelText={t('cancel')}
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => void remove(skill)}
+                >
+                  <Button type="link" size="small" danger disabled={pending}>
                     {t('delete')}
                   </Button>
-                ) : (
-                  <Popconfirm
-                    title={rc.deleteSkillConfirm}
-                    description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
-                    okText={t('delete')}
-                    cancelText={t('cancel')}
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() =>
-                      void run(async () => {
-                        await client.deleteSkill(skill.id);
-                      })
-                    }
-                  >
-                    <Button type="link" size="small" danger disabled={pending}>
-                      {t('delete')}
-                    </Button>
-                  </Popconfirm>
-                )}
+                </Popconfirm>
               </>
             ) : null}
           </Space>
@@ -3338,6 +3531,7 @@ function SkillsSection({
       {detailSkill ? (
         <SkillDetailDrawer
           client={client}
+          employees={employeeState}
           skill={detailSkill}
           resources={resources}
           canWrite={canWrite}
@@ -3386,40 +3580,75 @@ function SkillsSection({
         />
       ) : null}
       <Modal
-        open={blockedSkill !== null}
-        title={rc.skillDeleteBlockedTitle}
+        open={forceSkill !== null}
+        title={rc.skillForceDeleteTitle}
         footer={
-          <Button type="primary" onClick={() => setBlockedSkill(null)}>
-            {rc.ok}
-          </Button>
+          <Space>
+            <Button onClick={() => setForceSkill(null)}>{t('cancel')}</Button>
+            <Button
+              danger
+              type="primary"
+              loading={pending}
+              disabled={forceSkill === null}
+              onClick={() => forceSkill && void forceRemove(forceSkill)}
+            >
+              {rc.skillForceDeleteAction}
+            </Button>
+          </Space>
         }
-        onCancel={() => setBlockedSkill(null)}
+        onCancel={() => setForceSkill(null)}
       >
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Typography.Text>{rc.skillDeleteBlockedNote}</Typography.Text>
-          <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-            {blockedRefs.map((assignment) => (
-              <li key={assignment.id}>
-                <SubjectCell
-                  subjectType={assignment.subjectType}
-                  subjectId={assignment.subjectId}
-                  user={
-                    assignment.subjectType === AdminSubjectType.User
-                      ? resources.users.find((user) => user.id === assignment.subjectId)
-                      : undefined
-                  }
-                />
-              </li>
-            ))}
-          </ul>
+          <Typography.Text>{rc.skillForceDeleteNote}</Typography.Text>
+          <Typography.Text strong>{rc.skillEmployeesSection}</Typography.Text>
+          {forceSkill ? <SkillEmployees state={employeeState} skillId={forceSkill.id} variant="compact" /> : null}
+          <Typography.Text strong>{rc.skillForceDeleteGrants}</Typography.Text>
+          {forceRefs.length > 0 ? (
+            <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+              <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                {forceRefs.map((assignment) => (
+                  <li key={assignment.id}>
+                    <SubjectCell
+                      subjectType={assignment.subjectType}
+                      subjectId={assignment.subjectId}
+                      user={
+                        assignment.subjectType === AdminSubjectType.User
+                          ? resources.users.find((user) => user.id === assignment.subjectId)
+                          : undefined
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <Typography.Text type="secondary">{rc.skillForceDeleteGrantsNone}</Typography.Text>
+          )}
+          <Typography.Text type="secondary">{rc.skillForceDeletePlatformNote}</Typography.Text>
         </Space>
       </Modal>
     </div>
   );
 }
 
+// One grant's expiry: a date (marked once past), a perpetual grant, or unknown
+// when the server did not report the field at all.
+function GrantExpires({ expiresAt }: { readonly expiresAt: string | null | undefined }) {
+  if (expiresAt === undefined) return <Typography.Text type="secondary">{rc.grantExpiresUnknown}</Typography.Text>;
+  if (expiresAt === null) return <Typography.Text type="secondary">{rc.grantExpiresPerpetual}</Typography.Text>;
+  const parsed = Date.parse(expiresAt);
+  if (!Number.isFinite(parsed)) return <Typography.Text type="secondary">{rc.grantExpiresUnknown}</Typography.Text>;
+  const label = formatTimestamp(expiresAt) || expiresAt;
+  return parsed <= Date.now() ? (
+    <Tag color="warning">{`${rc.grantExpiresExpired} · ${label}`}</Tag>
+  ) : (
+    <Typography.Text>{label}</Typography.Text>
+  );
+}
+
 function SkillDetailDrawer({
   client,
+  employees,
   skill,
   resources,
   canWrite,
@@ -3432,6 +3661,7 @@ function SkillDetailDrawer({
   onGrant,
 }: {
   readonly client: AdminConsoleClient;
+  readonly employees: SkillEmployeesState;
   readonly skill: AdminSkill;
   readonly resources: AdminResources;
   readonly canWrite: boolean;
@@ -3557,6 +3787,11 @@ function SkillDetailDrawer({
                           />
                         ),
                       },
+                      {
+                        title: rc.skillGrantExpires,
+                        key: 'expiresAt',
+                        render: (_, assignment) => <GrantExpires expiresAt={assignment.expiresAt} />,
+                      },
                       ...(canAssign
                         ? [
                             {
@@ -3593,11 +3828,7 @@ function SkillDetailDrawer({
           {
             key: 'employees',
             label: rc.skillDetailEmployees,
-            children: (
-              <Empty description={rc.skillEmployeesEmpty}>
-                <Typography.Text type="secondary">{rc.skillEmployeesEmptyHint}</Typography.Text>
-              </Empty>
-            ),
+            children: <SkillEmployees state={employees} skillId={skill.id} variant="table" />,
           },
         ]}
       />
@@ -3892,6 +4123,7 @@ function SkillGrantModal({
 }) {
   const [skillId, setSkillId] = useState<string | null>(presetSkillId ?? null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
@@ -3899,6 +4131,7 @@ function SkillGrantModal({
     if (open) {
       setSkillId(presetSkillId ?? null);
       setSelected(new Set());
+      setExpiresAt(null);
       setFailed(false);
       setFailedSubjects([]);
     }
@@ -3922,7 +4155,11 @@ function SkillGrantModal({
         const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminSubjectType;
         const id = subjectKey.slice(separator + 1);
-        return client.createSkillAssignment({ skillId, subject: { type, id } });
+        return client.createSkillAssignment({
+          skillId,
+          subject: { type, id },
+          ...(expiresAt ? { expiresAt } : {}),
+        });
       });
       const failures = results.filter((result) => !result.ok).map((result) => result.item);
       if (failures.length > 0) {
@@ -3982,6 +4219,19 @@ function SkillGrantModal({
               label: skill.enabled ? skill.name : `${skill.name}（${t('disabled')}）`,
             }))}
           />
+        </div>
+        <div>
+          <Typography.Text strong>{rc.grantExpiresLabel}</Typography.Text>
+          <DatePicker
+            aria-label={rc.grantExpiresLabel}
+            disabled={pending}
+            allowClear
+            style={{ width: '100%', marginTop: 8 }}
+            onChange={(value) => setExpiresAt(value ? value.endOf('day').toISOString() : null)}
+          />
+          <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+            {rc.grantExpiresHint}
+          </Typography.Text>
         </div>
         <SubjectMultiPicker
           users={users}

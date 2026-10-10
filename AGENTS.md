@@ -148,22 +148,38 @@ registration, local user-data directory, and the public runtime.
 
 ## Admin Console UI
 
-Before any UI change, read `DESIGN.md`, `src/ui/tea-theme.css`,
-`src/ui/index.css`, `src/admin/theme.ts`, and the affected page. The console is
+Before any Admin Console UI change, read `DESIGN.md`, `src/admin/App.tsx`,
+`src/admin/main.tsx`, `src/admin/admin.css`, `src/admin/theme.ts`, and the
+affected page. The console is
 browser-only and communicates through `/aep` HTTP APIs; it must not use
 Electron IPC, Node modules, or `process`.
 
-- Use existing shadcn components from `src/ui/components/ui/*` and Lucide
-  icons. Do not hand-roll buttons, badges, dialogs, tabs, fields, or icon SVGs.
+- Use Ant Design components from `antd` and existing business composites from
+  `src/admin/components/*`. Use `@ant-design/icons` for new controls; preserve
+  existing Lucide icons where already used. Do not hand-roll buttons, tags,
+  dialogs, tabs, fields, selects, or icon SVGs.
 - Keep the fixed shell: left navigation + top row + content area. Preserve the
-  four top-level destinations and existing resource/model/event page ownership.
-- Consume Tea/shadcn semantic tokens; do not add hex colors, Tailwind default
-  color scales, one-off dark-mode colors, arbitrary spacing, or nested cards.
+  current destinations, permissions, route compatibility, and page ownership
+  defined in `src/admin/App.tsx`; do not restore obsolete navigation layouts.
+- Reuse the root Ant Design `ConfigProvider` and its light/dark algorithms.
+  Consume `theme.useToken()` in React and `--ant-*` variables in admin CSS.
+  Keep the current seed tokens (`colorPrimary: '#1677ff'`, `borderRadius: 6`,
+  `fontSize: 14`) centralized in `App.tsx`; never copy colors into pages or
+  create a second page-level theme. Match existing Card, Select, popup, and
+  disabled styles. Do not add Tailwind color scales, one-off dark-mode colors,
+  arbitrary spacing, or nested cards.
+- Keep the browser Admin Console and enterprise renderer styling separate.
+  Do not import `src/ui/index.css`, `src/ui/tea-theme.css`, or shadcn primitives
+  into `src/admin`; their presence in the repository is not an Admin UI rule.
+  `scripts/verify-admin-console.mjs` guards this build boundary.
 - Add all user-visible text to `src/admin/i18n.ts` in both Chinese and English.
 - Check loading, error, empty, success, disabled, focus, light theme, dark
   theme, desktop, and narrow viewport states.
 - After UI changes run `npm run typecheck`, `npm test`, `npm run verify:admin`,
   and `git diff --check`.
+- For documentation-only guidance corrections, check the guidance against the
+  current source, Markdown links, `git diff --check`, and the PR file scope.
+  Report that runtime checks were not run when no runtime files changed.
 
 ## Packaging and Release
 

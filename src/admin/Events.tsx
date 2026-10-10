@@ -17,11 +17,13 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import {
+  type AdminAuthenticationAuditRecord,
   type AdminConsoleClient,
   type AdminDeliveryRecord,
   type AdminEventRecord,
   type AdminIdentity,
   AdminPermission,
+  AdminRequestError,
   hasAdminPermission,
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
@@ -62,7 +64,11 @@ export function Events({
             {
               key: 'login',
               label: c.login,
-              children: <Result status="info" title={c.loginGap} subTitle={c.loginHint} />,
+              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
+                <LoginRecords client={client} />
+              ) : (
+                <Result status="403" title={shellCopy.forbidden} />
+              ),
             },
           ]}
         />
@@ -406,6 +412,178 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
           </Button>
         )}
       </Drawer>
+    </>
+  );
+}
+
+type LoginFilters = { eventType?: string; outcome?: string; userId?: string };
+
+/** 登录审计：服务端持久化的登录成功/失败/受限与改密记录，只读。 */
+function LoginRecords({ client }: { client: AdminConsoleClient }) {
+  const [form] = Form.useForm<LoginFilters>();
+  const [filters, setFilters] = useState<LoginFilters>({});
+  const [rows, setRows] = useState<readonly AdminAuthenticationAuditRecord[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [revision, refresh] = useState(0);
+  const requestVersion = useRef(0);
+  useEffect(() => {
+    requestVersion.current += 1;
+    const version = requestVersion.current;
+    let live = true;
+    setLoading(true);
+    setError(false);
+    setUnavailable(false);
+    setRows([]);
+    setCursor(null);
+    void client
+      .searchAuthenticationAudit({ ...filters, limit: 50 })
+      .then((page) => {
+        if (live && version === requestVersion.current) {
+          setRows(page.items);
+          setCursor(page.nextCursor);
+        }
+      })
+      .catch((cause) => {
+        if (!live) return;
+        // An older control service has no audit endpoint yet; degrade to the
+        // honest "not connected" state instead of an error.
+        if (cause instanceof AdminRequestError && cause.status === 404) setUnavailable(true);
+        else setError(true);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, filters, revision]);
+  const more = async () => {
+    if (!cursor || loading) return;
+    const version = requestVersion.current;
+    setLoading(true);
+    setError(false);
+    try {
+      const page = await client.searchAuthenticationAudit({ ...filters, cursor, limit: 50 });
+      if (version !== requestVersion.current) return;
+      setRows((current) => [...current, ...page.items]);
+      setCursor(page.nextCursor);
+    } catch {
+      if (version === requestVersion.current) setError(true);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
+  };
+  if (unavailable) {
+    return <Result status="info" title={c.loginUnavailable} />;
+  }
+  return (
+    <>
+      <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
+        <Form.Item name="eventType" label={c.eventType}>
+          <Select
+            allowClear
+            style={{ width: 150 }}
+            placeholder={c.all}
+            options={[
+              { value: 'login.succeeded', label: c.loginSucceeded },
+              { value: 'login.failed', label: c.loginFailed },
+              { value: 'login.throttled', label: c.loginThrottled },
+              { value: 'password.changed', label: c.passwordChanged },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="outcome" label={c.result}>
+          <Select
+            allowClear
+            style={{ width: 130 }}
+            placeholder={c.all}
+            options={[
+              { value: 'success', label: c.success },
+              { value: 'failure', label: c.failure },
+              { value: 'denied', label: c.denied },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="userId" label={c.loginActor}>
+          <Input allowClear />
+        </Form.Item>
+        <ListQueryActions
+          form={form}
+          searching={loading}
+          search={{
+            run: (values) => {
+              const next: LoginFilters = {};
+              if (values.eventType) next.eventType = values.eventType;
+              if (values.outcome) next.outcome = values.outcome;
+              if (values.userId?.trim()) next.userId = values.userId.trim();
+              setFilters(next);
+            },
+          }}
+          onReset={() => {
+            setFilters({});
+          }}
+        />
+        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+      </Form>
+      {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
+      <Table
+        loading={loading}
+        rowKey={(row) => row.cursor}
+        dataSource={[...rows]}
+        pagination={false}
+        scroll={{ x: 720 }}
+        locale={{ emptyText: error ? c.failed : c.empty }}
+        columns={[
+          { title: c.time, dataIndex: 'createdAt', render: shown },
+          { title: c.loginActor, dataIndex: 'userId', render: shown },
+          {
+            title: c.eventType,
+            dataIndex: 'eventType',
+            render: (value: string) => {
+              switch (value) {
+                case 'login.succeeded':
+                  return c.loginSucceeded;
+                case 'login.failed':
+                  return c.loginFailed;
+                case 'login.throttled':
+                  return c.loginThrottled;
+                case 'password.changed':
+                  return c.passwordChanged;
+                default:
+                  return value;
+              }
+            },
+          },
+          {
+            title: c.result,
+            dataIndex: 'outcome',
+            render: (value: string) =>
+              value === 'success' ? (
+                <Tag color="success">{c.success}</Tag>
+              ) : value === 'failure' ? (
+                <Tag color="error">{c.failure}</Tag>
+              ) : value === 'denied' ? (
+                <Tag color="warning">{c.denied}</Tag>
+              ) : (
+                <Tag>{shown(value)}</Tag>
+              ),
+          },
+          { title: c.reason, dataIndex: 'reason', render: shown },
+          {
+            title: c.source,
+            dataIndex: 'sourceHash',
+            render: (value?: string) => (value ? value.slice(0, 12) : c.unknown),
+          },
+        ]}
+      />
+      {cursor && (
+        <Button loading={loading} onClick={() => void more()} style={{ marginTop: 16 }}>
+          {c.more}
+        </Button>
+      )}
     </>
   );
 }

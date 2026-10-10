@@ -20,10 +20,65 @@ body {
 .admin-shell {
   min-height: 100vh;
 }
+.gateway-native-chart {
+  width: 100%;
+  min-width: 0;
+}
+.gateway-trend-card {
+  height: 100%;
+}
+.gateway-time-range {
+  /* Keep the picker's animated active bar inside its field during resize. */
+  overflow: clip;
+}
+.gateway-workbench .ant-space {
+  min-width: 0;
+}
+@media (max-width: 575px) {
+  .gateway-trend-card .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: var(--ant-margin-xs);
+    padding-block: var(--ant-padding-sm);
+  }
+  .gateway-trend-card .ant-card-extra {
+    margin-inline-start: 0;
+  }
+}
 .admin-body {
   min-width: 0;
 }
-.admin-sidebar {
+.admin-navigation-toggle {
+  display: none;
+}
+.admin-navigation-drawer .ant-drawer-body {
+  padding: 0;
+}
+@media (width < 48rem) {
+  .admin-shell > .admin-sidebar {
+    display: none;
+  }
+  .admin-navigation-toggle {
+    display: inline-flex;
+  }
+  .admin-shell .admin-header {
+    height: auto;
+    min-height: calc(var(--spacing) * 16);
+    flex-wrap: wrap;
+    gap: calc(var(--spacing) * 3);
+    padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+  }
+  .admin-header .admin-user {
+    display: none;
+  }
+  .admin-shell .admin-content {
+    padding: calc(var(--spacing) * 4);
+  }
+}
+.admin-shell > .admin-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   border-inline-end: 1px solid var(--ant-color-border-secondary, #eee);
 }
 .admin-brand {
@@ -55,6 +110,9 @@ body {
   line-height: 1.8;
 }
 .admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { AdminApp } from './App.js';
 import { AdminConsoleClient, AdminMetadataError } from './client.js';
@@ -13,6 +13,11 @@ vi.mock('./Resources.js', () => ({
   Resources: ({ tab }: { tab: string }) => <div data-testid="resource">{tab}</div>,
 }));
 vi.mock('./Models.js', () => ({ Models: () => <div>model-content</div> }));
+vi.mock('./GatewayWorkbench.js', () => ({
+  GatewayCall: () => <div>gateway-call-content</div>,
+  GatewayObservation: () => <div>gateway-observe-content</div>,
+  GatewayLimits: () => <div>gateway-limits-content</div>,
+}));
 vi.mock('./ServiceStatus.js', () => ({
   KnowledgeView: () => <div>knowledge-content</div>,
   ServicesView: () => <div>services-content</div>,
@@ -98,6 +103,18 @@ describe('Ant Design admin shell', () => {
     );
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
+  test('trims whitespace around the password before signing in', async () => {
+    render(<AdminApp />);
+    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: '  test-password  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await waitFor(() =>
+      expect(AdminConsoleClient.prototype.login).toHaveBeenCalledWith({
+        username: 'admin',
+        password: 'test-password',
+      }),
+    );
+  });
   test('shows a recoverable login error', async () => {
     vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(new Error('denied'));
     render(<AdminApp />);
@@ -173,7 +190,14 @@ describe('Ant Design admin shell', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: '模型网关' }));
     expect(await screen.findByText('model-content')).toBeInTheDocument();
     expect(screen.getAllByRole('tablist')).toHaveLength(1);
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['模型列表', '接入配置', '配置生效详情']);
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      '模型列表',
+      '接入配置',
+      '配置生效详情',
+      '模型调用检测',
+      '用量与错误观测',
+      '限流配额',
+    ]);
     expect(screen.getByRole('tab', { name: '模型列表' }).closest('.ant-tabs')).not.toHaveClass('ant-tabs-card');
     fireEvent.click(screen.getByRole('tab', { name: '接入配置' }));
     expect(await screen.findByText('credentials-content')).toBeInTheDocument();
@@ -186,6 +210,17 @@ describe('Ant Design admin shell', () => {
     expect(screen.queryByRole('tab', { name: '模型服务' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: '模型列表' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '渠道接入' })).toHaveAttribute('aria-selected', 'true');
+  });
+  test('navigates from the narrow viewport drawer and closes it after selection', async () => {
+    authenticated();
+    render(<AdminApp />);
+    fireEvent.click(await screen.findByRole('button', { name: '主导航' }));
+    const drawer = await screen.findByRole('dialog');
+    fireEvent.click(within(drawer).getByRole('menuitem', { name: '模型网关' }));
+    expect(await screen.findByText('model-content')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '主导航' })).toHaveAttribute('aria-expanded', 'false'),
+    );
   });
   test.each([
     ['models', 'model-content'],
@@ -206,10 +241,10 @@ describe('Ant Design admin shell', () => {
     expect(screen.getAllByRole('tablist')).toHaveLength(1);
   });
   test.each([
-    ['models.read', '模型列表', 'model-content'],
-    ['credentials.read', '接入配置', 'credentials-content'],
-    ['data_plane.write', '配置生效详情', 'configuration-content'],
-  ])('defaults the gateway to the first permitted tab for %s', async (permission, label, content) => {
+    ['models.read', '模型列表', 'model-content', 3],
+    ['credentials.read', '接入配置', 'credentials-content', 1],
+    ['data_plane.write', '配置生效详情', 'configuration-content', 1],
+  ])('defaults the gateway to the first permitted tab for %s', async (permission, label, content, count) => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
       status: 'authenticated',
       identity: { ...administratorIdentity, roles: [], permissions: [permission] },
@@ -217,7 +252,7 @@ describe('Ant Design admin shell', () => {
     window.location.hash = 'model-gateway';
     render(<AdminApp />);
     expect(await screen.findByText(content)).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    expect(screen.getAllByRole('tab')).toHaveLength(count);
     expect(screen.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
   });
   test('rejects gateway tabs without permission, including legacy links', async () => {
@@ -229,6 +264,36 @@ describe('Ant Design admin shell', () => {
     render(<AdminApp />);
     expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
     expect(screen.queryByText('credentials-content')).not.toBeInTheDocument();
+  });
+  test.each([
+    ['call', 'gateway-call-content'],
+    ['observe', 'gateway-observe-content'],
+    ['limits', 'gateway-limits-content'],
+  ])('opens the gateway %s route in the existing top-level tabs', async (route, content) => {
+    authenticated();
+    window.location.hash = `model-gateway/${route}`;
+    render(<AdminApp />);
+    expect(await screen.findByText(content)).toBeInTheDocument();
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  });
+  test.each([['models.read'], ['data_plane.write']])('denies limits with only %s permission', async (permission) => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: [permission] },
+    });
+    window.location.hash = 'model-gateway/limits';
+    render(<AdminApp />);
+    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
+    expect(screen.queryByText('gateway-limits-content')).not.toBeInTheDocument();
+  });
+  test('allows limits with both model read and data-plane write permissions', async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: ['models.read', 'data_plane.write'] },
+    });
+    window.location.hash = 'model-gateway/limits';
+    render(<AdminApp />);
+    expect(await screen.findByText('gateway-limits-content')).toBeInTheDocument();
   });
   test('renders the deployment settings surface under system settings', async () => {
     authenticated();
