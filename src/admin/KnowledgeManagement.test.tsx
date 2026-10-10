@@ -541,20 +541,24 @@ describe('KnowledgeManagement component state', () => {
     expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'preview');
     fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!);
     revokeObjectUrl.mockClear();
-    vi.useFakeTimers();
-    await act(async () => {
-      fireEvent.click(rowUi().getByRole('button', { name: /下载原文件/ }));
-      await Promise.resolve();
-      await Promise.resolve();
+    const realSetTimeout = window.setTimeout.bind(window);
+    let releaseDownloadUrl: (() => void) | undefined;
+    const timeout = vi.spyOn(window, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+      if (delay === 1000 && typeof handler === 'function') {
+        releaseDownloadUrl = () => handler(...args);
+        return 0 as unknown as ReturnType<typeof window.setTimeout>;
+      }
+      return realSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof window.setTimeout>;
     });
+    fireEvent.click(rowUi().getByRole('button', { name: /下载原文件/ }));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalled());
     expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'download');
     expect(anchorClick).toHaveBeenCalled();
     expect(revokeObjectUrl).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    expect(releaseDownloadUrl).toBeDefined();
+    act(() => releaseDownloadUrl!());
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:test-preview');
-    vi.useRealTimers();
+    timeout.mockRestore();
     expect(objectUrl).toHaveBeenCalledTimes(2);
   });
 });
