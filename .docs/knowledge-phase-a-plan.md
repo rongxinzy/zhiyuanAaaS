@@ -26,6 +26,14 @@
 
 ## 目标与边界
 
+### 2026-10-10 独立验收与后续修订
+
+- 管理台提交 `8933b04` 的 verify、coverage-ratchet、CodeQL 和 ci-gate 已全部通过；这仍不是本地原生知识管理的部署验收。
+- 第 3 轮治理修复在 detached `69cc88a` 隔离树中仅包含三个目标文件；主工作区与隔离树忽略 CRLF 后内容一致。主代理使用 Linux Go 1.26 全量测试通过（6.691s），实际覆盖率为 **81.0%**，未达到 main 82.9% 的 ratchet。Windows Go 1.27 的 83.0% 不能代替 CI 环境证据；继续补关键失败路径，不修改门禁、不将其记为验收通过。
+- 图片权限专项确认解析器的 `StoredImages` 可作为本次可信生成资源的来源，但原绑定流程仅凭同 tenant 接纳正文内的 handle。安全修复须覆盖文件、URL/HTML、手动正文和图片元数据写入口；不能仅过滤 Portal 手动输入，也不能把用户输入可以制造的 attachment 绑定作为可信证明。合法解析图片、重解析及已授权 clone/move 必须保留并分别回归。
+- 第 5 轮须闭合真实 Agent/MCP 授权链，而非只增加管理台检索接口。现有员工静态 KB 白名单和服务端 MCP bearer 不等于请求者逐库授权；检索、来源、图片和下载须检查当前身份、员工显式绑定、用户/团队 grants 与 deployment/tenant 归属，撤权后旧会话不得继续使用。
+- 本地原 `update-from-source.ps1` 不更新 Portal 或 WeKnora。第 6 轮复用已有更新工具，准备三个组件的精确源码/镜像记录、备份证明、部署顺序和受保护回滚；当前尚未执行数据库备份、迁移或部署。
+
 第 2 轮代码验收（2026-10-09）：Luna 实现 AaaS 原生知识管理页（Ant Design），通过固定 managed API 提供知识库列表/详情/新建/编辑/关联保护删除、TXT/PDF 上传、分页及解析状态，并覆盖操作编号、错误兼容、有限轮询/取消、陈旧响应及不确定写入防重试。CI 首轮暴露旧浏览器 fixture 仍依赖 legacy status API 和全仓覆盖率下降；已补 managed API fixture/E2E 并增加创建、编辑同步、上传、受保护删除测试。复验发现并修复 PATCH 成功后详情未同步的真实 UI bug。最终本地全量 coverage 442/442，行覆盖率 81.55%（main 81.48%）；typecheck、Biome、`git diff --check` 通过。AaaS `aa507fb` 的 verify、coverage-ratchet、CodeQL、DevOps gate 全部通过。**仅代码与 mock 浏览器 E2E 验收完成；未部署，真实 managed API/TXT/PDF 解析及用户本地验收仍未完成。** PR #165 与关联治理 PR #45 继续保持 Draft。
 
 ### 第 3 轮：资料生命周期（2026-10-10，代码验证收尾；尚未部署验收）
