@@ -35,6 +35,14 @@ vi.mock('antd', async (importOriginal) => {
   return { ...actual, Upload: UploadForStateTest };
 });
 
+// These parent tests focus on knowledge-base lifecycle state. Each managed
+// business surface has its own component tests, and the browser E2E exercises
+// their real integration, so keep unrelated tables/forms out of this suite.
+vi.mock('./KnowledgeGrants.js', () => ({ KnowledgeGrants: () => null }));
+vi.mock('./KnowledgeOperations.js', () => ({ KnowledgeOperations: () => null }));
+vi.mock('./KnowledgeRetrieval.js', () => ({ KnowledgeRetrieval: () => null }));
+
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeManagement } from './KnowledgeManagement.js';
 import { type ManagedKnowledgeBase, type PortalClient, PortalError } from './portal.js';
 
@@ -64,6 +72,13 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
     listManagedKnowledgeBases: vi.fn().mockResolvedValue([base]),
     getManagedKnowledgeBase: vi.fn().mockResolvedValue(base),
     listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 10 }),
+    listEmployees: vi.fn().mockResolvedValue([]),
+    listManagedKnowledgeGrants: vi
+      .fn()
+      .mockResolvedValue({ knowledge_base_id: base.id, tenant_id: '10000', grants: [] }),
+    replaceManagedKnowledgeGrants: vi
+      .fn()
+      .mockResolvedValue({ knowledge_base_id: base.id, tenant_id: '10000', grants: [] }),
     setManagedKnowledgeDocumentEnabled: vi.fn().mockResolvedValue({
       data: {
         id: 'doc-lifecycle',
@@ -437,6 +452,49 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByRole('img', { name: '查看分块图片 1' })).toHaveAttribute('src', 'blob:managed-image');
     expect(screen.queryByRole('img', { name: /example\.invalid/ })).not.toBeInTheDocument();
     expect(createURL).toHaveBeenCalledOnce();
+  });
+
+  test('edits a chunk with its content revision and reports failed indexing separately', async () => {
+    const doc = lifecycleDocument('completed');
+    const chunk = {
+      id: 'chunk-edit',
+      knowledge_id: doc.id,
+      seq_id: 1,
+      content: 'original body',
+      chunk_type: 'text',
+      is_enabled: true,
+      content_revision: 4,
+      index_status: 'ready' as const,
+      images: [],
+    };
+    const updateChunk = vi.fn().mockResolvedValue({
+      data: { ...chunk, content: 'updated body', content_revision: 5, index_status: 'failed' },
+      operationId: 'op-chunk-edit',
+    });
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      listManagedKnowledgeChunks: vi.fn().mockResolvedValue({ data: [chunk], total: 1, page: 1, pageSize: 50 }),
+      updateManagedKnowledgeChunk: updateChunk,
+    });
+    render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+    const row = within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(row.getByRole('button', { name: new RegExp(translate(ADMIN_LANGUAGE, 'knowledgeChunks')) }));
+    expect(await screen.findByText('original body')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeChunkEdit') }));
+    const dialogs = screen.getAllByRole('dialog');
+    const editor = within(dialogs[dialogs.length - 1]!);
+    fireEvent.change(editor.getByRole('textbox'), { target: { value: 'updated body' } });
+    const saveLabel = translate(ADMIN_LANGUAGE, 'knowledgeSave');
+    fireEvent.click(editor.getByRole('button', { name: new RegExp([...saveLabel].join('\\s*')) }));
+    await waitFor(() =>
+      expect(updateChunk).toHaveBeenCalledWith(doc.id, chunk.id, {
+        content: 'updated body',
+        expected_revision: 4,
+      }),
+    );
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeChunkIndexFailed'))).toBeInTheDocument();
+    expect(screen.getAllByText('updated body').length).toBeGreaterThan(0);
   });
 
   test('aborts chunk image reads on unmount and discards late responses', async () => {

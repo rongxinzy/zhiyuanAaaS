@@ -40,8 +40,63 @@ export const state = {
       embedding_model_id: 'embedding-e2e',
       type: 'document',
     },
+    {
+      id: 'kb-faq-e2e',
+      name: 'E2E 常见问题',
+      description: '浏览器 FAQ DTO fixture',
+      tenant_id: '10000',
+      embedding_model_id: 'embedding-e2e',
+      type: 'faq',
+    },
   ],
-  knowledgeDocuments: [],
+  knowledgeDocuments: [
+    {
+      id: 'doc-chunk-e2e',
+      knowledge_base_id: 'kb-1',
+      name: 'E2E chunk 原文',
+      file_name: 'chunk-e2e.txt',
+      parse_status: 'completed',
+      enable_status: 'enabled',
+      created_at: '2026-10-10T00:00:00Z',
+    },
+  ],
+  knowledgeChunks: [
+    {
+      id: 'chunk-e2e-editable',
+      knowledge_id: 'doc-chunk-e2e',
+      seq_id: 1,
+      content: 'original chunk line one\noriginal chunk line two',
+      chunk_type: 'text',
+      is_enabled: true,
+      content_revision: 3,
+      index_status: 'ready',
+      images: [],
+    },
+  ],
+  knowledgeFAQ: [
+    {
+      id: 81,
+      knowledge_id: 'faq-source-e2e',
+      knowledge_base_id: 'kb-faq-e2e',
+      tag_id: 44,
+      tag_name: 'Refund',
+      is_enabled: true,
+      is_recommended: true,
+      standard_question: 'seed-question',
+      similar_questions: ['similar one', 'similar two'],
+      negative_questions: ['negative one'],
+      answers: ['answer line one\nanswer line two', 'second answer intact'],
+      answer_strategy: 'best_match',
+      updated_at: '2026-10-10T00:00:00Z',
+      created_at: '2026-10-09T00:00:00Z',
+    },
+  ],
+  knowledgeTags: [
+    { id: 'tag-faq-refund', seq_id: 44, name: 'Refund', color: '#1677ff', sort_order: 0, knowledge_base_id: 'kb-faq-e2e' },
+  ],
+  knowledgeGrants: {
+    'kb-1': [{ type: 'user', id: 'user-1', granted_by: 'admin-1', created_at: '2026-10-10T00:00:00Z' }],
+  },
   controlEvents: [],
   employees: [
     {
@@ -117,7 +172,13 @@ export function createAdminFixture() {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     const body = await readBody(request);
-    state.requests.push({ method: request.method ?? '', path: url.pathname });
+    let parsedBody;
+    try {
+      parsedBody = jsonBody(body);
+    } catch {
+      parsedBody = null;
+    }
+    state.requests.push({ method: request.method ?? '', path: url.pathname, body: parsedBody });
     try {
       await route(request.method ?? 'GET', url.pathname, body, response, url.searchParams);
     } catch (error) {
@@ -133,6 +194,63 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === 'GET' && pathname === '/api/v1/employees')
     return writeJson(response, 200, { employees: state.employees });
+  if (method === 'POST' && pathname.match(/^\/api\/v1\/knowledge\/employees\/[^/]+\/search$/))
+    return writeJson(response, 200, {
+      query: jsonBody(rawBody).query,
+      mode: jsonBody(rawBody).mode,
+      results: [
+        {
+          score: 0.92,
+          content: '退款可在 30 天内申请。',
+          source: {
+            knowledge_base_id: jsonBody(rawBody).knowledge_base_ids?.[0] ?? 'kb-1',
+            document_id: 'doc-e2e-policy',
+            chunk_id: 'chunk-e2e-policy',
+            title: '退款政策',
+          },
+        },
+      ],
+    });
+  const chunkPath = pathname.match(/^\/api\/v1\/knowledge\/managed\/documents\/([^/]+)\/chunks(?:\/([^/]+))?$/);
+  if (chunkPath) {
+    const documentId = decodeURIComponent(chunkPath[1]);
+    const chunkId = chunkPath[2] ? decodeURIComponent(chunkPath[2]) : null;
+    const chunks = state.knowledgeChunks.filter((item) => item.knowledge_id === documentId);
+    if (method === 'GET' && !chunkId)
+      return writeJson(response, 200, {
+        data: chunks,
+        total: chunks.length,
+        page: Number(query.get('page') ?? 1),
+        pageSize: Number(query.get('page_size') ?? 20),
+      });
+    if (method === 'PUT' && chunkId) {
+      const chunk = chunks.find((item) => item.id === chunkId);
+      if (!chunk) return writeJson(response, 404, { code: 'CHUNK_NOT_FOUND' });
+      const input = jsonBody(rawBody);
+      if (typeof input.content === 'string' && input.content !== chunk.content) {
+        chunk.content = input.content;
+        chunk.content_revision += 1;
+      }
+      if (typeof input.is_enabled === 'boolean') chunk.is_enabled = input.is_enabled;
+      return writeJson(response, 200, { data: chunk, operationId: `chunkop-${state.nextId++}` });
+    }
+  }
+  const knowledgeSourceMatch = pathname.match(/^\/api\/v1\/knowledge\/employees\/[^/]+\/documents\/([^/]+)$/);
+  if (method === 'GET' && knowledgeSourceMatch)
+    return writeJson(response, 200, {
+      document: {
+        id: decodeURIComponent(knowledgeSourceMatch[1]),
+        title: '退款政策',
+        file_name: 'refund-policy.pdf',
+        file_type: 'pdf',
+        source: 'upload',
+        knowledge_base_id: 'kb-1',
+      },
+      chunks: [{ id: 'chunk-e2e-policy', seq_id: 1, chunk_type: 'text', content: '退款可在 30 天内申请。' }],
+      total: 1,
+      page: Number(query.get('page') ?? 1),
+      page_size: Number(query.get('page_size') ?? 20),
+    });
   if (method === 'POST' && pathname === '/api/v1/employees') {
     const input = jsonBody(rawBody);
     if (state.employees.some((employee) => employee.name === input.name))
@@ -234,11 +352,132 @@ async function route(method, pathname, rawBody, response, query) {
       type: 'document',
     };
     state.knowledgeBases.push(base);
+    state.knowledgeGrants[base.id] = [
+      { type: 'user', id: 'user-1', granted_by: 'admin-1', created_at: '2026-10-10T00:00:00Z' },
+    ];
     return writeJson(response, 201, { data: base, operationId: `kbop-create-${state.nextId}` });
   }
   if (pathname.startsWith('/api/v1/knowledge/managed/bases/')) {
     const basePath = '/api/v1/knowledge/managed/bases/';
     const suffix = pathname.slice(basePath.length);
+    const tagListMatch = suffix.match(/^([^/]+)\/tags$/);
+    const tagItemMatch = suffix.match(/^([^/]+)\/tags\/([^/]+)$/);
+    const grantsMatch = suffix.match(/^([^/]+)\/grants$/);
+    const foldersMatch = suffix.match(/^([^/]+)\/folders$/);
+    const folderMoveMatch = suffix.match(/^([^/]+)\/folders\/move$/);
+    const faqListMatch = suffix.match(/^([^/]+)\/faq\/entries$/);
+    const faqEntryMatch = suffix.match(/^([^/]+)\/faq\/entries\/(\d+)$/);
+    const operationBase =
+      tagListMatch?.[1] ?? tagItemMatch?.[1] ?? grantsMatch?.[1] ?? foldersMatch?.[1] ?? folderMoveMatch?.[1] ?? faqListMatch?.[1] ?? faqEntryMatch?.[1];
+    if (operationBase) {
+      const baseId = decodeURIComponent(operationBase);
+      const base = state.knowledgeBases.find((item) => item.id === baseId);
+      if (!base)
+        return writeJson(response, 404, {
+          error: { code: 'KNOWLEDGE_BASE_NOT_FOUND', message: 'Knowledge base not found' },
+        });
+      if (tagListMatch && method === 'GET') {
+        const tags = state.knowledgeTags.filter((tag) => tag.knowledge_base_id === baseId);
+        return writeJson(response, 200, { data: tags, total: tags.length, page: 1, page_size: 200 });
+      }
+      if (tagListMatch && method === 'POST') {
+        const input = jsonBody(rawBody);
+        const tag = {
+          id: `tag-${state.nextId++}`,
+          seq_id: state.nextId,
+          name: input.name,
+          color: input.color ?? '',
+          sort_order: input.sort_order ?? 0,
+          knowledge_base_id: baseId,
+        };
+        state.knowledgeTags.push(tag);
+        return writeJson(response, 200, { data: tag, operationId: `kbop-tag-${state.nextId}` });
+      }
+      if (tagItemMatch) {
+        const tagId = decodeURIComponent(tagItemMatch[2]);
+        const tag = state.knowledgeTags.find((item) => item.knowledge_base_id === baseId && item.id === tagId);
+        if (!tag) return writeJson(response, 404, { error: { code: 'TAG_NOT_FOUND', message: 'Tag not found' } });
+        if (method === 'PUT') {
+          Object.assign(tag, jsonBody(rawBody));
+          return writeJson(response, 200, { data: tag, operationId: `kbop-tag-${state.nextId}` });
+        }
+        if (method === 'DELETE') {
+          state.knowledgeTags = state.knowledgeTags.filter((item) => item !== tag);
+          return writeJson(response, 200, { deleted: true, operationId: `kbop-tag-${state.nextId}` });
+        }
+      }
+      if (grantsMatch && method === 'GET')
+        return writeJson(response, 200, {
+          knowledge_base_id: baseId,
+          tenant_id: '10000',
+          grants: state.knowledgeGrants[baseId] ?? [],
+        });
+      if (grantsMatch && method === 'PUT') {
+        const input = jsonBody(rawBody);
+        state.knowledgeGrants[baseId] = input.grants ?? [];
+        return writeJson(response, 200, {
+          knowledge_base_id: baseId,
+          tenant_id: '10000',
+          grants: state.knowledgeGrants[baseId],
+        });
+      }
+      if (foldersMatch && method === 'GET')
+        return writeJson(response, 200, { data: { root_document_count: 0, total_document_count: 0, folders: [] } });
+      if (foldersMatch && method === 'PUT') {
+        const input = jsonBody(rawBody);
+        return writeJson(response, 200, {
+          data: { outcome: 'succeeded', folderPath: input.to },
+          operationId: `kbop-folder-${state.nextId}`,
+        });
+      }
+      if (folderMoveMatch && method === 'POST') {
+        const input = jsonBody(rawBody);
+        return writeJson(response, 200, {
+          data: { outcome: 'succeeded', affectedCount: input.document_ids.length, folderPath: input.folder_path },
+          operationId: `kbop-folder-${state.nextId}`,
+        });
+      }
+      if (faqListMatch && method === 'GET') {
+        const entries = state.knowledgeFAQ.filter((entry) => entry.knowledge_base_id === baseId);
+        return writeJson(response, 200, {
+          data: entries,
+          total: entries.length,
+          page: Number(query.get('page') ?? 1),
+          page_size: Number(query.get('page_size') ?? 20),
+        });
+      }
+      if (faqListMatch && method === 'POST') {
+        const entry = {
+          id: 82,
+          knowledge_id: 'faq-source-e2e',
+          knowledge_base_id: baseId,
+          tag_id: 0,
+          tag_name: '',
+          is_enabled: true,
+          is_recommended: false,
+          answer_strategy: 'best_match',
+          updated_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          ...jsonBody(rawBody),
+        };
+        if (entry.tag_id) entry.tag_name = state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ?? '';
+        state.knowledgeFAQ.push(entry);
+        return writeJson(response, 200, { data: entry, operationId: `faqop-${state.nextId++}` });
+      }
+      if (faqEntryMatch && method === 'PUT') {
+        const id = Number(faqEntryMatch[2]);
+        const entry = state.knowledgeFAQ.find((item) => item.knowledge_base_id === baseId && item.id === id);
+        if (!entry) return writeJson(response, 404, { code: 'FAQ_NOT_FOUND' });
+        Object.assign(entry, jsonBody(rawBody));
+        if (!Object.hasOwn(jsonBody(rawBody), 'tag_id')) {
+          entry.tag_id = 0;
+          entry.tag_name = '';
+        }
+        entry.tag_name = state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ?? '';
+        entry.updated_at = new Date().toISOString();
+        return writeJson(response, 200, { data: entry, operationId: `faqop-${state.nextId++}` });
+      }
+    }
     const isDocuments = suffix.endsWith('/documents');
     const isFileUpload = suffix.endsWith('/documents/file');
     const encodedId = isFileUpload

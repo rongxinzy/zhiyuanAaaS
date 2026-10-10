@@ -4,6 +4,20 @@
 
 关联：[Issue #158](https://github.com/rongxinzy/zhiyuanAaaS/issues/158)。本文件是技术实施与验证记录；产品范围以 [FR-KB-03 / ER-AC-11 / K1](https://github.com/rongxinzy/zhiyuan-docs/blob/main/product/README.md) 为唯一正文。
 
+## 当前验收检查点（2026-10-10）
+
+本节是最新状态；下文保留的日期记录是历史快照，不能据其中旧的“未实现”或旧 CI 结果判断当前状态。六轮仍沿用 `feat/knowledge-phase-a`，由三个 Luna 分别完成 UI、权限/内容运营回归、部署适配，主代理独立审核。
+
+- 第 1–3 轮：管理台 `7dbe2df` 的 verify、coverage-ratchet、CodeQL 和 ci-gate 全部通过；治理 `beb9b09` 的 verify、coverage-ratchet 和 ci-gate 全部通过。引擎两处可信图片来源 fixture 提交为 `2b4e7cfa`；原生 Go MCP 的授权回调、工具范围和读取完成审计提交为 `a73c2175`。实际部署使用的 Python MCP 实时授权与读取完成审计已提交、推送为 `15d7e55a`，该提交 Go test/build/vet、lint 和 Python 3.10–3.13 CI 全部通过；主代理独立 Linux Python 复验为 39 项 unittest 与 20 项专项 pytest 通过。上述仅证明匹配提交的代码检查，不证明已部署。
+- 第 4–5 轮：标签、路径文件夹、FAQ、逐资源批量操作、分块修订、用户/团队 grants、员工检索与来源，以及实时 Agent/MCP 授权链已形成实现，管理台准备提交；治理代码仍在最终复验。跨语言测试已使用 Python MCP 工具调用真实 Go Portal HTTP handler，AEP、上游与数据库为隔离测试替身；不是连接本地业务数据库的真实验收。主代理发现并交付修复：切库/检索时陈旧响应与 loading 锁死，授权读取完成前误保存空集合，以及写入授权时伪造只读 provenance 字段。
+- 管理台最新全量 coverage 为 49 个文件、477 个测试通过，行覆盖率 81.63%（4986/6108），达到当前 main 基线，完整 `npm run check` 通过。最新 mock 浏览器 E2E 使用真实 Ant Design 组件：18 项检查、342 个请求、无 console error；覆盖标签新建、授权保存/撤销失败与重试、员工检索及来源、FAQ 新建/编辑保留多答案和元数据/清标签、chunk 原文保存与启停。此前一次完整 coverage 为 475/477，权限提示和 FAQ 编辑测试失败；保留失败事实。已在父组件状态测试隔离独立业务子组件、在运营组件测试仅替换 Table 呈现，保留真实 Form/Modal、业务请求及严格 payload 回归；未增加超时或放宽门禁，完整重跑 477/477 通过。Portal 新增功能后 Linux Go 1.26 覆盖率从初始 **70.0%** 提升到 81.6% 的中途检查点，仍低于 82.9% ratchet，继续补实际 handler 的成功/失败和越权回归；不调低门禁，不用 Windows 覆盖率代替 CI 环境证据。
+- 安全复查修复已形成：知识 managed 路由重新校验当前 AEP 管理员角色；managed 配置启用时旧的任意路径代理返回 410，避免绕过登记、逐资源授权与审计。不修改全局账号策略。Python 治理层补齐裸名工具识别并默认拒绝写工具，模型不能选择审计 action；MCP 读取失败也必须持久完成失败审计。专项回归已通过；治理改动尚待最终提交、匹配 CI 和真实本地撤权验收。
+- 只读对照当前 WeKnora `15d7e55a` 发现三处后写误报：chunk 原文 no-op、仅修改启用状态的 revision，以及上游标准化 folder path 后的结果校验。已交 Luna 修复并补真实字段形状回归；修复验收前不记为运营 API 兼容通过。FAQ 单项/批量清标签以及重解析/取消路径与该源码匹配，但源码核对不能代替运行镜像验证。
+- 第 6 轮：部署工具已修正 Deployment→ReplicaSet→Pod 归属检查、WSL 无法启动 PowerShell、planned RunRoot 的只读复用，以及 Windows 缺 CGO 编译器的准备路径；指定 Linux Go 1.26 + GCC 的数据库包测试实际通过，部署工具最新 52 项隔离单测通过。当前没有 DigitalEmployee CR，runtime 实为固定 gateway Deployment；六组件 prepare 已有实际构建/归档/导入适配代码，尚在审查，隔离测试不代表执行过。已加入临时 digest-pinned 构建输入及显式本地镜像导入确认，不修改上游 Dockerfile；尝试拉取六个官方基础镜像均被现有 daemon 代理连接失败阻断，未下载镜像，未修改全局代理。六组件 deploy/apply 适配继续补全，当前仍明确阻止部署。未构建本轮部署镜像、未备份/恢复数据库、未迁移、未部署。
+- 配套交付缺口：仅更新 WeKnora app、Portal、Admin 三镜像不够。实际 Python MCP 服务、治理包所在员工 runtime、operator 还需要匹配镜像/配置和 reconcile；当前 live MCP 未包含新授权环境变量，也没有源码 ConfigMap 挂载可热替换。工具在完整配套方案核对前拒绝不完整 prepare/deploy，不能将“三镜像更新”记为第 5 轮可用。部署方案还需确认两库受保护备份/隔离恢复证明、Portal 数据库连接归属，以及租户/模型/Secret selector 配置。
+
+仍未完成：最终提交与当前提交 CI、配套组件准备、备份及配置核对、真实本地部署、两用户撤权/跨库拒绝及真实浏览器验收、正式 approval。三个关联 PR 保持 Draft，Issue #158 不关闭。
+
 ## PR 合并目标调整（2026-10-09）
 
 用户要求 PR #165 不以阶段 A 探针作为合并交付：必须把企业知识库能力实际接入知远，本地更新可查看，并通过 CI 后才考虑合并。下文阶段 A 是已完成的技术证据，不是最终产品交付。

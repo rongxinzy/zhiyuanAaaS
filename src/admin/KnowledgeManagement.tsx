@@ -37,6 +37,9 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
+import { KnowledgeGrants } from './KnowledgeGrants.js';
+import { KnowledgeOperations } from './KnowledgeOperations.js';
+import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
 import {
   type ManagedKnowledgeBase,
   type ManagedKnowledgeChunk,
@@ -124,6 +127,11 @@ const copyKeys = {
   disableDocument: 'knowledgeDisableDocument',
   keepDisabledAfterParse: 'knowledgeKeepDisabledAfterParse',
   imagePreview: 'knowledgeImagePreview',
+  chunkEdit: 'knowledgeChunkEdit',
+  chunkRevision: 'knowledgeChunkRevision',
+  chunkSaved: 'knowledgeChunkSaved',
+  chunkIndexFailed: 'knowledgeChunkIndexFailed',
+  chunkIndexStatus: 'knowledgeChunkIndexStatus',
   knowledgeActions: 'knowledgeActions',
   active: 'knowledgeStatusActive',
   completed: 'knowledgeStatusCompleted',
@@ -214,6 +222,9 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
     | null
   >(null);
   const [chunksLoading, setChunksLoading] = useState(false);
+  const [chunkSavingId, setChunkSavingId] = useState<string | null>(null);
+  const [chunkEditor, setChunkEditor] = useState<ManagedKnowledgeChunk | null>(null);
+  const [chunkEditorText, setChunkEditorText] = useState('');
   const [chunkImageURLs, setChunkImageURLs] = useState<Record<string, string>>({});
   const [chunkImageLoading, setChunkImageLoading] = useState<string | null>(null);
   const chunkImageURLsRef = useRef<Record<string, string>>({});
@@ -226,6 +237,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
   const docGeneration = useRef(0);
   const pollRounds = useRef(0);
   const chunkRequestGeneration = useRef(0);
+  const chunkSaveGeneration = useRef(0);
   useEffect(
     () => () => {
       if (preview) URL.revokeObjectURL(preview.url);
@@ -317,6 +329,23 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
       });
     return () => controller.abort();
   }, [portal, selectedId]);
+
+  useEffect(() => {
+    chunkRequestGeneration.current += 1;
+    chunkSaveGeneration.current += 1;
+    setInspector(null);
+    setChunksLoading(false);
+    setChunkSavingId(null);
+    setChunkEditor(null);
+    setChunkEditorText('');
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (inspector?.kind !== 'chunks' || !inspector.content.some((chunk) => chunk.id === chunkEditor?.id)) {
+      setChunkEditor(null);
+      setChunkEditorText('');
+    }
+  }, [inspector, chunkEditor?.id]);
 
   const loadDocuments = useCallback(
     async (signal?: AbortSignal) => {
@@ -591,6 +620,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
   };
 
   const inspectDocument = async (document: ManagedKnowledgeDocument, kind: 'chunks' | 'spans') => {
+    chunkSaveGeneration.current += 1;
     chunkImageRequests.current.forEach((controller) => {
       controller.abort();
     });
@@ -649,6 +679,51 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
       setWriteNotice(errorText(cause));
     } finally {
       if (generation === chunkRequestGeneration.current) setChunksLoading(false);
+    }
+  };
+
+  const saveChunk = async (
+    chunk: ManagedKnowledgeChunk,
+    update: { readonly content?: string; readonly is_enabled?: boolean },
+  ) => {
+    if (inspector?.kind !== 'chunks' || uncertainWrite || writeBlocked || chunkSavingId) return;
+    const targetDocumentId = inspector.documentId;
+    const saveGeneration = ++chunkSaveGeneration.current;
+    setChunkSavingId(chunk.id);
+    setWriteNotice(null);
+    try {
+      const result = await portal.updateManagedKnowledgeChunk(targetDocumentId, chunk.id, {
+        ...update,
+        ...(update.content !== undefined ? { expected_revision: chunk.content_revision } : {}),
+      });
+      if (saveGeneration !== chunkSaveGeneration.current) return;
+      setInspector((current) =>
+        current?.kind === 'chunks' &&
+        current.documentId === targetDocumentId &&
+        current.content.some((item) => item.id === chunk.id)
+          ? {
+              ...current,
+              content: current.content.map((item) =>
+                item.id === chunk.id
+                  ? { ...item, ...result.data, ...(item.images ? { images: item.images } : {}) }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      setWriteNotice(
+        `${t('chunkSaved')} ${result.data.index_status === 'failed' ? t('chunkIndexFailed') : t('chunkIndexStatus')}: ${result.data.index_status} · ${t('operation')}: ${result.operationId}`,
+      );
+      setChunkEditor((current) => (current?.id === chunk.id ? null : current));
+    } catch (cause) {
+      if (saveGeneration !== chunkSaveGeneration.current) return;
+      if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+      if (isUncertain(cause)) setUncertainWrite(true);
+      setWriteNotice(
+        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
+      );
+    } finally {
+      if (saveGeneration === chunkSaveGeneration.current) setChunkSavingId(null);
     }
   };
 
@@ -924,9 +999,16 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                   type="button"
                   disabled={uploading}
                   onClick={() => {
+                    chunkRequestGeneration.current += 1;
+                    chunkSaveGeneration.current += 1;
                     setSelectedId(base.id);
                     setPage(1);
                     setFiles([]);
+                    setInspector(null);
+                    setChunksLoading(false);
+                    setChunkSavingId(null);
+                    setChunkEditor(null);
+                    setChunkEditorText('');
                   }}
                   className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${base.id === selectedId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                 >
@@ -1082,6 +1164,21 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                 }}
                 scroll={{ x: 560 }}
               />
+              <KnowledgeRetrieval key={`retrieval:${selected.id}`} portal={portal} baseId={selected.id} />
+              <KnowledgeGrants
+                key={`grants:${selected.id}`}
+                portal={portal}
+                baseId={selected.id}
+                disabled={writeBlocked || uploading}
+              />
+              <KnowledgeOperations
+                key={`operations:${selected.id}`}
+                portal={portal}
+                baseId={selected.id}
+                baseType={selected.type}
+                documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+                disabled={writeBlocked || uploading}
+              />
             </div>
           )}
         </Card>
@@ -1159,6 +1256,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
         footer={null}
         onCancel={() => {
           chunkRequestGeneration.current += 1;
+          chunkSaveGeneration.current += 1;
           chunkImageRequests.current.forEach((controller) => {
             controller.abort();
           });
@@ -1188,12 +1286,33 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                           <Tag color={chunk.is_enabled ? 'success' : 'default'}>
                             {chunk.is_enabled ? t('chunkEnabled') : t('chunkDisabled')}
                           </Tag>
+                          <Button
+                            size="small"
+                            disabled={writeBlocked || uncertainWrite || chunkSavingId !== null}
+                            onClick={() => {
+                              setChunkEditor(chunk);
+                              setChunkEditorText(chunk.content);
+                            }}
+                          >
+                            {t('chunkEdit')}
+                          </Button>
+                          <Switch
+                            size="small"
+                            checked={chunk.is_enabled}
+                            loading={chunkSavingId === chunk.id}
+                            disabled={writeBlocked || uncertainWrite || chunkSavingId !== null}
+                            aria-label={chunk.is_enabled ? t('chunkDisabled') : t('chunkEnabled')}
+                            onChange={(checked) => void saveChunk(chunk, { is_enabled: checked })}
+                          />
                         </Space>
                         <Typography.Paragraph
                           style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 0 }}
                         >
                           {chunk.content}
                         </Typography.Paragraph>
+                        {chunk.index_status === 'failed' && (
+                          <Alert type="warning" showIcon title={t('chunkIndexFailed')} />
+                        )}
                         {chunk.images?.map((image) => {
                           const imageKey = `${inspector.documentId}:${chunk.id}:${image.index}`;
                           const imageURL = chunkImageURLs[imageKey];
@@ -1247,6 +1366,28 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
             <Tree style={{ width: '100%' }} treeData={[spanTree(inspector.content.trace)]} defaultExpandAll />
           </Space>
         )}
+      </Modal>
+      <Modal
+        title={t('chunkEdit')}
+        open={chunkEditor !== null}
+        onCancel={() => setChunkEditor(null)}
+        onOk={() => chunkEditor && void saveChunk(chunkEditor, { content: chunkEditorText })}
+        confirmLoading={chunkSavingId === chunkEditor?.id}
+        okButtonProps={{ disabled: writeBlocked || uncertainWrite || !chunkEditorText.trim() }}
+        okText={t('save')}
+        cancelText={t('cancel')}
+        destroyOnHidden
+      >
+        <Typography.Text type="secondary">
+          {t('chunkRevision')}: {chunkEditor?.content_revision}
+        </Typography.Text>
+        <Input.TextArea
+          value={chunkEditorText}
+          onChange={(event) => setChunkEditorText(event.target.value)}
+          rows={10}
+          maxLength={1_000_000}
+          showCount
+        />
       </Modal>
       <Modal
         title={preview?.name ?? t('knowledgePreview')}

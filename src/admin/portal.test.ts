@@ -404,6 +404,98 @@ describe('portal client departments and lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
+  test('managed knowledge operations use fixed routes and preserve index/CAS state', async () => {
+    const portal = new PortalClient(async () => null);
+    const tag = {
+      id: 'tag-1',
+      seq_id: 2,
+      name: 'Policies',
+      color: '',
+      sort_order: 0,
+      knowledge_count: 1,
+      chunk_count: 2,
+    };
+    const tagsFetch = stubFetch(200, { data: [tag], total: 1, page: 1, page_size: 200 });
+    await expect(portal.listManagedKnowledgeTags('kb-1')).resolves.toEqual([tag]);
+    expect(tagsFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/tags?page=1&page_size=200');
+    vi.unstubAllGlobals();
+
+    const folder = { path: 'docs', name: 'docs', document_count: 1, total_count: 2, children: [] };
+    const foldersFetch = stubFetch(200, {
+      data: { root_document_count: 1, total_document_count: 3, folders: [folder] },
+    });
+    await expect(portal.getManagedKnowledgeFolders('kb-1')).resolves.toMatchObject({ folders: [folder] });
+    expect(foldersFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/folders');
+    vi.unstubAllGlobals();
+
+    const operation = { data: { outcome: 'succeeded', affectedCount: 2 }, operationId: 'op-1' };
+    const moveFetch = stubFetch(200, operation);
+    await expect(portal.moveManagedKnowledgeDocuments('kb-1', ['doc-1', 'doc-2'], 'docs')).resolves.toEqual(operation);
+    expect(moveFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/folders/move');
+    expect(JSON.parse(String((moveFetch.mock.calls[0]![1] as RequestInit).body))).toEqual({
+      document_ids: ['doc-1', 'doc-2'],
+      folder_path: 'docs',
+    });
+    vi.unstubAllGlobals();
+
+    const batchDeleteFetch = stubFetch(200, operation);
+    await expect(portal.deleteManagedKnowledgeFAQEntries('kb-1', [7])).resolves.toEqual(operation);
+    expect(batchDeleteFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/faq/batch/delete');
+    expect((batchDeleteFetch.mock.calls[0]![1] as RequestInit).method).toBe('DELETE');
+    vi.unstubAllGlobals();
+
+    const faq = {
+      id: 9,
+      knowledge_id: 'doc-1',
+      knowledge_base_id: 'kb-1',
+      tag_id: 0,
+      tag_name: '',
+      is_enabled: true,
+      is_recommended: false,
+      standard_question: 'How?',
+      similar_questions: [],
+      negative_questions: [],
+      answers: ['Because.'],
+      answer_strategy: '',
+      updated_at: '',
+      created_at: '',
+    };
+    const faqCreateFetch = stubFetch(200, { data: faq, operationId: 'op-faq' });
+    await expect(
+      portal.saveManagedKnowledgeFAQ('kb-1', null, {
+        standard_question: 'How?',
+        similar_questions: [],
+        negative_questions: [],
+        answers: ['Because.'],
+      }),
+    ).resolves.toMatchObject({ data: { id: 9 }, operationId: 'op-faq' });
+    expect(faqCreateFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/faq/entries');
+    vi.unstubAllGlobals();
+
+    const chunkFetch = stubFetch(200, {
+      data: {
+        id: 'chunk-1',
+        knowledge_id: 'doc-1',
+        seq_id: 3,
+        content: 'Updated',
+        chunk_type: 'text',
+        is_enabled: true,
+        content_revision: 5,
+        index_status: 'failed',
+      },
+      operationId: 'op-chunk',
+    });
+    await expect(
+      portal.updateManagedKnowledgeChunk('doc-1', 'chunk-1', { content: 'Updated', expected_revision: 4 }),
+    ).resolves.toMatchObject({ data: { content_revision: 5, index_status: 'failed' }, operationId: 'op-chunk' });
+    expect(chunkFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/chunks/chunk-1');
+    expect(JSON.parse(String((chunkFetch.mock.calls[0]![1] as RequestInit).body))).toEqual({
+      content: 'Updated',
+      expected_revision: 4,
+    });
+    vi.unstubAllGlobals();
+  });
+
   test('managed knowledge mutations keep DTOs allowlisted and operation IDs visible', async () => {
     const portal = new PortalClient(async () => null);
     const data = {
@@ -499,7 +591,16 @@ describe('portal client departments and lifecycle', () => {
 
     const chunksFetch = stubFetch(200, {
       data: [
-        { id: 'chunk-1', knowledge_id: 'doc-1', seq_id: 1, content: 'excerpt', chunk_type: 'text', is_enabled: true },
+        {
+          id: 'chunk-1',
+          knowledge_id: 'doc-1',
+          seq_id: 1,
+          content: 'excerpt',
+          chunk_type: 'text',
+          is_enabled: true,
+          content_revision: 4,
+          index_status: 'ready',
+        },
       ],
       total: 1,
       page: 1,
@@ -562,6 +663,97 @@ describe('portal client departments and lifecycle', () => {
     await expect(portal.getManagedKnowledgeFile('doc-1', 'preview')).resolves.toBeInstanceOf(Blob);
     expect(fileFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/preview');
     expect(fileFetch.mock.calls[0]![1]).toMatchObject({ headers: { Authorization: 'Bearer aep-token' } });
+    vi.unstubAllGlobals();
+  });
+
+  test('retrieval and access-grant client uses fixed routes and validates source DTOs', async () => {
+    const portal = new PortalClient(async () => 'aep-token');
+    const grantSet = {
+      knowledge_base_id: 'kb-1',
+      tenant_id: 'tenant-1',
+      grants: [{ type: 'user', id: 'user-1', granted_by: 'admin-1', created_at: '2026-10-10T00:00:00Z' }],
+    };
+    const grantFetch = stubFetch(200, grantSet);
+    await expect(portal.listManagedKnowledgeGrants('kb-1')).resolves.toEqual(grantSet);
+    expect(grantFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/grants');
+    vi.unstubAllGlobals();
+
+    const replaceFetch = stubFetch(200, { ...grantSet, grants: [{ type: 'team', id: 'team-1' }] });
+    await expect(portal.replaceManagedKnowledgeGrants('kb-1', [{ type: 'team', id: 'team-1' }])).resolves.toMatchObject(
+      {
+        grants: [{ type: 'team', id: 'team-1' }],
+      },
+    );
+    expect(replaceFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/grants');
+    expect(replaceFetch.mock.calls[0]![1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ grants: [{ type: 'team', id: 'team-1' }] }),
+    });
+    vi.unstubAllGlobals();
+
+    const searchFetch = stubFetch(200, {
+      query: 'refund policy',
+      mode: 'hybrid',
+      results: [
+        {
+          score: 0.91,
+          content: 'Refunds are available within 30 days.',
+          source: { knowledge_base_id: 'kb-1', document_id: 'doc-1', chunk_id: 'chunk-1', title: 'Refund policy' },
+        },
+      ],
+    });
+    await expect(
+      portal.searchEmployeeKnowledge('sales-helper', {
+        query: 'refund policy',
+        knowledge_base_ids: ['kb-1'],
+        mode: 'hybrid',
+        limit: 10,
+      }),
+    ).resolves.toMatchObject({ results: [{ source: { document_id: 'doc-1', chunk_id: 'chunk-1' } }] });
+    expect(searchFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/employees/sales-helper/search');
+    expect(searchFetch.mock.calls[0]![1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ query: 'refund policy', knowledge_base_ids: ['kb-1'], mode: 'hybrid', limit: 10 }),
+    });
+    vi.unstubAllGlobals();
+
+    const sourceFetch = stubFetch(200, {
+      document: {
+        id: 'doc-1',
+        title: 'Refund policy',
+        file_name: 'refund.pdf',
+        file_type: 'pdf',
+        source: 'upload',
+        knowledge_base_id: 'kb-1',
+      },
+      chunks: [{ id: 'chunk-1', seq_id: 2, chunk_type: 'text', content: 'Refunds are available within 30 days.' }],
+      total: 21,
+      page: 2,
+      page_size: 20,
+    });
+    await expect(portal.getEmployeeKnowledgeSource('sales-helper', 'doc-1', 2, 20)).resolves.toMatchObject({
+      document: { knowledge_base_id: 'kb-1' },
+      chunks: [{ id: 'chunk-1' }],
+      page: 2,
+      total: 21,
+    });
+    expect(sourceFetch.mock.calls[0]![0]).toBe(
+      '/api/v1/knowledge/employees/sales-helper/documents/doc-1?page=2&page_size=20',
+    );
+    vi.unstubAllGlobals();
+
+    stubFetch(200, { ...grantSet, knowledge_base_id: 'other-kb' });
+    await expect(portal.listManagedKnowledgeGrants('kb-1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    vi.unstubAllGlobals();
+    stubFetch(403, { error: 'knowledge access denied' });
+    await expect(
+      portal.searchEmployeeKnowledge('sales-helper', {
+        query: 'x',
+        knowledge_base_ids: ['kb-1'],
+        mode: 'hybrid',
+        limit: 10,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
     vi.unstubAllGlobals();
   });
 });
