@@ -416,6 +416,87 @@ describe('admin resources', () => {
   );
 
   test(
+    'creates a user with the default password placeholder when no password is entered',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+          roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        }),
+        createUser: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增用户/ }));
+      const modal = await screen.findByRole('dialog');
+      expect(within(modal).getByPlaceholderText('默认密码 123456')).toBeInTheDocument();
+      fireEvent.change(within(modal).getByLabelText('用户名'), { target: { value: 'new-user' } });
+      fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '新用户' } });
+      const comboBoxes = within(modal).getAllByRole('combobox');
+      await pickOption(comboBoxes[0]!, '管理员');
+      await pickOption(comboBoxes[1]!, '平台组');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createUser).toHaveBeenCalledWith(
+          expect.objectContaining({ username: 'new-user', temporaryPassword: '' }),
+        ),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'rejects a temporary password with edge whitespace instead of trimming silently',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+          roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        }),
+        createUser: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增用户/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('用户名'), { target: { value: 'new-user' } });
+      fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '新用户' } });
+      fireEvent.change(within(modal).getByLabelText('临时密码'), { target: { value: ' pad-password-123 ' } });
+      const comboBoxes = within(modal).getAllByRole('combobox');
+      await pickOption(comboBoxes[0]!, '管理员');
+      await pickOption(comboBoxes[1]!, '平台组');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await within(modal).findAllByText('密码前后不能有空格。');
+      expect(client.createUser).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'rejects a new password with edge whitespace in the self-service dialog',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'admin-1', displayName: '管理员', username: 'admin', status: 'active' }],
+        }),
+        changePassword: vi.fn(),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('管理员')).toBeInTheDocument();
+      openRowMenu('更多');
+      fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: ' fresh-password-12 ' } });
+      fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: ' fresh-password-12 ' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await within(modal).findAllByText('密码前后不能有空格。');
+      expect(client.changePassword).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'imports users from a JSON envelope and refreshes the list',
     async () => {
       const client = {
