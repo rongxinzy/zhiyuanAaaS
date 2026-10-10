@@ -48,7 +48,7 @@ import {
   theme,
   Upload,
 } from 'antd';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { runBatch } from './batch.js';
 import {
   type AdminConsoleClient,
@@ -68,6 +68,7 @@ import { ListQueryActions } from './components/ListQueryActions.js';
 import { formatTimestamp } from './format.js';
 import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
+import { PortalClient, PortalError } from './portal.js';
 import { resourcesCopy as rc } from './resources-copy.js';
 import { SessionClientCell, SessionClientDetail } from './session-client.js';
 
@@ -105,6 +106,8 @@ interface ResourcesProps {
   readonly client: AdminConsoleClient;
   readonly tab: AdminResourceTab;
   readonly identity?: AdminIdentity | undefined;
+  /** Test seam: injected portal client (defaults to a bearer client). */
+  readonly portal?: PortalClient | undefined;
 }
 
 const PAGINATION = { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false, align: 'center' } as const;
@@ -119,7 +122,8 @@ const EMPTY_RESOURCES: AdminResources = {
   assignments: [],
 };
 
-export function Resources({ client, tab, identity }: ResourcesProps) {
+export function Resources({ client, tab, identity, portal }: ResourcesProps) {
+  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
   const [resources, setResources] = useState<AdminResources | null>(null);
   const [modelResources, setModelResources] = useState<ModelResources>({
     models: [],
@@ -237,6 +241,7 @@ export function Resources({ client, tab, identity }: ResourcesProps) {
             <SkillsSection
               canAssign={hasAdminPermission(identity, AdminPermission.SkillsAssign)}
               client={client}
+              portal={resolvedPortal}
               resources={view}
               canWrite={canMutate}
               loading={loading}
@@ -3176,8 +3181,139 @@ function RoleEditorModal({
 // Skills
 // ---------------------------------------------------------------------------
 
+type SkillEmployeeRef = {
+  readonly key: string;
+  readonly name: string;
+  readonly displayName: string;
+  readonly version: string;
+};
+
+type SkillEmployeesState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly refs: readonly SkillEmployeeRef[]; readonly unconfigured: number }
+  | { readonly status: 'unavailable'; readonly forbidden: boolean };
+
+// The digital employees that enable a Skill. The portal authorises the read and
+// returns every employee, so the console filters locally. A failed or forbidden
+// read is never rendered as "nobody uses it".
+function SkillEmployees({
+  portal,
+  skillId,
+  variant,
+}: {
+  readonly portal: PortalClient;
+  readonly skillId: string;
+  readonly variant: 'compact' | 'table';
+}) {
+  const [state, setState] = useState<SkillEmployeesState>({ status: 'loading' });
+  const ticket = useRef(0);
+  useEffect(() => {
+    ticket.current += 1;
+    const current = ticket.current;
+    setState({ status: 'loading' });
+    portal
+      .listEmployees()
+      .then((employees) => {
+        if (current !== ticket.current) return;
+        const refs: SkillEmployeeRef[] = [];
+        let unconfigured = 0;
+        for (const employee of employees) {
+          // null/undefined = no explicit skill policy yet; [] = an explicit
+          // "no skills". Only a hit means the employee enables this Skill.
+          if (employee.skills === null || employee.skills === undefined) {
+            unconfigured += 1;
+            continue;
+          }
+          const match = employee.skills.find((skill) => skill.id === skillId);
+          if (match) {
+            refs.push({
+              key: employee.name,
+              name: employee.name,
+              displayName: employee.displayName,
+              version: match.version ?? '',
+            });
+          }
+        }
+        setState({ status: 'ready', refs, unconfigured });
+      })
+      .catch((error: unknown) => {
+        if (current !== ticket.current) return;
+        setState({ status: 'unavailable', forbidden: error instanceof PortalError && error.status === 403 });
+      });
+    return () => {
+      // A later load (or unmount) invalidates this response.
+      ticket.current += 1;
+    };
+  }, [portal, skillId]);
+
+  if (state.status === 'loading') return <Spin size="small" />;
+  if (state.status === 'unavailable') {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        title={state.forbidden ? rc.skillEmployeesForbidden : rc.skillEmployeesUnavailable}
+      />
+    );
+  }
+  if (state.refs.length === 0) {
+    return <Typography.Text type="secondary">{rc.skillEmployeesNone}</Typography.Text>;
+  }
+  const count = (
+    <Typography.Text type="secondary">
+      {rc.skillEmployeesCount.replace('{count}', String(state.refs.length))}
+    </Typography.Text>
+  );
+  const unconfigured =
+    state.unconfigured > 0 ? (
+      <Typography.Text type="secondary">
+        {rc.skillEmployeesUnconfigured.replace('{count}', String(state.unconfigured))}
+      </Typography.Text>
+    ) : null;
+  if (variant === 'table') {
+    return (
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+        {count}
+        <Table<SkillEmployeeRef>
+          rowKey="key"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...state.refs]}
+          columns={[
+            { title: rc.skillEmployeeColumnName, key: 'name', render: (_, ref) => ref.displayName || ref.name },
+            {
+              title: rc.skillEmployeeColumnId,
+              key: 'id',
+              render: (_, ref) => <Typography.Text type="secondary">{ref.name}</Typography.Text>,
+            },
+            { title: rc.skillEmployeeColumnVersion, key: 'version', render: (_, ref) => ref.version || '—' },
+          ]}
+        />
+        {unconfigured}
+      </Space>
+    );
+  }
+  return (
+    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+      {count}
+      <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          {state.refs.map((ref) => (
+            <li key={ref.key}>
+              {ref.displayName || ref.name}
+              {ref.version ? ` · ${ref.version}` : ''}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {unconfigured}
+    </Space>
+  );
+}
+
 function SkillsSection({
   client,
+  portal,
   resources,
   canWrite,
   canAssign,
@@ -3185,7 +3321,7 @@ function SkillsSection({
   onRefresh,
   onChanged,
   onError,
-}: SectionProps & { readonly canAssign: boolean }) {
+}: SectionProps & { readonly canAssign: boolean; readonly portal: PortalClient }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
@@ -3347,6 +3483,7 @@ function SkillsSection({
       {detailSkill ? (
         <SkillDetailDrawer
           client={client}
+          portal={portal}
           skill={detailSkill}
           resources={resources}
           canWrite={canWrite}
@@ -3415,23 +3552,31 @@ function SkillsSection({
       >
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Typography.Text>{rc.skillForceDeleteNote}</Typography.Text>
+          <Typography.Text strong>{rc.skillEmployeesSection}</Typography.Text>
+          {forceSkill ? <SkillEmployees portal={portal} skillId={forceSkill.id} variant="compact" /> : null}
+          <Typography.Text strong>{rc.skillForceDeleteGrants}</Typography.Text>
           {forceRefs.length > 0 ? (
-            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-              {forceRefs.map((assignment) => (
-                <li key={assignment.id}>
-                  <SubjectCell
-                    subjectType={assignment.subjectType}
-                    subjectId={assignment.subjectId}
-                    user={
-                      assignment.subjectType === AdminSubjectType.User
-                        ? resources.users.find((user) => user.id === assignment.subjectId)
-                        : undefined
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+            <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+              <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                {forceRefs.map((assignment) => (
+                  <li key={assignment.id}>
+                    <SubjectCell
+                      subjectType={assignment.subjectType}
+                      subjectId={assignment.subjectId}
+                      user={
+                        assignment.subjectType === AdminSubjectType.User
+                          ? resources.users.find((user) => user.id === assignment.subjectId)
+                          : undefined
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <Typography.Text type="secondary">{rc.skillForceDeleteGrantsNone}</Typography.Text>
+          )}
+          <Typography.Text type="secondary">{rc.skillForceDeletePlatformNote}</Typography.Text>
         </Space>
       </Modal>
     </div>
@@ -3440,6 +3585,7 @@ function SkillsSection({
 
 function SkillDetailDrawer({
   client,
+  portal,
   skill,
   resources,
   canWrite,
@@ -3452,6 +3598,7 @@ function SkillDetailDrawer({
   onGrant,
 }: {
   readonly client: AdminConsoleClient;
+  readonly portal: PortalClient;
   readonly skill: AdminSkill;
   readonly resources: AdminResources;
   readonly canWrite: boolean;
@@ -3613,11 +3760,7 @@ function SkillDetailDrawer({
           {
             key: 'employees',
             label: rc.skillDetailEmployees,
-            children: (
-              <Empty description={rc.skillEmployeesEmpty}>
-                <Typography.Text type="secondary">{rc.skillEmployeesEmptyHint}</Typography.Text>
-              </Empty>
-            ),
+            children: <SkillEmployees portal={portal} skillId={skill.id} variant="table" />,
           },
         ]}
       />
