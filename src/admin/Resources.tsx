@@ -73,8 +73,14 @@ import { SessionClientCell, SessionClientDetail } from './session-client.js';
 const language: AdminLanguage = 'zh';
 const t = (key: AdminTranslationKey) => translate(language, key);
 
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 1024;
+// New passwords reject edge whitespace; the prompt names the cause instead of
+// silently trimming a secret the operator may have pasted deliberately.
+const edgeWhitespaceRule = {
+  validator: (_: unknown, value: string) =>
+    !value || value === value.trim() ? Promise.resolve() : Promise.reject(new Error(t('passwordEdgeWhitespace'))),
+};
 
 type AdminUser = PlatformUser & { readonly email?: string | null };
 
@@ -1700,13 +1706,13 @@ function UserEditorModal({
             label={t('temporaryPassword')}
             extra={t('passwordPolicy')}
             rules={[
-              { required: true, message: t('passwordPolicy') },
               { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
+              edgeWhitespaceRule,
             ]}
           >
             <Input.Password
               autoComplete="new-password"
-              placeholder={t('temporaryPasswordPlaceholder')}
+              placeholder={t('defaultPasswordPlaceholder')}
               disabled={pending}
             />
           </Form.Item>
@@ -1816,6 +1822,7 @@ function PasswordResetModal({
           rules={[
             { required: true, message: t('passwordPolicy') },
             { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordPolicy') },
+            edgeWhitespaceRule,
           ]}
         >
           <Input.Password
@@ -1882,6 +1889,7 @@ function SelfPasswordChangeModal({
           rules={[
             { required: true, message: t('passwordChangePolicy') },
             { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordChangePolicy') },
+            edgeWhitespaceRule,
           ]}
         >
           <Input.Password autoComplete="new-password" disabled={pending} />

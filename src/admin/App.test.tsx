@@ -98,6 +98,18 @@ describe('Ant Design admin shell', () => {
     );
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
   });
+  test('trims whitespace around the password before signing in', async () => {
+    render(<AdminApp />);
+    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: '  test-password  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await waitFor(() =>
+      expect(AdminConsoleClient.prototype.login).toHaveBeenCalledWith({
+        username: 'admin',
+        password: 'test-password',
+      }),
+    );
+  });
   test('shows a recoverable login error', async () => {
     vi.mocked(AdminConsoleClient.prototype.login).mockRejectedValue(new Error('denied'));
     render(<AdminApp />);
