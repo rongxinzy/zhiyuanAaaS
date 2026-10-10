@@ -29,6 +29,8 @@ try {
     env: {
       ...process.env,
       ZHIYUAN_ADMIN_PORT: String(port),
+      // The browser contract test does not exercise the legacy upstream UI
+      // proxy; bind it to an ephemeral port instead of assuming 5174 is free.
       ZHIYUAN_ADMIN_WEKNORA_PORT: '0',
       ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
       ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
@@ -131,6 +133,149 @@ try {
     fullPage: true,
     animations: 'disabled',
   });
+  assert.ok(
+    state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Knowledge page must load its native managed registry, not the legacy status proxy',
+  );
+  await page.getByRole('button', { name: /新建知识库/ }).click();
+  const knowledgeDialog = page.getByRole('dialog');
+  await knowledgeDialog.getByLabel('名称', { exact: true }).fill('E2E 新建知识库');
+  await knowledgeDialog.getByLabel('描述', { exact: true }).fill('浏览器契约验证');
+  await knowledgeDialog.getByRole('button', { name: '保存', exact: true }).click();
+  await knowledgeDialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'E2E 新建知识库', exact: true }).waitFor();
+  assert.ok(state.knowledgeBases.some((item) => item.name === 'E2E 新建知识库'));
+  const createdKnowledgeBase = state.knowledgeBases.find((item) => item.name === 'E2E 新建知识库');
+  assert.ok(createdKnowledgeBase?.id);
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Create knowledge base must call the fixed managed API',
+  );
+  checks.push('native managed knowledge registry and create operation');
+  await page.getByRole('tab', { name: '标签', exact: true }).click();
+  await page.getByPlaceholder('标签名称').fill('E2E 标签');
+  await page.getByRole('button', { name: '新建标签', exact: true }).click();
+  await page.getByText('E2E 标签', { exact: true }).waitFor();
+  assert.ok(state.knowledgeTags.some((item) => item.name === 'E2E 标签'));
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path.endsWith('/tags')),
+    'Tag creation must call the fixed managed knowledge tag endpoint',
+  );
+  checks.push('native managed knowledge tag operation');
+  const grants = page.locator('section[aria-label="知识库访问授权"]').last();
+  await grants.getByText('user-1', { exact: true }).waitFor();
+  await grants.getByPlaceholder('输入用户 ID').fill('user-e2e');
+  await grants.getByRole('button', { name: '添加用户', exact: true }).click();
+  await grants.getByRole('button', { name: '保存授权', exact: true }).click();
+  await grants.getByText('user-e2e', { exact: true }).waitFor();
+  const revokePath = `/api/v1/knowledge/managed/bases/${createdKnowledgeBase.id}/grants`;
+  await waitForValue(
+    () => state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'),
+    true,
+  );
+  assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
+  assert.ok(state.requests.some((item) => item.method === 'PUT' && item.path === revokePath));
+  expectedFailurePaths.add(revokePath);
+  state.failNext = `PUT ${revokePath}`;
+  await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
+  const revokeDialog = page.getByRole('dialog');
+  await revokeDialog.getByRole('button', { name: '撤销全部', exact: true }).click();
+  await grants.getByText('HTTP 503', { exact: true }).waitFor();
+  assert.equal(await grants.getByText('当前没有用户或团队授权。', { exact: true }).count(), 0);
+  assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
+  await grants.getByRole('button', { name: '重试读取', exact: true }).click();
+  await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '撤销全部', exact: true }).click();
+  await grants.getByText('当前没有用户或团队授权。', { exact: true }).waitFor();
+  assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
+  checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
+
+  await visit('knowledge', 'E2E 产品资料');
+  const retrieval = page.locator('section').filter({ hasText: '选择数字员工' }).last();
+  await retrieval.locator('.ant-select').first().click();
+  await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
+  await retrieval.getByLabel('输入知识检索问题').fill('退款期限');
+  await retrieval.getByRole('button', { name: '检索', exact: true }).click();
+  await retrieval.getByRole('button', { name: '退款政策', exact: true }).waitFor();
+  await retrieval.getByRole('button', { name: '退款政策', exact: true }).click();
+  await retrieval.getByText('refund-policy.pdf · pdf', { exact: true }).waitFor();
+  assert.ok(
+    state.requests.some(
+      (item) => item.method === 'POST' && item.path === '/api/v1/knowledge/employees/sales-helper/search',
+    ),
+  );
+  assert.ok(
+    state.requests.some(
+      (item) =>
+        item.method === 'GET' && item.path === '/api/v1/knowledge/employees/sales-helper/documents/doc-e2e-policy',
+    ),
+  );
+  checks.push('employee knowledge search and verified source document/chunk');
+  await page.getByRole('button').filter({ hasText: 'kb-1' }).first().click();
+  const chunkRow = page.getByRole('row').filter({ hasText: 'chunk-e2e.txt' });
+  await chunkRow.getByRole('button').nth(2).click();
+  const chunkText = 'original chunk line one\noriginal chunk line two';
+  const chunkInspector = page.getByRole('dialog').first();
+  await chunkInspector.locator('.ant-modal-body button').first().click();
+  const chunkEditor = page.getByRole('dialog').nth(1);
+  const chunkTextarea = chunkEditor.getByRole('textbox');
+  await chunkTextarea.waitFor();
+  assert.equal(await chunkTextarea.inputValue(), chunkText, 'Chunk editor must load the exact original content');
+  await chunkEditor.locator('.ant-modal-footer .ant-btn-primary').click();
+  await chunkEditor.waitFor({ state: 'hidden' });
+  const chunkPath = '/api/v1/knowledge/managed/documents/doc-chunk-e2e/chunks/chunk-e2e-editable';
+  const noOpChunkWrite = state.requests.findLast((item) => item.method === 'PUT' && item.path === chunkPath);
+  assert.deepEqual(noOpChunkWrite?.body, { content: chunkText, expected_revision: 3 });
+  await page.getByRole('dialog').first().getByRole('switch').click();
+  await waitForValue(() => state.knowledgeChunks[0].is_enabled, false);
+  const switchWrite = state.requests.findLast((item) => item.method === 'PUT' && item.path === chunkPath);
+  assert.deepEqual(switchWrite?.body, { is_enabled: false });
+  await chunkInspector.locator('.ant-modal-close').click();
+  await chunkInspector.waitFor({ state: 'hidden' });
+  checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
+
+  await page.getByRole('button').filter({ hasText: 'kb-faq-e2e' }).first().click();
+  await page.locator('.ant-tabs-tab').filter({ hasText: 'FAQ' }).click();
+  await page.getByRole('button', { name: '\u65b0\u5efa FAQ', exact: true }).click();
+  let faqDialog = page.getByRole('dialog');
+  const faqFields = faqDialog.getByRole('textbox');
+  await faqFields.nth(0).fill('new question');
+  await faqFields.nth(1).fill('new answer line one\nnew answer line two');
+  await faqDialog.locator('.ant-select').click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'Refund' }).click();
+  await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
+  await faqDialog.waitFor({ state: 'hidden' });
+  const faqCollectionPath = '/api/v1/knowledge/managed/bases/kb-faq-e2e/faq/entries';
+  const createFAQWrite = state.requests.findLast((item) => item.method === 'POST' && item.path === faqCollectionPath);
+  assert.deepEqual(createFAQWrite?.body?.answers, ['new answer line one', 'new answer line two']);
+  assert.equal(createFAQWrite?.body?.tag_id, 44);
+  const existingFAQRow = page.getByRole('row').filter({ hasText: 'seed-question' });
+  await existingFAQRow.getByRole('button').first().click();
+  faqDialog = page.getByRole('dialog');
+  await faqDialog.getByRole('textbox').nth(0).fill('updated standard question');
+  await faqDialog.locator('.ant-select-clear').click();
+  await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
+  await faqDialog.waitFor({ state: 'hidden' });
+  const editFAQWrite = state.requests.findLast(
+    (item) => item.method === 'PUT' && item.path.endsWith('/faq/entries/81'),
+  );
+  assert.deepEqual(editFAQWrite?.body, {
+    standard_question: 'updated standard question',
+    similar_questions: ['similar one', 'similar two'],
+    negative_questions: ['negative one'],
+    answers: ['answer line one\nanswer line two', 'second answer intact'],
+    answer_strategy: 'best_match',
+    is_enabled: true,
+    is_recommended: true,
+  });
+  assert.equal(
+    state.knowledgeFAQ.find((entry) => entry.id === 81).tag_id,
+    0,
+    'Clearing the FAQ tag must clear the persisted tag',
+  );
+  checks.push(
+    'FAQ create/edit: multiline answers, tag set and clear, similar/negative questions and strategy preserved',
+  );
   await visit('users', '管理员');
   await page.screenshot({
     path: path.join(screenshots, 'users.png'),
@@ -449,7 +594,7 @@ try {
   await page
     ?.screenshot({ path: path.join(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' })
     .catch(() => undefined);
-  console.error(JSON.stringify({ checks, errors, route: page?.url() }));
+  console.error(JSON.stringify({ checks, errors, route: page?.url(), requests: state.requests.slice(-12) }));
   throw error;
 } finally {
   await browser?.close().catch(() => undefined);

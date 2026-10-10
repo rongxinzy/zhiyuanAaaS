@@ -8,7 +8,14 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testi
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { type PortalClient, PortalError, type PortalKnowledgeStatus, type PortalMemoryStatus } from './portal.js';
+import {
+  type ManagedKnowledgeBase,
+  type ManagedKnowledgeDocument,
+  type PortalClient,
+  PortalError,
+  type PortalKnowledgeStatus,
+  type PortalMemoryStatus,
+} from './portal.js';
 import { KnowledgeView, MemoryView, ServicesView } from './ServiceStatus.js';
 
 const TIMEOUT = 15000;
@@ -54,12 +61,45 @@ describe('admin service status views', () => {
       { id: 'kb-2', name: '制度资料', description: '' },
     ],
   };
+  const managedBase: ManagedKnowledgeBase = {
+    id: 'kb-managed-1',
+    name: '销售产品资料',
+    description: '产品说明',
+    tenant_id: '10000',
+    embedding_model_id: 'embedding-1',
+    type: 'document',
+  };
+  const managedDocument: ManagedKnowledgeDocument = {
+    id: 'doc-1',
+    knowledge_base_id: managedBase.id,
+    name: '产品手册',
+    file_name: 'manual.pdf',
+    parse_status: 'processing',
+    created_at: '2026-10-09T00:00:00Z',
+  };
 
   const makePortal = (overrides: Partial<PortalClient> = {}) =>
     ({
       memoryStatus: vi.fn().mockResolvedValue(memoryStatus),
       memorySearch: vi.fn().mockResolvedValue({ memories: [] }),
       knowledgeStatus: vi.fn().mockResolvedValue(knowledgeStatus),
+      managedKnowledgeReadiness: vi.fn().mockResolvedValue({
+        deploymentId: 'deploy-1',
+        tenantId: '10000',
+        tenant: 'verified',
+        embeddingModel: { state: 'configured', id: 'embedding-1', availability: 'unverified' },
+        storage: 'unverified',
+        parser: 'unverified',
+      }),
+      listManagedKnowledgeBases: vi.fn().mockResolvedValue([managedBase]),
+      getManagedKnowledgeBase: vi.fn().mockResolvedValue(managedBase),
+      listManagedKnowledgeDocuments: vi
+        .fn()
+        .mockResolvedValue({ data: [managedDocument], total: 1, page: 1, pageSize: 10 }),
+      createManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: managedBase, operationId: 'op-create-1' }),
+      updateManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: managedBase, operationId: 'op-update-1' }),
+      deleteManagedKnowledgeBase: vi.fn().mockResolvedValue({ operationId: 'op-delete-1' }),
+      uploadManagedKnowledgeDocument: vi.fn().mockResolvedValue({ data: managedDocument, operationId: 'op-upload-1' }),
       listEmployees: vi.fn().mockResolvedValue([]),
       ...overrides,
     }) as unknown as PortalClient;
@@ -126,85 +166,50 @@ describe('admin service status views', () => {
   );
 
   test(
-    'KnowledgeView loads asynchronously and hands off to the configured knowledge system only',
+    'KnowledgeView uses managed APIs, shows parse status, and never links to WeKnora UI',
     async () => {
-      render(<KnowledgeView client={client as never} portal={makePortal()} />);
-
-      expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
-      expect(screen.getByText('制度资料')).toBeInTheDocument();
-      // Uncounted documents stay "not counted" — service health is not
-      // presented as "all processed".
-      expect(screen.getAllByText('暂未统计').length).toBeGreaterThan(0);
-
-      const links = screen.getAllByRole('link', { name: /管理文档/ }) as HTMLAnchorElement[];
-      expect(links.length).toBeGreaterThan(0);
-      for (const link of links) {
-        expect(link.href).toBe('http://kb.example.internal:30163/');
-        expect(link.href).not.toContain('token');
-      }
+      const portal = makePortal();
+      render(<KnowledgeView client={client as never} portal={portal} />);
+      expect(await screen.findAllByText('销售产品资料')).toHaveLength(2);
+      expect(await screen.findByText(/解析中 · processing/)).toBeInTheDocument();
+      expect(screen.getByText(/可用性未验证/)).toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(portal.listManagedKnowledgeBases).toHaveBeenCalled();
+      expect(portal.getManagedKnowledgeBase).toHaveBeenCalledWith(managedBase.id, expect.any(AbortSignal));
     },
     TIMEOUT,
   );
 
   test(
-    'KnowledgeView disables the handoff and explains when the reported URL is not http(s)',
+    'KnowledgeView exposes readiness gaps and disables creation without an embedding model',
     async () => {
       const portal = makePortal({
-        knowledgeStatus: vi.fn().mockResolvedValue({ ...knowledgeStatus, uiURL: 'javascript:alert(1)' }),
+        managedKnowledgeReadiness: vi.fn().mockResolvedValue({
+          deploymentId: 'deploy-1',
+          tenantId: '10000',
+          tenant: 'verified',
+          embeddingModel: { state: 'not_configured', id: '', availability: 'unverified' },
+          storage: 'unverified',
+          parser: 'unverified',
+        }),
       });
       render(<KnowledgeView client={client as never} portal={portal} />);
-
-      expect(await screen.findByText(/不是 http\/https 链接/)).toBeInTheDocument();
-      const buttons = screen.getAllByRole('button', { name: /管理文档/ });
-      for (const button of buttons) expect(button).toBeDisabled();
-      expect(screen.queryByRole('link', { name: /管理文档/ })).not.toBeInTheDocument();
+      expect(await screen.findByText(/暂不能新建知识库/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /新建知识库/ })).toBeDisabled();
     },
     TIMEOUT,
   );
 
   test(
-    'KnowledgeView unconfigured state guides configuration instead of an empty list',
+    'KnowledgeView displays managed API authorization errors instead of empty-state',
     async () => {
       const portal = makePortal({
-        knowledgeStatus: vi.fn().mockResolvedValue({ ...knowledgeStatus, configured: false }),
+        listManagedKnowledgeBases: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')),
       });
       render(<KnowledgeView client={client as never} portal={portal} />);
-
-      expect(await screen.findByText('知识库服务尚未配置')).toBeInTheDocument();
-      expect(screen.queryByText('销售产品资料')).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: /管理文档/ })).not.toBeInTheDocument();
-    },
-    TIMEOUT,
-  );
-
-  test(
-    'KnowledgeView connection failure offers retry, not an empty-success table',
-    async () => {
-      const knowledgeStatus = vi
-        .fn()
-        .mockRejectedValueOnce(new Error('timeout'))
-        .mockResolvedValue(knowledgeStatusFixture());
-      const portal = makePortal({ knowledgeStatus });
-      render(<KnowledgeView client={client as never} portal={portal} />);
-
-      expect(await screen.findByText(/知识库服务连接失败/)).toBeInTheDocument();
-      expect(screen.queryByText('销售产品资料')).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: /重试/ }));
-      expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
-    },
-    TIMEOUT,
-  );
-
-  test(
-    'KnowledgeView 403 shows the no-permission state without leaking objects',
-    async () => {
-      const portal = makePortal({
-        knowledgeStatus: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')),
-      });
-      render(<KnowledgeView client={client as never} portal={portal} />);
-
-      expect(await screen.findByText('无权限查看知识库状态')).toBeInTheDocument();
-      expect(screen.queryByText('销售产品资料')).not.toBeInTheDocument();
+      expect(await screen.findByText('没有权限访问知识库管理。')).toBeInTheDocument();
+      expect(screen.queryByText('暂无已登记的知识库')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /新建知识库/ })).toBeDisabled();
     },
     TIMEOUT,
   );
@@ -251,22 +256,5 @@ function memoryStatusFixture(): PortalMemoryStatus {
     healthy: true,
     accounts: [],
     employees: [{ name: 'sales-helper', memoryUser: 'sales-helper', sessions: 8 }],
-  };
-}
-
-function knowledgeStatusFixture(): PortalKnowledgeStatus {
-  return {
-    uiURL: 'http://kb.example.internal:30163/',
-    configured: true,
-    healthy: true,
-    knowledgeBases: [
-      {
-        id: 'kb-1',
-        name: '销售产品资料',
-        description: '产品说明',
-        documentCount: 24,
-        createdAt: '2026-09-20T02:00:00Z',
-      },
-    ],
   };
 }
