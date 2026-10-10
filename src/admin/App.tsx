@@ -490,7 +490,12 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           key: ModelGatewayRoute.Observe,
           label: translate('zh', 'gatewayObserve'),
           permission: P.ModelsRead,
-          children: <GatewayObservation {...props} />,
+          children: (
+            <GatewayObservation
+              {...props}
+              onPrices={() => navigate(`${ModelGatewayRoute.Page}/${ModelGatewayRoute.Catalog}`)}
+            />
+          ),
         },
         {
           key: ModelGatewayRoute.Limits,
