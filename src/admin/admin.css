@@ -23,6 +23,33 @@ body {
 .admin-body {
   min-width: 0;
 }
+.admin-navigation-toggle {
+  display: none;
+}
+.admin-navigation-drawer .ant-drawer-body {
+  padding: 0;
+}
+@media (width < 48rem) {
+  .admin-shell > .admin-sidebar {
+    display: none;
+  }
+  .admin-navigation-toggle {
+    display: inline-flex;
+  }
+  .admin-shell .admin-header {
+    height: auto;
+    min-height: calc(var(--spacing) * 16);
+    flex-wrap: wrap;
+    gap: calc(var(--spacing) * 3);
+    padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+  }
+  .admin-header .admin-user {
+    display: none;
+  }
+  .admin-shell .admin-content {
+    padding: calc(var(--spacing) * 4);
+  }
+}
 .admin-sidebar {
   border-inline-end: 1px solid var(--ant-color-border-secondary, #eee);
 }
