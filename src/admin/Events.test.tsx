@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testi
 import { ConfigProvider } from 'antd';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { AdminRequestError } from './client.js';
 import { Events } from './Events.js';
 import { administratorIdentity } from './test-fixtures.js';
 
@@ -139,5 +140,12 @@ describe('read-only audit', () => {
     expect(screen.getByText('invalid_credentials')).toBeInTheDocument();
     expect(screen.getByText('abcdef012345')).toBeInTheDocument();
     expect(screen.queryByText('登录历史查询尚未接入')).not.toBeInTheDocument();
+  });
+  test('states honestly when the control service has no login-history endpoint', async () => {
+    const client = fixture();
+    client.searchAuthenticationAudit.mockRejectedValueOnce(new AdminRequestError(404, null, null));
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    expect(await screen.findByText('登录历史查询尚未接入')).toBeInTheDocument();
   });
 });

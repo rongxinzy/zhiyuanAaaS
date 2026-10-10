@@ -23,6 +23,7 @@ import {
   type AdminEventRecord,
   type AdminIdentity,
   AdminPermission,
+  AdminRequestError,
   hasAdminPermission,
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
@@ -425,6 +426,7 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   const [revision, refresh] = useState(0);
   const requestVersion = useRef(0);
   useEffect(() => {
@@ -433,6 +435,7 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
     let live = true;
     setLoading(true);
     setError(false);
+    setUnavailable(false);
     setRows([]);
     setCursor(null);
     void client
@@ -443,8 +446,12 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
           setCursor(page.nextCursor);
         }
       })
-      .catch(() => {
-        if (live) setError(true);
+      .catch((cause) => {
+        if (!live) return;
+        // An older control service has no audit endpoint yet; degrade to the
+        // honest "not connected" state instead of an error.
+        if (cause instanceof AdminRequestError && cause.status === 404) setUnavailable(true);
+        else setError(true);
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -469,6 +476,9 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
       if (version === requestVersion.current) setLoading(false);
     }
   };
+  if (unavailable) {
+    return <Result status="info" title={c.loginUnavailable} />;
+  }
   return (
     <>
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
