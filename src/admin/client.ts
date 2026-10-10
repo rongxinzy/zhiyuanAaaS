@@ -662,8 +662,15 @@ export class AdminConsoleClient {
     });
   }
 
-  async deleteSkill(skillId: string): Promise<void> {
-    await this.#requireClient().deleteSkill(skillId);
+  // The pinned SDK release predates the force query parameter, so the delete
+  // goes through the same handwritten transport path as the other newer admin
+  // endpoints (see #request).
+  async deleteSkill(skillId: string, force = false): Promise<void> {
+    await this.#request<null>(this.#requireClient(), {
+      method: HttpMethod.Delete,
+      path: `/aep/v1/admin/skills/${segment(skillId)}${force ? '?force=true' : ''}`,
+      responseType: 'empty',
+    });
   }
 
   async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {

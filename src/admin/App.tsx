@@ -173,8 +173,13 @@ function navigate(route: string) {
   window.location.hash = route;
 }
 const t = (key: Parameters<typeof translate>[1]) => translate('zh', key);
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 1024;
+// New passwords reject edge whitespace (see Resources.tsx for the same rule).
+const edgeWhitespaceRule = {
+  validator: (_: unknown, value: string) =>
+    !value || value === value.trim() ? Promise.resolve() : Promise.reject(new Error(t('passwordEdgeWhitespace'))),
+};
 
 export function AdminApp() {
   const [mode, setMode] = useState<AdminThemeMode>(initialAdminTheme);
@@ -295,7 +300,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
                 setSession(
                   await client.login({
                     username: values.username.trim(),
-                    password: values.password,
+                    password: values.password.trim(),
                   }),
                 );
               } catch (cause) {
@@ -632,6 +637,7 @@ function ForcedPasswordChange({
             rules={[
               { required: true, message: t('requiredFields') },
               { min: PASSWORD_MIN_LENGTH, max: PASSWORD_MAX_LENGTH, message: t('passwordChangePolicy') },
+              edgeWhitespaceRule,
             ]}
           >
             <Input.Password autoComplete="new-password" />

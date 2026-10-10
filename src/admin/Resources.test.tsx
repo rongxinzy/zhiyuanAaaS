@@ -5,7 +5,8 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-
+import { AdminRequestError } from './client.js';
+import { PortalError } from './portal.js';
 import { AdminResourceTab, Resources } from './Resources.js';
 import { administratorIdentity } from './test-fixtures.js';
 
@@ -415,6 +416,87 @@ describe('admin resources', () => {
   );
 
   test(
+    'creates a user with the default password placeholder when no password is entered',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+          roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        }),
+        createUser: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增用户/ }));
+      const modal = await screen.findByRole('dialog');
+      expect(within(modal).getByPlaceholderText('默认密码 123456')).toBeInTheDocument();
+      fireEvent.change(within(modal).getByLabelText('用户名'), { target: { value: 'new-user' } });
+      fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '新用户' } });
+      const comboBoxes = within(modal).getAllByRole('combobox');
+      await pickOption(comboBoxes[0]!, '管理员');
+      await pickOption(comboBoxes[1]!, '平台组');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createUser).toHaveBeenCalledWith(
+          expect.objectContaining({ username: 'new-user', temporaryPassword: '' }),
+        ),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'rejects a temporary password with edge whitespace instead of trimming silently',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '平台组', description: '', builtIn: false, enabled: true, memberCount: 0 }],
+          roles: [{ id: 'role-1', name: '管理员', description: '', builtIn: false, enabled: true, permissions: [] }],
+        }),
+        createUser: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增用户/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('用户名'), { target: { value: 'new-user' } });
+      fireEvent.change(within(modal).getByLabelText('显示名称'), { target: { value: '新用户' } });
+      fireEvent.change(within(modal).getByLabelText('临时密码'), { target: { value: ' pad-password-123 ' } });
+      const comboBoxes = within(modal).getAllByRole('combobox');
+      await pickOption(comboBoxes[0]!, '管理员');
+      await pickOption(comboBoxes[1]!, '平台组');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await within(modal).findAllByText('密码前后不能有空格。');
+      expect(client.createUser).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'rejects a new password with edge whitespace in the self-service dialog',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'admin-1', displayName: '管理员', username: 'admin', status: 'active' }],
+        }),
+        changePassword: vi.fn(),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('管理员')).toBeInTheDocument();
+      openRowMenu('更多');
+      fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('新密码'), { target: { value: ' fresh-password-12 ' } });
+      fireEvent.change(within(modal).getByLabelText('确认新密码'), { target: { value: ' fresh-password-12 ' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await within(modal).findAllByText('密码前后不能有空格。');
+      expect(client.changePassword).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'imports users from a JSON envelope and refreshes the list',
     async () => {
       const client = {
@@ -727,7 +809,7 @@ describe('admin resources', () => {
   );
 
   test(
-    'blocks skill deletion while known assignments reference the skill',
+    'offers a forced delete when the Skill is still referenced',
     async () => {
       const client = {
         resources: vi.fn().mockResolvedValue({
@@ -736,14 +818,78 @@ describe('admin resources', () => {
           skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
           assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
         }),
-        deleteSkill: vi.fn(),
+        deleteSkill: vi
+          .fn()
+          .mockRejectedValueOnce(new AdminRequestError(409, 'SKILL_IN_USE', 'still referenced'))
+          .mockResolvedValue(undefined),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
       expect(await screen.findByText('写作')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: '删除' }));
-      expect(await screen.findByText('无法删除被引用的技能')).toBeInTheDocument();
+      fireEvent.click(await modalButton('删除'));
+      // The server refusal becomes an explicit forced-delete prompt, not a dead end.
+      expect(await screen.findByText('此技能仍被引用')).toBeInTheDocument();
       expect(screen.getByText('张三')).toBeInTheDocument();
-      expect(client.deleteSkill).not.toHaveBeenCalled();
+      expect(client.deleteSkill).toHaveBeenCalledWith('s1');
+      fireEvent.click(screen.getByRole('button', { name: '强制删除' }));
+      await waitFor(() => expect(client.deleteSkill).toHaveBeenLastCalledWith('s1', true));
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'lists the digital employees that enable a Skill in the forced delete dialog',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+          assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
+        }),
+        deleteSkill: vi.fn().mockRejectedValue(new AdminRequestError(409, 'SKILL_IN_USE', 'referenced')),
+      };
+      const portal = {
+        listEmployees: vi.fn().mockResolvedValue([
+          { name: 'sales-helper', displayName: '销售助手', skills: [{ id: 's1', name: '写作', version: '1.2.0' }] },
+          { name: 'policy-bot', displayName: '制度助手', skills: [{ id: 's2', name: '别的技能', version: '1.0.0' }] },
+          { name: 'legacy-bot', displayName: '遗留助手', skills: null },
+          { name: 'plain-bot', displayName: '无技能助手', skills: [] },
+        ]),
+      };
+      render(<Resources client={client as never} portal={portal as never} tab={AdminResourceTab.Skills} />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '删除' }));
+      fireEvent.click(await modalButton('删除'));
+      expect(await screen.findByText('此技能仍被引用')).toBeInTheDocument();
+      // Only the employee that enables this Skill is listed, with its pinned version.
+      const row = await screen.findByText(
+        (_content, element) => element?.tagName === 'LI' && element.textContent === '销售助手 · 1.2.0',
+      );
+      expect(row).toBeInTheDocument();
+      expect(screen.queryAllByText(/制度助手/)).toHaveLength(0);
+      // A null policy is reported, never counted as "nobody uses it".
+      expect(await screen.findByText(/未显式配置技能关联/)).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'never renders a failed digital-employee read as "nobody uses it"',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+          assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
+        }),
+        deleteSkill: vi.fn().mockRejectedValue(new AdminRequestError(409, 'SKILL_IN_USE', null)),
+      };
+      const portal = { listEmployees: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')) };
+      render(<Resources client={client as never} portal={portal as never} tab={AdminResourceTab.Skills} />);
+      fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+      fireEvent.click(await modalButton('删除'));
+      expect(await screen.findByText(/无权查看数字员工关联/)).toBeInTheDocument();
+      expect(screen.queryByText('没有数字员工启用该技能。')).not.toBeInTheDocument();
     },
     TIMEOUT,
   );
