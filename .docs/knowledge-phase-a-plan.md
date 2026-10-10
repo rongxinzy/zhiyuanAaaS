@@ -12,9 +12,9 @@
 
 | 工作包 | 必须交付的可用行为 | 当前状态 |
 | --- | --- | --- |
-| 治理 API | 知远会话鉴权，明确操作白名单，逐库/文档授权，受控凭据，查询参数与专用上传流，安全错误输出 | 第 1 轮管理员库管理/分页/上传已实现；其他生命周期及成员授权未完成 |
-| 库与资料管理 | 知远内建库/编辑/受保护删除，文件/URL/文本导入，分页筛选，真实处理状态，重试/取消、启停、删除 | 未实现 |
-| 内容运营 | 分块/来源预览与受控原文件下载，标签、文件夹和 FAQ 管理，批量操作逐资源授权 | 未实现 |
+| 治理 API | 知远会话鉴权，固定操作白名单，逐库/文档归属校验，受控凭据，安全错误与持久审计 | 库/文档读取、URL/文本导入、解析动作、分块/spans 和受控文件读取代码已实现；成员授权未完成 |
+| 库与资料管理 | 知远内建库/编辑/受保护删除，文件/URL/文本导入，真实处理状态，重试/取消、启停、删除 | 第 3 轮部分治理 API 和自动化测试通过；未验收：资料级启停 API 与普通解析图片资源归属绑定 |
+| 内容运营 | 分块/来源预览与受控原文件下载，标签、文件夹和 FAQ 管理，批量操作逐资源授权 | 分块、解析过程与原文件预览/下载已接入；标签/文件夹/FAQ 与图片二进制读取未实现 |
 | 检索与员工使用 | 在知远内测试检索，显示命中来源，关联员工，员工与请求者授权交集，撤销后拒绝 | 员工绑定已有基础，其余未完整接入 |
 | 审计与依赖预检 | 记录真实操作者、资源和结果；模型、存储、解析失败均有可操作反馈 | 操作意图/结果持久审计与模型配置预检已有；推理/存储/解析验证及审计查询未完成 |
 | 本地交付 | 配套后端与管理台镜像/配置更新，真实浏览器闭环、错误/权限拒绝、可访问入口与截图 | 尚无原生页面效果 |
@@ -27,6 +27,24 @@
 ## 目标与边界
 
 第 2 轮代码验收（2026-10-09）：Luna 实现 AaaS 原生知识管理页（Ant Design），通过固定 managed API 提供知识库列表/详情/新建/编辑/关联保护删除、TXT/PDF 上传、分页及解析状态，并覆盖操作编号、错误兼容、有限轮询/取消、陈旧响应及不确定写入防重试。CI 首轮暴露旧浏览器 fixture 仍依赖 legacy status API 和全仓覆盖率下降；已补 managed API fixture/E2E 并增加创建、编辑同步、上传、受保护删除测试。复验发现并修复 PATCH 成功后详情未同步的真实 UI bug。最终本地全量 coverage 442/442，行覆盖率 81.55%（main 81.48%）；typecheck、Biome、`git diff --check` 通过。AaaS `aa507fb` 的 verify、coverage-ratchet、CodeQL、DevOps gate 全部通过。**仅代码与 mock 浏览器 E2E 验收完成；未部署，真实 managed API/TXT/PDF 解析及用户本地验收仍未完成。** PR #165 与关联治理 PR #45 继续保持 Draft。
+
+### 第 3 轮：资料生命周期（2026-10-10，代码验证收尾；尚未部署验收）
+
+最新独立复验（2026-10-10）：AaaS 完整 `npm run check` 通过，46 个测试文件、452/452 测试通过；完整 coverage 行覆盖率 81.62%（4554/5579），`KnowledgeManagement.tsx` 为 84.35%。mock 浏览器 E2E 通过，301 个请求、无 console error；Ant Design lint 未发现问题。治理 Portal 全量 Go 测试与 vet 通过；WeKnora router、repository、database 全量测试，以及 Knowledge 和 ChunkImage 相关服务测试通过。这些结果是代码与 mock 验证，不替代真实部署、两用户权限隔离和三类导入验收；较广 WeKnora 测试的本机 DNS 环境限制仍待 CI 复验。
+
+第 4 轮只读接口核对已完成：现有上游提供标签、资料路径文件夹、FAQ 与单项分块编辑接口。接入须使用固定 DTO 和逐资源归属校验；文件夹不能假称支持独立空文件夹，非事务批量写入不能假称原子全成功，失败结果须保留待核实状态。仍沿用同一分支，由 Luna 实现、主代理复核；不修改 AGENTS.md / DESIGN.md。
+
+第三轮补全审核（2026-10-09，进行中）：WeKnora 分支已加入原子资料启停、持久 `manual_disabled` 意图及逐资料/分块图片绑定读取；治理层和 Ant Design 页面正在接入。主代理已确认图片读取成功测试共用文档、分块与资源绑定数据库，且治理图片暂存有 20 MiB 上限、实际 MIME 检查和同租户/库/资料归属校验。现有治理全量测试通过，但不能替代后续改动的复验。审核发现并交由 Luna 修复的待验收项：上游 `image_info` 是序列化 JSON 字符串而非数组；解析中自动停用状态必须允许用户持久设置完成后保持停用；图片异步请求需取消与陈旧响应保护；重解析复用同一图片引用时不得在重新绑定前删除图片。Windows 缺少 CGO 编译器的限制已通过任务专用 Linux Go 1.26 与 WSL GCC 绕过，相关 WeKnora 包测试已启动，结果待确认。当前仍未提交这些补全改动、未部署、未完成真实接口和浏览器验收。
+
+补全验证快照（2026-10-09）：主代理复跑治理 `portal/go test ./...` 通过（8.796s）；WeKnora repository、database 全量测试及 service、handler 的 Knowledge 相关测试通过。首次 router 全量测试暴露 Gin 动态参数名称冲突，已由 Luna 改为沿用 `:id`；跨租户读取保持 404 隐藏语义，并验证图片服务读取次数不增加。WeKnora 较广的 service/handler 测试仍有失败：独立复跑确认 MCP 和 sandbox 用例使用的公网域名被本机 DNS 映射到 `198.18.***` 受限网段，SSRF 校验正确拒绝；这些模块及测试文件无本轮 diff，后续仍须匹配环境与 CI 全量验证。AaaS 当前类型检查通过，组件复验暴露图片请求增加 AbortSignal 后的断言及异步加载测试问题，Luna 修复中；不将此快照当作最终验收。
+
+本轮治理端新增固定 URL/手动文本导入、资料详情、解析重试/取消/删除、解析 spans、分页分块，以及经过资料与所属库双重校验的原文件预览/下载；写操作先持久化审计意图，结果回写审计。URL 输入预检会解析并拒绝本机/私网/链路本地等目标，DNS 检查有 5 秒上限；它只是早期过滤，不是连接安全边界。对固定 WeKnora 源码 commit `1edcd54b43606d9079bb36650efe3f68707a79ea` 的只读审查确认：URL fetcher 使用 SSRF-safe transport，拨号时重解析并逐 IP 校验后直连已校验地址，配置请求超时并限制重定向。**此保证仅在运行镜像确实包含该实现或等价措施时成立。** 当前本地 WeKnora checkout HEAD 与 pin 不同，运行镜像尚无已验证源码 commit；在核对镜像来源/摘要及安全实现前，真实 URL 导入不可标为验收通过。治理到 WeKnora 的 API 请求使用独立超时且禁止重定向。文件只允许固定预览/下载路由、受限 MIME/文件名与大小；固定 WeKnora 文件响应不提供 `Content-Length`，因此代理在响应头发出前使用权限受限的临时文件有界暂存，校验实际长度（已知长度时还须比对）、空流、读取错误和 256 MiB 上限后再回传。每个治理进程至多一个暂存任务，繁忙时返回可重试 503。AaaS 使用固定 `PortalClient` 方法，提供 URL/手动导入表单、真实资料解析状态和动作、可读分块列表、解析阶段树、受控原文件预览/下载；不把原始 JSON 当用户界面。
+
+固定 WeKnora 源码 commit `1edcd54b43606d9079bb36650efe3f68707a79ea` 的 API 核对结论：资料级 `enable_status` 没有更新端点；仅 chunk 有独立 `is_enabled`，不能将多个 chunk 更新假称为资料原子停用。故本轮不显示或实现伪启停控件。该版本存在 `GET /knowledge-bases/:id/files?file_path=...` KB 级文件路由，但其安全校验只限制同租户和 `exports/` namespace，并不验证文件归属当前资料/分块；`ImageInfo.URL` 也可能是外部来源。因此不能直接把不可信图片 URL 当路径代理，分块接口暂剔除图片引用。只读检查发现本地 WeKnora checkout HEAD `606a7dc2` 的该路由已改用 `access.ResolveKBFile`，校验精确 KB grant 及资源是否绑定到该 KB 的有效资料（不是 chunk.ImageInfo 的逐项绑定）；同时普通解析器 `ImageResolver.SaveBytes(..., false)` 生成图片后未找到绑定到 Knowledge 的代码路径，只有“存在安全路由”还不足以让普通解析图片可读。部署镜像尚未证明来自该 HEAD，不能把较新 checkout 的能力当作运行镜像已有能力。补齐图片显示需在 WeKnora 让普通解析产生的图片资源具有明确的资料归属绑定（或新增更窄的授权图片读取 API），再让治理端严格从已验证资料分块获取资源引用；不能开放任意路径或外链代理。启停仍需新增原子 API，并定义解析重试并发语义。
+
+上游补全可行性（对固定 commit 与本地 HEAD 的只读调查，2026-10-09）：`enable_status` 已参与问答检索过滤，但现有 `PUT /knowledge/:id` DTO 不含该字段；解析重试会先写 `disabled`，解析 finalizer 又会写 `enabled`，因此简单增加状态 PUT 会与后台解析竞争并意外重新启用。需要新增受租户/知识库/资料范围约束的幂等状态 API，并定义重解析期间与用户停用意图的并发语义后再提供控件。图片方面，固定 commit 的 KB 文件路由只有 owner-tenant/exports 限制；本地 checkout HEAD `606a7dc2` 加了精确 KB grant 和 KB-资源绑定校验，但没有逐 chunk.ImageInfo 绑定检查，且普通解析器保存图片后未发现 Knowledge 绑定路径。因此仍需给普通解析图片补上受约束的资料归属绑定，或设计更窄的图片读取 API；固定 commit 和该 HEAD 均未证明现有代码已提供完整图片闭环。具体方案待用户确认是否将 WeKnora 纳入本计划后再实现。
+
+本轮当前验证结果：治理 `portal` 全量 `go test ./... -count=1`、`go vet ./...` 和 diff 检查通过；复核还修正了解析 spans 的顺序：先完整校验 trace，再写成功读取审计，畸形 trace 以回归测试证明不会记成成功。AaaS `npm run test:coverage -- --reporter=dot` 最终复验为 46 个测试文件、449/449 通过，行覆盖率 81.62%（4479/5487），高于 main ratchet 81.48%；`KnowledgeManagement.tsx` 行覆盖率 83.57%。拆分后的 KnowledgeManagement 组件测试 12/12 通过，覆盖 Blob URL 延迟释放。全量 `npm run check` 首次运行因 WSL 占用默认 WeKnora 代理端口 5174，在最终 `verify:admin` 启动阶段失败；设置 `$env:ZHIYUAN_ADMIN_WEKNORA_PORT='0'` 后重新运行，**整套 `npm run check` 通过**：Biome、typecheck、449 个测试、构建、bundle/manifest、`verify:admin` 均成功。Ant Design lint、`verify:admin:e2e`（301 个 mock 请求、无 console error）及 diff 检查也通过。构建有既存大 chunk 警告但退出成功。coverage 初次复跑遭遇既有 Windows `skills.test.ts` 临时目录 rename EPERM；隔离复跑该用例 1/1 通过后，完整 coverage 重试 449/449 成功。治理 unknown-length 文件流的 spool 修复及 spans 审计修复经主代理复跑全量 Go tests、`go vet` 与 diff 检查通过。治理和 AaaS 本轮改动均未提交。**未部署、未连接真实 managed API、未做用户浏览器验收。** PR #165 与关联治理 PR #45 均保持 Draft；待主代理独立复核安全边界和 CI 后再决定是否发布。
 
 ### 产品化执行顺序与 Luna 交接（2026-10-09）
 

@@ -440,6 +440,130 @@ describe('portal client departments and lifecycle', () => {
     expect(deleteFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1');
     vi.unstubAllGlobals();
   });
+
+  test('managed document lifecycle methods use only fixed routes and return validated data', async () => {
+    const portal = new PortalClient(async () => 'aep-token');
+    const document = {
+      id: 'doc-1',
+      knowledge_base_id: 'kb-1',
+      name: 'Guide',
+      file_name: 'guide.pdf',
+      parse_status: 'pending',
+      created_at: '2026-10-09T00:00:00Z',
+    };
+
+    const urlFetch = stubFetch(202, { data: document, operationId: 'op-url' });
+    await expect(
+      portal.importManagedKnowledgeURL('kb-1', { url: 'https://docs.example.test/guide', title: 'Guide' }),
+    ).resolves.toMatchObject({ operationId: 'op-url', data: { id: 'doc-1' } });
+    expect(urlFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/documents/url');
+    expect(JSON.parse(String((urlFetch.mock.calls[0]![1] as RequestInit).body))).toEqual({
+      url: 'https://docs.example.test/guide',
+      title: 'Guide',
+    });
+    vi.unstubAllGlobals();
+
+    const manualFetch = stubFetch(202, { data: document, operationId: 'op-manual' });
+    await expect(
+      portal.importManagedKnowledgeManual('kb-1', { title: 'Guide', content: '# Notes' }),
+    ).resolves.toMatchObject({
+      operationId: 'op-manual',
+    });
+    expect(manualFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/documents/manual');
+    vi.unstubAllGlobals();
+
+    const detailFetch = stubFetch(200, { data: document });
+    await expect(portal.getManagedKnowledgeDocument('doc-1')).resolves.toMatchObject({ id: 'doc-1' });
+    expect(detailFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1');
+    vi.unstubAllGlobals();
+
+    const spans = {
+      knowledge_id: 'doc-1',
+      attempt: 2,
+      latest_attempt: 2,
+      parse_status: 'completed',
+      current_stage: 'completed',
+      trace: {
+        knowledge_id: 'doc-1',
+        attempt: 2,
+        span_id: 'span-1',
+        name: 'parse',
+        kind: 'parser',
+        status: 'completed',
+      },
+    };
+    const spansFetch = stubFetch(200, { data: spans });
+    await expect(portal.getManagedKnowledgeSpans('doc-1')).resolves.toMatchObject({ current_stage: 'completed' });
+    expect(spansFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/spans');
+    vi.unstubAllGlobals();
+
+    const chunksFetch = stubFetch(200, {
+      data: [
+        { id: 'chunk-1', knowledge_id: 'doc-1', seq_id: 1, content: 'excerpt', chunk_type: 'text', is_enabled: true },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+    });
+    await expect(portal.listManagedKnowledgeChunks('doc-1', { page: 1, pageSize: 50 })).resolves.toMatchObject({
+      total: 1,
+    });
+    expect(chunksFetch.mock.calls[0]![0]).toBe(
+      '/api/v1/knowledge/managed/documents/doc-1/chunks?page=1&page_size=50&chunk_type=text',
+    );
+    vi.unstubAllGlobals();
+
+    const enabledFetch = stubFetch(200, {
+      data: { ...document, enable_status: 'disabled' },
+      operationId: 'op-disable',
+    });
+    await expect(portal.setManagedKnowledgeDocumentEnabled('doc-1', false)).resolves.toMatchObject({
+      operationId: 'op-disable',
+      data: { id: 'doc-1', enable_status: 'disabled' },
+    });
+    expect(enabledFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/enable-status');
+    expect(enabledFetch.mock.calls[0]![1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ enabled: false }) });
+    vi.unstubAllGlobals();
+
+    const imageFetch = vi.fn().mockResolvedValue(
+      new Response(new Blob(['png']), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      }),
+    );
+    vi.stubGlobal('fetch', imageFetch);
+    await expect(portal.getManagedKnowledgeChunkImage('doc-1', 'chunk-1', 0)).resolves.toBeInstanceOf(Blob);
+    expect(imageFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/chunks/chunk-1/images/0');
+    vi.unstubAllGlobals();
+
+    const actionFetch = stubFetch(202, { data: document, operationId: 'op-reparse' });
+    await expect(portal.runManagedKnowledgeDocumentAction('doc-1', 'reparse')).resolves.toMatchObject({
+      operationId: 'op-reparse',
+    });
+    expect(actionFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/reparse');
+    vi.unstubAllGlobals();
+
+    const cancelFetch = stubFetch(202, { data: document, operationId: 'op-cancel' });
+    await portal.runManagedKnowledgeDocumentAction('doc-1', 'cancel-parse');
+    expect(cancelFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/cancel-parse');
+    vi.unstubAllGlobals();
+
+    const deleteFetch = stubFetch(200, { deleted: true, operationId: 'op-delete', resourceId: 'doc-1' });
+    await expect(portal.runManagedKnowledgeDocumentAction('doc-1', 'delete')).resolves.toEqual({
+      operationId: 'op-delete',
+      resourceId: 'doc-1',
+    });
+    expect(deleteFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1');
+    expect((deleteFetch.mock.calls[0]![1] as RequestInit).method).toBe('DELETE');
+    vi.unstubAllGlobals();
+
+    const fileFetch = vi.fn().mockResolvedValue(new Response(new Blob(['file']), { status: 200 }));
+    vi.stubGlobal('fetch', fileFetch);
+    await expect(portal.getManagedKnowledgeFile('doc-1', 'preview')).resolves.toBeInstanceOf(Blob);
+    expect(fileFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/documents/doc-1/preview');
+    expect(fileFetch.mock.calls[0]![1]).toMatchObject({ headers: { Authorization: 'Bearer aep-token' } });
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('workbench client surface', () => {

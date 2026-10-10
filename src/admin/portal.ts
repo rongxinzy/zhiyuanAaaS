@@ -191,10 +191,54 @@ export type ManagedKnowledgeBase = {
 export type ManagedKnowledgeDocument = {
   readonly id: string;
   readonly knowledge_base_id: string;
+  readonly tenant_id?: string;
+  readonly type?: string;
   readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly source?: string;
   readonly file_name: string;
+  readonly file_type?: string;
+  readonly file_size?: number;
   readonly parse_status: string;
+  readonly enable_status?: string;
+  readonly manual_disabled?: boolean;
+  readonly summary_status?: string;
   readonly created_at: string;
+};
+
+export type ManagedKnowledgeSpan = {
+  readonly knowledge_id: string;
+  readonly attempt: number;
+  readonly span_id: string;
+  readonly parent_span_id?: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly error_code?: string;
+  readonly started_at?: string;
+  readonly finished_at?: string;
+  readonly duration_ms?: number;
+  readonly children?: readonly ManagedKnowledgeSpan[];
+};
+
+export type ManagedKnowledgeSpans = {
+  readonly knowledge_id: string;
+  readonly attempt: number;
+  readonly latest_attempt: number;
+  readonly parse_status: string;
+  readonly current_stage: string;
+  readonly trace: ManagedKnowledgeSpan;
+};
+
+export type ManagedKnowledgeChunk = {
+  readonly id: string;
+  readonly knowledge_id: string;
+  readonly seq_id: number;
+  readonly content: string;
+  readonly chunk_type: string;
+  readonly is_enabled: boolean;
+  readonly images?: readonly { readonly index: number; readonly url: string }[];
 };
 
 export type ManagedKnowledgePage = {
@@ -514,6 +558,196 @@ export class PortalClient {
     );
     if (status !== 202) throw portalError(status, data);
     return parseManagedMutation(data, (value) => parseManagedKnowledgeDocument(value, id));
+  }
+
+  async importManagedKnowledgeURL(
+    id: string,
+    input: { readonly url: string; readonly title?: string; readonly fileName?: string; readonly fileType?: string },
+  ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeDocument>> {
+    const { status, data } = await this.#request(
+      'POST',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents/url`,
+      {
+        url: input.url,
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.fileName ? { file_name: input.fileName } : {}),
+        ...(input.fileType ? { file_type: input.fileType } : {}),
+      },
+    );
+    if (status !== 202) throw portalError(status, data);
+    return parseManagedMutation(data, (value) => parseManagedKnowledgeDocument(value, id));
+  }
+
+  async importManagedKnowledgeManual(
+    id: string,
+    input: { readonly title: string; readonly content: string },
+  ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeDocument>> {
+    const { status, data } = await this.#request(
+      'POST',
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents/manual`,
+      input,
+    );
+    if (status !== 202) throw portalError(status, data);
+    return parseManagedMutation(data, (value) => parseManagedKnowledgeDocument(value, id));
+  }
+
+  async getManagedKnowledgeDocument(id: string, signal?: AbortSignal): Promise<ManagedKnowledgeDocument> {
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const record = objectOf(data)?.data;
+    const document = objectOf(record);
+    if (!document) throw invalidManagedResponse();
+    return parseManagedKnowledgeDocument(document, String(document.knowledge_base_id ?? ''));
+  }
+
+  async getManagedKnowledgeSpans(id: string, signal?: AbortSignal): Promise<ManagedKnowledgeSpans> {
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}/spans`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const value = objectOf(data)?.data;
+    const record = objectOf(value);
+    if (!record || record.knowledge_id !== id || !objectOf(record.trace)) throw invalidManagedResponse();
+    return record as unknown as ManagedKnowledgeSpans;
+  }
+
+  async listManagedKnowledgeChunks(
+    id: string,
+    query: { readonly page: number; readonly pageSize: number },
+    signal?: AbortSignal,
+  ): Promise<{
+    readonly data: readonly ManagedKnowledgeChunk[];
+    readonly total: number;
+    readonly page: number;
+    readonly pageSize: number;
+  }> {
+    const params = new URLSearchParams({
+      page: String(query.page),
+      page_size: String(query.pageSize),
+      chunk_type: 'text',
+    });
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}/chunks?${params.toString()}`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const record = objectOf(data);
+    if (
+      !Array.isArray(record?.data) ||
+      !isFiniteNumber(record.total) ||
+      !isFiniteNumber(record.page) ||
+      !isFiniteNumber(record.pageSize)
+    ) {
+      throw invalidManagedResponse();
+    }
+    const chunks = record.data.map((value) => {
+      const chunk = objectOf(value);
+      if (!chunk || chunk.knowledge_id !== id || !nonEmptyString(chunk.id) || typeof chunk.content !== 'string') {
+        throw invalidManagedResponse();
+      }
+      const images = chunk.images;
+      if (images !== undefined && !Array.isArray(images)) throw invalidManagedResponse();
+      const parsedImages = (images ?? []).map((item) => {
+        const image = objectOf(item);
+        if (!image || !Number.isInteger(image.index) || Number(image.index) < 0) throw invalidManagedResponse();
+        const expectedURL = `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}/chunks/${encodeURIComponent(chunk.id as string)}/images/${Number(image.index)}`;
+        if (image.url !== expectedURL) throw invalidManagedResponse();
+        return { index: Number(image.index), url: expectedURL };
+      });
+      return { ...chunk, images: parsedImages } as unknown as ManagedKnowledgeChunk;
+    });
+    return { data: chunks, total: record.total, page: record.page, pageSize: record.pageSize };
+  }
+
+  async runManagedKnowledgeDocumentAction(
+    id: string,
+    action: 'reparse' | 'cancel-parse' | 'delete',
+  ): Promise<
+    ManagedKnowledgeMutation<ManagedKnowledgeDocument> | { readonly operationId: string; readonly resourceId: string }
+  > {
+    const method = action === 'delete' ? 'DELETE' : 'POST';
+    const { status, data } = await this.#request(
+      method,
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}${action === 'delete' ? '' : `/${action}`}`,
+    );
+    if (action === 'delete') {
+      if (status !== 200) throw portalError(status, data);
+      const record = objectOf(data);
+      if (!nonEmptyString(record?.operationId) || record.resourceId !== id) throw invalidManagedResponse();
+      return { operationId: record.operationId, resourceId: id };
+    }
+    if (status !== 202) throw portalError(status, data);
+    return parseManagedMutation(data, (value) => {
+      const document = objectOf(value);
+      if (!document || document.id !== id || typeof document.knowledge_base_id !== 'string')
+        throw invalidManagedResponse();
+      return parseManagedKnowledgeDocument(document, document.knowledge_base_id);
+    });
+  }
+
+  async setManagedKnowledgeDocumentEnabled(
+    id: string,
+    enabled: boolean,
+  ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeDocument>> {
+    const { status, data } = await this.#request(
+      'PUT',
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}/enable-status`,
+      { enabled },
+    );
+    if (status !== 200) throw portalError(status, data);
+    return parseManagedMutation(data, (value) =>
+      parseManagedKnowledgeDocument(value, String(objectOf(value)?.knowledge_base_id ?? '')),
+    );
+  }
+
+  async getManagedKnowledgeChunkImage(
+    documentId: string,
+    chunkId: string,
+    index: number,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    if (!Number.isInteger(index) || index < 0) throw invalidManagedResponse();
+    const token = await this.#tokenProvider();
+    const response = await fetch(
+      `/api/v1/knowledge/managed/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/images/${index}`,
+      { method: 'GET', headers: token ? { Authorization: `Bearer ${token}` } : {}, ...(signal ? { signal } : {}) },
+    );
+    if (!response.ok) {
+      const data: unknown = await response.json().catch(() => null);
+      throw portalError(response.status, data);
+    }
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase();
+    if (!contentType || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(contentType)) {
+      throw invalidManagedResponse();
+    }
+    return response.blob();
+  }
+
+  async getManagedKnowledgeFile(id: string, kind: 'preview' | 'download', signal?: AbortSignal): Promise<Blob> {
+    const token = await this.#tokenProvider();
+    const response = await fetch(`/api/v1/knowledge/managed/documents/${encodeURIComponent(id)}/${kind}`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) {
+      const data: unknown = await response.json().catch(() => null);
+      throw portalError(response.status, data);
+    }
+    return response.blob();
   }
 
   // Single-employee detail (same authorization as the list/chat rules).
@@ -905,6 +1139,8 @@ function parseManagedKnowledgeDocument(value: unknown, expectedBaseId: string): 
   ) {
     throw invalidManagedResponse();
   }
+  if (record.manual_disabled !== undefined && typeof record.manual_disabled !== 'boolean')
+    throw invalidManagedResponse();
   return record as unknown as ManagedKnowledgeDocument;
 }
 
