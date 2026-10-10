@@ -72,6 +72,31 @@ try {
   });
   checks.push('explicit login, eight business entries, overview');
 
+  // The shell sidebar and header must stay pinned while long content scrolls.
+  const shellScroll = await page.evaluate(() => {
+    const sidebar = document.querySelector('.admin-sidebar');
+    const header = document.querySelector('.admin-header');
+    const content = document.querySelector('.admin-content');
+    content.style.minHeight = '300vh';
+    window.scrollTo(0, 600);
+    const metrics = {
+      sidebarPosition: getComputedStyle(sidebar).position,
+      headerPosition: getComputedStyle(header).position,
+      sidebarTop: Math.round(sidebar.getBoundingClientRect().top),
+      headerTop: Math.round(header.getBoundingClientRect().top),
+      scrolled: window.scrollY,
+    };
+    window.scrollTo(0, 0);
+    content.style.minHeight = '';
+    return metrics;
+  });
+  assert.ok(shellScroll.scrolled > 0, 'page must be scrollable for the shell scroll check');
+  assert.equal(shellScroll.sidebarPosition, 'sticky');
+  assert.equal(shellScroll.headerPosition, 'sticky');
+  assert.equal(shellScroll.sidebarTop, 0);
+  assert.equal(shellScroll.headerTop, 0);
+  checks.push('shell sidebar and header stay pinned during content scroll');
+
   async function visit(route, expected) {
     await page.goto(`${origin}/#${route}`);
     await page.locator('.admin-page').getByText(expected, { exact: true }).first().waitFor();
