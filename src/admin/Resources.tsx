@@ -7,7 +7,6 @@
  */
 
 import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
-import { AepProblem } from '@aep/sdk-node';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -55,6 +54,7 @@ import {
   type AdminIdentity,
   type AdminIdentitySource,
   AdminPermission,
+  AdminRequestError,
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
@@ -3360,11 +3360,11 @@ function SkillsSection({
       try {
         await client.deleteSkill(skill.id);
       } catch (error) {
-        if (error instanceof AepProblem && error.code === 'SKILL_IN_USE') {
+        if (error instanceof AdminRequestError && error.code === 'SKILL_IN_USE') {
           setForceSkill(skill);
           return;
         }
-        if (error instanceof AepProblem && error.status === 404) {
+        if (error instanceof AdminRequestError && error.status === 404) {
           // A stale row (deleted elsewhere, or a double click): say so and
           // refresh, instead of the generic "service unavailable" notice.
           notify(AdminNotificationKind.Error, rc.skillDeleteGone);

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { AepProblem } from '@aep/sdk-node';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { AdminRequestError } from './client.js';
 import { PortalError } from './portal.js';
 import { AdminResourceTab, Resources } from './Resources.js';
 import { administratorIdentity } from './test-fixtures.js';
@@ -739,7 +739,7 @@ describe('admin resources', () => {
         }),
         deleteSkill: vi
           .fn()
-          .mockRejectedValueOnce(AepProblem.from(409, { code: 'SKILL_IN_USE', detail: 'still referenced' }))
+          .mockRejectedValueOnce(new AdminRequestError(409, 'SKILL_IN_USE', 'still referenced'))
           .mockResolvedValue(undefined),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
@@ -765,7 +765,7 @@ describe('admin resources', () => {
           skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
           assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
         }),
-        deleteSkill: vi.fn().mockRejectedValue(AepProblem.from(409, { code: 'SKILL_IN_USE', detail: 'referenced' })),
+        deleteSkill: vi.fn().mockRejectedValue(new AdminRequestError(409, 'SKILL_IN_USE', 'referenced')),
       };
       const portal = {
         listEmployees: vi.fn().mockResolvedValue([
@@ -801,7 +801,7 @@ describe('admin resources', () => {
           skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
           assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
         }),
-        deleteSkill: vi.fn().mockRejectedValue(AepProblem.from(409, { code: 'SKILL_IN_USE' })),
+        deleteSkill: vi.fn().mockRejectedValue(new AdminRequestError(409, 'SKILL_IN_USE', null)),
       };
       const portal = { listEmployees: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')) };
       render(<Resources client={client as never} portal={portal as never} tab={AdminResourceTab.Skills} />);
