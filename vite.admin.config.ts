@@ -53,13 +53,6 @@ export default defineConfig({
         target: process.env.ZHIYUAN_PORTAL_BASE_URL ?? 'http://localhost:30190',
         changeOrigin: true,
       },
-      // Companion messenger iframe (dev): strip the /companion prefix, keep
-      // the 搭档 SSE streaming (vite's http-proxy streams by default).
-      '/companion': {
-        target: process.env.ZHIYUAN_COMPANION_BASE_URL ?? 'http://localhost:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/companion\/?/, '/'),
-      },
     },
   },
   preview: { headers: securityHeaders },
