@@ -25,6 +25,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  DatePicker,
   Descriptions,
   Drawer,
   Dropdown,
@@ -417,7 +418,12 @@ function buildAccessRows(input: {
     const subject = subjectKeys.get(`${assignment.subjectType}:${assignment.subjectId}`);
     if (!subject) continue;
     const skill = skills.get(assignment.skillId);
-    const effective = skill !== undefined && accountActive && skillEffective(skill);
+    // An expired grant authorizes nothing: the manifest already filters those
+    // rows out, so showing this one as effective would contradict the server.
+    const expiresAt = assignment.expiresAt;
+    const expired =
+      typeof expiresAt === 'string' && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= Date.now();
+    const effective = skill !== undefined && accountActive && skillEffective(skill) && !expired;
     rows.push({
       key: `skill:${assignment.id}`,
       resourceType: 'skill',
@@ -430,11 +436,13 @@ function buildAccessRows(input: {
       effective,
       reason: effective
         ? null
-        : skill === undefined
-          ? rc.accessStateUnknown
-          : !accountActive
-            ? rc.accessUserDisabled
-            : rc.accessResourceDisabled,
+        : expired
+          ? rc.accessGrantExpired
+          : skill === undefined
+            ? rc.accessStateUnknown
+            : !accountActive
+              ? rc.accessUserDisabled
+              : rc.accessResourceDisabled,
     });
   }
   for (const assignment of modelResources.assignments) {
@@ -3615,6 +3623,21 @@ function SkillsSection({
   );
 }
 
+// One grant's expiry: a date (marked once past), a perpetual grant, or unknown
+// when the server did not report the field at all.
+function GrantExpires({ expiresAt }: { readonly expiresAt: string | null | undefined }) {
+  if (expiresAt === undefined) return <Typography.Text type="secondary">{rc.grantExpiresUnknown}</Typography.Text>;
+  if (expiresAt === null) return <Typography.Text type="secondary">{rc.grantExpiresPerpetual}</Typography.Text>;
+  const parsed = Date.parse(expiresAt);
+  if (!Number.isFinite(parsed)) return <Typography.Text type="secondary">{rc.grantExpiresUnknown}</Typography.Text>;
+  const label = formatTimestamp(expiresAt) || expiresAt;
+  return parsed <= Date.now() ? (
+    <Tag color="warning">{`${rc.grantExpiresExpired} · ${label}`}</Tag>
+  ) : (
+    <Typography.Text>{label}</Typography.Text>
+  );
+}
+
 function SkillDetailDrawer({
   client,
   employees,
@@ -3755,6 +3778,11 @@ function SkillDetailDrawer({
                             }
                           />
                         ),
+                      },
+                      {
+                        title: rc.skillGrantExpires,
+                        key: 'expiresAt',
+                        render: (_, assignment) => <GrantExpires expiresAt={assignment.expiresAt} />,
                       },
                       ...(canAssign
                         ? [
@@ -4087,6 +4115,7 @@ function SkillGrantModal({
 }) {
   const [skillId, setSkillId] = useState<string | null>(presetSkillId ?? null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const [failedSubjects, setFailedSubjects] = useState<readonly string[]>([]);
@@ -4094,6 +4123,7 @@ function SkillGrantModal({
     if (open) {
       setSkillId(presetSkillId ?? null);
       setSelected(new Set());
+      setExpiresAt(null);
       setFailed(false);
       setFailedSubjects([]);
     }
@@ -4117,7 +4147,11 @@ function SkillGrantModal({
         const separator = subjectKey.indexOf(':');
         const type = subjectKey.slice(0, separator) as AdminSubjectType;
         const id = subjectKey.slice(separator + 1);
-        return client.createSkillAssignment({ skillId, subject: { type, id } });
+        return client.createSkillAssignment({
+          skillId,
+          subject: { type, id },
+          ...(expiresAt ? { expiresAt } : {}),
+        });
       });
       const failures = results.filter((result) => !result.ok).map((result) => result.item);
       if (failures.length > 0) {
@@ -4177,6 +4211,19 @@ function SkillGrantModal({
               label: skill.enabled ? skill.name : `${skill.name}（${t('disabled')}）`,
             }))}
           />
+        </div>
+        <div>
+          <Typography.Text strong>{rc.grantExpiresLabel}</Typography.Text>
+          <DatePicker
+            aria-label={rc.grantExpiresLabel}
+            disabled={pending}
+            allowClear
+            style={{ width: '100%', marginTop: 8 }}
+            onChange={(value) => setExpiresAt(value ? value.endOf('day').toISOString() : null)}
+          />
+          <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+            {rc.grantExpiresHint}
+          </Typography.Text>
         </div>
         <SubjectMultiPicker
           users={users}

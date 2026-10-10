@@ -199,6 +199,60 @@ describe('admin resources', () => {
   );
 
   test(
+    'marks an expired Skill grant as expired instead of effective',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+          skills: [{ id: 's1', name: '写作', enabled: true, state: 'active', versions: [] }],
+          assignments: [
+            { id: 'sa-live', skillId: 's1', subjectType: 'user', subjectId: 'u1', expiresAt: null },
+            { id: 'sa-old', skillId: 's1', subjectType: 'user', subjectId: 'u1', expiresAt: '2020-01-01T00:00:00Z' },
+          ],
+        }),
+        models: vi.fn().mockResolvedValue({ models: [], assignments: [] }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('张三')).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole('button', { name: '查看' })[0]!);
+      fireEvent.click(await screen.findByRole('tab', { name: '访问权限' }));
+      // The perpetual grant authorizes; the one past its expiry does not, and
+      // the table says why instead of showing a stale "effective".
+      expect(await screen.findByText('有效')).toBeInTheDocument();
+      expect(screen.getAllByText('授权已过期')).toHaveLength(1);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'shows the grant expiry and exposes the expiry field when granting',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [{ id: 'u1', displayName: '张三', username: 'zhangsan', status: 'active' }],
+          skills: [{ id: 's1', name: '写作', enabled: true, state: 'active', versions: [] }],
+          assignments: [
+            { id: 'a-old', skillId: 's1', subjectType: 'user', subjectId: 'u1', expiresAt: '2020-01-01T00:00:00Z' },
+            { id: 'a-perp', skillId: 's1', subjectType: 'user', subjectId: 'u2', expiresAt: null },
+          ],
+        }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      fireEvent.click((await screen.findAllByRole('button', { name: '查看' }))[0]!);
+      fireEvent.click(await screen.findByRole('tab', { name: /使用权限/ }));
+      // A past expiry is flagged; a null expiry reads as perpetual.
+      expect(await screen.findByText(/已过期/)).toBeInTheDocument();
+      expect(screen.getByText('永久')).toBeInTheDocument();
+      // …and a temporary grant can actually be created from the console.
+      fireEvent.click(screen.getByRole('button', { name: /调整授权/ }));
+      expect(await screen.findByText('到期时间（可选）')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'renders assignment and revokes it after confirmation',
     async () => {
       const client = {
