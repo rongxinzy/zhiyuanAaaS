@@ -108,6 +108,7 @@ export const AdminPermission = {
   SessionsWrite: 'sessions.write',
   EventsRead: 'events.read',
   EventsWrite: 'events.write',
+  AuditRead: 'audit.read',
   DataPlaneWrite: 'data_plane.write',
   DeploymentRead: 'deployment.read',
   DeploymentWrite: 'deployment.write',
@@ -370,6 +371,31 @@ export interface AdminEventRecord {
 export interface AdminEventPage {
   readonly items: readonly AdminEventRecord[];
   readonly nextCursor: string | null;
+}
+
+export interface AdminAuthenticationAuditRecord {
+  readonly cursor: string;
+  readonly userId?: string;
+  readonly eventType: string;
+  readonly outcome: string;
+  readonly reason?: string;
+  readonly sourceHash?: string;
+  readonly createdAt?: string;
+}
+
+export interface AdminAuthenticationAuditPage {
+  readonly items: readonly AdminAuthenticationAuditRecord[];
+  readonly nextCursor: string | null;
+}
+
+export interface AuthenticationAuditFilters {
+  readonly eventType?: string;
+  readonly outcome?: string;
+  readonly userId?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
+  readonly cursor?: string;
+  readonly limit?: number;
 }
 
 export interface AdminDeliveryRecord {
@@ -1092,6 +1118,36 @@ export class AdminConsoleClient {
       ];
     });
     return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
+  }
+
+  async searchAuthenticationAudit(filters?: AuthenticationAuditFilters): Promise<AdminAuthenticationAuditPage> {
+    const result = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/audit/authentication?${identityQuery({ ...filters })}`,
+    });
+    const items = arrayFrom(result, 'items').flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.cursor !== 'string' ||
+        typeof record.eventType !== 'string' ||
+        typeof record.outcome !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          cursor: record.cursor,
+          eventType: record.eventType,
+          outcome: record.outcome,
+          ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(typeof record.sourceHash === 'string' ? { sourceHash: record.sourceHash } : {}),
+          ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
+        },
+      ];
+    });
+    return { items, nextCursor: valueString(result, 'nextCursor') };
   }
 
   #getClient(): AepClient {

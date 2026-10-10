@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testi
 import { ConfigProvider } from 'antd';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { AdminRequestError } from './client.js';
 import { Events } from './Events.js';
 import { administratorIdentity } from './test-fixtures.js';
 
@@ -41,6 +42,20 @@ function fixture() {
           eventId: 'control-1',
           state: 'failed',
           attemptCount: 2,
+        },
+      ],
+      nextCursor: null,
+    }),
+    searchAuthenticationAudit: vi.fn().mockResolvedValue({
+      items: [
+        {
+          cursor: '7',
+          userId: 'user-a',
+          eventType: 'login.failed',
+          outcome: 'failure',
+          reason: 'invalid_credentials',
+          sourceHash: 'abcdef0123456789',
+          createdAt: '2026-10-10T00:00:00Z',
         },
       ],
       nextCursor: null,
@@ -115,10 +130,51 @@ describe('read-only audit', () => {
     expect(await screen.findByText('failed')).toBeInTheDocument();
     expect(client.cancelControlEvent).not.toHaveBeenCalled();
   });
-  test('does not label telemetry as complete login history', async () => {
+  test('loads persisted login history with actor, reason and source', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={administratorIdentity} />);
     fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    expect(await screen.findByText('登录失败')).toBeInTheDocument();
+    expect(client.searchAuthenticationAudit).toHaveBeenCalledWith({ limit: 50 });
+    expect(screen.getByText('user-a')).toBeInTheDocument();
+    expect(screen.getByText('invalid_credentials')).toBeInTheDocument();
+    expect(screen.getByText('abcdef012345')).toBeInTheDocument();
+    expect(screen.queryByText('登录历史查询尚未接入')).not.toBeInTheDocument();
+  });
+  test('states honestly when the control service has no login-history endpoint', async () => {
+    const client = fixture();
+    client.searchAuthenticationAudit.mockRejectedValueOnce(new AdminRequestError(404, null, null));
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
     expect(await screen.findByText('登录历史查询尚未接入')).toBeInTheDocument();
+  });
+  test('page-loads additional login history', async () => {
+    const client = fixture();
+    client.searchAuthenticationAudit
+      .mockResolvedValueOnce({
+        items: [{ cursor: '2', eventType: 'login.succeeded', outcome: 'success' }],
+        nextCursor: '2',
+      })
+      .mockResolvedValueOnce({
+        items: [{ cursor: '1', eventType: 'login.failed', outcome: 'failure', reason: 'invalid_credentials' }],
+        nextCursor: null,
+      });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    expect(await screen.findByText('登录成功')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText('invalid_credentials')).toBeInTheDocument();
+    expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ cursor: '2', limit: 50 });
+  });
+  test('applies the login filter through the query button', async () => {
+    const client = fixture();
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    await screen.findByText('登录失败');
+    fireEvent.change(screen.getByLabelText('用户'), { target: { value: 'user-a' } });
+    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    await waitFor(() =>
+      expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ userId: 'user-a', limit: 50 }),
+    );
   });
 });

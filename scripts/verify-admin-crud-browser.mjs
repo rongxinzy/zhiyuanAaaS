@@ -371,8 +371,9 @@ try {
   await visit('system/licenses', '产品授权');
   await visit('audit', '日志审计');
   await page.getByRole('tab', { name: '登录日志', exact: true }).click();
-  await page.getByText('登录历史查询尚未接入', { exact: true }).waitFor();
-  checks.push('all available module routes, truthful unsupported login history');
+  await page.getByText('invalid_credentials', { exact: true }).waitFor();
+  assert.equal(await page.getByText('登录历史查询尚未接入', { exact: true }).count(), 0);
+  checks.push('all available module routes, persisted login history');
 
   await visit('overview', '概览');
   await page.getByRole('combobox', { name: '外观', exact: true }).click();
