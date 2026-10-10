@@ -148,4 +148,33 @@ describe('read-only audit', () => {
     fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
     expect(await screen.findByText('登录历史查询尚未接入')).toBeInTheDocument();
   });
+  test('page-loads additional login history', async () => {
+    const client = fixture();
+    client.searchAuthenticationAudit
+      .mockResolvedValueOnce({
+        items: [{ cursor: '2', eventType: 'login.succeeded', outcome: 'success' }],
+        nextCursor: '2',
+      })
+      .mockResolvedValueOnce({
+        items: [{ cursor: '1', eventType: 'login.failed', outcome: 'failure', reason: 'invalid_credentials' }],
+        nextCursor: null,
+      });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    expect(await screen.findByText('登录成功')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText('invalid_credentials')).toBeInTheDocument();
+    expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ cursor: '2', limit: 50 });
+  });
+  test('applies the login filter through the query button', async () => {
+    const client = fixture();
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
+    await screen.findByText('登录失败');
+    fireEvent.change(screen.getByLabelText('用户'), { target: { value: 'user-a' } });
+    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    await waitFor(() =>
+      expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ userId: 'user-a', limit: 50 }),
+    );
+  });
 });

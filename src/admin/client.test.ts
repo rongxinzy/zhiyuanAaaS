@@ -406,6 +406,36 @@ describe('admin session client identity', () => {
     expect(sessions[3]?.client).toBeUndefined();
   });
 
+  test('loads the authentication audit and drops malformed records', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/audit/authentication': {
+        body: {
+          items: [
+            {
+              cursor: '7',
+              userId: 'u1',
+              eventType: 'login.failed',
+              outcome: 'failure',
+              reason: 'invalid_credentials',
+              sourceHash: 'h',
+              createdAt: '2026-10-01T00:00:00Z',
+            },
+            { cursor: '6', userId: null, eventType: 'login.throttled', outcome: 'denied', reason: null },
+            { cursor: 5 },
+          ],
+          nextCursor: '6',
+        },
+      },
+    });
+    const page = await client.searchAuthenticationAudit({ eventType: 'login.failed', limit: 50 });
+    expect(page.items).toHaveLength(2);
+    expect(page.items[0]).toMatchObject({ cursor: '7', userId: 'u1', eventType: 'login.failed', outcome: 'failure' });
+    expect(page.items[1]).toMatchObject({ cursor: '6', eventType: 'login.throttled', outcome: 'denied' });
+    expect(page.items[1]?.userId).toBeUndefined();
+    expect(page.nextCursor).toBe('6');
+    expect(requests.some((item) => item.path === '/aep/v1/admin/audit/authentication')).toBe(true);
+  });
+
   test('tracks the console session id from login and clears it on logout', async () => {
     const { client } = await signedInClient({
       'POST /aep/v1/auth/logout': { status: 204, body: null },
