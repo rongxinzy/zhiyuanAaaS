@@ -33,6 +33,21 @@ import {
   type ServiceMetadata,
   type Team,
 } from '@aep/sdk-node';
+import type {
+  GatewayCapabilities,
+  GatewayHealth,
+  GatewayLimit,
+  GatewayLimitPage,
+  GatewayLimitPublication,
+  GatewayLimitStatus,
+  GatewayLimitWrite,
+  GatewayMetricQuery,
+  GatewayMetricResult,
+  GatewayNativeResult,
+  GatewayQuota,
+  GatewayRequestQuery,
+  GatewayTestAccess,
+} from './gateway-api.js';
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -690,6 +705,100 @@ export class AdminConsoleClient {
 
   async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {
     await this.#requireClient().createModel(input);
+  }
+
+  async gatewaySubjects(identity?: AdminIdentity) {
+    const client = this.#requireClient();
+    const [models, users, teams, roles] = await Promise.all([
+      hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : { models: [] },
+      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : [],
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : [],
+      hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : [],
+    ]);
+    return { models: models.models, users, teams, roles };
+  }
+
+  getGatewayCapabilities(): Promise<GatewayCapabilities> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/model-gateway/capabilities',
+    });
+  }
+  queryGatewayMetrics(input: GatewayMetricQuery): Promise<GatewayMetricResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/metrics?${identityQuery({ ...input })}`,
+    });
+  }
+  getGatewayMonitoringHealth(): Promise<GatewayHealth> {
+    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/health' });
+  }
+  searchGatewayRequests(input: GatewayRequestQuery): Promise<GatewayNativeResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/requests?${identityQuery({ ...input })}`,
+    });
+  }
+  getGatewayRequest(requestId: string, input: GatewayRequestQuery): Promise<GatewayNativeResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/requests/${encodeURIComponent(requestId)}?${identityQuery({ ...input })}`,
+    });
+  }
+  listGatewayLimits(): Promise<GatewayLimitPage> {
+    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/limits' });
+  }
+  putGatewayLimit(ruleId: string, input: GatewayLimitWrite): Promise<GatewayLimit> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}`,
+      body: { ...input },
+    });
+  }
+  deleteGatewayLimit(ruleId: string, expectedVersion: number): Promise<void> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Delete,
+      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}?${identityQuery({ expectedVersion })}`,
+      responseType: 'empty',
+    });
+  }
+  publishGatewayLimits(): Promise<GatewayLimitPublication> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: '/aep/v1/admin/model-gateway/limits/publish',
+    });
+  }
+  getGatewayLimitsStatus(): Promise<GatewayLimitStatus> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/model-gateway/limits/status',
+    });
+  }
+  getGatewayQuota(userId: string): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}`,
+    });
+  }
+  refreshGatewayQuota(userId: string, quota: number): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/refresh`,
+      body: { quota },
+    });
+  }
+  changeGatewayQuota(userId: string, value: number): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/delta`,
+      body: { value },
+    });
+  }
+  createGatewayTestAccess(modelId: string): Promise<GatewayTestAccess> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/models/${encodeURIComponent(modelId)}/test-access`,
+    });
   }
 
   async updateModel(modelId: string, input: Parameters<AepClient['updateModel']>[1]): Promise<void> {

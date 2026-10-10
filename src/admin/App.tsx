@@ -4,6 +4,7 @@ import {
   BookOutlined,
   DashboardOutlined,
   LogoutOutlined,
+  MenuOutlined,
   RobotOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -16,6 +17,7 @@ import {
   Card,
   Col,
   ConfigProvider,
+  Drawer,
   Form,
   Input,
   Layout,
@@ -83,12 +85,18 @@ const DeploymentSettings = lazy(() =>
 );
 const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
 const Workbench = lazy(() => import('./Workbench.js').then((m) => ({ default: m.Workbench })));
+const GatewayCall = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayCall })));
+const GatewayObservation = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayObservation })));
+const GatewayLimits = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayLimits })));
 
 const ModelGatewayRoute = {
   Page: 'model-gateway',
   Catalog: 'catalog',
   Connections: 'connections',
   Configuration: 'configuration',
+  Call: 'call',
+  Observe: 'observe',
+  Limits: 'limits',
 } as const;
 
 const modules = [
@@ -221,6 +229,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<'signInFailed' | 'signInMetadataFailed' | null>(null);
   const [route, setRoute] = useState(readRoute);
+  const [navigationOpen, setNavigationOpen] = useState(false);
   useEffect(() => {
     let live = true;
     void client
@@ -349,6 +358,18 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   }
   const allowed = (permission: P) => hasAdminPermission(identity, permission);
   const visible = modules.filter((m) => m.permissions.length === 0 || m.permissions.some(allowed));
+  const navigation = (
+    <Menu
+      aria-label={c.navigation}
+      mode="inline"
+      selectedKeys={[page]}
+      items={visible.map(({ key, label, icon }) => ({ key, label, icon, 'aria-label': label }))}
+      onClick={({ key }) => {
+        navigate(key);
+        setNavigationOpen(false);
+      }}
+    />
+  );
   const selected = modules.find((m) => m.key === page);
   const accessible = visible.some((m) => m.key === page);
   const enterprise = identity?.deployment?.name ?? identity?.enterprise?.name ?? identity?.deploymentId ?? c.enterprise;
@@ -358,13 +379,15 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       key: string;
       label: string;
       permission?: P | readonly P[];
+      requiredPermissions?: readonly P[];
       children: ReactNode;
     }[],
   ) => {
     const usable = items.filter(
       (item) =>
-        !item.permission ||
-        (typeof item.permission === 'string' ? allowed(item.permission) : item.permission.some(allowed)),
+        (!item.permission ||
+          (typeof item.permission === 'string' ? allowed(item.permission) : item.permission.some(allowed))) &&
+        (!item.requiredPermissions || item.requiredPermissions.every(allowed)),
     );
     const key = subpage ?? usable[0]?.key;
     if (!key || !usable.some((item) => item.key === key)) return <Result status="403" title={c.forbidden} />;
@@ -447,6 +470,30 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           permission: P.DataPlaneWrite,
           children: <ConfigurationStatus {...props} />,
         },
+        {
+          key: ModelGatewayRoute.Call,
+          label: translate('zh', 'gatewayCall'),
+          permission: P.ModelsRead,
+          children: (
+            <GatewayCall
+              {...props}
+              onObserve={() => navigate(`${ModelGatewayRoute.Page}/${ModelGatewayRoute.Observe}`)}
+            />
+          ),
+        },
+        {
+          key: ModelGatewayRoute.Observe,
+          label: translate('zh', 'gatewayObserve'),
+          permission: P.ModelsRead,
+          children: <GatewayObservation {...props} />,
+        },
+        {
+          key: ModelGatewayRoute.Limits,
+          label: translate('zh', 'gatewayLimits'),
+          permission: P.DataPlaneWrite,
+          requiredPermissions: [P.ModelsRead],
+          children: <GatewayLimits {...props} />,
+        },
       ]);
       break;
     case 'system':
@@ -493,22 +540,18 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             <small>{c.admin}</small>
           </div>
         </div>
-        <Menu
-          aria-label={c.navigation}
-          mode="inline"
-          selectedKeys={[page]}
-          items={visible.map(({ key, label, icon }) => ({
-            key,
-            label,
-            icon,
-            'aria-label': label,
-          }))}
-          onClick={({ key }) => navigate(key)}
-        />
+        {navigation}
         <div className="admin-sidebar-note">{c.accountScope}</div>
       </Layout.Sider>
       <Layout className="admin-body">
         <Layout.Header className="admin-header">
+          <Button
+            className="admin-navigation-toggle"
+            aria-label={c.navigation}
+            aria-expanded={navigationOpen}
+            icon={<MenuOutlined aria-hidden />}
+            onClick={() => setNavigationOpen(true)}
+          />
           <Typography.Text strong ellipsis>
             {enterprise}
           </Typography.Text>
@@ -532,6 +575,16 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           </div>
         </Layout.Content>
       </Layout>
+      <Drawer
+        title={c.navigation}
+        placement="left"
+        size={256}
+        className="admin-navigation-drawer"
+        open={navigationOpen}
+        onClose={() => setNavigationOpen(false)}
+      >
+        {navigation}
+      </Drawer>
     </Layout>
   );
 }

@@ -29,8 +29,10 @@ try {
     env: {
       ...process.env,
       ZHIYUAN_ADMIN_PORT: String(port),
+      ZHIYUAN_ADMIN_WEKNORA_PORT: '0',
       ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
       ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
+      ZHIYUAN_GATEWAY_ORIGIN: `http://127.0.0.1:${apiPort}`,
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
@@ -199,7 +201,7 @@ try {
   assert.match(page.url(), /#model-gateway$/);
   assert.equal(await page.getByRole('tablist').count(), 1);
   assert.equal(await page.locator('.admin-page > div > div > .ant-tabs-card').count(), 0);
-  assert.equal(await page.getByRole('tab').count(), 3);
+  assert.equal(await page.getByRole('tab').count(), 6);
   await page.screenshot({
     path: path.join(screenshots, 'models.png'),
     fullPage: true,
@@ -271,6 +273,48 @@ try {
   await page.getByRole('tab', { name: '配置生效详情', exact: true }).click();
   assert.match(page.url(), /#model-gateway\/configuration$/);
   await page.getByText('期望路由与模型目录一致', { exact: true }).waitFor();
+  await visit('model-gateway/call', '模型调用检测');
+  await page.getByRole('button', { name: '发起测试' }).click();
+  await page.getByText('HTTP 200', { exact: true }).waitFor();
+  await page.getByRole('region', { name: '原始响应' }).getByText('fixture-stream', { exact: false }).waitFor();
+  assert.equal(state.gateway.inference.length, 1);
+  assert.equal(state.gateway.inference[0].model, state.models[0].id);
+  assert.equal(await page.locator('body').getByText('e2e-disposable-model-token').count(), 0);
+  await page.getByRole('switch', { name: '流式响应' }).click();
+  await page.getByRole('button', { name: '发起测试' }).click();
+  await page.getByText('fixture-json', { exact: false }).waitFor();
+  await visit('model-gateway/observe', '用量与错误观测');
+  await page.getByText('gateway-e2e-r1', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '详情', exact: true }).click();
+  await page.getByRole('dialog').waitFor();
+  await waitForValue(() => state.gateway.details.length, 1);
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Close|关闭/ })
+    .click();
+  await visit('model-gateway/limits', '限流配额');
+  await page.getByLabel('规则 ID', { exact: true }).fill('e2e-rule');
+  await page.getByRole('combobox', { name: '主体维度', exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '全部请求' }).click();
+  await page.getByRole('button', { name: '保存规则', exact: true }).click();
+  await waitForValue(() => state.gateway.rules.length, 1);
+  assert.equal(state.gateway.revision, null);
+  await page.getByRole('button', { name: '发布配置', exact: true }).click();
+  await page.locator('.ant-popconfirm').getByRole('button', { name: '发布配置', exact: true }).click();
+  await page.getByText('配置已应用', { exact: true }).waitFor();
+  await page.getByText('Token 余额配额', { exact: true }).click();
+  await page.getByRole('combobox', { name: '用户', exact: true }).click();
+  await page
+    .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+    .filter({ hasText: '管理员' })
+    .click();
+  await page.getByLabel('配额值 / 调整量').fill('-5');
+  await page.getByRole('button', { name: '调整余额', exact: true }).click();
+  await page.locator('.ant-popconfirm').getByRole('button', { name: '调整余额', exact: true }).click();
+  await waitForValue(() => state.gateway.quota, 995);
+  checks.push(
+    'gateway native JSON/SSE proxy, request details, save/publish/status and confirmed per-user quota API contracts',
+  );
   for (const themeMode of ['light', 'dark']) {
     await page.evaluate((mode) => localStorage.setItem('zhiyuan.admin.theme', mode), themeMode);
     await page.reload({ waitUntil: 'networkidle' });
@@ -283,8 +327,21 @@ try {
         ['catalog', '模型列表'],
         ['connections', '接入配置'],
         ['configuration', '配置生效详情'],
+        ['call', '模型调用检测'],
+        ['observe', '用量与错误观测'],
+        ['limits', '限流配额'],
       ]) {
         await visit(`model-gateway/${tab}`, label);
+        if (tab === 'observe') {
+          await page.getByRole('heading', { name: label, exact: true }).waitFor();
+          assert.equal(await page.getByText('1,600', { exact: true }).count(), 0);
+          assert.equal(await page.getByRole('switch', { name: '查看示例数据' }).count(), 0);
+          assert.equal(await page.getByRole('combobox', { name: '团队', exact: true }).isDisabled(), false);
+          await page.getByText('gateway-e2e-r1', { exact: true }).waitFor();
+        }
+        if (tab === 'limits') {
+          assert.equal(await page.getByRole('button', { name: '保存规则', exact: true }).isDisabled(), false);
+        }
         assert.equal(await page.getByRole('tablist').count(), 1);
         assert.equal(await page.locator('.admin-page .ant-tabs-card').count(), 0);
         const activeTab = page.getByRole('tab', { name: label, exact: true });
@@ -301,7 +358,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
   await page.reload({ waitUntil: 'networkidle' });
-  checks.push('model gateway: three top-level underline tabs, light/dark, desktop/narrow, keyboard focus');
+  checks.push('model gateway: six top-level underline tabs, light/dark, desktop/narrow, keyboard focus');
   await visit('system/channels', 'E2E 企业微信');
   assert.equal(await page.getByRole('tab', { name: '模型服务', exact: true }).count(), 0);
   await visit('system/services', '服务状态');
