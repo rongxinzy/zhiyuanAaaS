@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
+import { AepProblem } from '@aep/sdk-node';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
@@ -727,7 +728,7 @@ describe('admin resources', () => {
   );
 
   test(
-    'blocks skill deletion while known assignments reference the skill',
+    'offers a forced delete when the Skill is still referenced',
     async () => {
       const client = {
         resources: vi.fn().mockResolvedValue({
@@ -736,14 +737,21 @@ describe('admin resources', () => {
           skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
           assignments: [{ id: 'a1', skillId: 's1', subjectType: 'user', subjectId: 'u1' }],
         }),
-        deleteSkill: vi.fn(),
+        deleteSkill: vi
+          .fn()
+          .mockRejectedValueOnce(AepProblem.from(409, { code: 'SKILL_IN_USE', detail: 'still referenced' }))
+          .mockResolvedValue(undefined),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
       expect(await screen.findByText('写作')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: '删除' }));
-      expect(await screen.findByText('无法删除被引用的技能')).toBeInTheDocument();
+      fireEvent.click(await modalButton('删除'));
+      // The server refusal becomes an explicit forced-delete prompt, not a dead end.
+      expect(await screen.findByText('此技能仍被引用')).toBeInTheDocument();
       expect(screen.getByText('张三')).toBeInTheDocument();
-      expect(client.deleteSkill).not.toHaveBeenCalled();
+      expect(client.deleteSkill).toHaveBeenCalledWith('s1');
+      fireEvent.click(screen.getByRole('button', { name: '强制删除' }));
+      await waitFor(() => expect(client.deleteSkill).toHaveBeenLastCalledWith('s1', true));
     },
     TIMEOUT,
   );

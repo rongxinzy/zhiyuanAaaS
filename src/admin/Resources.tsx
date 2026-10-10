@@ -7,6 +7,7 @@
  */
 
 import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
+import { AepProblem } from '@aep/sdk-node';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -3190,7 +3191,7 @@ function SkillsSection({
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ readonly id?: string } | null>(null);
   const [grant, setGrant] = useState<{ readonly skillId?: string } | null>(null);
-  const [blockedSkill, setBlockedSkill] = useState<AdminSkill | null>(null);
+  const [forceSkill, setForceSkill] = useState<AdminSkill | null>(null);
   const { pending, run } = useMutationRunner(onChanged, onError);
   const rows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -3205,7 +3206,26 @@ function SkillsSection({
   const assignmentsFor = (skillId: string) => resources.assignments.filter((item) => item.skillId === skillId);
   const latestPublished = (skill: AdminSkill) =>
     skill.versions.find((version) => version.state === 'published')?.version ?? null;
-  const blockedRefs = blockedSkill ? assignmentsFor(blockedSkill.id) : [];
+  const forceRefs = forceSkill ? assignmentsFor(forceSkill.id) : [];
+  // The server refuses to delete a Skill that is still referenced; surface that
+  // as an explicit forced delete instead of the generic failure notice.
+  const remove = (skill: AdminSkill) =>
+    run(async () => {
+      try {
+        await client.deleteSkill(skill.id);
+      } catch (error) {
+        if (error instanceof AepProblem && error.code === 'SKILL_IN_USE') {
+          setForceSkill(skill);
+          return;
+        }
+        throw error;
+      }
+    });
+  const forceRemove = (skill: AdminSkill) =>
+    run(async () => {
+      await client.deleteSkill(skill.id, true);
+      setForceSkill(null);
+    });
   const columns: TableProps<AdminSkill>['columns'] = [
     {
       title: t('skill'),
@@ -3234,7 +3254,6 @@ function SkillsSection({
       key: 'actions',
       align: 'right',
       render: (_, skill) => {
-        const refs = assignmentsFor(skill.id);
         return (
           <Space size={0} wrap>
             <Button type="link" size="small" disabled={pending} onClick={() => setDetailSkillId(skill.id)}>
@@ -3257,28 +3276,18 @@ function SkillsSection({
                 >
                   {skill.enabled ? t('disable') : t('enable')}
                 </Button>
-                {refs.length > 0 ? (
-                  <Button type="link" size="small" danger disabled={pending} onClick={() => setBlockedSkill(skill)}>
+                <Popconfirm
+                  title={rc.deleteSkillConfirm}
+                  description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
+                  okText={t('delete')}
+                  cancelText={t('cancel')}
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => void remove(skill)}
+                >
+                  <Button type="link" size="small" danger disabled={pending}>
                     {t('delete')}
                   </Button>
-                ) : (
-                  <Popconfirm
-                    title={rc.deleteSkillConfirm}
-                    description={`${rc.stopSkillFirst} ${rc.skillDeleteUncheckedNote}`}
-                    okText={t('delete')}
-                    cancelText={t('cancel')}
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() =>
-                      void run(async () => {
-                        await client.deleteSkill(skill.id);
-                      })
-                    }
-                  >
-                    <Button type="link" size="small" danger disabled={pending}>
-                      {t('delete')}
-                    </Button>
-                  </Popconfirm>
-                )}
+                </Popconfirm>
               </>
             ) : null}
           </Space>
@@ -3386,32 +3395,43 @@ function SkillsSection({
         />
       ) : null}
       <Modal
-        open={blockedSkill !== null}
-        title={rc.skillDeleteBlockedTitle}
+        open={forceSkill !== null}
+        title={rc.skillForceDeleteTitle}
         footer={
-          <Button type="primary" onClick={() => setBlockedSkill(null)}>
-            {rc.ok}
-          </Button>
+          <Space>
+            <Button onClick={() => setForceSkill(null)}>{t('cancel')}</Button>
+            <Button
+              danger
+              type="primary"
+              loading={pending}
+              disabled={forceSkill === null}
+              onClick={() => forceSkill && void forceRemove(forceSkill)}
+            >
+              {rc.skillForceDeleteAction}
+            </Button>
+          </Space>
         }
-        onCancel={() => setBlockedSkill(null)}
+        onCancel={() => setForceSkill(null)}
       >
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Typography.Text>{rc.skillDeleteBlockedNote}</Typography.Text>
-          <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-            {blockedRefs.map((assignment) => (
-              <li key={assignment.id}>
-                <SubjectCell
-                  subjectType={assignment.subjectType}
-                  subjectId={assignment.subjectId}
-                  user={
-                    assignment.subjectType === AdminSubjectType.User
-                      ? resources.users.find((user) => user.id === assignment.subjectId)
-                      : undefined
-                  }
-                />
-              </li>
-            ))}
-          </ul>
+          <Typography.Text>{rc.skillForceDeleteNote}</Typography.Text>
+          {forceRefs.length > 0 ? (
+            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+              {forceRefs.map((assignment) => (
+                <li key={assignment.id}>
+                  <SubjectCell
+                    subjectType={assignment.subjectType}
+                    subjectId={assignment.subjectId}
+                    user={
+                      assignment.subjectType === AdminSubjectType.User
+                        ? resources.users.find((user) => user.id === assignment.subjectId)
+                        : undefined
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Space>
       </Modal>
     </div>
