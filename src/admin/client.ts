@@ -33,6 +33,21 @@ import {
   type ServiceMetadata,
   type Team,
 } from '@aep/sdk-node';
+import type {
+  GatewayCapabilities,
+  GatewayHealth,
+  GatewayLimit,
+  GatewayLimitPage,
+  GatewayLimitPublication,
+  GatewayLimitStatus,
+  GatewayLimitWrite,
+  GatewayMetricQuery,
+  GatewayMetricResult,
+  GatewayNativeResult,
+  GatewayQuota,
+  GatewayRequestQuery,
+  GatewayTestAccess,
+} from './gateway-api.js';
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -93,6 +108,7 @@ export const AdminPermission = {
   SessionsWrite: 'sessions.write',
   EventsRead: 'events.read',
   EventsWrite: 'events.write',
+  AuditRead: 'audit.read',
   DataPlaneWrite: 'data_plane.write',
   DeploymentRead: 'deployment.read',
   DeploymentWrite: 'deployment.write',
@@ -138,6 +154,8 @@ export interface AdminSkillAssignment {
   readonly skillId: string;
   readonly subjectType: string;
   readonly subjectId: string;
+  /** ISO expiry. null = a perpetual grant; undefined = the server reported none. */
+  readonly expiresAt?: string | null | undefined;
 }
 
 export const AdminSubjectType = {
@@ -353,6 +371,31 @@ export interface AdminEventRecord {
 export interface AdminEventPage {
   readonly items: readonly AdminEventRecord[];
   readonly nextCursor: string | null;
+}
+
+export interface AdminAuthenticationAuditRecord {
+  readonly cursor: string;
+  readonly userId?: string;
+  readonly eventType: string;
+  readonly outcome: string;
+  readonly reason?: string;
+  readonly sourceHash?: string;
+  readonly createdAt?: string;
+}
+
+export interface AdminAuthenticationAuditPage {
+  readonly items: readonly AdminAuthenticationAuditRecord[];
+  readonly nextCursor: string | null;
+}
+
+export interface AuthenticationAuditFilters {
+  readonly eventType?: string;
+  readonly outcome?: string;
+  readonly userId?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
+  readonly cursor?: string;
+  readonly limit?: number;
 }
 
 export interface AdminDeliveryRecord {
@@ -647,8 +690,15 @@ export class AdminConsoleClient {
     });
   }
 
-  async deleteSkill(skillId: string): Promise<void> {
-    await this.#requireClient().deleteSkill(skillId);
+  // The pinned SDK release predates the force query parameter, so the delete
+  // goes through the same handwritten transport path as the other newer admin
+  // endpoints (see #request).
+  async deleteSkill(skillId: string, force = false): Promise<void> {
+    await this.#request<null>(this.#requireClient(), {
+      method: HttpMethod.Delete,
+      path: `/aep/v1/admin/skills/${segment(skillId)}${force ? '?force=true' : ''}`,
+      responseType: 'empty',
+    });
   }
 
   async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {
@@ -666,10 +716,12 @@ export class AdminConsoleClient {
   async createSkillAssignment(input: {
     readonly skillId: string;
     readonly subject: AdminAssignmentSubject;
+    readonly expiresAt?: string | null;
   }): Promise<void> {
     await this.#requireClient().createSkillAssignment({
       skillId: input.skillId,
       subject: { type: input.subject.type, id: input.subject.id },
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
     });
   }
 
@@ -690,6 +742,100 @@ export class AdminConsoleClient {
 
   async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {
     await this.#requireClient().createModel(input);
+  }
+
+  async gatewaySubjects(identity?: AdminIdentity) {
+    const client = this.#requireClient();
+    const [models, users, teams, roles] = await Promise.all([
+      hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : { models: [] },
+      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : [],
+      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : [],
+      hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : [],
+    ]);
+    return { models: models.models, users, teams, roles };
+  }
+
+  getGatewayCapabilities(): Promise<GatewayCapabilities> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/model-gateway/capabilities',
+    });
+  }
+  queryGatewayMetrics(input: GatewayMetricQuery): Promise<GatewayMetricResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/metrics?${identityQuery({ ...input })}`,
+    });
+  }
+  getGatewayMonitoringHealth(): Promise<GatewayHealth> {
+    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/health' });
+  }
+  searchGatewayRequests(input: GatewayRequestQuery): Promise<GatewayNativeResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/requests?${identityQuery({ ...input })}`,
+    });
+  }
+  getGatewayRequest(requestId: string, input: GatewayRequestQuery): Promise<GatewayNativeResult> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/requests/${encodeURIComponent(requestId)}?${identityQuery({ ...input })}`,
+    });
+  }
+  listGatewayLimits(): Promise<GatewayLimitPage> {
+    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/limits' });
+  }
+  putGatewayLimit(ruleId: string, input: GatewayLimitWrite): Promise<GatewayLimit> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}`,
+      body: { ...input },
+    });
+  }
+  deleteGatewayLimit(ruleId: string, expectedVersion: number): Promise<void> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Delete,
+      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}?${identityQuery({ expectedVersion })}`,
+      responseType: 'empty',
+    });
+  }
+  publishGatewayLimits(): Promise<GatewayLimitPublication> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: '/aep/v1/admin/model-gateway/limits/publish',
+    });
+  }
+  getGatewayLimitsStatus(): Promise<GatewayLimitStatus> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/model-gateway/limits/status',
+    });
+  }
+  getGatewayQuota(userId: string): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}`,
+    });
+  }
+  refreshGatewayQuota(userId: string, quota: number): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/refresh`,
+      body: { quota },
+    });
+  }
+  changeGatewayQuota(userId: string, value: number): Promise<GatewayQuota> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/delta`,
+      body: { value },
+    });
+  }
+  createGatewayTestAccess(modelId: string): Promise<GatewayTestAccess> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Post,
+      path: `/aep/v1/admin/model-gateway/models/${encodeURIComponent(modelId)}/test-access`,
+    });
   }
 
   async updateModel(modelId: string, input: Parameters<AepClient['updateModel']>[1]): Promise<void> {
@@ -972,6 +1118,36 @@ export class AdminConsoleClient {
       ];
     });
     return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
+  }
+
+  async searchAuthenticationAudit(filters?: AuthenticationAuditFilters): Promise<AdminAuthenticationAuditPage> {
+    const result = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/audit/authentication?${identityQuery({ ...filters })}`,
+    });
+    const items = arrayFrom(result, 'items').flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.cursor !== 'string' ||
+        typeof record.eventType !== 'string' ||
+        typeof record.outcome !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          cursor: record.cursor,
+          eventType: record.eventType,
+          outcome: record.outcome,
+          ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(typeof record.sourceHash === 'string' ? { sourceHash: record.sourceHash } : {}),
+          ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
+        },
+      ];
+    });
+    return { items, nextCursor: valueString(result, 'nextCursor') };
   }
 
   #getClient(): AepClient {
@@ -1504,6 +1680,10 @@ function parseAssignments(value: unknown): AdminSkillAssignment[] {
         skillId: record.skillId,
         subjectType,
         subjectId,
+        // Distinguish "the server said null (perpetual)" from "the server did
+        // not report an expiry at all" (an older API).
+        expiresAt:
+          record.expiresAt === null ? null : typeof record.expiresAt === 'string' ? record.expiresAt : undefined,
       },
     ];
   });

@@ -37,6 +37,7 @@ const fullPermissions = [
   'sessions.write',
   'events.read',
   'events.write',
+  'audit.read',
   'data_plane.write',
   'deployment.read',
   'deployment.write',
@@ -55,6 +56,132 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
     ...overrides,
   };
 }
+
+describe('gateway API adapters', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  test('preserves query filters, encoded subjects, scoped auth and optimistic write versions', async () => {
+    const requests: { url: URL; init: RequestInit }[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/aep/v1/metadata') return Response.json(serverMetadata);
+      if (url.pathname === '/aep/v1/auth/password/login') return Response.json(loginTokens);
+      if (url.pathname === '/aep/v1/user/me') return Response.json(adminMe);
+      requests.push({ url, init });
+      return init.method === 'DELETE'
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ items: [], quota: 17 }), { headers: { 'Content-Type': 'application/json' } });
+    });
+    const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+    await client.login({ username: 'admin', password: 'test-password' });
+    const window = {
+      start: '2026-10-10T00:00:00Z',
+      end: '2026-10-10T01:00:00Z',
+      userId: '用户/1',
+      teamId: 'team',
+      roleId: 'role',
+      modelId: 'model',
+    };
+    await client.getGatewayCapabilities();
+    await client.queryGatewayMetrics({
+      ...window,
+      metric: 'calls',
+      groupBy: 'team',
+      step: 60,
+      expectedDefinition: 'gateway_access_requests',
+    });
+    await client.getGatewayMonitoringHealth();
+    await client.searchGatewayRequests({ ...window, source: 'gateway', limit: 200, cursor: '1000000000000000001' });
+    await client.getGatewayRequest('request/1', { ...window, source: 'all' });
+    await client.listGatewayLimits();
+    const configuration = {
+      kind: 'tokens' as const,
+      scopeType: 'user' as const,
+      scopeId: 'user',
+      modelId: 'model',
+      maximum: 25,
+      interval: 'minute' as const,
+      enabled: true,
+      expectedVersion: 7,
+    };
+    await client.putGatewayLimit('rule/1', configuration);
+    await client.deleteGatewayLimit('rule/1', 7);
+    await client.publishGatewayLimits();
+    await client.getGatewayLimitsStatus();
+    await client.getGatewayQuota('用户/1');
+    await client.refreshGatewayQuota('用户/1', 100);
+    await client.changeGatewayQuota('用户/1', -5);
+    await client.createGatewayTestAccess('model/1');
+    const prefix = '/aep/v1/admin/model-gateway/';
+    expect(requests.map(({ url }) => url.pathname)).toEqual(
+      [
+        'capabilities',
+        'metrics',
+        'health',
+        'requests',
+        'requests/request%2F1',
+        'limits',
+        'limits/rule%2F1',
+        'limits/rule%2F1',
+        'limits/publish',
+        'limits/status',
+        'quotas/%E7%94%A8%E6%88%B7%2F1',
+        'quotas/%E7%94%A8%E6%88%B7%2F1/refresh',
+        'quotas/%E7%94%A8%E6%88%B7%2F1/delta',
+        'models/model%2F1/test-access',
+      ].map((path) => prefix + path),
+    );
+    expect(Object.fromEntries(requests[1]!.url.searchParams)).toEqual({
+      ...window,
+      metric: 'calls',
+      groupBy: 'team',
+      step: '60',
+      expectedDefinition: 'gateway_access_requests',
+    });
+    expect(requests[3]!.url.searchParams.get('cursor')).toBe('1000000000000000001');
+    expect(requests[7]!.url.searchParams.get('expectedVersion')).toBe('7');
+    expect(JSON.parse(String(requests[6]!.init.body))).toEqual(configuration);
+    expect(JSON.parse(String(requests[11]!.init.body))).toEqual({ quota: 100 });
+    expect(JSON.parse(String(requests[12]!.init.body))).toEqual({ value: -5 });
+    for (const { init } of requests) {
+      const headers = new Headers(init.headers);
+      expect(headers.get('Authorization')).toBe('Bearer test-access');
+      expect(headers.get('X-AEP-Protocol-Version')).toBe('1.0');
+    }
+  });
+  test('fails closed on signed-out calls and does not replay conflict writes', async () => {
+    expect(() => new AdminConsoleClient().getGatewayCapabilities()).toThrow();
+    const { client, requests } = await signedInClient({
+      'PUT /aep/v1/admin/model-gateway/limits/rule': { status: 409, body: { code: 'VERSION_CONFLICT' } },
+    });
+    await expect(
+      client.putGatewayLimit('rule', {
+        kind: 'requests',
+        scopeType: 'global',
+        maximum: 1,
+        interval: 'second',
+        enabled: true,
+        expectedVersion: 0,
+      }),
+    ).rejects.toThrow();
+    expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(1);
+  });
+  test('loads only readable subject catalogs and paginates without fetching Skills', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/models': { body: { models: [{ id: 'model' }], nextCursor: null } },
+      'GET /aep/v1/admin/users': { body: { items: [{ id: 'user' }], nextCursor: null } },
+      'GET /aep/v1/admin/teams': { body: { teams: [{ id: 'team' }], nextCursor: null } },
+      'GET /aep/v1/admin/roles': { body: { roles: [{ id: 'role' }], nextCursor: null } },
+    });
+    expect(await client.gatewaySubjects()).toEqual({ models: [], users: [], teams: [], roles: [] });
+    expect(await client.gatewaySubjects(identity({ roles: ['admin'] }))).toEqual({
+      models: [{ id: 'model' }],
+      users: [{ id: 'user' }],
+      teams: [{ id: 'team' }],
+      roles: [{ id: 'role' }],
+    });
+    expect(requests.some((request) => request.path.includes('skills'))).toBe(false);
+  });
+});
 
 const loginTokens = {
   accessToken: 'test-access',
@@ -277,6 +404,36 @@ describe('admin session client identity', () => {
     expect(sessions[1]?.client).toEqual({ name: 'browser' });
     expect(sessions[2]?.client).toBeNull();
     expect(sessions[3]?.client).toBeUndefined();
+  });
+
+  test('loads the authentication audit and drops malformed records', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/audit/authentication': {
+        body: {
+          items: [
+            {
+              cursor: '7',
+              userId: 'u1',
+              eventType: 'login.failed',
+              outcome: 'failure',
+              reason: 'invalid_credentials',
+              sourceHash: 'h',
+              createdAt: '2026-10-01T00:00:00Z',
+            },
+            { cursor: '6', userId: null, eventType: 'login.throttled', outcome: 'denied', reason: null },
+            { cursor: 5 },
+          ],
+          nextCursor: '6',
+        },
+      },
+    });
+    const page = await client.searchAuthenticationAudit({ eventType: 'login.failed', limit: 50 });
+    expect(page.items).toHaveLength(2);
+    expect(page.items[0]).toMatchObject({ cursor: '7', userId: 'u1', eventType: 'login.failed', outcome: 'failure' });
+    expect(page.items[1]).toMatchObject({ cursor: '6', eventType: 'login.throttled', outcome: 'denied' });
+    expect(page.items[1]?.userId).toBeUndefined();
+    expect(page.nextCursor).toBe('6');
+    expect(requests.some((item) => item.path === '/aep/v1/admin/audit/authentication')).toBe(true);
   });
 
   test('tracks the console session id from login and clears it on logout', async () => {

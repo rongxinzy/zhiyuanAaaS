@@ -27,6 +27,7 @@ export const state = {
   skills: [],
   skillAssignments: [],
   models: [],
+  gateway: { rules: [], revision: null, quota: 1000, inference: [], queries: [], details: [] },
   modelAssignments: [],
   credentials: [],
   credentialAssignments: [],
@@ -92,7 +93,14 @@ export const state = {
     },
   ],
   knowledgeTags: [
-    { id: 'tag-faq-refund', seq_id: 44, name: 'Refund', color: '#1677ff', sort_order: 0, knowledge_base_id: 'kb-faq-e2e' },
+    {
+      id: 'tag-faq-refund',
+      seq_id: 44,
+      name: 'Refund',
+      color: '#1677ff',
+      sort_order: 0,
+      knowledge_base_id: 'kb-faq-e2e',
+    },
   ],
   knowledgeGrants: {
     'kb-1': [{ type: 'user', id: 'user-1', granted_by: 'admin-1', created_at: '2026-10-10T00:00:00Z' }],
@@ -192,6 +200,189 @@ async function route(method, pathname, rawBody, response, query) {
     state.failNext = null;
     return writeJson(response, 503, { code: 'TEST_FAILURE', detail: 'Temporary test failure' });
   }
+  const gatewayPrefix = '/aep/v1/admin/model-gateway';
+  if (pathname.startsWith(gatewayPrefix)) {
+    const suffix = pathname.slice(gatewayPrefix.length);
+    if (method === 'GET' && suffix === '/capabilities')
+      return writeJson(response, 200, {
+        sources: { prometheus: true, loki: true, quota: true, testAccess: true },
+        dimensions: ['model', 'user', 'team', 'role'],
+        metrics: [
+          'calls',
+          'failures',
+          'input_tokens',
+          'output_tokens',
+          'first_token_duration',
+          'service_duration',
+          'downstream_qps',
+          'upstream_qps',
+          'downstream_success_rate',
+          'upstream_success_rate',
+          'auth_requests',
+        ],
+        unsupported: ['cost', 'p95', 'p99'],
+      });
+    if (method === 'GET' && suffix === '/health')
+      return writeJson(response, 200, {
+        sources: ['prometheus', 'loki', 'quota'].map((source) => ({
+          source,
+          state: 'healthy',
+          checkedAt: new Date().toISOString(),
+          targets: [],
+        })),
+      });
+    if (method === 'GET' && suffix === '/metrics') {
+      const input = Object.fromEntries(query);
+      state.gateway.queries.push(input);
+      const group = query.get('groupBy');
+      const groupId =
+        group === 'user'
+          ? state.users[0].id
+          : group === 'team'
+            ? state.teams[0]?.id
+            : group === 'role'
+              ? state.roles[0]?.id
+              : group === 'model'
+                ? state.models[0]?.id
+                : null;
+      const metric = query.get('metric');
+      const value = metric === 'failures' ? '2' : metric?.includes('success_rate') ? '0.99' : '23';
+      return writeJson(response, 200, {
+        source: 'prometheus',
+        queriedAt: new Date().toISOString(),
+        definition: {
+          id: metric,
+          unit: metric?.includes('success_rate') ? 'ratio' : 'requests',
+          aggregation: 'counter_increase',
+          windowSeconds: Number(query.get('step')),
+          groupBy: group,
+          modelDimension: 'not_applicable',
+        },
+        data: {
+          status: 'success',
+          data: {
+            resultType: 'matrix',
+            result: [
+              {
+                metric: groupId ? { [`${group}_id`]: groupId } : {},
+                values: [
+                  [Date.now() / 1000 - 120, '11'],
+                  [Date.now() / 1000 - 60, 'NaN'],
+                  [Date.now() / 1000, value],
+                ],
+              },
+            ],
+          },
+        },
+      });
+    }
+    if (method === 'GET' && (suffix === '/requests' || suffix.startsWith('/requests/'))) {
+      if (suffix !== '/requests') state.gateway.details.push(suffix);
+      return writeJson(response, 200, {
+        source: 'loki',
+        queriedAt: new Date().toISOString(),
+        data: {
+          status: 'success',
+          data: {
+            resultType: 'streams',
+            result: [
+              {
+                stream: { aep_source: 'gateway' },
+                values: [
+                  [
+                    '1800000000000000000',
+                    JSON.stringify({
+                      request_id: 'gateway-e2e-r1',
+                      model_id: state.models[0]?.id ?? '',
+                      user_id: state.users[0].id,
+                      team_ids: '',
+                      role_ids: '',
+                      status: '503',
+                      input_token: '17',
+                      output_token: '3',
+                      response_flags: 'UF',
+                      llm_service_duration: '12',
+                      llm_first_token_duration: '5',
+                    }),
+                  ],
+                ],
+              },
+            ],
+          },
+        },
+      });
+    }
+    if (method === 'GET' && suffix === '/limits') return writeJson(response, 200, { items: state.gateway.rules });
+    if (method === 'GET' && suffix === '/limits/status')
+      return writeJson(response, 200, {
+        state: state.gateway.revision ? 'applied' : 'unpublished',
+        revision: state.gateway.revision,
+        runtimeVerified: false,
+      });
+    if (method === 'POST' && suffix === '/limits/publish') {
+      state.gateway.revision = 'gateway-e2e-rev';
+      return writeJson(response, 200, {
+        revision: state.gateway.revision,
+        publishedAt: new Date().toISOString(),
+        items: state.gateway.rules,
+      });
+    }
+    if (method === 'PUT' && suffix.startsWith('/limits/')) {
+      const id = decodeURIComponent(suffix.slice('/limits/'.length));
+      const input = jsonBody(rawBody);
+      const existing = state.gateway.rules.find((item) => item.id === id);
+      if ((existing?.version ?? 0) !== input.expectedVersion)
+        return writeJson(response, 409, { code: 'VERSION_CONFLICT' });
+      const saved = {
+        id,
+        version: (existing?.version ?? 0) + 1,
+        configuration: input,
+        updatedAt: new Date().toISOString(),
+      };
+      state.gateway.rules = [...state.gateway.rules.filter((item) => item.id !== id), saved];
+      return writeJson(response, 200, saved);
+    }
+    if (method === 'DELETE' && suffix.startsWith('/limits/')) {
+      const id = decodeURIComponent(suffix.slice('/limits/'.length));
+      const existing = state.gateway.rules.find((item) => item.id === id);
+      if (existing?.version !== Number(query.get('expectedVersion')))
+        return writeJson(response, 409, { code: 'VERSION_CONFLICT' });
+      state.gateway.rules = state.gateway.rules.filter((item) => item.id !== id);
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (suffix.startsWith('/quotas/')) {
+      if (method === 'POST') {
+        const input = jsonBody(rawBody);
+        state.gateway.quota = suffix.endsWith('/refresh') ? input.quota : state.gateway.quota + input.value;
+      }
+      return writeJson(response, 200, { consumer: 'aep.demo.admin', quota: state.gateway.quota });
+    }
+    if (method === 'POST' && suffix.endsWith('/test-access')) {
+      const id = decodeURIComponent(suffix.split('/')[2]);
+      const model = state.models.find((item) => item.id === id);
+      return writeJson(response, 200, {
+        modelId: id,
+        protocol: model.protocol,
+        baseUrl: model.protocol === 'anthropic' ? `http://gateway.test/${id}` : 'http://gateway.test/v1',
+        path: model.protocol === 'anthropic' ? '/v1/messages' : '/chat/completions',
+        modelAccessToken: 'e2e-disposable-model-token',
+        expiresAt: new Date(Date.now() + 120000).toISOString(),
+      });
+    }
+  }
+  if (method === 'POST' && (pathname === '/v1/chat/completions' || pathname.endsWith('/v1/messages'))) {
+    const input = jsonBody(rawBody);
+    state.gateway.inference.push(input);
+    if (input.stream) {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream', 'X-Request-ID': 'e2e-model-call' });
+      response.write('data: {"choices":[{"delta":{"content":"fixture-stream"}}]}\n\n');
+      response.end('data: [DONE]\n\n');
+      return;
+    }
+    return writeJson(response, 200, { choices: [{ message: { content: 'fixture-json' } }] });
+  }
   if (method === 'GET' && pathname === '/api/v1/employees')
     return writeJson(response, 200, { employees: state.employees });
   if (method === 'POST' && pathname.match(/^\/api\/v1\/knowledge\/employees\/[^/]+\/search$/))
@@ -227,11 +418,11 @@ async function route(method, pathname, rawBody, response, query) {
       const chunk = chunks.find((item) => item.id === chunkId);
       if (!chunk) return writeJson(response, 404, { code: 'CHUNK_NOT_FOUND' });
       const input = jsonBody(rawBody);
-      if (typeof input.content === 'string' && input.content !== chunk.content) {
-        chunk.content = input.content;
-        chunk.content_revision += 1;
-      }
-      if (typeof input.is_enabled === 'boolean') chunk.is_enabled = input.is_enabled;
+      const nextContent = typeof input.content === 'string' ? input.content.trim() : chunk.content;
+      const nextEnabled = typeof input.is_enabled === 'boolean' ? input.is_enabled : chunk.is_enabled;
+      if (nextContent !== chunk.content || nextEnabled !== chunk.is_enabled) chunk.content_revision += 1;
+      chunk.content = nextContent;
+      chunk.is_enabled = nextEnabled;
       return writeJson(response, 200, { data: chunk, operationId: `chunkop-${state.nextId++}` });
     }
   }
@@ -368,7 +559,13 @@ async function route(method, pathname, rawBody, response, query) {
     const faqListMatch = suffix.match(/^([^/]+)\/faq\/entries$/);
     const faqEntryMatch = suffix.match(/^([^/]+)\/faq\/entries\/(\d+)$/);
     const operationBase =
-      tagListMatch?.[1] ?? tagItemMatch?.[1] ?? grantsMatch?.[1] ?? foldersMatch?.[1] ?? folderMoveMatch?.[1] ?? faqListMatch?.[1] ?? faqEntryMatch?.[1];
+      tagListMatch?.[1] ??
+      tagItemMatch?.[1] ??
+      grantsMatch?.[1] ??
+      foldersMatch?.[1] ??
+      folderMoveMatch?.[1] ??
+      faqListMatch?.[1] ??
+      faqEntryMatch?.[1];
     if (operationBase) {
       const baseId = decodeURIComponent(operationBase);
       const base = state.knowledgeBases.find((item) => item.id === baseId);
@@ -460,7 +657,10 @@ async function route(method, pathname, rawBody, response, query) {
           created_at: new Date().toISOString(),
           ...jsonBody(rawBody),
         };
-        if (entry.tag_id) entry.tag_name = state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ?? '';
+        if (entry.tag_id)
+          entry.tag_name =
+            state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ??
+            '';
         state.knowledgeFAQ.push(entry);
         return writeJson(response, 200, { data: entry, operationId: `faqop-${state.nextId++}` });
       }
@@ -473,7 +673,9 @@ async function route(method, pathname, rawBody, response, query) {
           entry.tag_id = 0;
           entry.tag_name = '';
         }
-        entry.tag_name = state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ?? '';
+        entry.tag_name =
+          state.knowledgeTags.find((tag) => tag.knowledge_base_id === baseId && tag.seq_id === entry.tag_id)?.name ??
+          '';
         entry.updated_at = new Date().toISOString();
         return writeJson(response, 200, { data: entry, operationId: `faqop-${state.nextId++}` });
       }
@@ -809,6 +1011,21 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === 'GET' && pathname === '/aep/v1/admin/events')
     return writeJson(response, 200, { items: [], nextCursor: null });
+  if (method === 'GET' && pathname === '/aep/v1/admin/audit/authentication')
+    return writeJson(response, 200, {
+      items: [
+        {
+          cursor: '1',
+          userId: 'user-1',
+          eventType: 'login.failed',
+          outcome: 'failure',
+          reason: 'invalid_credentials',
+          sourceHash: 'fixture-source-hash',
+          createdAt: '2026-10-10T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
   if (method === 'GET' && pathname === '/aep/v1/admin/control-events')
     return writeJson(response, 200, {
       items: state.controlEvents,
