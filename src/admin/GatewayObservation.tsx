@@ -91,7 +91,7 @@ function logTime(row: GatewayLogRow): string {
   }
 }
 
-export function GatewayObservation({ client, identity }: GatewayProps) {
+export function GatewayObservation({ client, identity, onPrices }: GatewayProps & { onPrices?: () => void }) {
   const { token } = theme.useToken();
   const canReadRequests = hasAdminPermission(identity, AdminPermission.EventsRead);
   const capabilities = useGatewayRemote(useCallback(() => client.getGatewayCapabilities(), [client]));
@@ -448,7 +448,11 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
         </Col>
         <Col xs={24}>
           <Card title={t('gatewayCostStatistics')}>
-            <Empty description={t('gatewayNotProvided')} />
+            <Empty description={t('gatewayNotProvided')}>
+              {onPrices && hasAdminPermission(identity, AdminPermission.ModelsRead) ? (
+                <Button onClick={onPrices}>{t('modelPricingGoToModels')}</Button>
+              ) : null}
+            </Empty>
             <Typography.Text type="secondary">{t('gatewayCostSourcePending')}</Typography.Text>
           </Card>
         </Col>

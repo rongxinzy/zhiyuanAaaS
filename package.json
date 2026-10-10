@@ -16,6 +16,7 @@
     "verify:admin:e2e": "npm run build:admin && node scripts/verify-admin-crud-browser.mjs",
     "verify:workbench:e2e": "npm run build:admin && node scripts/verify-workbench-browser.mjs",
     "verify:admin:real-e2e": "npm run build:admin && node scripts/verify-admin-real-e2e.mjs",
+    "verify:admin:pricing:e2e": "npm run build:admin && node scripts/verify-model-pricing-browser.mjs",
     "build:extension": "tsup",
     "build:ui": "vite build",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest && npm run verify:admin",
