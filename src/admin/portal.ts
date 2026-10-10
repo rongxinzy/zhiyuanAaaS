@@ -311,10 +311,7 @@ export class PortalClient {
   // flashing between the console and the conversation. Returns false when
   // any step fails; callers fall back to the portal /chat handoff link.
   async mintChatSession(employee: string): Promise<boolean> {
-    const token = await this.#tokenProvider();
-    if (!token) return false;
-    const session = await this.#request('POST', '/api/v1/session', { token });
-    if (session.status !== 200) return false;
+    if ((await this.mintPortalSession()) !== 200) return false;
     const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1];
     if (!csrf) return false;
     const selected = await this.#request(
@@ -324,6 +321,18 @@ export class PortalClient {
       { 'X-CSRF-Token': decodeURIComponent(csrf) },
     );
     return selected.status === 200;
+  }
+
+  // Mint the basic portal session (no employee selection) so an embedded
+  // surface — the workbench messenger iframe — can use the /api chat and
+  // directory endpoints under the console's same-origin proxy. Returns the
+  // HTTP status so callers can distinguish an expired AEP session (401)
+  // from transport/gateway failures.
+  async mintPortalSession(): Promise<number> {
+    const token = await this.#tokenProvider();
+    if (!token) return 401;
+    const session = await this.#request('POST', '/api/v1/session', { token });
+    return session.status;
   }
 
   async listEmployees(): Promise<readonly PortalEmployee[]> {

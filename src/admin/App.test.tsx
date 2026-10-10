@@ -261,7 +261,7 @@ describe('Ant Design admin shell', () => {
       identity: administratorIdentity,
     });
     render(<AdminApp />);
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    expect(await screen.findByText('消息')).toBeInTheDocument();
     expect(screen.queryByText('没有管理权限')).not.toBeInTheDocument();
     // No admin sidebar for employees.
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
@@ -278,7 +278,7 @@ describe('Ant Design admin shell', () => {
     });
     window.location.hash = 'employees';
     render(<AdminApp />);
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    expect(await screen.findByText('消息')).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe('#workbench'));
   });
   test('lets administrators switch between the console and the workbench', async () => {
@@ -286,7 +286,7 @@ describe('Ant Design admin shell', () => {
     render(<AdminApp />);
     await screen.findByRole('heading', { name: '概览' });
     fireEvent.click(screen.getByRole('button', { name: '工作台' }));
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
+    expect(await screen.findByText('消息')).toBeInTheDocument();
     expect(window.location.hash).toBe('#workbench');
     fireEvent.click(screen.getByRole('button', { name: '管理后台' }));
     expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();

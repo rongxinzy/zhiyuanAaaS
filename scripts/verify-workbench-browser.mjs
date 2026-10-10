@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -15,6 +16,13 @@ import { createAdminFixture, state } from './admin-browser-fixture.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const screenshots = process.env.ZHIYUAN_ADMIN_SCREENSHOTS ?? '/tmp/zhiyuan-workbench-qa';
 const api = createAdminFixture();
+// Companion messenger stub: the workbench home embeds /companion/ through the
+// admin server's proxy; a minimal page stands in for the real messenger so the
+// iframe contract (mint → embed) is asserted without a live companion pod.
+const companionStub = http.createServer((request, response) => {
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  response.end('<!doctype html><html><body><main id="messenger-stub">messenger stub</main></body></html>');
+});
 let server;
 let browser;
 let page;
@@ -23,6 +31,7 @@ const checks = [];
 try {
   await fs.mkdir(screenshots, { recursive: true });
   const apiPort = await listen(api);
+  const companionPort = await listen(companionStub);
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [path.join(root, 'scripts/serve-admin.mjs')], {
@@ -32,41 +41,86 @@ try {
       ZHIYUAN_ADMIN_PORT: String(port),
       ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
       ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
+      ZHIYUAN_COMPANION_BASE_URL: `http://127.0.0.1:${companionPort}`,
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await waitForHttp(origin);
-  browser = await chromium.launch({
-    headless: true,
-    executablePath: await findChrome(),
-  });
-  page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  // Local Chrome binary, or an already-running headless Chrome over CDP
+  // (ZHIYUAN_CHROME_CDP=http://127.0.0.1:9222) when no executable exists.
+  const cdp = process.env.ZHIYUAN_CHROME_CDP;
+  if (cdp) {
+    browser = await chromium.connectOverCDP(cdp);
+    page = await browser.contexts()[0].newPage();
+  } else {
+    browser = await chromium.launch({
+      headless: true,
+      executablePath: await findChrome(),
+    });
+    page = await browser.newPage();
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   page.setDefaultTimeout(10000);
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') errors.push(message.text());
   });
 
-  // --- Regular member ("zhang"): straight into the workbench, no 403 wall.
+  // --- Regular member ("zhang"): straight into the workbench messenger.
   await page.goto(origin, { waitUntil: 'networkidle' });
   await page.getByLabel('用户名', { exact: true }).fill('zhang');
   await page.getByLabel('密码', { exact: true }).fill('e2e-test-password');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await page.getByRole('heading', { name: '我的工作台', exact: true }).waitFor();
+  await page.getByText('消息', { exact: true }).first().waitFor();
   assert.equal(await page.getByText('没有管理权限').count(), 0);
   assert.equal(new URL(page.url()).hash, '#workbench');
   assert.equal(await page.getByRole('menuitem').count(), 0, 'Employees get no admin sidebar');
-  const rosterRow = page.getByRole('row').filter({ hasText: 'E2E 销售助理' });
-  await rosterRow.waitFor();
-  assert.equal(await rosterRow.getByText('全体成员', { exact: true }).count(), 1, 'Access reason column');
-  assert.equal(await rosterRow.getByText('已发布', { exact: true }).count(), 1, 'Phase column');
-  await page.getByText('销售数据助理', { exact: true }).first().waitFor();
+  // The portal session is minted, then the messenger iframe embeds through
+  // the same-origin /companion/ proxy.
+  const messenger = page.locator('iframe[title="消息"]');
+  await messenger.waitFor();
+  await page.frameLocator('iframe[title="消息"]').locator('#messenger-stub').waitFor();
   await page.screenshot({
     path: path.join(screenshots, 'workbench-home.png'),
     fullPage: true,
     animations: 'disabled',
   });
-  checks.push('regular member lands in the workbench: roster with access reason/phase plus own requests');
+  checks.push('regular member lands in the workbench: session minted and messenger iframe embedded');
+
+  // --- Proxy hardening regressions (review findings B1/B2).
+  // Malformed request-target: llhttp accepts it, WHATWG URL rejects it — the
+  // server must answer 4xx and stay alive (one packet must not kill the
+  // console + WeKnora process).
+  {
+    const { socket, statusLine } = await rawStatusLine(port, 'GET http://[ HTTP/1.1');
+    socket.destroy();
+    assert.match(statusLine ?? '', /^HTTP\/1\.[01] 4\d\d/, 'malformed request-target must get a 4xx');
+    const alive = await fetch(origin).then((r) => r.ok).catch(() => false);
+    assert.ok(alive, 'server must survive a malformed request-target');
+    checks.push('malformed request-target answered 4xx without killing the process');
+  }
+  // Open-proxy guard: `/companion//<host>/x` must route to the configured
+  // companion target's `/<host>/x` path — never reinterpret `<host>` as an
+  // authority. A second stub proves no request escapes to arbitrary hosts.
+  {
+    let escapeAttempts = 0;
+    const escapeTarget = http.createServer(() => {
+      escapeAttempts += 1;
+    });
+    const escapePort = await listen(escapeTarget);
+    const res = await fetch(`${origin}/companion//127.0.0.1:${escapePort}/steal`, {
+      headers: { cookie: 'de_portal_session=x; csrf_token=y' },
+    }).catch(() => null);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    escapeTarget.close();
+    assert.equal(escapeAttempts, 0, 'companion proxy must not become an open relay');
+    if (res) {
+      assert.ok([400, 404, 502].includes(res.status) || res.status === 200, `unexpected status ${res.status}`);
+      // Whatever answered, it must be the configured stub (path-routed), not
+      // the escape target: the escape server saw zero requests.
+    }
+    checks.push('companion double-slash does not reinterpret host authority (no open relay)');
+  }
 
   // --- Apply: the form parks a request and lands on the submitted page.
   await page.getByRole('button', { name: /申请数字员工/ }).click();
@@ -120,7 +174,7 @@ try {
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.getByRole('heading', { name: '概览', exact: true }).waitFor();
   await page.getByRole('button', { name: '工作台', exact: true }).click();
-  await page.getByRole('heading', { name: '我的工作台', exact: true }).waitFor();
+  await page.locator('iframe[title="消息"]').waitFor();
   assert.equal(await page.getByRole('button', { name: '管理后台', exact: true }).count(), 1);
   await page.screenshot({
     path: path.join(screenshots, 'workbench-as-admin.png'),
@@ -152,11 +206,37 @@ try {
   await browser?.close().catch(() => undefined);
   server?.kill();
   api.close();
+  companionStub.close();
 }
 
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return server.address().port;
+}
+
+// Sends one raw request line over a socket and resolves with the response's
+// status line (or null on early close). Playwright cannot emit malformed
+// request-targets; this regression needs the raw wire.
+function rawStatusLine(port, requestLine) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1');
+    socket.setTimeout(5000, () => {
+      socket.destroy();
+      resolve({ socket, statusLine: null });
+    });
+    socket.on('error', (error) => {
+      socket.destroy();
+      resolve({ socket, statusLine: null, error: error.message });
+    });
+    socket.on('connect', () => {
+      socket.write(`${requestLine}\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+    });
+    socket.on('data', (chunk) => {
+      const statusLine = chunk.toString('latin1').split('\r\n')[0];
+      socket.destroy();
+      resolve({ socket, statusLine });
+    });
+  });
 }
 async function freePort() {
   const server = http.createServer();

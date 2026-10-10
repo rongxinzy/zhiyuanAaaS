@@ -9,6 +9,11 @@ const proxyTargets = Object.freeze([
   // Digital-employee portal APIs, same-origin like /aep (no CORS, CSP stays 'self').
   Object.freeze({ prefix: '/api/', target: new URL(process.env.ZHIYUAN_PORTAL_BASE_URL ?? 'http://localhost:30190') }),
 ]);
+// Companion messenger (Pi Durable 搭档): embedded as a same-origin iframe from
+// the workbench home (/companion/). Streamed — not buffered — so the 搭档 SSE
+// (/api/conversations/:id/stream) passes through live. The prefix is stripped
+// before proxying; the companion server stays prefix-unaware.
+const companionTarget = new URL(process.env.ZHIYUAN_COMPANION_BASE_URL ?? 'http://localhost:8080');
 const port = Number(process.env.ZHIYUAN_ADMIN_PORT ?? 5173);
 // The WeKnora frontend cannot live under a /weknora/ subpath here: its build
 // references assets with root-absolute paths and its runtime calls /api/v1,
@@ -42,10 +47,39 @@ const securityHeaders = Object.freeze({
 });
 
 const server = http.createServer(async (request, response) => {
-  for (const [name, value] of Object.entries(securityHeaders)) {
-    response.setHeader(name, value);
+  // Companion routes set their own (embedding-aware) policy inside
+  // proxyCompanion — pre-setting the base headers here would layer a second
+  // CSP on top; with multiple policies the strictest directives win, so the
+  // base frame-ancestors 'none' + X-Frame-Options DENY would block the
+  // workbench iframe.
+  let isCompanionRoute = false;
+  try {
+    // Inside the try: llhttp accepts request-targets that WHATWG URL rejects
+    // (`GET http://[ HTTP/1.1`); an uncaught parse error here would take the
+    // whole process (console + WeKnora proxy) down with one packet.
+    const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+    isCompanionRoute = pathname === '/companion' || pathname.startsWith('/companion/');
+  } catch {
+    response.writeHead(400).end('Bad request');
+    return;
+  }
+  if (!isCompanionRoute) {
+    for (const [name, value] of Object.entries(securityHeaders)) {
+      response.setHeader(name, value);
+    }
   }
   try {
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    // /companion → /companion/ : the messenger's relative asset URLs resolve
+    // against the document directory, so the trailing slash is load-bearing.
+    if (url.pathname === '/companion') {
+      response.writeHead(301, { location: '/companion/' }).end();
+      return;
+    }
+    if (url.pathname === '/companion/' || url.pathname.startsWith('/companion/')) {
+      await proxyCompanion(request, response, url);
+      return;
+    }
     const route = proxyTargets.find((candidate) => request.url?.startsWith(candidate.prefix));
     if (route) {
       await proxy(request, response, route.target, { policy: true });
@@ -104,6 +138,75 @@ async function proxy(request, response, target, { policy }) {
   }
   response.writeHead(result.status, forwarded);
   response.end(Buffer.from(await result.arrayBuffer()));
+}
+
+// Companion proxy: same shape as proxy() but STREAMS the body (the messenger's
+// SSE must not be buffered) and, for HTML documents, swaps the embedding-hostile
+// headers (frame-ancestors 'none' + X-Frame-Options DENY) for frame-ancestors
+// 'self' so the workbench iframe can load it. Sub-resources keep the full
+// policy: script-src 'self' still covers the messenger's module bundle.
+async function proxyCompanion(request, response, url) {
+  // Assign the path onto a parsed copy of the target — never string-replace
+  // and re-parse. `/companion//evil/x` strips to `//evil/x`, and a WHATWG
+  // parse of that treats `evil` as the AUTHORITY: one line of string
+  // surgery turns this proxy into an open relay that forwards the caller's
+  // portal cookies to an arbitrary host.
+  const upstream = new URL(companionTarget);
+  upstream.pathname = url.pathname.replace(/^\/companion\/?/, '/');
+  upstream.search = url.search;
+  const headers = { ...request.headers, host: upstream.host };
+  const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : request;
+  let result;
+  try {
+    result = await fetch(upstream, { method: request.method, headers, body, duplex: body ? 'half' : undefined });
+  } catch (error) {
+    // Upstream unreachable: answer with the console's own headers rather
+    // than a bare 502 (the pre-set header loop was skipped for this route).
+    for (const [name, value] of Object.entries(securityHeaders)) {
+      response.setHeader(name, value);
+    }
+    response.writeHead(502).end('Bad gateway');
+    return;
+  }
+  const forwarded = { ...Object.fromEntries(result.headers) };
+  delete forwarded['set-cookie'];
+  delete forwarded['content-encoding']; // undici already decompressed the stream
+  delete forwarded['content-length']; // may mismatch after decompression
+  delete forwarded['transfer-encoding'];
+  const setCookies = result.headers.getSetCookie?.() ?? [];
+  if (setCookies.length > 0) {
+    response.setHeader('set-cookie', setCookies);
+  }
+  const isHtml = (forwarded['content-type'] ?? '').includes('text/html');
+  Object.assign(forwarded, securityHeaders);
+  if (isHtml) {
+    // Embeddable document: the base policy's frame-ancestors 'none' CSP
+    // directive and X-Frame-Options DENY would block the workbench iframe.
+    delete forwarded['x-frame-options'];
+    forwarded['content-security-policy'] = securityHeaders['content-security-policy'].replace(
+      "frame-ancestors 'none'",
+      "frame-ancestors 'self'",
+    );
+  }
+  response.writeHead(result.status, forwarded);
+  if (!result.body) {
+    response.end();
+    return;
+  }
+  const reader = result.body.getReader();
+  request.on('close', () => {
+    reader.cancel().catch(() => {});
+  });
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      response.write(Buffer.from(value));
+    }
+  } catch {
+    // client disconnect or upstream error mid-stream: end quietly
+  }
+  response.end();
 }
 
 function contentType(file) {

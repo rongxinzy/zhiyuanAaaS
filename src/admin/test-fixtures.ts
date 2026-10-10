@@ -39,6 +39,7 @@ export function workbenchPortal(overrides: Record<string, unknown> = {}): Portal
     getRequest: vi.fn(),
     apply: vi.fn(),
     mintChatSession: vi.fn().mockResolvedValue(true),
+    mintPortalSession: vi.fn().mockResolvedValue(200),
     ...overrides,
   } as unknown as PortalClient;
 }

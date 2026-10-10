@@ -121,6 +121,11 @@ const zh = {
   timelineDecidedBy: '审批人',
   backToRequests: '返回申请列表',
   notProvided: '—',
+  messengerTitle: '消息',
+  messengerHint: '与搭档、数字员工和同事对话；搭档置顶。',
+  messengerMintFailed: '工作台会话建立失败，重试后再打开消息。',
+  messengerLoading: '正在打开消息…',
+  retry: '重试',
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -242,6 +247,11 @@ const en: Record<keyof typeof zh, string> = {
   timelineDecidedBy: 'Approver',
   backToRequests: 'Back to requests',
   notProvided: '—',
+  messengerTitle: 'Messages',
+  messengerHint: 'Chat with your companion, digital employees, and colleagues.',
+  messengerMintFailed: 'Could not establish the portal session; retry to open messages.',
+  messengerLoading: 'Opening messages…',
+  retry: 'Retry',
 };
 
 export const workbenchCopy: Record<AdminLanguage, Record<keyof typeof zh, string>> = { zh, en };
