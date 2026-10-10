@@ -43,7 +43,7 @@ import {
   type PortalEmployee,
   type PortalEmployeeUpdateInput,
   type PortalRequest,
-  portalChatBaseURL,
+  botUIBaseURL,
 } from './portal.js';
 import { MemoryView } from './ServiceStatus.js';
 
@@ -1341,7 +1341,7 @@ function EmployeeDetail({
   const [editing, setEditing] = useState(false);
   // The real web entry for this employee on the portal host. It never
   // contains an access token — sessions are minted by the portal itself.
-  const entryURL = `${portalChatBaseURL()}/chat?employee=${encodeURIComponent(employee.name)}`;
+  const entryURL = `${botUIBaseURL()}/#/emp/${encodeURIComponent(employee.name)}`;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">

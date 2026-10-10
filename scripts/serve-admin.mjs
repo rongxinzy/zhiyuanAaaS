@@ -109,6 +109,7 @@ async function proxy(request, response, target, { policy }) {
   response.end(Buffer.from(await result.arrayBuffer()));
 }
 
+
 function contentType(file) {
   if (file.endsWith('.html')) return 'text/html; charset=utf-8';
   if (file.endsWith('.js')) return 'text/javascript; charset=utf-8';

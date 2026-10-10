@@ -306,6 +306,15 @@ async function route(method, pathname, rawBody, response, query) {
   }
   if (method === 'GET' && pathname === '/api/v1/employees')
     return writeJson(response, 200, { employees: state.employees });
+  // Portal session mint for the embedded workbench messenger: the console
+  // trades its AEP bearer for portal cookies before mounting the iframe.
+  if (method === 'POST' && pathname === '/api/v1/session') {
+    response.writeHead(200, {
+      'content-type': 'application/json',
+      'set-cookie': ['de_portal_session=fixed-e2e-session; Path=/', 'csrf_token=e2e-csrf; Path=/'],
+    });
+    return response.end(JSON.stringify({ ok: true }));
+  }
   if (method === 'POST' && pathname === '/api/v1/employees') {
     const input = jsonBody(rawBody);
     if (state.employees.some((employee) => employee.name === input.name))
