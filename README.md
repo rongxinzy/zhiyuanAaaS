@@ -19,8 +19,14 @@ npm ci
 npm run check
 ```
 
-The Admin Console is a standalone browser entrypoint for enterprise operators. Start the AEP
-control service first, then run the console in a second terminal:
+The Admin Console is a standalone browser entrypoint for enterprise operators.
+
+Admin UI changes follow [DESIGN.md](DESIGN.md) and the Admin Console section of
+[AGENTS.md](AGENTS.md): use Ant Design components and the existing root `ConfigProvider` tokens.
+The browser console's `src/admin` styles are separate from the enterprise renderer's `src/ui`
+styles; Tea/shadcn reference assets are not the Admin Console design system.
+
+Start the AEP control service first, then run the console in a second terminal:
 
 ```bash
 npm run dev:admin
