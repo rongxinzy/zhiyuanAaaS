@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { gatewayOrigin, proxyGatewayTest } from './scripts/admin-gateway-proxy.mjs';
 
 const repositoryRoot = path.dirname(fileURLToPath(import.meta.url));
 const securityHeaders = {
@@ -29,7 +30,25 @@ const securityHeaders = {
 export default defineConfig({
   root: path.resolve(repositoryRoot, 'src/admin'),
   base: './',
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    {
+      name: 'zhiyuan-admin-gateway-test',
+      configureServer(server) {
+        const target = gatewayOrigin(process.env.ZHIYUAN_GATEWAY_ORIGIN);
+        server.middlewares.use((request, response, next) => {
+          if (!proxyGatewayTest(request, response, target)) next();
+        });
+      },
+      configurePreviewServer(server) {
+        const target = gatewayOrigin(process.env.ZHIYUAN_GATEWAY_ORIGIN);
+        server.middlewares.use((request, response, next) => {
+          if (!proxyGatewayTest(request, response, target)) next();
+        });
+      },
+    },
+  ],
   resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
   build: {
     outDir: path.resolve(repositoryRoot, 'dist/admin'),

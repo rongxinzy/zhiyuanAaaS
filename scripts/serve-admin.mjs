@@ -2,8 +2,10 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gatewayOrigin, proxyGatewayTest } from './admin-gateway-proxy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/admin');
+const gatewayTarget = gatewayOrigin(process.env.ZHIYUAN_GATEWAY_ORIGIN);
 const proxyTargets = Object.freeze([
   Object.freeze({ prefix: '/aep/', target: new URL(process.env.ZHIYUAN_AEP_BASE_URL ?? 'http://localhost:8080') }),
   // Digital-employee portal APIs, same-origin like /aep (no CORS, CSP stays 'self').
@@ -46,6 +48,7 @@ const server = http.createServer(async (request, response) => {
     response.setHeader(name, value);
   }
   try {
+    if (proxyGatewayTest(request, response, gatewayTarget)) return;
     const route = proxyTargets.find((candidate) => request.url?.startsWith(candidate.prefix));
     if (route) {
       await proxy(request, response, route.target, { policy: true });
