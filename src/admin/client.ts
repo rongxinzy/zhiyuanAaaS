@@ -154,6 +154,8 @@ export interface AdminSkillAssignment {
   readonly skillId: string;
   readonly subjectType: string;
   readonly subjectId: string;
+  /** ISO expiry. null = a perpetual grant; undefined = the server reported none. */
+  readonly expiresAt?: string | null | undefined;
 }
 
 export const AdminSubjectType = {
@@ -714,10 +716,12 @@ export class AdminConsoleClient {
   async createSkillAssignment(input: {
     readonly skillId: string;
     readonly subject: AdminAssignmentSubject;
+    readonly expiresAt?: string | null;
   }): Promise<void> {
     await this.#requireClient().createSkillAssignment({
       skillId: input.skillId,
       subject: { type: input.subject.type, id: input.subject.id },
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
     });
   }
 
@@ -1676,6 +1680,10 @@ function parseAssignments(value: unknown): AdminSkillAssignment[] {
         skillId: record.skillId,
         subjectType,
         subjectId,
+        // Distinguish "the server said null (perpetual)" from "the server did
+        // not report an expiry at all" (an older API).
+        expiresAt:
+          record.expiresAt === null ? null : typeof record.expiresAt === 'string' ? record.expiresAt : undefined,
       },
     ];
   });
