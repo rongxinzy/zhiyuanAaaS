@@ -3364,6 +3364,13 @@ function SkillsSection({
           setForceSkill(skill);
           return;
         }
+        if (error instanceof AepProblem && error.status === 404) {
+          // A stale row (deleted elsewhere, or a double click): say so and
+          // refresh, instead of the generic "service unavailable" notice.
+          notify(AdminNotificationKind.Error, rc.skillDeleteGone);
+          await onChanged();
+          return;
+        }
         throw error;
       }
     });
