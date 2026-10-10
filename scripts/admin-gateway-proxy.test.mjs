@@ -124,3 +124,58 @@ test('returns a redacted transport failure', async () => {
   expect(response.status).toBe(502);
   expect(await response.text()).toBe('{"code":"GATEWAY_TEST_UNAVAILABLE"}');
 });
+
+test('pins the upstream authority and rejects raw path traversal or encoded route injection', async () => {
+  const seen = [];
+  let forbiddenReached = 0;
+  const forbidden = await serve((request, response) => {
+    forbiddenReached++;
+    request.resume();
+    response.end('{}');
+  });
+  const upstream = await serve((request, response) => {
+    seen.push({ path: request.url, host: request.headers.host });
+    request.resume();
+    request.on('end', () => response.end('{}'));
+  });
+  const proxy = await serve((request, response) => proxyGatewayTest(request, response, gatewayOrigin(upstream)));
+  const rawRequest = (route) =>
+    new Promise((resolve, reject) => {
+      const request = http.request(
+        proxy,
+        {
+          method: 'POST',
+          path: `/aep/gateway-test${route}`,
+          headers: {
+            Host: new URL(forbidden).host,
+            Authorization: 'Bearer disposable-token',
+            'Content-Type': 'application/json',
+          },
+        },
+        (response) => {
+          response.resume();
+          response.on('end', () => resolve(response.statusCode));
+        },
+      );
+      request.on('error', reject);
+      request.end('{}');
+    });
+  for (const path of [
+    `//${new URL(forbidden).host}/v1/chat/completions`,
+    '/model-a/../v1/chat/completions',
+    '/model-a%2F..%2Fadmin/v1/messages',
+    '/model-a\\..\\admin/v1/messages',
+    '/%2e%2e/v1/messages',
+    '/model-a/v1/messages?target=http://forbidden.test',
+    '/model-a/v1/messages#admin',
+  ])
+    expect(await rawRequest(path)).toBe(400);
+  expect(seen).toEqual([]);
+  expect(await rawRequest('/v1/chat/completions')).toBe(200);
+  expect(await rawRequest('/model-a_1.2/v1/messages')).toBe(200);
+  expect(seen).toEqual([
+    { path: '/v1/chat/completions', host: new URL(upstream).host },
+    { path: '/model-a_1.2/v1/messages', host: new URL(upstream).host },
+  ]);
+  expect(forbiddenReached).toBe(0);
+});

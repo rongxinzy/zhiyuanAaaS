@@ -21,10 +21,16 @@ export function gatewayOrigin(value = 'http://localhost:8090') {
 export function proxyGatewayTest(request, response, target) {
   if (!request.url?.startsWith(prefix)) return false;
   const path = request.url.slice(prefix.length);
-  const allowed = path === '/v1/chat/completions' || /^\/[A-Za-z0-9][A-Za-z0-9._-]{0,199}\/v1\/messages$/.test(path);
+  const modelRoute = /^\/([A-Za-z0-9][A-Za-z0-9._-]{0,199})\/v1\/messages$/.exec(path);
+  const upstreamPath =
+    path === '/v1/chat/completions'
+      ? '/v1/chat/completions'
+      : modelRoute
+        ? `/${encodeURIComponent(modelRoute[1])}/v1/messages`
+        : undefined;
   if (
     request.method !== 'POST' ||
-    !allowed ||
+    !upstreamPath ||
     !/^Bearer \S+$/.test(request.headers.authorization ?? '') ||
     !/^application\/json(?:;|$)/i.test(request.headers['content-type'] ?? '')
   ) {
@@ -39,15 +45,27 @@ export function proxyGatewayTest(request, response, target) {
     accept: 'application/json, text/event-stream',
     ...(request.headers['anthropic-version'] ? { 'anthropic-version': request.headers['anthropic-version'] } : {}),
   };
-  const upstream = transport.request(new URL(path, target), { method: 'POST', headers }, (result) => {
-    response.writeHead(result.statusCode ?? 502, {
-      'Content-Type': result.headers['content-type'] ?? 'application/json',
-      'Cache-Control': 'no-store',
-      ...(result.headers['x-request-id'] ? { 'X-Request-ID': result.headers['x-request-id'] } : {}),
-    });
-    result.on('error', () => response.destroy());
-    result.pipe(response);
-  });
+  // Keep the authority separate from the validated route. No browser value
+  // participates in URL resolution or chooses the upstream host or port.
+  const upstream = transport.request(
+    {
+      protocol: target.protocol,
+      hostname: target.hostname.replace(/^\[|\]$/g, ''),
+      port: target.port,
+      path: upstreamPath,
+      method: 'POST',
+      headers,
+    },
+    (result) => {
+      response.writeHead(result.statusCode ?? 502, {
+        'Content-Type': result.headers['content-type'] ?? 'application/json',
+        'Cache-Control': 'no-store',
+        ...(result.headers['x-request-id'] ? { 'X-Request-ID': result.headers['x-request-id'] } : {}),
+      });
+      result.on('error', () => response.destroy());
+      result.pipe(response);
+    },
+  );
   upstream.setTimeout(60_000, () => upstream.destroy(new Error('Gateway test timeout')));
   upstream.on('error', () => {
     if (!response.headersSent) {

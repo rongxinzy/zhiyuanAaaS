@@ -26,6 +26,8 @@ Vite 开发、Vite preview 和内置静态服务器都提供受限的同源
 
 代理仅接受 POST 到 `/v1/chat/completions` 或 `/{modelId}/v1/messages`，
 不允许任意目标、配额路径或重定向；不会转发浏览器 Cookie 与身份 Header。
+上游协议、主机和端口独立取自服务端配置；调用路径由服务端固定或按校验后的
+模型 ID 重建，浏览器路径不参与上游 URL 解析。
 生产反向代理需将保留路径 `/aep/gateway-test/*` 路由到 Admin 服务器，
 其他 `/aep/*` 路由到 AEP。仅部署静态文件时，需要提供等价的受限流式代理。
 上游模型密钥仍由 Higress 管理，浏览器不接收该密钥。
