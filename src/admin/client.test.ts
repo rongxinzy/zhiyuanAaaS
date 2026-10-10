@@ -37,6 +37,7 @@ const fullPermissions = [
   'sessions.write',
   'events.read',
   'events.write',
+  'audit.read',
   'data_plane.write',
   'deployment.read',
   'deployment.write',

@@ -45,6 +45,20 @@ function fixture() {
       ],
       nextCursor: null,
     }),
+    searchAuthenticationAudit: vi.fn().mockResolvedValue({
+      items: [
+        {
+          cursor: '7',
+          userId: 'user-a',
+          eventType: 'login.failed',
+          outcome: 'failure',
+          reason: 'invalid_credentials',
+          sourceHash: 'abcdef0123456789',
+          createdAt: '2026-10-10T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    }),
     publishControlEvent: vi.fn(),
     cancelControlEvent: vi.fn(),
   };
@@ -115,10 +129,15 @@ describe('read-only audit', () => {
     expect(await screen.findByText('failed')).toBeInTheDocument();
     expect(client.cancelControlEvent).not.toHaveBeenCalled();
   });
-  test('does not label telemetry as complete login history', async () => {
+  test('loads persisted login history with actor, reason and source', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={administratorIdentity} />);
     fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
-    expect(await screen.findByText('登录历史查询尚未接入')).toBeInTheDocument();
+    expect(await screen.findByText('登录失败')).toBeInTheDocument();
+    expect(client.searchAuthenticationAudit).toHaveBeenCalledWith({ limit: 50 });
+    expect(screen.getByText('user-a')).toBeInTheDocument();
+    expect(screen.getByText('invalid_credentials')).toBeInTheDocument();
+    expect(screen.getByText('abcdef012345')).toBeInTheDocument();
+    expect(screen.queryByText('登录历史查询尚未接入')).not.toBeInTheDocument();
   });
 });
