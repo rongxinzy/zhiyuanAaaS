@@ -70,7 +70,7 @@ test('retains existing audit rows when pagination fails and reports unknown erro
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   expect(await screen.findByText('知识审计读取失败')).toBeInTheDocument();
   expect(screen.getByText('kbop-delete')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: '加载更多' })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
 });
 
 test('ignores a stale pagination response after resetting the filter', async () => {
