@@ -320,41 +320,25 @@ describe('Ant Design admin shell', () => {
     await waitFor(() => expect(AdminConsoleClient.prototype.overview).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText('暂无法获取')).not.toBeInTheDocument());
   });
-  test('routes forbidden users into the workbench instead of a 403 wall', async () => {
+  test('forbidden users see the 403 screen with a jump to the employee front end', async () => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
       status: 'forbidden',
       identity: administratorIdentity,
     });
     render(<AdminApp />);
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
-    expect(screen.queryByText('没有管理权限')).not.toBeInTheDocument();
+    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开知远消息' })).toBeInTheDocument();
     // No admin sidebar for employees.
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
-    await waitFor(() => expect(window.location.hash).toBe('#workbench'));
-    // Signing out from the workbench header returns to the login screen.
-    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
-    expect(await screen.findByRole('heading', { name: '登录企业管理后台' })).toBeInTheDocument();
-    expect(AdminConsoleClient.prototype.logout).toHaveBeenCalledOnce();
   });
-  test('funnels admin deep links into the workbench for forbidden users', async () => {
+  test('forbidden users on admin deep links stay on the 403 screen', async () => {
     vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
       status: 'forbidden',
       identity: administratorIdentity,
     });
     window.location.hash = 'employees';
     render(<AdminApp />);
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
-    await waitFor(() => expect(window.location.hash).toBe('#workbench'));
-  });
-  test('lets administrators switch between the console and the workbench', async () => {
-    authenticated();
-    render(<AdminApp />);
-    await screen.findByRole('heading', { name: '概览' });
-    fireEvent.click(screen.getByRole('button', { name: '工作台' }));
-    expect(await screen.findByRole('heading', { name: '我的工作台' })).toBeInTheDocument();
-    expect(window.location.hash).toBe('#workbench');
-    fireEvent.click(screen.getByRole('button', { name: '管理后台' }));
-    expect(await screen.findByRole('heading', { name: '概览' })).toBeInTheDocument();
+    expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
   });
   test('forces a password change before entering the console when the session requires it', async () => {
     const changePassword = vi

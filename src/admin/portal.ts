@@ -1846,20 +1846,16 @@ function parseManagedKnowledgeFAQ(value: unknown): ManagedKnowledgeFAQEntry {
   };
 }
 
-// The chat entry lives on the portal origin (not proxied): the browser must
-// land there so the portal can set its own cookies. The portal runs on the
-// SAME host as the console (k3s NodePort 30190), so the default derives from
-// the console's own location — whatever hostname the user typed keeps
-// portal and chat UI on one hostname (cookies ignore ports, not hosts), and
-// nothing environment-specific is baked into the build. VITE_PORTAL_URL
+// The employee chat entry is the standalone zhiyuanBotUI (NodePort 30202 on
+// the same host as the console; it owns its own login). VITE_BOT_UI_URL
 // overrides for split deployments.
-export function chatUIBaseURL(): string {
+export function botUIBaseURL(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  if (env?.VITE_CHAT_UI_URL) return env.VITE_CHAT_UI_URL;
+  if (env?.VITE_BOT_UI_URL) return env.VITE_BOT_UI_URL;
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:30195`;
+    return `${window.location.protocol}//${window.location.hostname}:30202`;
   }
-  return 'http://localhost:30195';
+  return 'http://localhost:30202';
 }
 
 export function portalChatBaseURL(): string {

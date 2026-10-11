@@ -54,6 +54,7 @@ export function GatewayField({
   onChange,
   disabled = false,
   loading = false,
+  layout = 'vertical',
 }: {
   label: string;
   value?: string | undefined;
@@ -61,10 +62,14 @@ export function GatewayField({
   onChange: (value: string) => void;
   disabled?: boolean;
   loading?: boolean;
+  layout?: 'vertical' | 'horizontal';
 }) {
   const id = useId();
   return (
-    <Form layout="vertical">
+    <Form
+      layout={layout}
+      {...(layout === 'horizontal' ? { labelCol: { flex: 'none' }, wrapperCol: { flex: 'auto' } } : {})}
+    >
       <Form.Item label={label} htmlFor={id} style={{ marginBottom: 0 }}>
         <Select
           id={id}

@@ -38,10 +38,6 @@ try {
   // desktop renderer bundle only and must never leak into the admin build.
   assert.doesNotMatch(css, /\.tea-theme-/, 'Admin CSS must not include the Tea theme.');
   const chunks = await fs.readdir(path.join(root, 'assets'));
-  assert.ok(
-    chunks.some((asset) => /^Workbench-.*\.js$/.test(asset)),
-    'Admin bundle must include the workbench chunk.',
-  );
   console.log(JSON.stringify({ status: 'passed', origin: `http://127.0.0.1:${port}`, assets }));
 } finally {
   child.kill();

@@ -4,9 +4,11 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Descriptions,
   Drawer,
   Empty,
+  Form,
   Row,
   Space,
   Switch,
@@ -15,9 +17,10 @@ import {
   Typography,
   theme,
 } from 'antd';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dayjs, { type Dayjs } from 'dayjs';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AdminPermission, hasAdminPermission } from './client.js';
-import { GatewayMetricNote, GatewayTrend } from './GatewayTrend.js';
+import { GatewayMetricNote, GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
 import type {
   GatewayDimension,
   GatewayLogRow,
@@ -99,6 +102,9 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
   const [period, setPeriod] = useState('3600');
   const [step, setStep] = useState('60');
   const [end, setEnd] = useState(() => Date.now());
+  const [customRange, setCustomRange] = useState<[number, number]>();
+  const [rangeError, setRangeError] = useState(false);
+  const chartGroup = useId();
   const [source, setSource] = useState<'all' | 'gateway' | 'authorizer'>('all');
   const [errorsOnly, setErrorsOnly] = useState(true);
   const [detail, setDetail] = useState<GatewayLogRow>();
@@ -108,16 +114,22 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
   const [moreLoading, setMoreLoading] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const rangeStart = customRange?.[0] ?? end - Number(period) * 1000;
+  const rangeEnd = customRange?.[1] ?? end;
   const window: GatewayWindow = useMemo(
     () => ({
-      start: new Date(end - Number(period) * 1000).toISOString(),
-      end: new Date(end).toISOString(),
+      start: new Date(rangeStart).toISOString(),
+      end: new Date(rangeEnd).toISOString(),
       ...(filters.model ? { modelId: filters.model } : {}),
       ...(filters.user ? { userId: filters.user } : {}),
       ...(filters.team ? { teamId: filters.team } : {}),
       ...(filters.role ? { roleId: filters.role } : {}),
     }),
-    [end, period, filters],
+    [rangeStart, rangeEnd, filters],
+  );
+  const pickerRange = useMemo<[Dayjs, Dayjs]>(
+    () => [dayjs(window.start), dayjs(window.end)],
+    [window.start, window.end],
   );
   const requestQuery = useMemo<GatewayRequestQuery>(() => ({ ...window, source, limit: 200 }), [window, source]);
   const activeQuery = useRef(requestQuery);
@@ -252,7 +264,7 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
     }
   }
   function refresh() {
-    setEnd(Date.now());
+    if (!customRange) setEnd(Date.now());
     data.retry();
     health.retry();
     capabilities.retry();
@@ -329,11 +341,21 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
           <GatewayField
             label={t('gatewayPeriod')}
             value={period}
-            onChange={setPeriod}
+            onChange={(value) => {
+              setPeriod(value);
+              if (value === 'custom')
+                setCustomRange([new Date(window.start).getTime(), new Date(window.end).getTime()]);
+              else {
+                setCustomRange(undefined);
+                setEnd(Date.now());
+                setRangeError(false);
+              }
+            }}
             options={[
               { value: '3600', label: t('gatewayLastHour') },
               { value: '21600', label: t('gatewayLastSixHours') },
               { value: '86400', label: t('gatewayLastDay') },
+              { value: 'custom', label: t('gatewayCustomTime') },
             ]}
           />
         </Col>
@@ -350,13 +372,43 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
           />
         </Col>
         <Col xs={24} sm={8}>
-          <Typography.Text type="secondary">
-            {t('gatewayDeployment')}: {identity?.deployment?.name ?? identity?.deploymentId ?? '—'}
-            <br />
-            {new Date(window.start).toLocaleString()} — {new Date(window.end).toLocaleString()}
-          </Typography.Text>
+          <Form layout="vertical">
+            <Form.Item
+              label={t('gatewaySelectedTime')}
+              validateStatus={rangeError ? 'error' : ''}
+              help={rangeError ? t('gatewayTimeRangeInvalid') : undefined}
+              style={{ marginBottom: 0 }}
+            >
+              <DatePicker.RangePicker
+                className="gateway-time-range"
+                aria-label={t('gatewaySelectedTime')}
+                value={pickerRange}
+                showTime
+                needConfirm={false}
+                format="MM-DD HH:mm"
+                allowClear={false}
+                maxDate={dayjs()}
+                style={{ width: '100%' }}
+                onChange={(values) => {
+                  if (!values?.[0] || !values[1]) return;
+                  const range: [number, number] = [values[0].valueOf(), values[1].valueOf()];
+                  if (range[1] <= range[0] || range[1] > Date.now() || range[1] - range[0] > 31 * 86400 * 1000) {
+                    setRangeError(true);
+                    return;
+                  }
+                  setRangeError(false);
+                  setCustomRange(range);
+                  setPeriod('custom');
+                }}
+              />
+            </Form.Item>
+          </Form>
         </Col>
       </Row>
+      <Typography.Text type="secondary">
+        {t('gatewayDeployment')}: {identity?.deployment?.name ?? identity?.deploymentId ?? '—'} ·{' '}
+        {new Date(window.start).toLocaleString()} — {new Date(window.end).toLocaleString()}
+      </Typography.Text>
       <Alert type="info" showIcon title={t('gatewayWindowHint')} description={t('gatewayNativeOnly')} />
       {queryFailed ? <GatewayLoadError retry={data.retry} /> : null}
       <Row gutter={[token.margin, token.margin]}>
@@ -376,30 +428,55 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
         })}
       </Row>
       <Row gutter={[token.marginLG, token.marginLG]}>
-        <Col xs={24} xl={16}>
-          <GatewayTrend calls={data.value?.summary.calls?.result} failures={data.value?.summary.failures?.result} />
+        <Col xs={24} xl={12}>
+          <GatewayTrend
+            calls={data.value?.summary.calls?.result}
+            failures={data.value?.summary.failures?.result}
+            group={chartGroup}
+            window={window}
+            loading={data.loading}
+          />
         </Col>
-        <Col xs={24} xl={8}>
-          <Card title={t('gatewayEstimatedCost')}>
+        <Col xs={24} xl={12}>
+          <GatewayTokenTrend
+            input={data.value?.summary.input_tokens?.result}
+            output={data.value?.summary.output_tokens?.result}
+            group={chartGroup}
+            window={window}
+            loading={data.loading}
+          />
+        </Col>
+        <Col xs={24}>
+          <Card title={t('gatewayCostStatistics')}>
             <Empty description={t('gatewayNotProvided')} />
             <Typography.Text type="secondary">{t('gatewayCostSourcePending')}</Typography.Text>
           </Card>
         </Col>
       </Row>
-      <Space wrap>
-        <Typography.Title level={5} style={{ margin: 0 }}>
-          {t('gatewayGroups')}
-        </Typography.Title>
-        <GatewayField
-          label={t('gatewayGroupBy')}
-          value={group}
-          onChange={(value) => setGroup(value as GatewayDimension)}
-          options={(['user', 'team', 'role', 'model'] as const)
-            .filter((value) => capabilities.value?.dimensions.includes(value))
-            .map((value) => ({ value, label: t(dimensionLabels[value]) }))}
-          disabled={!capabilities.value}
-        />
-      </Space>
+      <Row
+        className="gateway-group-header"
+        justify="space-between"
+        align="middle"
+        gutter={[token.margin, token.marginSM]}
+      >
+        <Col xs={24} sm={8} lg={12}>
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {t('gatewayGroups')}
+          </Typography.Title>
+        </Col>
+        <Col xs={24} sm={16} lg={12} xl={8}>
+          <GatewayField
+            layout="horizontal"
+            label={t('gatewayGroupBy')}
+            value={group}
+            onChange={(value) => setGroup(value as GatewayDimension)}
+            options={(['user', 'team', 'role', 'model'] as const)
+              .filter((value) => capabilities.value?.dimensions.includes(value))
+              .map((value) => ({ value, label: t(dimensionLabels[value]) }))}
+            disabled={!capabilities.value}
+          />
+        </Col>
+      </Row>
       <Table
         aria-label={t('gatewayGroups')}
         rowKey="key"
@@ -453,27 +530,39 @@ export function GatewayObservation({ client, identity }: GatewayProps) {
       </Row>
       {canReadRequests ? (
         <>
-          <Row justify="space-between" gutter={[token.margin, token.margin]}>
-            <Col>
+          <Row
+            className="gateway-error-header"
+            justify="space-between"
+            align="middle"
+            gutter={[token.margin, token.marginSM]}
+          >
+            <Col xs={24} lg={8}>
               <Typography.Title level={5} style={{ margin: 0 }}>
                 {t('gatewayErrors')}
               </Typography.Title>
             </Col>
-            <Col>
-              <Space wrap>
-                <Switch aria-label={t('gatewayErrorsOnly')} checked={errorsOnly} onChange={setErrorsOnly} />
-                <Typography.Text>{t('gatewayErrorsOnly')}</Typography.Text>
-                <GatewayField
-                  label={t('gatewayErrorSource')}
-                  value={source}
-                  onChange={(value) => setSource(value as typeof source)}
-                  options={[
-                    { value: 'all', label: t('gatewayAllSources') },
-                    { value: 'gateway', label: t('modelGateway') },
-                    { value: 'authorizer', label: t('gatewayAuthSource') },
-                  ]}
-                />
-              </Space>
+            <Col xs={24} lg={16} xl={12}>
+              <Row align="middle" gutter={[token.margin, token.marginSM]}>
+                <Col xs={24} sm={12}>
+                  <Space>
+                    <Switch aria-label={t('gatewayErrorsOnly')} checked={errorsOnly} onChange={setErrorsOnly} />
+                    <Typography.Text>{t('gatewayErrorsOnly')}</Typography.Text>
+                  </Space>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <GatewayField
+                    layout="horizontal"
+                    label={t('gatewayErrorSource')}
+                    value={source}
+                    onChange={(value) => setSource(value as typeof source)}
+                    options={[
+                      { value: 'all', label: t('gatewayAllSources') },
+                      { value: 'gateway', label: t('modelGateway') },
+                      { value: 'authorizer', label: t('gatewayAuthSource') },
+                    ]}
+                  />
+                </Col>
+              </Row>
             </Col>
           </Row>
           {data.value?.logsFailed ? <GatewayLoadError retry={data.retry} /> : null}

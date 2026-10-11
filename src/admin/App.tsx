@@ -49,7 +49,7 @@ import {
 } from './client.js';
 import { translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
-import { PortalClient, type PortalEmployee } from './portal.js';
+import { botUIBaseURL, PortalClient, type PortalEmployee } from './portal.js';
 import { shellCopy as c } from './shell-copy.js';
 import {
   type AdminThemeMode,
@@ -58,7 +58,6 @@ import {
   persistAdminTheme,
   subscribeToSystemTheme,
 } from './theme.js';
-import { workbenchT } from './workbench-copy.js';
 
 const Resources = lazy(() => import('./Resources.js').then((m) => ({ default: m.Resources })));
 const Identity = lazy(() => import('./Identity.js').then((m) => ({ default: m.Identity })));
@@ -84,7 +83,6 @@ const DeploymentSettings = lazy(() =>
   })),
 );
 const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
-const Workbench = lazy(() => import('./Workbench.js').then((m) => ({ default: m.Workbench })));
 const GatewayCall = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayCall })));
 const GatewayObservation = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayObservation })));
 const GatewayLimits = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayLimits })));
@@ -257,13 +255,6 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     window.addEventListener('hashchange', change);
     return () => window.removeEventListener('hashchange', change);
   }, []);
-  useEffect(() => {
-    // Non-admin accounts only have the workbench: funnel every other hash
-    // into it so admin deep links cannot render an empty shell.
-    if (session?.status === AdminConsoleStatus.Forbidden && (route.split('/')[0] ?? '') !== 'workbench') {
-      navigate('workbench');
-    }
-  }, [session, route]);
   const signOut = async () => {
     setPending(true);
     try {
@@ -343,21 +334,21 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       />
     );
   const identity = session.identity;
-  // One login, two modes: accounts with admin-console access get the admin
-  // shell (plus a workbench switch in the header); everybody else lands in
-  // the employee workbench — no 403 wall.
+  // 管理端只服务管理员：普通员工使用独立员工前端（zhiyuanBotUI，NodePort 30202），
+  // 非管理员登录这里只看到无权限提示。
   const adminAccess = session.status === AdminConsoleStatus.Authenticated;
   const [page = 'overview', subpage] = route.split('/');
-  if (!adminAccess || page === 'workbench') {
+  if (!adminAccess) {
     return (
-      <Workbench
-        client={client}
-        identity={identity}
-        canManage={adminAccess}
-        route={page === 'workbench' ? route : 'workbench'}
-        themeControl={themeControl}
-        onSignOut={() => void signOut()}
-        signingOut={pending}
+      <Result
+        status="403"
+        title={c.forbidden}
+        subTitle={c.employeeConsoleHint}
+        extra={
+          <Button type="primary" onClick={() => window.open(botUIBaseURL(), '_blank', 'noopener')}>
+            {c.openEmployeeConsole}
+          </Button>
+        }
       />
     );
   }
@@ -561,7 +552,6 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
             {enterprise}
           </Typography.Text>
           <Space wrap>
-            <Button onClick={() => navigate('workbench')}>{workbenchT('switchToWorkbench')}</Button>
             {themeControl}
             <Typography.Text className="admin-user">{identity?.user.displayName}</Typography.Text>
             <Button aria-label={c.signOut} icon={<LogoutOutlined />} loading={pending} onClick={() => void signOut()}>

@@ -20,6 +20,30 @@ body {
 .admin-shell {
   min-height: 100vh;
 }
+.gateway-native-chart {
+  width: 100%;
+  min-width: 0;
+}
+.gateway-trend-card {
+  height: 100%;
+}
+.gateway-time-range {
+  /* Keep the picker's animated active bar inside its field during resize. */
+  overflow: clip;
+}
+.gateway-workbench .ant-space {
+  min-width: 0;
+}
+@media (max-width: 575px) {
+  .gateway-trend-card .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: var(--ant-margin-xs);
+    padding-block: var(--ant-padding-sm);
+  }
+  .gateway-trend-card .ant-card-extra {
+    margin-inline-start: 0;
+  }
+}
 .admin-body {
   min-width: 0;
 }

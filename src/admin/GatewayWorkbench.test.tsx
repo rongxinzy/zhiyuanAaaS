@@ -12,6 +12,7 @@ import {
 } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { AdminConsoleClient } from './client.js';
@@ -405,6 +406,41 @@ test('model readers can observe metrics without requesting restricted request lo
   await waitFor(() => expect(client.getGatewayMonitoringHealth).toHaveBeenCalledTimes(2));
   expect(client.searchGatewayRequests).not.toHaveBeenCalled();
 });
+test('custom time inputs reach AEP, survive refresh and return to preset windows', async () => {
+  const client = stub();
+  render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
+  await screen.findByText('用户甲');
+  await select('时间范围', '自定义时段');
+  const inputs = document.querySelectorAll<HTMLInputElement>('.gateway-time-range input');
+  const start = dayjs().subtract(2, 'hour').startOf('minute');
+  const end = dayjs().subtract(1, 'hour').startOf('minute');
+  fireEvent.focus(inputs[0]!);
+  fireEvent.change(inputs[0]!, { target: { value: start.format('MM-DD HH:mm') } });
+  fireEvent.keyDown(inputs[0]!, { key: 'Tab', code: 'Tab' });
+  fireEvent.blur(inputs[0]!);
+  fireEvent.focus(inputs[1]!);
+  fireEvent.change(inputs[1]!, { target: { value: end.format('MM-DD HH:mm') } });
+  fireEvent.keyDown(inputs[1]!, { key: 'Enter', code: 'Enter' });
+  fireEvent.blur(inputs[1]!);
+  await waitFor(() =>
+    expect(client.queryGatewayMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ start: start.toISOString(), end: end.toISOString() }),
+    ),
+  );
+  const count = client.queryGatewayMetrics.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: '刷新查询' }));
+  await waitFor(() => expect(client.queryGatewayMetrics.mock.calls.length).toBeGreaterThan(count));
+  expect(client.queryGatewayMetrics).toHaveBeenLastCalledWith(
+    expect.objectContaining({ start: start.toISOString(), end: end.toISOString() }),
+  );
+  fireEvent.keyDown(inputs[1]!, { key: 'Escape', code: 'Escape' });
+  await select('时间范围', '最近 6 小时');
+  await waitFor(() => {
+    const query = client.queryGatewayMetrics.mock.calls.at(-1)?.[0] as GatewayMetricQuery;
+    expect(Date.parse(query.end) - Date.parse(query.start)).toBe(6 * 3600 * 1000);
+  });
+});
+
 test('limit edits preserve version and subject × model; saving never publishes automatically', async () => {
   const client = stub();
   render(<GatewayLimits client={typed(client)} identity={administratorIdentity} />);

@@ -112,7 +112,6 @@ describe('admin digital employees', () => {
       deleteEmployee: vi.fn().mockResolvedValue(undefined),
       listRequests: vi.fn().mockResolvedValue([]),
       decideRequest: vi.fn().mockResolvedValue(undefined),
-      mintChatSession: vi.fn().mockResolvedValue(true),
       memoryStatus: vi.fn().mockResolvedValue(memoryStatus),
       memorySearch: vi.fn().mockResolvedValue({ memories: [] }),
       knowledgeStatus: vi.fn().mockResolvedValue({
@@ -159,10 +158,9 @@ describe('admin digital employees', () => {
   );
 
   test(
-    'opens chat in a new tab after the silent session handoff',
+    'opens the employee front end deep link in a new tab',
     async () => {
       const portal = makePortal();
-      // A truthy return means the browser accepted the new window.
       const open = vi.spyOn(window, 'open').mockReturnValue({} as WindowProxy);
       render(<DigitalEmployees client={client as never} portal={portal} />);
 
@@ -172,58 +170,10 @@ describe('admin digital employees', () => {
         within(screen.getByText('sales-helper').closest('tr')!).getByRole('button', { name: /测试对话/, hidden: true }),
       );
       await waitFor(() => expect(open).toHaveBeenCalledOnce());
-      expect(portal.mintChatSession).toHaveBeenCalledWith('sales-helper');
       const [href] = open.mock.calls[0]!;
-      expect(href).toContain('http://localhost:30195/workspace');
-      // The minted path never carries the access token.
+      // Deep link into the standalone employee front end (own login).
+      expect(href).toContain(':30202/#/emp/sales-helper');
       expect(href).not.toContain('token');
-      expect(screen.queryByText(/aep-token/)).not.toBeInTheDocument();
-      open.mockRestore();
-    },
-    TIMEOUT,
-  );
-
-  test(
-    'falls back to the portal fragment link when the silent handoff fails',
-    async () => {
-      const portal = makePortal({ mintChatSession: vi.fn().mockResolvedValue(false) });
-      const open = vi.spyOn(window, 'open').mockReturnValue({} as WindowProxy);
-      render(<DigitalEmployees client={client as never} portal={portal} />);
-
-      expect(await screen.findByText('sales-helper')).toBeInTheDocument();
-
-      fireEvent.click(
-        within(screen.getByText('sales-helper').closest('tr')!).getByRole('button', { name: /测试对话/, hidden: true }),
-      );
-      await waitFor(() => expect(open).toHaveBeenCalledOnce());
-      const [href] = open.mock.calls[0]!;
-      // Derived from the test page's own origin (jsdom serves from
-      // localhost), never hardcoded: whichever host serves the console
-      // yields the same host on the portal port.
-      expect(href).toContain('http://localhost:30190/chat?employee=sales-helper#token=aep-token');
-      // The token travels in the opened URL only; it is never rendered.
-      expect(screen.queryByText(/aep-token/)).not.toBeInTheDocument();
-      open.mockRestore();
-    },
-    TIMEOUT,
-  );
-
-  test(
-    'popup-blocked handoff offers an explicit token-free link instead of claiming success',
-    async () => {
-      const portal = makePortal();
-      // null = the browser blocked the programmatic open after the await.
-      const open = vi.spyOn(window, 'open').mockReturnValue(null);
-      render(<DigitalEmployees client={client as never} portal={portal} />);
-
-      const employeeRow = (await screen.findByText('sales-helper')).closest('tr')!;
-      fireEvent.click(within(employeeRow).getByRole('button', { name: /测试对话/, hidden: true }));
-
-      expect(await screen.findByText(/浏览器拦截了新窗口/)).toBeInTheDocument();
-      const link = screen.getByRole('link', { name: /进入对话/ }) as HTMLAnchorElement;
-      expect(link.href).toContain('http://localhost:30195/workspace');
-      expect(link.href).not.toContain('token');
-      expect(document.body.textContent).not.toContain('aep-token');
       open.mockRestore();
     },
     TIMEOUT,
@@ -232,14 +182,14 @@ describe('admin digital employees', () => {
   test(
     'popup-blocked fallback explains the failure and keeps retry, never showing the token',
     async () => {
-      const portal = makePortal({ mintChatSession: vi.fn().mockResolvedValue(false) });
+      const portal = makePortal();
       const open = vi.spyOn(window, 'open').mockReturnValue(null);
       render(<DigitalEmployees client={client as never} portal={portal} />);
 
       const employeeRow = (await screen.findByText('sales-helper')).closest('tr')!;
       fireEvent.click(within(employeeRow).getByRole('button', { name: /测试对话/, hidden: true }));
 
-      expect(await screen.findByText(/弹出式窗口/)).toBeInTheDocument();
+      expect(await screen.findByText(/被浏览器拦截/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: '重试打开' })).toBeInTheDocument();
       expect(document.body.textContent).not.toContain('aep-token');
       open.mockRestore();
@@ -685,7 +635,7 @@ describe('admin digital employees', () => {
       fireEvent.click(await screen.findByText('sales-helper'));
       fireEvent.click(await screen.findByRole('tab', { name: '发布与使用' }));
 
-      const entry = await screen.findByText(/localhost:30190\/chat\?employee=sales-helper$/);
+      const entry = await screen.findByText(/localhost:30202\/#\/emp\/sales-helper$/);
       expect(entry.textContent).not.toContain('token');
       expect(screen.queryByText(/aep-token/)).not.toBeInTheDocument();
     },
