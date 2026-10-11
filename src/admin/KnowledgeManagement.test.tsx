@@ -194,6 +194,7 @@ describe('KnowledgeManagement component state', () => {
     expect(portal.createManagedKnowledgeBase).toHaveBeenCalledWith({
       name: 'New research',
       description: 'Created in console',
+      type: 'document',
     });
   });
 
@@ -327,7 +328,7 @@ describe('KnowledgeManagement component state', () => {
     expect(within(row).getByRole('switch', { name: '解析完成后保持停用' })).toBeChecked();
   });
 
-  test('retries parsing and confirms document deletion through managed actions', async () => {
+  test('retries parsing through the managed action', async () => {
     const doc = lifecycleDocument('failed');
     const portal = makePortal({
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
@@ -338,6 +339,17 @@ describe('KnowledgeManagement component state', () => {
     const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
     fireEvent.click(rowUi().getByRole('button', { name: /重新解析/ }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'reparse'));
+  });
+
+  test('confirms document deletion through the managed action', async () => {
+    const doc = lifecycleDocument('failed');
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      runManagedKnowledgeDocumentAction: vi.fn().mockResolvedValue({ operationId: 'kbop-doc-action' }),
+    });
+    render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
     fireEvent.click(rowUi().getByRole('button', { name: /删除资料/ }));
     fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'delete'));

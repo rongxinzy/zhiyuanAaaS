@@ -24,6 +24,7 @@ import {
   Listy,
   Modal,
   Pagination,
+  Select,
   Space,
   Spin,
   Switch,
@@ -54,6 +55,9 @@ import {
 const language: AdminLanguage = ADMIN_LANGUAGE;
 type SpanTreeNode = { readonly key: string; readonly title: ReactNode; readonly children?: SpanTreeNode[] };
 const copyKeys = {
+  knowledgeBaseType: 'knowledgeBaseType',
+  knowledgeDocumentBase: 'knowledgeDocumentBase',
+  knowledgeFAQBase: 'knowledgeFAQBase',
   title: 'knowledgeManagementTitle',
   description: 'knowledgeManagementDescription',
   bases: 'knowledgeBasesManaged',
@@ -427,7 +431,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
 
   const saveBase = async () => {
     if (uncertainWrite || uploading) return;
-    let values: { name: string; description: string };
+    let values: { name: string; description: string; type?: 'document' | 'faq' };
     try {
       values = await form.validateFields();
     } catch {
@@ -1196,6 +1200,16 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
         destroyOnHidden
       >
         <Form form={form} layout="vertical" preserve={false}>
+          {!editing && (
+            <Form.Item name="type" label={t('knowledgeBaseType')} initialValue="document" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: 'document', label: t('knowledgeDocumentBase') },
+                  { value: 'faq', label: t('knowledgeFAQBase') },
+                ]}
+              />
+            </Form.Item>
+          )}
           <Form.Item
             name="name"
             label={t('name')}

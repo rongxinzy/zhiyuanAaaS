@@ -11,6 +11,62 @@ function stubFetch(status: number, body: unknown) {
 }
 
 describe('portal client', () => {
+  test('rejects unsafe chunk image MIME, invalid image indexes and unauthorized binary reads', async () => {
+    const portal = new PortalClient(async () => null);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', -1)).rejects.toBeInstanceOf(PortalError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce(new Response('<script>bad</script>', { headers: { 'Content-Type': 'text/html' } }));
+    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toBeInstanceOf(PortalError);
+    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
+    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toMatchObject({ status: 403 });
+    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
+    await expect(portal.getManagedKnowledgeFile('doc', 'download')).rejects.toMatchObject({ status: 403 });
+    vi.unstubAllGlobals();
+  });
+
+  test('reads bounded audit pages with encoded filters and caller cancellation', async () => {
+    const item = {
+      cursor: '12',
+      operationId: 'kbop/1',
+      actorUserId: 'admin-1',
+      action: 'delete',
+      resourceType: 'knowledge-base',
+      resourceId: 'kb-1',
+      parentResourceId: '',
+      outcome: 'uncertain',
+      statusCode: 502,
+      createdAt: '2026-10-11T00:00:00Z',
+    };
+    const fetchMock = stubFetch(200, { items: [item], nextCursor: '12' });
+    const portal = new PortalClient(async () => 'aep-token');
+    const controller = new AbortController();
+    await expect(
+      portal.knowledgeAudit({ operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20' }, controller.signal),
+    ).resolves.toEqual({ items: [item], nextCursor: '12' });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20');
+    expect((init as RequestInit).signal).toBeDefined();
+    vi.unstubAllGlobals();
+  });
+
+  test('rejects malformed audit pages and maps authorization failures', async () => {
+    const portal = new PortalClient(async () => 'token');
+    for (const body of [
+      null,
+      { items: [], nextCursor: 12 },
+      { items: [null], nextCursor: null },
+      { items: [{ cursor: '1' }], nextCursor: null },
+    ]) {
+      stubFetch(200, body);
+      await expect(portal.knowledgeAudit()).rejects.toBeInstanceOf(PortalError);
+    }
+    stubFetch(403, { error: 'not allowed' });
+    await expect(portal.knowledgeAudit()).rejects.toMatchObject({ status: 403 });
+    vi.unstubAllGlobals();
+  });
+
   test('attaches the bearer token and parses the employee list', async () => {
     const fetchMock = stubFetch(200, {
       employees: [{ name: 'sales-helper', displayName: '销售助理', phase: 'Ready', model: 'bench-glm' }],

@@ -186,7 +186,7 @@ export function createAdminFixture() {
     } catch {
       parsedBody = null;
     }
-    state.requests.push({ method: request.method ?? '', path: url.pathname, body: parsedBody });
+    state.requests.push({ method: request.method ?? '', path: url.pathname, query: url.search, body: parsedBody });
     try {
       await route(request.method ?? 'GET', url.pathname, body, response, url.searchParams);
     } catch (error) {
@@ -530,6 +530,24 @@ async function route(method, pathname, rawBody, response, query) {
       storage: 'unverified',
       parser: 'unverified',
     });
+  if (method === 'GET' && pathname === '/api/v1/knowledge/managed/audit')
+    return writeJson(response, 200, {
+      items: [
+        {
+          cursor: '12',
+          operationId: 'kbop-e2e-delete',
+          actorUserId: 'admin-e2e',
+          action: 'delete',
+          resourceType: 'knowledge-base',
+          resourceId: 'kb-1',
+          parentResourceId: '',
+          outcome: 'uncertain',
+          statusCode: 502,
+          createdAt: '2026-10-11T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
   if (method === 'GET' && pathname === '/api/v1/knowledge/managed/bases')
     return writeJson(response, 200, { data: state.knowledgeBases });
   if (method === 'POST' && pathname === '/api/v1/knowledge/managed/bases') {
@@ -540,7 +558,7 @@ async function route(method, pathname, rawBody, response, query) {
       description: input.description ?? '',
       tenant_id: '10000',
       embedding_model_id: 'embedding-e2e',
-      type: 'document',
+      type: input.type ?? 'document',
     };
     state.knowledgeBases.push(base);
     state.knowledgeGrants[base.id] = [

@@ -137,7 +137,7 @@ try {
     state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/knowledge/managed/bases'),
     'Knowledge page must load its native managed registry, not the legacy status proxy',
   );
-  await page.getByRole('button', { name: /新建知识库/ }).click();
+  await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
   const knowledgeDialog = page.getByRole('dialog');
   await knowledgeDialog.getByLabel('名称', { exact: true }).fill('E2E 新建知识库');
   await knowledgeDialog.getByLabel('描述', { exact: true }).fill('浏览器契约验证');
@@ -234,6 +234,20 @@ try {
   await chunkInspector.waitFor({ state: 'hidden' });
   checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
 
+  await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
+  const faqBaseDialog = page.getByRole('dialog');
+  await faqBaseDialog.getByLabel('名称', { exact: true }).fill('E2E 新建 FAQ 库');
+  await faqBaseDialog.getByLabel('知识库类型', { exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'FAQ 库' }).click();
+  await faqBaseDialog.getByRole('button', { name: '保存', exact: true }).click();
+  await faqBaseDialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'E2E 新建 FAQ 库', exact: true }).waitFor();
+  assert.equal(state.knowledgeBases.find((item) => item.name === 'E2E 新建 FAQ 库')?.type, 'faq');
+  await page.getByRole('tab', { name: 'FAQ', exact: true }).click();
+  await page.getByRole('button', { name: '新建 FAQ', exact: true }).click();
+  await page.getByRole('dialog').getByRole('textbox').first().waitFor();
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  checks.push('create FAQ library and enter native FAQ editor without upstream login');
   await page.getByRole('button').filter({ hasText: 'kb-faq-e2e' }).first().click();
   await page.locator('.ant-tabs-tab').filter({ hasText: 'FAQ' }).click();
   await page.getByRole('button', { name: '\u65b0\u5efa FAQ', exact: true }).click();
@@ -540,6 +554,20 @@ try {
   await visit('system/settings', '基本设置');
   await visit('system/licenses', '产品授权');
   await visit('audit', '日志审计');
+  await page.getByRole('tab', { name: '知识审计', exact: true }).click();
+  await page.getByText('kbop-e2e-delete', { exact: true }).waitFor();
+  await page.getByText('admin-e2e', { exact: true }).waitFor();
+  await page.getByText('uncertain', { exact: true }).waitFor();
+  await page.getByLabel('操作人 ID', { exact: true }).fill('admin-e2e');
+  await page.getByRole('button', { name: /^查\s*询$/ }).click();
+  await waitForValue(
+    () =>
+      state.requests.some(
+        (item) => item.path === '/api/v1/knowledge/managed/audit' && item.query.includes('actorUserId=admin-e2e'),
+      ),
+    true,
+  );
+  checks.push('knowledge audit remains in native log page with actor filter and uncertain outcome');
   await page.getByRole('tab', { name: '登录日志', exact: true }).click();
   await page.getByText('invalid_credentials', { exact: true }).waitFor();
   assert.equal(await page.getByText('登录历史查询尚未接入', { exact: true }).count(), 0);

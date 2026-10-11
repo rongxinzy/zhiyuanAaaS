@@ -188,6 +188,19 @@ export type ManagedKnowledgeBase = {
   readonly type: string;
 };
 
+export type KnowledgeAuditRecord = {
+  readonly cursor: string;
+  readonly operationId: string;
+  readonly actorUserId: string;
+  readonly action: string;
+  readonly resourceType: string;
+  readonly resourceId: string;
+  readonly parentResourceId: string;
+  readonly outcome: string;
+  readonly statusCode: number;
+  readonly createdAt: string;
+};
+
 export type ManagedKnowledgeDocument = {
   readonly id: string;
   readonly knowledge_base_id: string;
@@ -564,6 +577,40 @@ export class PortalClient {
     return parseManagedReadiness(data);
   }
 
+  async knowledgeAudit(
+    filters: { readonly operationId?: string; readonly actorUserId?: string; readonly cursor?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<{ readonly items: readonly KnowledgeAuditRecord[]; readonly nextCursor: string | null }> {
+    const query = new URLSearchParams({ limit: '50' });
+    for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+    const { status, data } = await this.#request(
+      'GET',
+      `/api/v1/knowledge/managed/audit?${query}`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (status !== 200) throw portalError(status, data);
+    const record = objectOf(data);
+    if (!record || !Array.isArray(record.items) || !(record.nextCursor === null || nonEmptyString(record.nextCursor)))
+      throw invalidManagedResponse();
+    const items = record.items.map((value: unknown) => {
+      const row = objectOf(value);
+      if (
+        !row ||
+        !['cursor', 'operationId', 'actorUserId', 'action', 'resourceType', 'outcome', 'createdAt'].every((key) =>
+          nonEmptyString(row[key]),
+        ) ||
+        typeof row.resourceId !== 'string' ||
+        typeof row.parentResourceId !== 'string' ||
+        !Number.isInteger(row.statusCode)
+      )
+        throw invalidManagedResponse();
+      return row as unknown as KnowledgeAuditRecord;
+    });
+    return { items, nextCursor: record.nextCursor as string | null };
+  }
+
   async listManagedKnowledgeBases(signal?: AbortSignal): Promise<readonly ManagedKnowledgeBase[]> {
     const { status, data } = await this.#request(
       'GET',
@@ -593,6 +640,7 @@ export class PortalClient {
   async createManagedKnowledgeBase(input: {
     readonly name: string;
     readonly description: string;
+    readonly type?: 'document' | 'faq';
   }): Promise<ManagedKnowledgeMutation<ManagedKnowledgeBase>> {
     const { status, data } = await this.#request('POST', '/api/v1/knowledge/managed/bases', input);
     if (status !== 201) throw portalError(status, data);
