@@ -4,9 +4,23 @@
 
 关联：[Issue #158](https://github.com/rongxinzy/zhiyuanAaaS/issues/158)。本文件是技术实施与验证记录；产品范围以 [FR-KB-03 / ER-AC-11 / K1](https://github.com/rongxinzy/zhiyuan-docs/blob/main/product/README.md) 为唯一正文。
 
-## 当前验收检查点（2026-10-10）
+## 当前验收检查点（2026-10-11，另一机器续做）
 
-本节是最新状态；下文保留的日期记录是历史快照，不能据其中旧的“未实现”或旧 CI 结果判断当前状态。六轮仍沿用 `feat/knowledge-phase-a`，由三个 Luna 分别完成 UI、权限/内容运营回归、部署适配，主代理独立审核。
+继续原 `feat/knowledge-phase-a` 和关联 Draft PR，不新建替代功能分支。下方 2026-10-10 的部署缓存与未提交 worktree 描述属于原机器历史，不能视为当前可交付源码。
+
+- 补齐文档/FAQ 类型选择与类型化建库请求，默认文档类型兼容原客户端；新库可直接进入原生 FAQ 编辑器，无 WeKnora 登录或跳转。
+- 补齐固定知识审计查询 API 与现有日志页面入口。服务端从身份与配置固定 deployment/tenant，限定过滤字段与游标分页；上游不可用时仍可读取真实操作者和 pending/uncertain 等结果。
+- 删除与员工创建、绑定更新、待审批写入/审批使用相同 PostgreSQL 行锁，按库 ID 排序避免锁顺序死锁；先持久化审计，再提交 deleting 状态，最后请求上游。上游断连或审计回写失败不自动恢复绑定资格。直接 Kubernetes CR 写入不受 Portal 锁保护，需限制相应权限；不确定状态恢复仍需人工核对。
+- 本机隔离 PostgreSQL 14 的 race 集成测试通过：实际观察第二事务等待锁，删除状态提交后拒绝绑定，新连接池也拒绝；CI 新增隔离 PostgreSQL 服务跑同一回归，适用工作流范围未改变，CI diff 仍需正式维护者 review。
+- 合入本次 fetch 的 main 后，AaaS 完整 check、coverage 与 22 项 / 552 请求 mock 浏览器检查通过，无 console error。行覆盖率 83.39%，同工具链独立 main `ec96761` 为 83.32%。治理 Portal 全量测试、race、vet 和 lint 按当前源码复验；行锁故障、审计分页/过滤、FAQ 请求、null run 已有回归，普通覆盖率 82.9%，独立 main `103632e` 为 82.6%。修复测试 HTTP 计数器的 race、最新 main 的静态检查写法及管理台格式问题，没有放宽门槛或延长超时。
+- 产品唯一正文同步原生管理范围与未验收状态。第 1–5 轮仍需匹配当前提交的远端 CI，以及两用户撤权、真实三类资料导入/解析/来源的部署验收，不能用 mock 代替。
+- 第 6 轮明确缺口：远端仅有 Portal updater。原机器未提交的六组件 updater 和基础镜像缓存无法从 clone 恢复。本机 Docker daemon 未启动，未构建/导入业务镜像、未迁移真实数据库、未部署；须恢复或重建 Admin/Portal/WeKnora/Python MCP/runtime/operator 配套部署方案，并完成两库受保护备份与隔离恢复、配置检查和真实浏览器验收。
+
+当前三个功能 PR 保持 Draft，Issue #158 不关闭；正式 approval 与用户验收仍未完成。当前提交的 GitHub CI 以各 PR checks 为准，不沿用下面历史提交的绿色结果。
+
+## 历史验收检查点（2026-10-10）
+
+本节保留原机器的历史状态；当前状态以上方 2026-10-11 续做记录为准。原机器的六轮沿用 `feat/knowledge-phase-a`，由三个 Luna 分别完成 UI、权限/内容运营回归、部署适配，主代理独立审核。
 
 - 第 1–3 轮：管理台 `7dbe2df` 的 verify、coverage-ratchet、CodeQL 和 ci-gate 全部通过；治理 `beb9b09` 的 verify、coverage-ratchet 和 ci-gate 全部通过。引擎两处可信图片来源 fixture 提交为 `2b4e7cfa`；原生 Go MCP 的授权回调、工具范围和读取完成审计提交为 `a73c2175`。实际部署使用的 Python MCP 实时授权与读取完成审计已提交、推送为 `15d7e55a`，该提交 Go test/build/vet、lint 和 Python 3.10–3.13 CI 全部通过；主代理独立 Linux Python 复验为 39 项 unittest 与 20 项专项 pytest 通过。上述仅证明匹配提交的代码检查，不证明已部署。
 - 第 4–5 轮：标签、路径文件夹、FAQ、逐资源批量操作、分块修订、用户/团队 grants、员工检索与来源，以及实时 Agent/MCP 授权链已形成实现。管理台 `4c2802e` 已提交推送，并普通合并最新 main 为 `da7d204`；治理功能已提交为 `ce36fc6`，主代理继续审核合入最新 main 的快照。跨语言测试已使用 Python MCP 工具调用真实 Go Portal HTTP handler，AEP、上游与数据库为隔离测试替身；不是连接本地业务数据库的真实验收。主代理发现并交付修复：切库/检索时陈旧响应与 loading 锁死，授权读取完成前误保存空集合，以及写入授权时伪造只读 provenance 字段。

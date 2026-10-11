@@ -515,27 +515,6 @@ export class PortalClient {
     return { status: response.status, data };
   }
 
-  // Silent chat handoff: mint the portal session and select the employee
-  // server-side (cookies land on the shared host through the /api proxy),
-  // so the browser can open the chat UI directly — no portal entry page
-  // flashing between the console and the conversation. Returns false when
-  // any step fails; callers fall back to the portal /chat handoff link.
-  async mintChatSession(employee: string): Promise<boolean> {
-    const token = await this.#tokenProvider();
-    if (!token) return false;
-    const session = await this.#request('POST', '/api/v1/session', { token });
-    if (session.status !== 200) return false;
-    const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1];
-    if (!csrf) return false;
-    const selected = await this.#request(
-      'POST',
-      '/api/v1/session/employee',
-      { name: employee },
-      { 'X-CSRF-Token': decodeURIComponent(csrf) },
-    );
-    return selected.status === 200;
-  }
-
   async listEmployees(signal?: AbortSignal): Promise<readonly PortalEmployee[]> {
     const { status, data } = await this.#request('GET', '/api/v1/employees', undefined, undefined, signal);
     if (status !== 200) throw portalError(status, data);
