@@ -49,7 +49,6 @@ export default defineConfig({
       },
     },
   ],
-  resolve: { alias: { '@': path.resolve(repositoryRoot, 'src/ui') } },
   build: {
     outDir: path.resolve(repositoryRoot, 'dist/admin'),
     emptyOutDir: true,
