@@ -5,11 +5,6 @@ import { defineConfig } from 'vitest/config';
 const repositoryRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@': path.resolve(repositoryRoot, 'src/ui'),
-    },
-  },
   test: {
     setupFiles: ['src/admin/test-setup.ts'],
     root: repositoryRoot,
@@ -24,7 +19,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary'],
       include: ['src/**/*.ts', 'src/**/*.tsx'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/admin/test-setup.ts', 'src/ui/components/ui/**'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/admin/test-setup.ts'],
       // Lines is the primary coverage metric for TS (statements is a Go
       // convention); branches/functions hold secondary floors.
       thresholds: { lines: 80, branches: 60, functions: 70 },

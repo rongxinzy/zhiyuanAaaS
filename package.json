@@ -8,7 +8,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "build": "npm run build:extension && npm run build:ui && npm run build:admin",
+    "build": "npm run build:admin",
     "build:admin": "vite build --config vite.admin.config.ts",
     "dev:admin": "vite --config vite.admin.config.ts",
     "serve:admin": "npm run build:admin && node scripts/serve-admin.mjs",
@@ -16,39 +16,22 @@
     "verify:admin:e2e": "npm run build:admin && node scripts/verify-admin-crud-browser.mjs",
     "verify:admin:real-e2e": "npm run build:admin && node scripts/verify-admin-real-e2e.mjs",
     "verify:admin:pricing:e2e": "npm run build:admin && node scripts/verify-model-pricing-browser.mjs",
-    "build:extension": "tsup",
-    "build:ui": "vite build",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:bundle && npm run verify:manifest && npm run verify:admin",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:admin",
     "test": "vitest run --config vitest.config.ts",
-    "typecheck": "tsc --noEmit && tsc --project tsconfig.ui.json --noEmit && tsc --project tsconfig.admin.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.admin.json --noEmit",
     "lint": "biome check",
     "format": "biome check --write",
-    "verify:bundle": "node scripts/verify-bundle.mjs",
-    "verify:agent-control:e2e": "npm run build:extension && node scripts/verify-agent-control-e2e.mjs",
-    "verify:electron-rc": "node scripts/verify-electron-rc.mjs",
-    "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
-    "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
-    "verify:electron-package": "node scripts/verify-electron-package.mjs",
-    "verify:release-artifacts": "node scripts/verify-release-artifacts.mjs",
-    "verify:manifest": "node scripts/verify-manifest.mjs",
-    "verify:sdk": "node scripts/verify-sdk.mjs",
     "test:coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
     "@aep/sdk-node": "https://github.com/rongxinzy/Agent-Enterprise-Protocol/releases/download/sdk-node-v0.3.0/aep-sdk-node-0.3.0.tgz",
     "@ant-design/icons": "6.3.4",
-    "@base-ui/react": "^1.7.0",
     "antd": "6.6.5",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "dayjs": "1.11.23",
     "echarts": "6.0.0",
     "lucide-react": "^1.34.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "tailwind-merge": "^3.6.0",
-    "tw-animate-css": "^1.4.0",
-    "yauzl": "^3.2.0"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
@@ -58,20 +41,14 @@
     "@types/node": "24.10.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "@types/yauzl": "^2.10.3",
-    "@types/yazl": "^3.3.0",
     "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "4.1.11",
-    "js-yaml": "^4.3.1",
     "jsdom": "^30.0.1",
     "playwright-core": "^1.62.1",
-    "shadcn": "^4.19.0",
     "tailwindcss": "^4.3.3",
-    "tsup": "8.5.1",
     "typescript": "5.9.3",
     "vite": "^8.2.2",
-    "vitest": "4.1.11",
-    "yazl": "^3.3.1"
+    "vitest": "4.1.11"
   },
   "overrides": {
     "esbuild": "0.28.1"
