@@ -167,14 +167,13 @@ async function route(method, pathname, rawBody, response, query) {
                 ? state.models[0]?.id
                 : null;
       const metric = query.get('metric');
-      const value = metric === 'failures' ? '2.9' : metric?.includes('success_rate') ? '0.99' : '23.9';
-      const endTime = Date.parse(query.get('end')) / 1000;
+      const value = metric === 'failures' ? '2' : metric?.includes('success_rate') ? '0.99' : '23';
       return writeJson(response, 200, {
-        source: input.source ?? 'prometheus',
+        source: 'prometheus',
         queriedAt: new Date().toISOString(),
         definition: {
-          id: metric === 'calls' && input.source === 'loki' ? 'gateway_access_requests' : metric,
-          unit: metric?.includes('success_rate') ? 'ratio' : metric?.includes('tokens') ? 'tokens' : 'requests',
+          id: metric,
+          unit: metric?.includes('success_rate') ? 'ratio' : 'requests',
           aggregation: 'counter_increase',
           windowSeconds: Number(query.get('step')),
           groupBy: group,
@@ -188,12 +187,9 @@ async function route(method, pathname, rawBody, response, query) {
               {
                 metric: groupId ? { [`${group}_id`]: groupId } : {},
                 values: [
-                  [endTime - 300, metric === 'output_tokens' ? '8.7' : '11.7'],
-                  [endTime - 240, metric === 'output_tokens' ? '9.8' : '13.8'],
-                  [endTime - 180, 'NaN'],
-                  [endTime - 120, metric === 'output_tokens' ? '12.9' : '18.9'],
-                  [endTime - 60, metric === 'output_tokens' ? '16.3' : '21.3'],
-                  [endTime, value],
+                  [Date.now() / 1000 - 120, '11'],
+                  [Date.now() / 1000 - 60, 'NaN'],
+                  [Date.now() / 1000, value],
                 ],
               },
             ],

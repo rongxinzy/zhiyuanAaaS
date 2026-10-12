@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ConfigProvider, theme } from 'antd';
 import { type ECharts, getInstanceByDom } from 'echarts/core';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { GatewayTrend } from './GatewayTrend.js';
+import { GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
 import type { GatewayMetricResult } from './gateway-api.js';
 
 let width: number;
@@ -67,36 +67,34 @@ function zoom(chart: ECharts) {
   return (chart.getOption().dataZoom as { start: number; end: number }[])[0];
 }
 
-test('one real chart switches units, retains zoom across modes and resets it for a new query window', () => {
+test('real charts link zoom, retain it across filters and reset it for a new query window', () => {
   const calls = metric('calls');
   const failures = metric('failures', ['0', '1', '0']);
   const view = (range = window) => (
     <ConfigProvider>
-      <GatewayTrend calls={calls} input={calls} output={failures} group="linked-test" window={range} />
+      <GatewayTrend calls={calls} failures={failures} group="linked-test" window={range} />
+      <GatewayTokenTrend input={calls} output={failures} group="linked-test" window={range} />
     </ConfigProvider>
   );
   const result = render(view());
-  const original = chartFor('调用次数趋势');
+  const original = chartFor('调用与失败趋势');
+  const tokens = chartFor('Token 用量趋势');
   expect(series(original)[0]?.data).toEqual([
-    [100000, 1],
+    [100000, 1.75],
     [160000, null],
     [220000, 0],
   ]);
-  expect(series(original).map((item) => item.name)).toEqual(['调用次数']);
-  expect(screen.queryByRole('radio', { name: '失败次数' })).not.toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: '成功' })).toBeDisabled();
   act(() => original.dispatchAction({ type: 'dataZoom', start: 20, end: 70 }));
-  fireEvent.click(screen.getByRole('radio', { name: 'Token 用量' }));
+  expect(zoom(tokens)).toMatchObject({ start: 20, end: 70 });
+  fireEvent.click(screen.getByRole('radio', { name: '失败次数' }));
   expect(original.isDisposed()).toBe(true);
-  const filtered = chartFor('Token 用量趋势');
-  expect(series(filtered).map((item) => item.name)).toEqual(['输入 Token', '输出 Token']);
-  expect((filtered.getOption().yAxis as { name: string }[])[0]?.name).toBe('Token');
+  const filtered = chartFor('调用与失败趋势');
+  expect(series(filtered).map((item) => item.name)).toEqual(['失败次数']);
   expect(zoom(filtered)).toMatchObject({ start: 20, end: 70 });
-  fireEvent.click(screen.getByRole('radio', { name: '调用次数' }));
-  expect(zoom(chartFor('调用次数趋势'))).toMatchObject({ start: 20, end: 70 });
-  expect((chartFor('调用次数趋势').getOption().yAxis as { name: string }[])[0]?.name).toBe('次数（次）');
+  expect(zoom(tokens)).toMatchObject({ start: 20, end: 70 });
   result.rerender(view({ ...window, end: new Date(460000).toISOString() }));
-  expect(zoom(chartFor('调用次数趋势'))).toMatchObject({ start: 0, end: 100 });
-  fireEvent.click(screen.getByRole('radio', { name: 'Token 用量' }));
+  expect(zoom(chartFor('调用与失败趋势'))).toMatchObject({ start: 0, end: 100 });
   const finalTokens = chartFor('Token 用量趋势');
   expect(zoom(finalTokens)).toMatchObject({ start: 0, end: 100 });
   const finalElement = finalTokens.getDom();
@@ -108,9 +106,13 @@ test('one real chart switches units, retains zoom across modes and resets it for
 
 test('Token visibility changes native series and an empty selection does not forge zeros', () => {
   const result = render(
-    <GatewayTrend input={metric('input_tokens')} output={metric('output_tokens')} group="token-test" window={window} />,
+    <GatewayTokenTrend
+      input={metric('input_tokens')}
+      output={metric('output_tokens')}
+      group="token-test"
+      window={window}
+    />,
   );
-  fireEvent.click(screen.getByRole('radio', { name: 'Token 用量' }));
   const original = chartFor('Token 用量趋势');
   expect(series(original)).toHaveLength(2);
   fireEvent.click(screen.getByRole('checkbox', { name: '输入 Token' }));
@@ -118,13 +120,9 @@ test('Token visibility changes native series and an empty selection does not for
   fireEvent.click(screen.getByRole('checkbox', { name: '输出 Token' }));
   expect(screen.queryByRole('img', { name: 'Token 用量趋势' })).not.toBeInTheDocument();
   expect(screen.getByText('当前查询没有原生数据')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('radio', { name: '调用次数' }));
-  fireEvent.click(screen.getByRole('radio', { name: 'Token 用量' }));
-  expect(screen.getByRole('checkbox', { name: '输入 Token' })).not.toBeChecked();
-  expect(screen.getByRole('checkbox', { name: '输出 Token' })).not.toBeChecked();
   fireEvent.click(screen.getByRole('checkbox', { name: '输入 Token' }));
   expect(series(chartFor('Token 用量趋势'))[0]?.data).toEqual([
-    [100000, 1],
+    [100000, 1.75],
     [160000, null],
     [220000, 0],
   ]);
@@ -140,19 +138,19 @@ test('hidden charts initialize on resize, use native tooltips and follow theme c
     </ConfigProvider>
   );
   const result = render(view(false));
-  const element = screen.getByRole('img', { name: '调用次数趋势' });
+  const element = screen.getByRole('img', { name: '调用与失败趋势' });
   expect(getInstanceByDom(element)).toBeUndefined();
   act(() => {
     width = 600;
     for (const observer of observers) observer.callback([], observer);
   });
-  const original = chartFor('调用次数趋势');
+  const original = chartFor('调用与失败趋势');
   const options = original.getOption();
   const tooltip = (
     options.tooltip as { valueFormatter: (value: unknown) => string; axisPointer: { type: string } }[]
   )[0]!;
   expect(tooltip.axisPointer.type).toBe('line');
-  expect(tooltip.valueFormatter(1.75)).toBe('1');
+  expect(tooltip.valueFormatter(1.75)).toBe('1.75');
   expect(tooltip.valueFormatter(null)).toBe('未提供');
   act(() => {
     width = 360;
@@ -162,7 +160,7 @@ test('hidden charts initialize on resize, use native tooltips and follow theme c
   expect(original.getWidth()).toBe(360);
   const lightBackground = (options.tooltip as { backgroundColor: string }[])[0]?.backgroundColor;
   result.rerender(view(true));
-  const dark = chartFor('调用次数趋势');
+  const dark = chartFor('调用与失败趋势');
   expect(original.isDisposed()).toBe(true);
   expect((dark.getOption().tooltip as { backgroundColor: string }[])[0]?.backgroundColor).not.toBe(lightBackground);
   expect(zoom(dark)).toMatchObject({ start: 10, end: 80 });
