@@ -1,4 +1,5 @@
 {
+  "eventDrivenGate": true,
   "workflows": [
     {
       "name": "CI",
@@ -7,6 +8,10 @@
     {
       "name": "CodeQL",
       "path": ".github/workflows/codeql.yml"
+    },
+    {
+      "name": "DevOps gate tests",
+      "path": ".github/workflows/devops-gate-tests.yml"
     }
   ]
 }
