@@ -310,6 +310,31 @@ try {
   await page.getByText('fixture-json', { exact: false }).waitFor();
   await visit('model-gateway/observe', '用量与错误观测');
   await page.getByText('gateway-e2e-r1', { exact: true }).waitFor();
+  assert.equal(await page.locator('.gateway-trend-card').count(), 1);
+  const trend = page.locator('.gateway-trend-card');
+  await trend.getByRole('img', { name: '调用次数趋势', exact: true }).waitFor();
+  assert.equal(await trend.getByRole('radio', { name: '失败次数' }).count(), 0);
+  assert.equal(await page.getByRole('heading', { name: '23', exact: true }).count(), 3);
+  assert.equal(await page.getByRole('heading', { name: '2', exact: true }).count(), 1);
+  assert(
+    state.gateway.queries
+      .filter((query) => query.metric === 'calls')
+      .every((query) => query.source === 'loki' && query.expectedDefinition === 'gateway_access_requests'),
+  );
+  const queriesBeforeSwitch = state.gateway.queries.length;
+  await trend.getByText('Token 用量', { exact: true }).click();
+  await trend.getByRole('img', { name: 'Token 用量趋势', exact: true }).waitFor();
+  assert.equal(await trend.locator('.gateway-native-chart').count(), 1);
+  await trend.getByRole('checkbox', { name: '输入 Token', exact: true }).uncheck();
+  await trend.locator('.ant-segmented').getByText('调用次数', { exact: true }).click();
+  await trend.getByText('Token 用量', { exact: true }).click();
+  assert.equal(await trend.getByRole('checkbox', { name: '输入 Token', exact: true }).isChecked(), false);
+  assert.equal(state.gateway.queries.length, queriesBeforeSwitch);
+  await trend.getByRole('checkbox', { name: '输入 Token', exact: true }).check();
+  await trend.locator('.ant-segmented').getByText('调用次数', { exact: true }).click();
+  checks.push(
+    'single usage card switches units without queries, retains Token selection and floors native display values',
+  );
   await page.getByRole('button', { name: '详情', exact: true }).click();
   await page.getByRole('dialog').waitFor();
   await waitForValue(() => state.gateway.details.length, 1);
@@ -380,6 +405,35 @@ try {
       }
     }
   }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
+  await page.reload({ waitUntil: 'networkidle' });
+  for (const mode of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('zhiyuan.admin.theme', value), mode);
+    await page.reload({ waitUntil: 'networkidle' });
+    for (const width of [1440, 392]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`${origin}/#model-gateway/observe`);
+      await page.getByRole('heading', { name: '用量与错误观测', exact: true }).waitFor();
+      await page.waitForLoadState('networkidle');
+      const card = page.locator('.gateway-trend-card');
+      await card.locator('.ant-segmented').getByText('调用次数', { exact: true }).click();
+      await card.getByRole('img', { name: '调用次数趋势' }).waitFor();
+      await card.scrollIntoViewIfNeeded();
+      await card.screenshot({ path: path.join(screenshots, `usage-calls-${mode}-${width}.png`) });
+      await card.getByText('Token 用量', { exact: true }).click();
+      await card.getByRole('img', { name: 'Token 用量趋势' }).waitFor();
+      await card.screenshot({ path: path.join(screenshots, `usage-tokens-${mode}-${width}.png`) });
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      assert.equal(overflow, false, `Usage page overflows at ${width}px in ${mode}`);
+      await card.locator('.ant-segmented').getByText('调用次数', { exact: true }).click();
+      await card.getByRole('radio', { name: '调用次数', exact: true }).focus();
+      await page.keyboard.press('ArrowRight');
+      await card.getByRole('radio', { name: 'Token 用量', exact: true }).waitFor({ state: 'attached' });
+      assert.equal(await card.getByRole('radio', { name: 'Token 用量', exact: true }).isChecked(), true);
+    }
+  }
+  checks.push('usage card: calls/Tokens, light/dark, 1440/392px, no page overflow and keyboard switching');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
   await page.reload({ waitUntil: 'networkidle' });
