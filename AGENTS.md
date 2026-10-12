@@ -1,23 +1,24 @@
-# Zhiyuan Enterprise Extension Developer Guide
+# Zhiyuan Admin Console Developer Guide
 
-This repository contains the closed-source Zhiyuan enterprise extension. It is
-loaded by the public Zhiyuan desktop application through the host capability
-contract. Treat this file as the first repository-specific instruction for
-coding agents and developers.
+This repository contains the closed-source Zhiyuan Admin Console, a standalone
+browser application for enterprise operators that talks to the AEP control
+service over HTTP, plus its deployment manifests. Treat this file as the first
+repository-specific instruction for coding agents and developers.
 
 ## Repository Boundaries
 
-- `D:/rxzy/ZhiyuanAaaS` is the closed enterprise extension and Admin Console.
+- `D:/rxzy/ZhiyuanAaaS` is the closed Admin Console and its deployment
+  configuration.
 - `D:/rxzy/Agent-Enterprise-Protocol` is the public AEP contract, SDK, control
   service, gateway authorizer, reconciler, CLI, and integration tests.
-- `D:/rxzy/zhiyuan-dev` is the public Zhiyuan desktop application. Keep
+- The enterprise client extension, enterprise renderer, license, agent-control,
+  and Windows packaging/signing moved to `rongxinzy/RongxinAI` (the
+  `enterprise/` directory there; enterprise Windows installers are built by
+  its `Build Zhiyuan Enterprise Windows package` workflow). Do not reintroduce
+  extension code, Electron host contracts, or packaging overlays here.
+- The public Zhiyuan desktop application lives in `rongxinzy/RongxinAI`; keep
   enterprise implementation, policy, deployment configuration, and customer
-  data out of that repository.
-- Change the public application only when a versioned host capability or
-  packaging overlay requires it. Do not copy enterprise source into the public
-  tree.
-- Pin public Zhiyuan core and AEP SDK inputs to immutable commits/releases in
-  `build/build-manifest.json`; branches are not valid release inputs.
+  data out of the public tree except through that repository's review process.
 
 Product names, user-visible text, logs, test fixtures, and identifiers must use
 Zhiyuan. Do not introduce retired brand names or expose internal runtime names
@@ -28,48 +29,40 @@ in product copy.
 - Never commit, print, paste into test fixtures, or place in build inputs a
   customer password, cloud model API key, refresh token, license private key,
   or signer private key.
-- The license signer is a local/offline release tool and remains outside this
-  repository. Runtime packages contain only the license file and trusted public
-  keys needed for verification.
 - Use environment variables for disposable local credentials, for example
   `ZHIYUAN_AEP_ADMIN_PASSWORD` and `ZHIYUAN_AEP_BASE_URL`.
 - Use mock providers for automated tests. Real-provider tests must be explicit,
   time-bounded, and followed by key revocation/rotation and cleanup of temporary
   container configuration.
-- The Electron renderer never receives AEP access/refresh/model tokens, gateway
-  URLs, provider credentials, or license private material. Keep privileged
-  operations in the extension main/runtime boundary.
+- The Admin Console is a browser application and never receives AEP
+  access/refresh/model tokens beyond its own operator session, provider
+  credentials, or license private material.
 
 ## Toolchain and Install
 
 - Node.js `>=24 <25` is required.
 - Use the checked-in `package-lock.json` with `npm ci`; do not regenerate the
-  dependency graph casually. `bun.lock` may be present for local tooling, but
-  npm scripts and CI are the canonical path for this repository.
-- AEP service development additionally requires Go 1.26, Docker Compose, and
-  Git Bash for `gh` operations.
+  dependency graph casually.
+- Running the local AEP stack for development requires Docker Compose (see
+  below). `gh` operations must run from Git Bash.
 
 ## Development Commands
-
-From this repository:
 
 ```bash
 npm ci
 npm run typecheck
 npm test
-npm run build
+npm run test:coverage
+npm run build            # builds the Admin Console to dist/admin
 npm run verify:admin
+npm run verify:admin:e2e
+npm run verify:admin:pricing:e2e
 npm run verify:admin:real-e2e  # requires a running AEP Control Service
-npm run verify:bundle
-npm run verify:manifest
-npm run verify:agent-control:e2e
-npm run verify:model-acceptance
-npm run verify:package-inputs
-npm run verify:electron-package
-npm run check
+npm run lint
+npm run check            # lint && typecheck && test && build && verify:admin
 ```
 
-The Admin Console is a standalone browser application, not an Electron page:
+The Admin Console is a standalone browser application:
 
 ```bash
 npm run dev:admin       # Vite, normally http://localhost:5173
@@ -81,16 +74,11 @@ There is no `admin:dev` script. Set `VITE_AEP_BASE_URL` for Vite development or
 `ZHIYUAN_AEP_BASE_URL` for the static server when AEP is not on
 `http://localhost:8080`.
 
-## AEP and Gateway Startup Order
+## AEP Startup Order
 
-Inference and control are deliberately two linked paths:
-
-```text
-Electron -> Zhiyuan custom enterprise provider -> Higress OpenAI-compatible gateway -> cloud/local provider
-Electron/Admin Console -> AEP control API (identity, catalog, assignments, events, telemetry)
-```
-
-Start AEP before the extension or Admin Console:
+The Admin Console talks only to the AEP control API (identity, catalog,
+assignments, events, telemetry); model inference paths belong to the enterprise
+extension in RongxinAI. Start AEP before the console:
 
 ```bash
 cd /d/rxzy/Agent-Enterprise-Protocol
@@ -99,52 +87,11 @@ npm run compose:gateway:up
 # health checks: http://localhost:8080/healthz and http://localhost:8090/healthz
 ```
 
-The default stack uses a deterministic mock provider. Configure a real
-OpenAI-compatible provider only through deployment environment/configuration;
-never hard-code its key in `deploy/`, source, or documentation. Stop it with:
+The default stack uses a deterministic mock provider. Stop it with:
 
 ```bash
 npm run compose:gateway:down
 ```
-
-## Extension Development with Zhiyuan
-
-Build the extension first, then point the public application's host at the
-absolute bundle path:
-
-```powershell
-cd D:\rxzy\ZhiyuanAaaS
-npm ci
-npm run build:extension
-
-cd D:\rxzy\zhiyuan-dev
-$env:ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH = 'D:\rxzy\ZhiyuanAaaS\dist\extension.cjs'
-npm run electron:dev
-```
-
-The enterprise extension owns the password session, normalized enterprise
-identity, managed model projection, Agent control loop, managed Skill root,
-and enterprise settings surfaces. The host owns the Electron window, IPC
-registration, local user-data directory, and the public runtime.
-
-## Model and Reasoning Rules
-
-- Enterprise models are projected into Zhiyuan's existing custom-provider
-  mechanism. Do not create a second model runtime or a parallel provider UI.
-- AEP manages model catalog, assignment, authorization, and short-lived model
-  access. Actual inference remains on the direct custom-provider -> Higress path.
-- Enabled and assigned gateway models are exposed as-is in their wire protocol
-  (OpenAI-compatible or Anthropic). Anthropic models require host
-  managed-provider capability v2; older hosts automatically fall back to
-  OpenAI-compatible models only. Community/local provider configuration stays
-  hidden and unauthorized model references must be rejected.
-- Preserve streaming, multi-turn context, tool calls, and provider
-  `reasoning_content`. Reasoning compatibility is model metadata; do not
-  hard-code behavior from a model name. Providers may support different
-  thinking levels (for example, a model can accept `low/high/max` but not
-  `medium`).
-- Verify non-streaming, SSE, timeout, 401, retry, reasoning replay, tool
-  continuation, and context persistence before claiming a model is accepted.
 
 ## Admin Console UI
 
@@ -168,10 +115,8 @@ Electron IPC, Node modules, or `process`.
   create a second page-level theme. Match existing Card, Select, popup, and
   disabled styles. Do not add Tailwind color scales, one-off dark-mode colors,
   arbitrary spacing, or nested cards.
-- Keep the browser Admin Console and enterprise renderer styling separate.
-  Do not import `src/ui/index.css`, `src/ui/tea-theme.css`, or shadcn primitives
-  into `src/admin`; their presence in the repository is not an Admin UI rule.
-  `scripts/verify-admin-console.mjs` guards this build boundary.
+- The Admin Console ships antd styling only; `scripts/verify-admin-console.mjs`
+  guards this build boundary on the built CSS.
 - Add all user-visible text to `src/admin/i18n.ts` in both Chinese and English.
 - Check loading, error, empty, success, disabled, focus, light theme, dark
   theme, desktop, and narrow viewport states.
@@ -181,85 +126,23 @@ Electron IPC, Node modules, or `process`.
   current source, Markdown links, `git diff --check`, and the PR file scope.
   Report that runtime checks were not run when no runtime files changed.
 
-## Packaging and Release
-
-The overlay must add files under `resources/zhiyuan-enterprise` without
-overwriting public application files. Render the packaged AEP configuration and
-validate the extension inputs:
-
-```bash
-cd /d/rxzy/ZhiyuanAaaS
-node scripts/render-enterprise-config.mjs --base-url <aep-url> --output build/.enterprise-config.generated.json
-npm run build
-ZHIYUAN_ENTERPRISE_CONFIG_FILE=build/.enterprise-config.generated.json npm run verify:package-inputs
-```
-
-The render script reads the base URL from `--base-url` or `ZHIYUAN_AEP_BASE_URL`, accepts only
-http/https URLs without credentials, query, or fragment, and sets `allowInsecureHttp`
-automatically for http endpoints. The generated file is git-ignored. For a local directory
-package, configure the relative overlay inputs expected by
-`build/electron-builder.overlay.yml` (including `ZHIYUAN_ENTERPRISE_CONFIG_FILE`, relative to
-the public application root), then run `electron-builder --dir` from the
-public Zhiyuan repository. Validate the result with:
-
-```bash
-npm run verify:electron-package
-```
-
-The reproducible Windows installer is built by the public repository's GitHub
-Actions workflow after the exact core commit and AaaS inputs are pinned. A
-package made by disabling host packaging hooks is renderer-smoke-only and must
-not be published.
-
-### Windows Code Signing
-
-Signing is centralized in the rongxinzy/RongxinAI repository, following the
-same model as pi-connect, engram-cjk, and xiaoruan-ai-agent. This repository
-holds no signing credentials and needs no GitHub secret: the Certum
-credentials (`CERTUM_USER_ID`, `CERTUM_OTP_URI`, `CERTUM_CERT_THUMBPRINT`)
-live only in the RongxinAI `release` environment, and the certificate private
-key never leaves the Certum cloud HSM.
-
-- Unsigned installers come from this repository's
-  `Build Windows enterprise package` workflow artifact.
-- Signed installers come from the RongxinAI
-  `Sign Zhiyuan Enterprise Windows package` workflow. Dispatch it with the run
-  ID of one successful unsigned build from this repository; it checks out this
-  repository at the corresponding commit, connects Certum SimplySign through
-  the shared `setup-certum-signing` action, and repackages with
-  `build/electron-builder.overlay-signed.cjs` while injecting
-  `CERTUM_CERT_THUMBPRINT`. The signed overlay is parsed from the YAML overlay
-  and only adds `win.signtoolOptions`, so electron-builder signs the packaged
-  executables and the NSIS installer in one pass; re-signing the installer
-  afterwards would leave the inner executables unsigned. The same workflow
-  verifies every installer, the packaged `知远企业版.exe`, and the bundled
-  uninstaller with RongxinAI's own
-  `scripts/ci/verify-windows-authenticode.ps1`.
-- Local developers who need a signed build dispatch the central workflow; do
-  not install SimplySign Desktop locally for this repository.
-
-Centrally signed runtime binaries such as engram.exe keep their existing
-signatures through the host `win.signExts` exclusion.
-
 ## Tests and Acceptance
 
 Use the narrowest relevant test first, then the full gate for release changes:
 
 ```bash
-npm run verify:agent-control:e2e
-npm run verify:model-acceptance
+npm run verify:admin
+npm run verify:admin:e2e
 npm run check
 ```
 
-The control E2E must cover login/session recovery, Agent binding, Skill
-download/install/revocation, safe ZIP extraction, event acknowledgement,
-telemetry, restart recovery, and managed filesystem ownership. Model acceptance
-must cover the two-path request chain and must not expose provider credentials.
+Browser E2E uses Chrome via `playwright-core`; real-service E2E requires the
+AEP control service and disposable credentials through environment variables.
 
 ## Change and PR Rules
 
-- Make one coherent change per PR and keep PRs stage-oriented (SDK/contract,
-  service, extension, UI, packaging, or release verification).
+- Make one coherent change per PR and keep PRs stage-oriented (console UI,
+  console API client, deployment, or CI).
 - Commit messages and PR titles follow Conventional Commits.
 - Use `apply_patch` for manual edits. Keep generated files and lockfile changes
   only when the command that owns them requires the update.
@@ -269,4 +152,4 @@ must cover the two-path request chain and must not expose provider credentials.
 
 ## 跨仓协作规范
 
-提交、PR 标题与说明、review、bug fix 验证遵循 [DEVOPS.md](DEVOPS.md)。本仓已有专项安全、设计与发布门继续执行。
+提交、PR 标题与说明、review、bug fix 验证遵循 [DEVOPS.md](DEVOPS.md)。本仓已有专项安全与 CI 门继续执行。
