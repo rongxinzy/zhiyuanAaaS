@@ -96,6 +96,8 @@ jobs:
 
   # Coverage ratchet: a PR may not lower the line coverage relative to main.
   # The floor alone (80%) would allow slow erosion from e.g. 85% to 80%.
+  # A percentage drop with no growth in absolute uncovered lines is a covered
+  # code deletion, not new untested code, and passes.
   coverage-ratchet:
     if: github.event_name == 'pull_request'
     needs: verify
@@ -142,6 +144,16 @@ jobs:
             exit 0
           fi
           if awk "BEGIN{exit !($head < $base)}"; then
+            # Deleting well-covered code lowers the percentage without adding
+            # uncovered lines; only a growth in absolute uncovered lines means
+            # the PR actually shipped untested code.
+            uncovered_base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.total - s.total.lines.covered)")
+            uncovered_head=$(node -e "const s=require('./${SUMMARY}');console.log(s.total.lines.total - s.total.lines.covered)")
+            echo "uncovered lines: base=$uncovered_base head=$uncovered_head"
+            if [ "$uncovered_head" -le "$uncovered_base" ]; then
+              echo "Percentage dropped only because covered lines were deleted; uncovered lines did not grow."
+              exit 0
+            fi
             echo "::error::Line coverage dropped from ${base}% on main to ${head}% in this PR."
             exit 1
           fi
