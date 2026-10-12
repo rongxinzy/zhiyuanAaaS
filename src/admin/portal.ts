@@ -303,27 +303,6 @@ export class PortalClient {
     return { status: response.status, data };
   }
 
-  // Silent chat handoff: mint the portal session and select the employee
-  // server-side (cookies land on the shared host through the /api proxy),
-  // so the browser can open the chat UI directly — no portal entry page
-  // flashing between the console and the conversation. Returns false when
-  // any step fails; callers fall back to the portal /chat handoff link.
-  async mintChatSession(employee: string): Promise<boolean> {
-    const token = await this.#tokenProvider();
-    if (!token) return false;
-    const session = await this.#request('POST', '/api/v1/session', { token });
-    if (session.status !== 200) return false;
-    const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1];
-    if (!csrf) return false;
-    const selected = await this.#request(
-      'POST',
-      '/api/v1/session/employee',
-      { name: employee },
-      { 'X-CSRF-Token': decodeURIComponent(csrf) },
-    );
-    return selected.status === 200;
-  }
-
   async listEmployees(): Promise<readonly PortalEmployee[]> {
     const { status, data } = await this.#request('GET', '/api/v1/employees');
     if (status !== 200) throw portalError(status, data);
@@ -666,20 +645,16 @@ function portalError(status: number, data: unknown): PortalError {
   return new PortalError(status, errorMessage(data) ?? `HTTP ${status}`);
 }
 
-// The chat entry lives on the portal origin (not proxied): the browser must
-// land there so the portal can set its own cookies. The portal runs on the
-// SAME host as the console (k3s NodePort 30190), so the default derives from
-// the console's own location — whatever hostname the user typed keeps
-// portal and chat UI on one hostname (cookies ignore ports, not hosts), and
-// nothing environment-specific is baked into the build. VITE_PORTAL_URL
+// The employee chat entry is the standalone zhiyuanBotUI (NodePort 30202 on
+// the same host as the console; it owns its own login). VITE_BOT_UI_URL
 // overrides for split deployments.
-export function chatUIBaseURL(): string {
+export function botUIBaseURL(): string {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  if (env?.VITE_CHAT_UI_URL) return env.VITE_CHAT_UI_URL;
+  if (env?.VITE_BOT_UI_URL) return env.VITE_BOT_UI_URL;
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:30195`;
+    return `${window.location.protocol}//${window.location.hostname}:30202`;
   }
-  return 'http://localhost:30195';
+  return 'http://localhost:30202';
 }
 
 export function portalChatBaseURL(): string {
