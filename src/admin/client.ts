@@ -363,8 +363,6 @@ export interface AdminEventRecord {
   readonly resourceType?: string;
   readonly resourceId?: string;
   readonly result?: string;
-  readonly scopeType?: string;
-  readonly scopeId?: string;
   readonly receivedAt?: string;
   readonly createdAt?: string;
 }
@@ -1126,8 +1124,6 @@ export class AdminConsoleClient {
           ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
           ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
           ...(typeof record.result === 'string' ? { result: record.result } : {}),
-          ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
-          ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
           ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
           ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
         },
