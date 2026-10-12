@@ -11,12 +11,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/ui/*"]
-    },
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.mjs", "tsup.config.ts", "vitest.config.ts"],
-  "exclude": ["src/ui"]
+  "include": ["src/**/*.ts", "scripts/**/*.mjs", "vitest.config.ts"]
 }

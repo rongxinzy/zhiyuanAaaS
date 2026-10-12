@@ -38,21 +38,5 @@
         "organizeImports": "on"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": ["src/ui/**"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "useSemanticElements": "off",
-            "useAriaPropsSupportedByRole": "off",
-            "noLabelWithoutControl": "off",
-            "noStaticElementInteractions": "off",
-            "useKeyWithClickEvents": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

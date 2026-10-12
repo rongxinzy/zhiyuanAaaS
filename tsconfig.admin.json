@@ -1,8 +1,17 @@
 {
-  "extends": "./tsconfig.ui.json",
   "compilerOptions": {
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/ui/*"] }
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client", "vitest/globals"]
   },
   "include": ["src/admin/**/*.ts", "src/admin/**/*.tsx", "vite.admin.config.ts"]
 }
