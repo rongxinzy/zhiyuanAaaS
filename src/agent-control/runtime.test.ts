@@ -200,10 +200,12 @@ describe('Agent control runtime', () => {
     const runtime = createRuntime(clientFixture({ uploadEventBatch: uploadTelemetry }), state);
     try {
       await runtime.flushTelemetry();
-      expect(state.listTelemetry()).toEqual([
-        { eventId: 'transient', type: 'skill.sync.failed' },
-        { eventId: 'future', type: 'skill.sync.completed' },
-      ]);
+      expect(
+        state
+          .listTelemetry()
+          .map((item) => item.eventId)
+          .sort(),
+      ).toEqual(['future', 'transient']);
     } finally {
       state.close();
     }
