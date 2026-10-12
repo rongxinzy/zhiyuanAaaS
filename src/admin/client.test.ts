@@ -41,6 +41,7 @@ const fullPermissions = [
   'data_plane.write',
   'deployment.read',
   'deployment.write',
+  'agents.compute.write',
 ];
 
 function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
@@ -846,5 +847,195 @@ describe('admin console passthrough endpoints', () => {
     const result = await client.dataPlane();
     expect(result.desired).toMatchObject({ revision: 'r1' });
     expect(result.status).toMatchObject({ state: 'ready' });
+  });
+});
+
+describe('admin compute governance', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const computeSettings = {
+    modelGatewayBaseUrl: { override: null, effectiveValue: 'https://gateway.example.test/v1', source: 'env' },
+    computeDefaultTier: { override: null, effectiveValue: 'standard', source: 'env' },
+    computeIdleHibernateSeconds: { override: 300, effectiveValue: 300, source: 'override' },
+    computeConcurrencyCap: { override: null, effectiveValue: null, source: 'unset' },
+  };
+
+  test('parses compute deployment settings with integer fidelity', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/deployment/settings': { body: computeSettings },
+    });
+    const settings = await client.deploymentSettings();
+    expect(settings.computeDefaultTier).toEqual({ override: null, effectiveValue: 'standard', source: 'env' });
+    expect(settings.computeIdleHibernateSeconds).toEqual({ override: 300, effectiveValue: 300, source: 'override' });
+    expect(settings.computeConcurrencyCap).toEqual({ override: null, effectiveValue: null, source: 'unset' });
+    expect(typeof settings.computeIdleHibernateSeconds.override).toBe('number');
+  });
+
+  test('parses absent compute keys as unset for older control services', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/deployment/settings': {
+        body: {
+          modelGatewayBaseUrl: { override: null, effectiveValue: 'https://gateway.example.test/v1', source: 'env' },
+        },
+      },
+    });
+    const settings = await client.deploymentSettings();
+    expect(settings.computeDefaultTier).toEqual({ override: null, effectiveValue: null, source: 'unset' });
+    expect(settings.computeIdleHibernateSeconds).toEqual({ override: null, effectiveValue: null, source: 'unset' });
+    expect(settings.computeConcurrencyCap).toEqual({ override: null, effectiveValue: null, source: 'unset' });
+  });
+
+  test('writes compute policy keys and clears them with explicit nulls', async () => {
+    const { client, requests } = await signedInClient({
+      'PUT /aep/v1/admin/deployment/settings': { body: computeSettings },
+    });
+    await client.updateDeploymentSettings({
+      computeIdleHibernateSeconds: 900,
+      computeDefaultTier: null,
+      computeConcurrencyCap: 25,
+    });
+    const write = requests.find(
+      (request) => `${request.method} ${request.path}` === 'PUT /aep/v1/admin/deployment/settings',
+    );
+    expect(write?.body).toEqual({
+      computeIdleHibernateSeconds: 900,
+      computeDefaultTier: null,
+      computeConcurrencyCap: 25,
+    });
+  });
+
+  test('reads the compute tier catalog', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/compute/tiers': {
+        body: {
+          items: [
+            {
+              name: 'standard',
+              description: '默认档位',
+              cpuRequest: '250m',
+              cpuLimit: '1000m',
+              memoryRequest: '512Mi',
+              memoryLimit: '1Gi',
+              source: 'deployment',
+            },
+            {
+              name: 'performance',
+              cpuRequest: '1',
+              cpuLimit: '2',
+              memoryRequest: '2Gi',
+              memoryLimit: '4Gi',
+              source: 'deployment',
+            },
+          ],
+        },
+      },
+    });
+    const tiers = await client.computeTierCatalog();
+    expect(tiers).toHaveLength(2);
+    expect(tiers[0]).toMatchObject({ name: 'standard', description: '默认档位', source: 'deployment' });
+    expect(tiers[1]).not.toHaveProperty('description');
+    expect(requests.map((request) => `${request.method} ${request.path}`)).toContain('GET /aep/v1/admin/compute/tiers');
+  });
+
+  test('lists compute assignments with override and default sources', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/compute/assignments': {
+        body: {
+          items: [
+            {
+              agentId: 'agent-1',
+              agentName: '销售助理',
+              tier: { override: 'performance', effective: 'performance', source: 'override' },
+              updatedAt: '2026-10-10T08:00:00Z',
+              updatedBy: 'admin-1',
+            },
+            { agentId: 'agent-2', tier: { override: null, effective: 'standard', source: 'default' } },
+          ],
+        },
+      },
+    });
+    const assignments = await client.computeAssignments();
+    expect(assignments).toEqual([
+      {
+        agentId: 'agent-1',
+        agentName: '销售助理',
+        tier: { override: 'performance', effective: 'performance', source: 'override' },
+        updatedAt: '2026-10-10T08:00:00Z',
+        updatedBy: 'admin-1',
+      },
+      { agentId: 'agent-2', tier: { override: null, effective: 'standard', source: 'default' } },
+    ]);
+  });
+
+  test('updates an assignment and clears it with an explicit null', async () => {
+    const updated = { agentId: 'agent-2', tier: { override: 'standard', effective: 'standard', source: 'override' } };
+    const { client, requests } = await signedInClient({
+      'PUT /aep/v1/admin/compute/assignments/agent-2': { body: updated },
+    });
+    expect(await client.updateComputeAssignment('agent-2', 'standard')).toEqual(updated);
+    expect(requests.at(-1)?.body).toEqual({ tier: 'standard' });
+    await client.updateComputeAssignment('agent-2', null);
+    expect(requests.at(-1)?.body).toEqual({ tier: null });
+  });
+
+  test('encodes the agent id in the assignment path', async () => {
+    const { client, requests } = await signedInClient({
+      'PUT /aep/v1/admin/compute/assignments/agent%2Fone': {
+        body: { agentId: 'agent/one', tier: { override: 'standard', effective: 'standard', source: 'override' } },
+      },
+    });
+    await client.updateComputeAssignment('agent/one', 'standard');
+    expect(requests.at(-1)?.path).toBe('/aep/v1/admin/compute/assignments/agent%2Fone');
+  });
+
+  test('surfaces the 422 INVALID_COMPUTE_TIER problem', async () => {
+    const { client } = await signedInClient({
+      'PUT /aep/v1/admin/compute/assignments/agent-2': {
+        status: 422,
+        body: { code: 'INVALID_COMPUTE_TIER', detail: 'The tier is not in the compute tier catalog.' },
+      },
+    });
+    const error = await client.updateComputeAssignment('agent-2', 'platinum').catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(AdminRequestError);
+    expect((error as AdminRequestError).status).toBe(422);
+    expect((error as AdminRequestError).code).toBe('INVALID_COMPUTE_TIER');
+  });
+});
+
+describe('admin compute governance parse guards', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('rejects an assignment whose tier source is outside the contract', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/compute/assignments': {
+        body: { items: [{ agentId: 'agent-1', tier: { override: null, effective: 'standard', source: 'env' } }] },
+      },
+    });
+    await expect(client.computeAssignments()).rejects.toThrow('The AEP compute assignment response is invalid.');
+  });
+
+  test('rejects compute settings with non-numeric integer values', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/deployment/settings': {
+        body: {
+          modelGatewayBaseUrl: { override: null, effectiveValue: null, source: 'unset' },
+          computeIdleHibernateSeconds: { override: '300', effectiveValue: '300', source: 'override' },
+        },
+      },
+    });
+    await expect(client.deploymentSettings()).rejects.toThrow('The AEP deployment settings response is invalid.');
+  });
+
+  test('reads an empty tier catalog and empty assignment list', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/compute/tiers': { body: { items: [] } },
+      'GET /aep/v1/admin/compute/assignments': { body: { items: [] } },
+    });
+    expect(await client.computeTierCatalog()).toEqual([]);
+    expect(await client.computeAssignments()).toEqual([]);
   });
 });
