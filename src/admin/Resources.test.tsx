@@ -6,6 +6,7 @@ import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { AdminRequestError } from './client.js';
+import { AdminNotificationViewport } from './notifications.js';
 import { PortalError } from './portal.js';
 import { AdminResourceTab, Resources } from './Resources.js';
 import { administratorIdentity } from './test-fixtures.js';
@@ -944,6 +945,82 @@ describe('admin resources', () => {
       fireEvent.click(await modalButton('删除'));
       expect(await screen.findByText(/无权查看数字员工关联/)).toBeInTheDocument();
       expect(screen.queryByText('没有数字员工启用该技能。')).not.toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'names why a Skill package was refused',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+        }),
+        uploadSkillVersion: vi
+          .fn()
+          .mockRejectedValueOnce(
+            new AdminRequestError(
+              400,
+              'INVALID_SKILL_PACKAGE',
+              'the Skill package does not contain SKILL.md at its root',
+            ),
+          )
+          .mockRejectedValueOnce(new AdminRequestError(500, 'INTERNAL_ERROR', 'unavailable')),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      rtlRender(<AdminNotificationViewport />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /版本记录/ }));
+      fireEvent.change(await screen.findByLabelText('版本号'), { target: { value: '1.0.0' } });
+      const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' });
+      Object.defineProperty(archive, 'arrayBuffer', { value: async () => new Uint8Array([1, 2, 3]).buffer });
+      fireEvent.change(fileInput(), { target: { files: [archive] } });
+      fireEvent.click(screen.getByRole('button', { name: '上传版本' }));
+      // A rejected package names the package contract; the generic notice would
+      // send the operator looking at a ZIP file that is already valid.
+      expect(
+        await screen.findByText('技能包无效：必须是 ZIP 压缩包，且根目录包含 SKILL.md（不能放在子目录里）。'),
+      ).toBeInTheDocument();
+      // The button returns to rest before a retry; this failure is not a
+      // package problem, so the generic notice stays.
+      const retry = screen.getByText('上传版本', { selector: 'button span' }).closest('button');
+      await waitFor(() => expect(retry).not.toHaveClass('ant-btn-loading'));
+      fireEvent.click(retry!);
+      expect(await screen.findByText('版本上传失败，请检查 ZIP 文件和版本号。')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'names a missing Skill version when publishing',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [
+            {
+              id: 's1',
+              name: '写作',
+              description: '',
+              enabled: true,
+              state: 'active',
+              versions: [{ version: '1.0.0', state: 'draft', sha256: 'a'.repeat(64), size: 3 }],
+            },
+          ],
+        }),
+        publishSkillVersion: vi
+          .fn()
+          .mockRejectedValue(new AdminRequestError(404, 'RESOURCE_NOT_FOUND', 'The Skill version was not found.')),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      rtlRender(<AdminNotificationViewport />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /版本记录/ }));
+      fireEvent.click(await screen.findByText('发布', { selector: 'button span' }));
+      expect(await screen.findByText('这个版本已不存在，请刷新后重试。')).toBeInTheDocument();
     },
     TIMEOUT,
   );

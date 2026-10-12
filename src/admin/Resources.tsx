@@ -351,6 +351,27 @@ function NameCell({ name, detail }: { readonly name: string; readonly detail: st
 
 type MutationRunner = (operation: () => Promise<void>) => Promise<void>;
 
+// The server names why a Skill package or version was refused
+// (INVALID_SKILL_PACKAGE, PACKAGE_TOO_LARGE, ...). Showing that reason tells
+// the operator what to change; the generic per-action notice cannot, and for a
+// rejected package it is actively misleading, because a ZIP that is perfectly
+// valid on its own is the common failure.
+function skillRequestFailure(error: unknown): AdminTranslationKey | null {
+  if (!(error instanceof AdminRequestError)) return null;
+  switch (error.code) {
+    case 'INVALID_SKILL_PACKAGE':
+      return 'skillPackageInvalid';
+    case 'PACKAGE_TOO_LARGE':
+      return 'skillPackageTooLarge';
+    case 'INVALID_SKILL_VERSION':
+      return 'skillVersionInvalid';
+    case 'RESOURCE_NOT_FOUND':
+      return 'skillVersionGone';
+    default:
+      return null;
+  }
+}
+
 function useMutationRunner(onChanged: () => Promise<void>, onError: () => void) {
   const [pending, setPending] = useState(false);
   const run = useCallback<MutationRunner>(
@@ -3867,8 +3888,8 @@ function VersionManager({
       setArchive(null);
       await onChanged();
       notify(AdminNotificationKind.Success, t('versionUploaded'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillUploadFailed'));
+    } catch (error) {
+      notify(AdminNotificationKind.Error, t(skillRequestFailure(error) ?? 'skillUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -3879,8 +3900,8 @@ function VersionManager({
       await client.publishSkillVersion(skill.id, candidate);
       await onChanged();
       notify(AdminNotificationKind.Success, t('changesSaved'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillPublishFailed'));
+    } catch (error) {
+      notify(AdminNotificationKind.Error, t(skillRequestFailure(error) ?? 'skillPublishFailed'));
     } finally {
       setPendingVersion(null);
     }

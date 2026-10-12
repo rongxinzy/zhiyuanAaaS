@@ -36,6 +36,7 @@ import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import {
+  botUIBaseURL,
   EMPLOYEE_NAME_PATTERN,
   type PortalApplyInput,
   PortalClient,
@@ -43,7 +44,6 @@ import {
   type PortalEmployee,
   type PortalEmployeeUpdateInput,
   type PortalRequest,
-  botUIBaseURL,
 } from './portal.js';
 import { MemoryView } from './ServiceStatus.js';
 
