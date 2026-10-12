@@ -1,13 +1,13 @@
 # Zhiyuan Admin Console Developer Guide
 
-This repository contains the closed-source Zhiyuan Admin Console, a standalone
+This repository contains the Zhiyuan Admin Console, a standalone
 browser application for enterprise operators that talks to the AEP control
 service over HTTP, plus its deployment manifests. Treat this file as the first
 repository-specific instruction for coding agents and developers.
 
 ## Repository Boundaries
 
-- `D:/rxzy/ZhiyuanAaaS` is the closed Admin Console and its deployment
+- `D:/rxzy/ZhiyuanAaaS` is the Admin Console and its deployment
   configuration.
 - `D:/rxzy/Agent-Enterprise-Protocol` is the public AEP contract, SDK, control
   service, gateway authorizer, reconciler, CLI, and integration tests.
