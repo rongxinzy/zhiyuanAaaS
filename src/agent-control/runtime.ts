@@ -85,7 +85,23 @@ export class AgentControlRuntime {
     if (events.length === 0) return;
     const response = await this.#options.client.uploadEventBatch(events);
     const accepted = Array.isArray(response.accepted) ? response.accepted.map(String) : [];
-    this.#options.state.removeTelemetry(accepted);
+    // An event the service refused for a non-transient reason must leave the
+    // outbox: it sits at the head (oldest first) and would otherwise block
+    // every later event forever. A transient storage failure stays queued.
+    const abandoned = Array.isArray(response.rejected)
+      ? response.rejected.flatMap((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+          const record = item as Record<string, unknown>;
+          if (typeof record.eventId !== 'string' || record.code === 'INTERNAL_ERROR') return [];
+          return [record.eventId];
+        })
+      : [];
+    if (abandoned.length > 0) {
+      this.#options.onError?.(
+        new Error(`${abandoned.length} telemetry event(s) were rejected and dropped: ${abandoned.join(', ')}`),
+      );
+    }
+    this.#options.state.removeTelemetry([...accepted, ...abandoned]);
   }
 
   #schedule(delayMs: number): void {

@@ -150,6 +150,39 @@ describe('Agent control runtime', () => {
     }
   });
 
+  test('drops refused telemetry so one bad event cannot block the outbox', async () => {
+    const state = createState();
+    state.enqueueTelemetry({ eventId: 'poison', type: '' });
+    state.enqueueTelemetry({ eventId: 'later', type: 'skill.sync.completed' });
+    const uploadTelemetry = vi.fn(async () => ({
+      accepted: [],
+      rejected: [{ eventId: 'poison', code: 'INVALID_TYPE' }],
+    }));
+    const runtime = createRuntime(clientFixture({ uploadEventBatch: uploadTelemetry }), state);
+    try {
+      await runtime.flushTelemetry();
+      expect(state.listTelemetry()).toEqual([{ eventId: 'later', type: 'skill.sync.completed' }]);
+    } finally {
+      state.close();
+    }
+  });
+
+  test('keeps telemetry after a transient storage failure', async () => {
+    const state = createState();
+    state.enqueueTelemetry({ eventId: 'transient', type: 'skill.sync.failed' });
+    const uploadTelemetry = vi.fn(async () => ({
+      accepted: [],
+      rejected: [{ eventId: 'transient', code: 'INTERNAL_ERROR' }],
+    }));
+    const runtime = createRuntime(clientFixture({ uploadEventBatch: uploadTelemetry }), state);
+    try {
+      await runtime.flushTelemetry();
+      expect(state.listTelemetry()).toEqual([{ eventId: 'transient', type: 'skill.sync.failed' }]);
+    } finally {
+      state.close();
+    }
+  });
+
   test('coalesces concurrent cycles so control work cannot overlap', async () => {
     const state = createState();
     let releaseHeartbeat: () => void = () => {};
