@@ -104,46 +104,63 @@ test('missing, cancelled and newest failed CI never pass; other heads cannot sat
 
 function fixture() {
   const pr = {
-    number: 17, state: 'open', title: 'ci: improve gate', body, changed_files: 1,
-    head: { sha: 'a'.repeat(40), ref: 'change', repo: { id: 10 } }, base: { ref: 'main' },
+    number: 17,
+    state: 'open',
+    title: 'ci: improve gate',
+    body,
+    changed_files: 1,
+    head: { sha: 'a'.repeat(40), ref: 'change', repo: { id: 10 } },
+    base: { ref: 'main' },
   };
-  const config = { workflows: [
-    { name: 'CI', path: '.github/workflows/ci.yml' },
-    { name: 'CodeQL', path: '.github/workflows/codeql.yml' },
-    { name: 'DevOps gate tests', path: '.github/workflows/devops-gate-tests.yml' },
-  ] };
+  const config = {
+    workflows: [
+      { name: 'CI', path: '.github/workflows/ci.yml' },
+      { name: 'CodeQL', path: '.github/workflows/codeql.yml' },
+      { name: 'DevOps gate tests', path: '.github/workflows/devops-gate-tests.yml' },
+    ],
+  };
   const state = { pr, files: [{ filename: 'main.go' }], checks: [], writes: [], reads: 0, snapshots: 0 };
   state.runs = config.workflows.map((workflow, index) => ({
-    id: index + 1, run_attempt: 1, event: 'pull_request', path: workflow.path,
-    head_sha: pr.head.sha, head_branch: pr.head.ref, head_repository: { id: pr.head.repo.id },
+    id: index + 1,
+    run_attempt: 1,
+    event: 'pull_request',
+    path: workflow.path,
+    head_sha: pr.head.sha,
+    head_branch: pr.head.ref,
+    head_repository: { id: pr.head.repo.id },
     pull_requests: [{ number: pr.number, head: { sha: pr.head.sha }, base: { ref: 'main' } }],
-    status: 'completed', conclusion: 'success',
+    status: 'completed',
+    conclusion: 'success',
   }));
   state.eventRun = state.runs[0];
   const github = {
     rest: {
       pulls: {
-        listFiles: 'files', list: 'prs',
-        get: async () => { state.reads++; return { data: structuredClone(state.pr) }; },
+        listFiles: 'files',
+        list: 'prs',
+        get: async () => {
+          state.reads++;
+          return { data: structuredClone(state.pr) };
+        },
       },
       actions: { listWorkflowRunsForRepo: 'runs', getWorkflowRun: async () => ({ data: state.eventRun }) },
       checks: {
         listForRef: 'checks',
-        create: async request => {
+        create: async (request) => {
           state.writes.push({ action: 'create', ...request });
           const check = { ...request, id: 100, app: { slug: 'github-actions' } };
           state.checks.push(check);
           return { data: check };
         },
-        update: async request => {
+        update: async (request) => {
           state.writes.push({ action: 'update', ...request });
-          const check = state.checks.find(check => check.id === request.check_run_id);
+          const check = state.checks.find((check) => check.id === request.check_run_id);
           Object.assign(check, request);
           return { data: check };
         },
       },
     },
-    paginate: async endpoint => {
+    paginate: async (endpoint) => {
       if (endpoint === 'files') return state.files;
       if (endpoint === 'prs') return [state.pr];
       if (endpoint === 'checks') return state.checks;
@@ -153,8 +170,12 @@ function fixture() {
     },
   };
   const context = {
-    eventName: 'pull_request_target', repo: { owner: 'example', repo: 'example' },
-    serverUrl: 'https://github.com', ref: 'refs/heads/main', runId: 99, payload: { pull_request: structuredClone(pr) },
+    eventName: 'pull_request_target',
+    repo: { owner: 'example', repo: 'example' },
+    serverUrl: 'https://github.com',
+    ref: 'refs/heads/main',
+    runId: 99,
+    payload: { pull_request: structuredClone(pr) },
   };
   return { state, github, context, config, core: { info() {} } };
 }
@@ -185,14 +206,22 @@ test('upstream completion event refreshes the current PR and releases the check'
 
 test('metadata errors, failed/cancelled/skipped CI and incomplete files block the required check', async () => {
   const changes = [
-    f => { f.state.pr.body = 'missing template'; },
-    f => { f.state.pr.title = 'not conventional'; },
-    f => { f.state.files = []; },
-    ...['failure', 'cancelled', 'skipped', 'neutral', 'timed_out'].map(conclusion =>
-      f => { f.state.runs[0].conclusion = conclusion; }),
+    (f) => {
+      f.state.pr.body = 'missing template';
+    },
+    (f) => {
+      f.state.pr.title = 'not conventional';
+    },
+    (f) => {
+      f.state.files = [];
+    },
+    ...['failure', 'cancelled', 'skipped', 'neutral', 'timed_out'].map((conclusion) => (f) => {
+      f.state.runs[0].conclusion = conclusion;
+    }),
   ];
   for (const change of changes) {
-    const f = fixture(); change(f);
+    const f = fixture();
+    change(f);
     await refresh(f);
     assert.equal(f.state.writes.at(-1).conclusion, 'failure');
   }
@@ -215,13 +244,18 @@ test('newest run and newest attempt override historical success or failure', asy
 
 test('foreign PR, branch, repository, base, SHA and non-PR runs cannot satisfy the gate', async () => {
   for (const changed of [
-    { head_sha: 'b'.repeat(40) }, { event: 'push' }, { event: 'workflow_dispatch' },
-    { head_branch: 'other' }, { head_repository: { id: 999 } }, { pull_requests: [] },
+    { head_sha: 'b'.repeat(40) },
+    { event: 'push' },
+    { event: 'workflow_dispatch' },
+    { head_branch: 'other' },
+    { head_repository: { id: 999 } },
+    { pull_requests: [] },
     { pull_requests: [{ number: 999, head: { sha: 'a'.repeat(40) }, base: { ref: 'main' } }] },
     { pull_requests: [{ number: 17, head: { sha: 'a'.repeat(40) }, base: { ref: 'other' } }] },
     { pull_requests: [{ number: 17, head: { sha: 'b'.repeat(40) }, base: { ref: 'main' } }] },
   ]) {
-    const f = fixture(); Object.assign(f.state.runs[0], changed);
+    const f = fixture();
+    Object.assign(f.state.runs[0], changed);
     await refresh(f);
     assert.equal(f.state.writes.at(-1).status, 'queued');
     assert.equal(f.state.writes.at(-1).conclusion, undefined);
@@ -230,15 +264,32 @@ test('foreign PR, branch, repository, base, SHA and non-PR runs cannot satisfy t
 
 test('old-head, closed-PR, wrong-path and unrelated workflow events do not publish checks', async () => {
   for (const change of [
-    f => { f.state.eventRun = { ...f.state.eventRun, head_sha: 'old' }; },
-    f => { f.state.pr.state = 'closed'; },
-    f => { f.state.eventRun = { ...f.state.eventRun, path: '.github/workflows/unrelated.yml' }; },
-    f => { f.state.eventRun = { ...f.state.eventRun, event: 'push' }; },
-    f => { f.state.eventRun = { ...f.state.eventRun, head_repository: { id: 999 } }; },
-    f => { f.state.eventRun = { ...f.state.eventRun, pull_requests: [{ number: 17, head: { sha: 'old' }, base: { ref: 'main' } }] }; },
+    (f) => {
+      f.state.eventRun = { ...f.state.eventRun, head_sha: 'old' };
+    },
+    (f) => {
+      f.state.pr.state = 'closed';
+    },
+    (f) => {
+      f.state.eventRun = { ...f.state.eventRun, path: '.github/workflows/unrelated.yml' };
+    },
+    (f) => {
+      f.state.eventRun = { ...f.state.eventRun, event: 'push' };
+    },
+    (f) => {
+      f.state.eventRun = { ...f.state.eventRun, head_repository: { id: 999 } };
+    },
+    (f) => {
+      f.state.eventRun = {
+        ...f.state.eventRun,
+        pull_requests: [{ number: 17, head: { sha: 'old' }, base: { ref: 'main' } }],
+      };
+    },
   ]) {
-    const f = fixture(); change(f);
-    f.context.eventName = 'workflow_run'; f.context.payload = { workflow_run: { id: 1 } };
+    const f = fixture();
+    change(f);
+    f.context.eventName = 'workflow_run';
+    f.context.payload = { workflow_run: { id: 1 } };
     await refresh(f);
     assert.deepEqual(f.state.writes, []);
   }
@@ -246,8 +297,18 @@ test('old-head, closed-PR, wrong-path and unrelated workflow events do not publi
 
 test('head, body and base changes during aggregation invalidate the snapshot', async () => {
   for (const change of [
-    pr => { pr.head.sha = 'b'.repeat(40); }, pr => { pr.body = 'edited'; },
-    pr => { pr.base.ref = 'other'; }, pr => { pr.state = 'closed'; },
+    (pr) => {
+      pr.head.sha = 'b'.repeat(40);
+    },
+    (pr) => {
+      pr.body = 'edited';
+    },
+    (pr) => {
+      pr.base.ref = 'other';
+    },
+    (pr) => {
+      pr.state = 'closed';
+    },
   ]) {
     const f = fixture();
     f.github.rest.pulls.get = async () => {
@@ -264,7 +325,7 @@ test('renamed old paths remain in workflow applicability and cannot hide a requi
   const f = fixture();
   f.config.workflows[1].paths = ['sensitive/**'];
   f.state.files = [{ filename: 'docs/moved.md', previous_filename: 'sensitive/token.go' }];
-  f.state.runs = f.state.runs.filter(run => run.path !== f.config.workflows[1].path);
+  f.state.runs = f.state.runs.filter((run) => run.path !== f.config.workflows[1].path);
   await refresh(f);
   assert.equal(f.state.writes.at(-1).status, 'queued');
   assert.match(f.state.writes.at(-1).output.summary, /CodeQL/);
@@ -274,14 +335,16 @@ test('fork events without PR hints are resolved read-only but missing associatio
   const f = fixture();
   f.state.eventRun = { ...f.state.eventRun, pull_requests: [] };
   f.state.runs[0] = f.state.eventRun;
-  f.context.eventName = 'workflow_run'; f.context.payload = { workflow_run: { id: 1 } };
+  f.context.eventName = 'workflow_run';
+  f.context.payload = { workflow_run: { id: 1 } };
   await refresh(f);
   assert.equal(f.state.writes[0].name, 'ci-gate');
   assert.equal(f.state.writes.at(-1).status, 'queued');
 });
 
 test('manual recovery only accepts a numeric PR ID and validates fresh API metadata', async () => {
-  const f = fixture(); f.context.eventName = 'workflow_dispatch';
+  const f = fixture();
+  f.context.eventName = 'workflow_dispatch';
   for (const value of ['', '-1', '1; command', '1.2', '9007199254740992']) {
     f.context.payload = { inputs: { pull_request: value }, repository: { default_branch: 'main' } };
     await assert.rejects(eventPullNumbers(f), /valid pull request/);
@@ -296,14 +359,16 @@ test('manual recovery only accepts a numeric PR ID and validates fresh API metad
 test('API errors cannot publish success and failed result writes leave a blocking queued check', async () => {
   const f = fixture();
   const paginate = f.github.paginate;
-  f.github.paginate = async endpoint => {
+  f.github.paginate = async (endpoint) => {
     if (endpoint === 'checks') return paginate(endpoint);
     throw new Error('API unavailable');
   };
   await refresh(f);
   assert.equal(f.state.writes.at(-1).conclusion, 'failure');
   const broken = fixture();
-  broken.github.rest.checks.update = async () => { throw new Error('write unavailable'); };
+  broken.github.rest.checks.update = async () => {
+    throw new Error('write unavailable');
+  };
   await assert.rejects(refresh(broken), /write unavailable/);
   assert.equal(broken.state.writes.length, 1);
   assert.equal(broken.state.writes[0].status, 'queued');
@@ -316,7 +381,7 @@ test('refresh reuses only publisher-owned checks and resets success to pending d
   f.state.runs[0].status = 'in_progress';
   f.state.runs[0].conclusion = null;
   await refresh(f);
-  assert.equal(f.state.writes.filter(write => write.action === 'create').length, 1);
+  assert.equal(f.state.writes.filter((write) => write.action === 'create').length, 1);
   const reset = f.state.writes.at(-2);
   assert.equal(reset.check_run_id, 100);
   assert.equal(reset.status, 'queued');
@@ -329,5 +394,5 @@ test('refresh reuses only publisher-owned checks and resets success to pending d
     { id: 91, name: 'ci-gate', external_id: `devops-gate:17:${foreign.state.pr.head.sha}`, app: { slug: 'other-app' } },
   ];
   await refresh(foreign);
-  assert.ok(foreign.state.writes.every(write => ![90, 91].includes(write.check_run_id)));
+  assert.ok(foreign.state.writes.every((write) => ![90, 91].includes(write.check_run_id)));
 });
