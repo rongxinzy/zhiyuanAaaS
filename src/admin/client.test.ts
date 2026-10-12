@@ -59,6 +59,31 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
 
 describe('gateway API adapters', () => {
   afterEach(() => vi.unstubAllGlobals());
+  test('saves model prices through the authenticated API with exact decimals and versioned clear', async () => {
+    const requests: { url: URL; init: RequestInit }[] = [];
+    const record = { modelId: 'model/one', version: 7, updatedAt: null, pricing: null };
+    vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/aep/v1/metadata') return Response.json(serverMetadata);
+      if (url.pathname === '/aep/v1/auth/password/login') return Response.json(loginTokens);
+      if (url.pathname === '/aep/v1/user/me') return Response.json(adminMe);
+      requests.push({ url, init });
+      return Response.json(record);
+    });
+    const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+    await client.login({ username: 'admin', password: 'test-password' });
+    expect(await client.getModelPricing('model/one')).toEqual(record);
+    const pricing = { currency: 'CNY', inputPricePerMillionTokens: '0.000001', outputPricePerMillionTokens: '0' };
+    await client.putModelPricing('model/one', { pricing, expectedVersion: 7 });
+    await client.putModelPricing('model/one', { pricing: null, expectedVersion: 8 });
+    expect(requests.map((request) => request.url.pathname)).toEqual(
+      Array(3).fill('/aep/v1/admin/models/model%2Fone/pricing'),
+    );
+    expect(JSON.parse(String(requests[1]?.init.body))).toEqual({ pricing, expectedVersion: 7 });
+    expect(JSON.parse(String(requests[2]?.init.body))).toEqual({ pricing: null, expectedVersion: 8 });
+    expect(new Headers(requests[1]?.init.headers).get('Authorization')).toBe(`Bearer ${loginTokens.accessToken}`);
+    expect(new Headers(requests[1]?.init.headers).get('X-AEP-Protocol-Version')).toBe('1.0');
+  });
   test('preserves query filters, encoded subjects, scoped auth and optimistic write versions', async () => {
     const requests: { url: URL; init: RequestInit }[] = [];
     vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit) => {
