@@ -30,6 +30,7 @@ export interface GatewayWindow {
 }
 export interface GatewayMetricQuery extends GatewayWindow {
   metric: GatewayMetric;
+  source?: 'loki';
   groupBy?: GatewayDimension | 'none';
   step?: number;
   expectedDefinition?: string;

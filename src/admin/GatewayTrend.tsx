@@ -1,12 +1,12 @@
-import { Card, Checkbox, Empty, Segmented, Space, Tooltip, Typography, theme } from 'antd';
+import { Card, Checkbox, Empty, Segmented, Space, Typography, theme } from 'antd';
 import { LineChart } from 'echarts/charts';
 import { AriaComponent, DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components';
 import { connect, type ECharts, type EChartsCoreOption, init, use } from 'echarts/core';
 import { SVGRenderer } from 'echarts/renderers';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GatewayMetricResult, GatewayWindow } from './gateway-api.js';
 import { nativeSeries } from './gateway-api.js';
-import { formatGatewayNumber, gatewayT as t } from './gateway-ui.js';
+import { formatGatewayNumber, gatewayDisplayValue, gatewayT as t } from './gateway-ui.js';
 
 use([LineChart, GridComponent, TooltipComponent, DataZoomComponent, AriaComponent, SVGRenderer]);
 
@@ -28,14 +28,14 @@ interface TrendMeasure {
 }
 
 // ECharts owns axes, panning, zoom and crosshair tooltips. Values remain native
-// samples, with no interpolation, totals or success-from-failure calculations.
-// Timestamp conversion only changes drawing coordinates.
+// samples floored for presentation, with no interpolation, totals or
+// success-from-failure calculations. Timestamp conversion only changes coordinates.
 export function gatewayTrendSeries(measures: TrendMeasure[]) {
   return measures.flatMap(({ name, result, color, dashed }) =>
     nativeSeries(result).map((item) => ({
       type: 'line' as const,
       name: `${name}${Object.keys(item.labels).length ? ` · ${Object.values(item.labels).join(' / ')}` : ''}`,
-      data: item.points.map((point) => [point.time * 1000, point.value]),
+      data: item.points.map((point) => [point.time * 1000, gatewayDisplayValue(point.value)]),
       connectNulls: false,
       smooth: false,
       showSymbol: false,
@@ -179,55 +179,73 @@ function NativeTrend({
 
 export function GatewayTrend({
   calls,
-  failures,
+  input,
+  output,
   group,
   window,
   loading,
 }: {
   calls?: GatewayMetricResult | undefined;
-  failures?: GatewayMetricResult | undefined;
+  input?: GatewayMetricResult | undefined;
+  output?: GatewayMetricResult | undefined;
   group: string;
   window: GatewayWindow;
   loading?: boolean | undefined;
 }) {
   const { token } = theme.useToken();
-  const [status, setStatus] = useState('all');
+  const [mode, setMode] = useState('calls');
+  const [visible, setVisible] = useState(['input', 'output']);
   const measures = useMemo(
-    () => [
-      ...(status === 'all' ? [{ name: t('gatewayCalls'), result: calls, color: token.colorPrimary }] : []),
-      { name: t('gatewayFailures'), result: failures, color: token.colorError, dashed: true },
-    ],
-    [status, calls, failures, token],
+    () =>
+      mode === 'calls'
+        ? [{ name: t('gatewayCalls'), result: calls, color: token.colorPrimary }]
+        : [
+            ...(visible.includes('input')
+              ? [{ name: t('gatewayInputTokens'), result: input, color: token.colorPrimary }]
+              : []),
+            ...(visible.includes('output')
+              ? [{ name: t('gatewayOutputTokens'), result: output, color: token.colorSuccess, dashed: true }]
+              : []),
+          ],
+    [mode, calls, input, output, token, visible],
   );
   return (
     <Card
       className="gateway-trend-card"
       loading={Boolean(loading)}
-      title={t('gatewayCallTrend')}
+      title={t('gatewayUsageTrend')}
       extra={
         <Segmented
-          aria-label={t('gatewayCallResult')}
-          value={status}
-          onChange={setStatus}
+          aria-label={t('gatewayTrendMetric')}
+          value={mode}
+          onChange={setMode}
           options={[
-            { label: t('gatewayAll'), value: 'all' },
-            {
-              label: <Tooltip title={t('gatewaySuccessSourcePending')}>{t('gatewaySuccessfulCalls')}</Tooltip>,
-              value: 'success',
-              disabled: true,
-            },
-            { label: t('gatewayFailures'), value: 'failed' },
+            { label: t('gatewayCalls'), value: 'calls' },
+            { label: t('gatewayTokenUsage'), value: 'tokens' },
           ]}
         />
       }
     >
       <Space orientation="vertical" style={{ width: '100%' }}>
+        {mode === 'tokens' ? (
+          <Checkbox.Group
+            aria-label={t('gatewayTokenVisibility')}
+            value={visible}
+            onChange={setVisible}
+            options={[
+              { label: t('gatewayInputTokens'), value: 'input' },
+              { label: t('gatewayOutputTokens'), value: 'output' },
+            ]}
+          />
+        ) : (
+          <Typography.Text type="secondary">{t('gatewayCallsIncludeFailures')}</Typography.Text>
+        )}
         <NativeTrend
-          title={t('gatewayCallTrend')}
+          title={t(mode === 'calls' ? 'gatewayCallTrend' : 'gatewayTokenTrend')}
           measures={measures}
           group={group}
           window={window}
-          unit={t('gatewayRequestUnit')}
+          unit={mode === 'calls' ? t('gatewayRequestUnit') : 'Token'}
           loading={loading}
         />
         <Space wrap>
@@ -237,69 +255,9 @@ export function GatewayTrend({
             </Typography.Text>
           ))}
         </Space>
-        {status === 'all' ? <GatewayMetricNote result={calls} /> : null}
-        <GatewayMetricNote result={failures} />
-        <Typography.Text type="secondary">{t('gatewaySuccessSourcePending')}</Typography.Text>
-      </Space>
-    </Card>
-  );
-}
-
-export function GatewayTokenTrend({
-  input,
-  output,
-  group,
-  window,
-  loading,
-}: {
-  input?: GatewayMetricResult | undefined;
-  output?: GatewayMetricResult | undefined;
-  group: string;
-  window: GatewayWindow;
-  loading?: boolean | undefined;
-}) {
-  const { token } = theme.useToken();
-  const [visible, setVisible] = useState(['input', 'output']);
-  const onVisible = useCallback((values: string[]) => setVisible(values), []);
-  const measures = useMemo(
-    () => [
-      ...(visible.includes('input')
-        ? [{ name: t('gatewayInputTokens'), result: input, color: token.colorPrimary }]
-        : []),
-      ...(visible.includes('output')
-        ? [{ name: t('gatewayOutputTokens'), result: output, color: token.colorSuccess, dashed: true }]
-        : []),
-    ],
-    [input, output, token, visible],
-  );
-  return (
-    <Card
-      title={t('gatewayTokenTrend')}
-      loading={Boolean(loading)}
-      className="gateway-trend-card"
-      extra={
-        <Checkbox.Group
-          aria-label={t('gatewayTokenVisibility')}
-          value={visible}
-          onChange={onVisible}
-          options={[
-            { label: t('gatewayInputTokens'), value: 'input' },
-            { label: t('gatewayOutputTokens'), value: 'output' },
-          ]}
-        />
-      }
-    >
-      <Space orientation="vertical" style={{ width: '100%' }}>
-        <NativeTrend
-          title={t('gatewayTokenTrend')}
-          measures={measures}
-          group={group}
-          window={window}
-          unit="Token"
-          loading={loading}
-        />
-        {visible.includes('input') ? <GatewayMetricNote result={input} /> : null}
-        {visible.includes('output') ? <GatewayMetricNote result={output} /> : null}
+        {measures.map((measure) => (
+          <GatewayMetricNote key={measure.name} result={measure.result} />
+        ))}
       </Space>
     </Card>
   );
