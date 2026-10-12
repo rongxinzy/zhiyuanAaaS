@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   DatePicker,
   Descriptions,
   Drawer,
@@ -108,6 +109,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
   const [source, setSource] = useState<'all' | 'gateway' | 'authorizer'>('all');
   const [errorsOnly, setErrorsOnly] = useState(true);
   const [detail, setDetail] = useState<GatewayLogRow>();
+  const [detailRecords, setDetailRecords] = useState<GatewayLogRow[]>([]);
   const [detailFailed, setDetailFailed] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [more, setMore] = useState<GatewayLogRow[]>([]);
@@ -243,10 +245,18 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
     const current = requestQuery;
     const valid = () => mounted.current && activeQuery.current === current && detailRevision.current === revision;
     setDetail(row);
+    setDetailRecords([]);
     setDetailFailed(false);
     setDetailLoading(true);
     try {
-      const entries = nativeRequests(await client.getGatewayRequest(row.fields.request_id ?? '', requestQuery));
+      const entries = nativeRequests(
+        await client.getGatewayRequest(row.fields.request_id ?? '', {
+          ...requestQuery,
+          source: 'all',
+          ...(!requestQuery.userId && row.fields.user_id ? { userId: row.fields.user_id } : {}),
+          ...(!requestQuery.modelId && row.fields.model_id ? { modelId: row.fields.model_id } : {}),
+        }),
+      );
       const match = entries.find(
         (item) =>
           item.fields.request_id === row.fields.request_id &&
@@ -255,7 +265,20 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
       );
       if (valid()) {
         if (!match) setDetailFailed(true);
-        else setDetail(match);
+        else {
+          setDetail(match);
+          // Request IDs can be supplied/reused by callers. Never combine fields
+          // from other identities, or merge separate source records into a call.
+          setDetailRecords(
+            entries.filter(
+              (item) =>
+                item.fields.request_id === match.fields.request_id &&
+                ['deployment_id', 'user_id', 'model_id', 'team_ids', 'role_ids'].every(
+                  (field) => (item.fields[field] ?? '') === (match.fields[field] ?? ''),
+                ),
+            ),
+          );
+        }
       }
     } catch {
       if (valid()) setDetailFailed(true);
@@ -682,51 +705,83 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
             {detailFailed ? (
               <Alert showIcon type="error" title={t('gatewayDetailFailed')} />
             ) : detail ? (
-              <Descriptions
-                column={1}
-                items={[
-                  { key: 'request', label: t('gatewayRequestId'), children: detail.fields.request_id },
-                  { key: 'time', label: t('gatewayTime'), children: logTime(detail) },
-                  { key: 'model', label: t('gatewayModel'), children: label('model', detail.fields.model_id ?? '') },
-                  { key: 'user', label: t('gatewayUser'), children: label('user', detail.fields.user_id ?? '') },
-                  {
-                    key: 'teams',
-                    label: t('gatewayAtCallTeam'),
-                    children:
-                      memberships(detail.fields.team_ids ?? '')
-                        .map((id) => label('team', id))
-                        .join(', ') || '—',
-                  },
-                  {
-                    key: 'roles',
-                    label: t('gatewayAtCallRole'),
-                    children:
-                      memberships(detail.fields.role_ids ?? '')
-                        .map((id) => label('role', id))
-                        .join(', ') || '—',
-                  },
-                  {
-                    key: 'status',
-                    label: t('gatewayError'),
-                    children: `HTTP ${detail.fields.status || '—'} ${detail.fields.response_flags || ''}`,
-                  },
-                  ...(['input_token', 'output_token', 'llm_first_token_duration', 'llm_service_duration'] as const).map(
-                    (field) => ({
-                      key: field,
-                      label: t(
-                        field === 'input_token'
-                          ? 'gatewayInputTokens'
-                          : field === 'output_token'
-                            ? 'gatewayOutputTokens'
-                            : field === 'llm_first_token_duration'
-                              ? 'gatewayFirstTokenMean'
-                              : 'gatewayServiceMean',
-                      ),
-                      children: detail.fields[field] || t('gatewayNotProvided'),
-                    }),
-                  ),
-                ]}
-              />
+              <Space orientation="vertical" style={{ width: '100%' }}>
+                <Typography.Text type="secondary">{t('gatewayLinkedRecordsHint')}</Typography.Text>
+                {!detailRecords.some((record) => record.source === 'gateway') ? (
+                  <Alert showIcon type="info" title={t('gatewayLinkedGatewayMissing')} />
+                ) : null}
+                {detailRecords.some(
+                  (record, index) => detailRecords.findIndex((other) => other.source === record.source) !== index,
+                ) ? (
+                  <Alert showIcon type="warning" title={t('gatewayRequestIdReused')} />
+                ) : null}
+                <Collapse
+                  defaultActiveKey={detailRecords.map((record) => record.key)}
+                  items={detailRecords.map((record) => ({
+                    key: record.key,
+                    label: (
+                      <Typography.Text>
+                        {t(record.source === 'gateway' ? 'modelGateway' : 'gatewayAuthSource')}
+                      </Typography.Text>
+                    ),
+                    children: (
+                      <Descriptions
+                        column={1}
+                        items={[
+                          { key: 'request', label: t('gatewayRequestId'), children: record.fields.request_id },
+                          { key: 'time', label: t('gatewayTime'), children: logTime(record) },
+                          {
+                            key: 'model',
+                            label: t('gatewayModel'),
+                            children: label('model', record.fields.model_id ?? ''),
+                          },
+                          {
+                            key: 'user',
+                            label: t('gatewayUser'),
+                            children: label('user', record.fields.user_id ?? ''),
+                          },
+                          {
+                            key: 'teams',
+                            label: t('gatewayAtCallTeam'),
+                            children:
+                              memberships(record.fields.team_ids ?? '')
+                                .map((id) => label('team', id))
+                                .join(', ') || '—',
+                          },
+                          {
+                            key: 'roles',
+                            label: t('gatewayAtCallRole'),
+                            children:
+                              memberships(record.fields.role_ids ?? '')
+                                .map((id) => label('role', id))
+                                .join(', ') || '—',
+                          },
+                          {
+                            key: 'status',
+                            label: t('gatewayError'),
+                            children: `HTTP ${record.fields.status || '—'} ${record.fields.response_flags || ''}`,
+                          },
+                          ...(
+                            ['input_token', 'output_token', 'llm_first_token_duration', 'llm_service_duration'] as const
+                          ).map((field) => ({
+                            key: field,
+                            label: t(
+                              field === 'input_token'
+                                ? 'gatewayInputTokens'
+                                : field === 'output_token'
+                                  ? 'gatewayOutputTokens'
+                                  : field === 'llm_first_token_duration'
+                                    ? 'gatewayFirstTokenDuration'
+                                    : 'gatewayServiceDuration',
+                            ),
+                            children: record.fields[field] || t('gatewayNotProvided'),
+                          })),
+                        ]}
+                      />
+                    ),
+                  }))}
+                />
+              </Space>
             ) : null}
           </Drawer>
         </>

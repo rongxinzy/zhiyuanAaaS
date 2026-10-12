@@ -208,6 +208,11 @@ const translations = {
     gatewayAction: '操作',
     gatewayDetails: '详情',
     gatewayRequestDetails: '请求详情',
+    gatewayLinkedRecordsHint: '按请求 ID 读取各来源原始记录；每条记录独立显示，不合并计算。',
+    gatewayLinkedGatewayMissing: '未找到匹配的网关记录；请求可能在鉴权阶段被拒绝、日志尚未到达或已过期。',
+    gatewayRequestIdReused: '同一请求 ID 存在多条同来源记录，可能被重复使用；请结合各条时间判断。',
+    gatewayFirstTokenDuration: '首 Token 耗时（毫秒）',
+    gatewayServiceDuration: '服务耗时（毫秒）',
     gatewayCollapse: '收起',
     gatewayRequestId: '请求 ID',
     gatewayAtCallTeam: '调用时团队',
@@ -1132,6 +1137,14 @@ const translations = {
     gatewayAction: 'Action',
     gatewayDetails: 'Details',
     gatewayRequestDetails: 'Request details',
+    gatewayLinkedRecordsHint:
+      'Read original records from each source by request ID; records are displayed separately without combining values.',
+    gatewayLinkedGatewayMissing:
+      'No matching gateway record. Authorization may have rejected the call, or logs may be delayed or expired.',
+    gatewayRequestIdReused:
+      'Multiple records from the same source share this request ID. It may have been reused; check each timestamp.',
+    gatewayFirstTokenDuration: 'First-token duration (ms)',
+    gatewayServiceDuration: 'Service duration (ms)',
     gatewayCollapse: 'Collapse',
     gatewayRequestId: 'Request ID',
     gatewayAtCallTeam: 'Team at call time',
