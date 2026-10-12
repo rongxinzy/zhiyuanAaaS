@@ -132,6 +132,10 @@ function transport({
       const doc = docs.get(id);
       if (!suffix) return response({ data: { ...doc, ...(brokenParse ? { parse_status: 'failed' } : {}) } });
       if (suffix === '/reparse') return mutation(doc, 202, 'succeeded');
+      if (suffix === '/enable-status') {
+        doc.enable_status = body.enabled ? 'enabled' : 'disabled';
+        return mutation(doc);
+      }
       if (suffix === '/preview' || suffix === '/download') {
         if (user !== 'admin') return response({}, 403);
         return new Response(doc.marker, {
@@ -175,7 +179,9 @@ function transport({
       if (employeePath.endsWith('/download'))
         return new Response(doc.marker, { headers: { 'Content-Type': 'text/plain' } });
       const matches = [...docs.values()].filter(
-        (item) => item.knowledge_base_id === baseID && (employeePath !== 'search' || body.query === item.marker),
+        (item) =>
+          item.knowledge_base_id === baseID &&
+          (employeePath !== 'search' || (body.query === item.marker && item.enable_status !== 'disabled')),
       );
       if (employeePath === 'search')
         return response({

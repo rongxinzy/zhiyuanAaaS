@@ -15,7 +15,7 @@
 - 原生 WeKnora 使用独立 SQLite + FTS5、Redis、锁定依赖的真实 DocReader 与本机 Ollama 嵌入模型。主代理实际复跑 26 项：manual/TXT/PDF 解析、来源、关键词/向量/混合检索、文件预览下载，以及 FAQ 来源/向量/混合检索均通过。真实 PDF 编号被插空格的问题已按字体边界修正；DocReader 锁定依赖测试 198 项，13 项既有环境/样本跳过，其余通过。FAQ 关键词模式仍未验收，SQLite 证据不替代目标 PostgreSQL/ParadeDB 部署与迁移验收。
 - 原生 Kubernetes apiserver/etcd 与 operator 验证合成员工 CR 创建 Deployment、owner UID、镜像变更 reconcile、空知识库配置 deny-all；没有 scheduler/kubelet，不证明 Pod 或 runtime 启动。原生 AEP 控制服务使用真实隔离 PostgreSQL；未使用的 Skill 对象存储是显式本地 S3 模拟，不属于本轮能力验收。
 - 新增原生 Portal HTTP 验收 runner，区分 runner 自身契约测试与真实 HTTP 结果。临时资源限定本轮随机名字与精确 ownership readback，401 不能记为已认证权限隔离通过；报告不输出 token、凭据、私有 URL 或资料正文。完整计划通过标记保持 false。
-- 真实 AEP 两非管理员用户、PostgreSQL Portal、Kubernetes API 与 WeKnora 贯通，Portal runner 的 TXT/PDF/manual 范围 31 项通过并清理：建库、真实解析、预览/下载、FAQ、标签/文件夹/chunk 修改、用户/团队授权、旧 Bearer 撤权、跨库拒绝、来源与真实 actor 审计。默认仍验证 URL；本机 URL accepted 后解析超时，外部源 TLS 连接失败，未记通过。显式跳过 URL 的报告将 `url-import` 加入未验收列表。
+- 真实 AEP 两非管理员用户、PostgreSQL Portal、Kubernetes API 与 WeKnora 贯通，Portal runner 的 TXT/PDF/manual 范围 32 项通过并清理：建库、真实解析、预览/下载、FAQ、标签/文件夹/chunk 修改、资料停用/重新启用检索、用户/团队授权、旧 Bearer 撤权、跨库拒绝、来源与真实 actor 审计。最后补验发现旧索引仍返回停用资料，已在引擎最终结果汇集处同时过滤直接命中与 enrichment 的停用状态，并真实复跑通过。默认仍验证 URL；本机 URL accepted 后解析超时，外部源 TLS 连接失败，未记通过。显式跳过 URL 的报告将 `url-import` 加入未验收列表。
 - 原生管理台浏览器 4 项通过：真实 AEP 登录、知识库详情、revision=0 的新分块显示、1440→900→1440 来源内容与外层宽度检查；console/knowledge 请求错误均为 0。修复客户端错误的标签分页参数，以及已支持启停却仍显示“不支持”的旧提示。该只读浏览器验收不等于完整业务操作或 Agent 验收。
 - 本机隔离恢复 4 项通过：Portal PostgreSQL 受限权限 custom dump 恢复到新库；WeKnora SQLite 一致性备份及自有文件副本恢复；重新启动真实引擎/Portal 后校验目录、授权用户来源与原 actor/outcome 审计。恢复进程已停止，只删除新恢复库，没有覆盖源数据库；不替代目标 PostgreSQL/ParadeDB 与生产恢复演练。
 - Chart 新增 managed tenant/embedding/Secret selector 配置，启用后缺少标识即渲染失败。可选未来六组件镜像事务工具只完成源码、安全测试与准备，未执行 Docker、镜像更新或部署；原机器未提交 updater 仍未恢复。CI diff 需维护者正式 review。

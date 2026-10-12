@@ -490,6 +490,32 @@ export async function runManagedKnowledgeAcceptance(options) {
       );
     }
     record('employee-intersection-search-and-source');
+    const toggled = mutation(
+      await request('disable-document', `${pathDoc(primary.id)}/enable-status`, {
+        method: 'PUT',
+        body: { enabled: false },
+      }),
+      'disable-document',
+    );
+    ensure(toggled.enable_status === 'disabled', 'disable-document', 'disable-readback-mismatch');
+    const disabledSearch = await search(documentID, primary.marker, 'a');
+    ensure(
+      disabledSearch.data.results?.every((hit) => hit.source?.document_id !== primary.id),
+      'disable-document',
+      'disabled-document-still-retrievable',
+    );
+    mutation(
+      await request('enable-document', `${pathDoc(primary.id)}/enable-status`, {
+        method: 'PUT',
+        body: { enabled: true },
+      }),
+      'enable-document',
+    );
+    await poll('enable-document', async (requestTimeout) => {
+      const result = await search(documentID, primary.marker, 'a', [200], requestTimeout);
+      return result.data.results?.some((hit) => hit.source?.document_id === primary.id);
+    });
+    record('document-disable-and-reenable-retrieval');
     await poll('faq-employee-search', async (requestTimeout) => {
       const result = await search(faqID, runID, 'b', [200], requestTimeout);
       return result.data.results?.some(
