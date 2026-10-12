@@ -473,7 +473,7 @@ describe('portal client departments and lifecycle', () => {
     };
     const tagsFetch = stubFetch(200, { data: [tag], total: 1, page: 1, page_size: 200 });
     await expect(portal.listManagedKnowledgeTags('kb-1')).resolves.toEqual([tag]);
-    expect(tagsFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/tags?page=1&page_size=200');
+    expect(tagsFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases/kb-1/tags');
     vi.unstubAllGlobals();
 
     const folder = { path: 'docs', name: 'docs', document_count: 1, total_count: 2, children: [] };
@@ -654,7 +654,7 @@ describe('portal client departments and lifecycle', () => {
           content: 'excerpt',
           chunk_type: 'text',
           is_enabled: true,
-          content_revision: 4,
+          content_revision: 0,
           index_status: 'ready',
         },
       ],
@@ -664,6 +664,7 @@ describe('portal client departments and lifecycle', () => {
     });
     await expect(portal.listManagedKnowledgeChunks('doc-1', { page: 1, pageSize: 50 })).resolves.toMatchObject({
       total: 1,
+      data: [expect.objectContaining({ content_revision: 0 })],
     });
     expect(chunksFetch.mock.calls[0]![0]).toBe(
       '/api/v1/knowledge/managed/documents/doc-1/chunks?page=1&page_size=50&chunk_type=text',

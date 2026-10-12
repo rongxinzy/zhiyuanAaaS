@@ -4,7 +4,25 @@
 
 关联：[Issue #158](https://github.com/rongxinzy/zhiyuanAaaS/issues/158)。本文件是技术实施与验证记录；产品范围以 [FR-KB-03 / ER-AC-11 / K1](https://github.com/rongxinzy/zhiyuan-docs/blob/main/product/README.md) 为唯一正文。
 
-## 当前验收检查点（2026-10-11，另一机器续做）
+## 当前验收检查点（2026-10-12，无 Docker 原生进程）
+
+按用户要求不使用 Docker，不依赖当前无法获得的业务镜像。继续更新原 AaaS #165、治理 #45、引擎 #3；没有部署到原 Windows K3s 或共享环境。
+
+- 主代理复核并修复 Bearer 调用检索却额外要求 Portal cookie 的接入问题；拒绝的 Bearer 不得借用有效 cookie。Cookie 与 runtime handle 路径保留持久会话撤销检查。
+- 引擎修复 FAQ 缺省配置提前返回导致索引默认值缺失；MCP required 模式对所有注册工具做服务端边界检查，未受 Portal 在线授权保护的管理工具默认拒绝。真实 MCP dispatcher 回归 45 项通过，不能以客户端 middleware 代替服务端授权。
+- 真实引擎试跑发现 Portal 手动导入使用了不支持的 `published` 状态，已改成上游 `publish`；FAQ 来源默认只查询 text chunk，已按验证后的资料类型选择固定 `faq`/`text`，不接受客户端扩展类型。
+- Runtime 审计新增员工与 context 哈希绑定，完成操作限定 deployment、tenant、actor、员工、当前 run、runtime action 和 pending；旧未绑定记录、管理操作、其他会话与重放拒绝。真实隔离 PostgreSQL 14 的升级、行锁与审计边界回归通过。
+- 原生 WeKnora 使用独立 SQLite + FTS5、Redis、锁定依赖的真实 DocReader 与本机 Ollama 嵌入模型。主代理实际复跑 26 项：manual/TXT/PDF 解析、来源、关键词/向量/混合检索、文件预览下载，以及 FAQ 来源/向量/混合检索均通过。真实 PDF 编号被插空格的问题已按字体边界修正；DocReader 锁定依赖测试 198 项，13 项既有环境/样本跳过，其余通过。FAQ 关键词模式仍未验收，SQLite 证据不替代目标 PostgreSQL/ParadeDB 部署与迁移验收。
+- 原生 Kubernetes apiserver/etcd 与 operator 验证合成员工 CR 创建 Deployment、owner UID、镜像变更 reconcile、空知识库配置 deny-all；没有 scheduler/kubelet，不证明 Pod 或 runtime 启动。原生 AEP 控制服务使用真实隔离 PostgreSQL；未使用的 Skill 对象存储是显式本地 S3 模拟，不属于本轮能力验收。
+- 新增原生 Portal HTTP 验收 runner，区分 runner 自身契约测试与真实 HTTP 结果。临时资源限定本轮随机名字与精确 ownership readback，401 不能记为已认证权限隔离通过；报告不输出 token、凭据、私有 URL 或资料正文。完整计划通过标记保持 false。
+- 真实 AEP 两非管理员用户、PostgreSQL Portal、Kubernetes API 与 WeKnora 贯通，Portal runner 的 TXT/PDF/manual 范围 31 项通过并清理：建库、真实解析、预览/下载、FAQ、标签/文件夹/chunk 修改、用户/团队授权、旧 Bearer 撤权、跨库拒绝、来源与真实 actor 审计。默认仍验证 URL；本机 URL accepted 后解析超时，外部源 TLS 连接失败，未记通过。显式跳过 URL 的报告将 `url-import` 加入未验收列表。
+- 原生管理台浏览器 4 项通过：真实 AEP 登录、知识库详情、revision=0 的新分块显示、1440→900→1440 来源内容与外层宽度检查；console/knowledge 请求错误均为 0。修复客户端错误的标签分页参数，以及已支持启停却仍显示“不支持”的旧提示。该只读浏览器验收不等于完整业务操作或 Agent 验收。
+- 本机隔离恢复 4 项通过：Portal PostgreSQL 受限权限 custom dump 恢复到新库；WeKnora SQLite 一致性备份及自有文件副本恢复；重新启动真实引擎/Portal 后校验目录、授权用户来源与原 actor/outcome 审计。恢复进程已停止，只删除新恢复库，没有覆盖源数据库；不替代目标 PostgreSQL/ParadeDB 与生产恢复演练。
+- Chart 新增 managed tenant/embedding/Secret selector 配置，启用后缺少标识即渲染失败。可选未来六组件镜像事务工具只完成源码、安全测试与准备，未执行 Docker、镜像更新或部署；原机器未提交 updater 仍未恢复。CI diff 需维护者正式 review。
+
+本轮 Portal race 覆盖率 83.3%，AaaS 完整 check 54 文件 / 531 tests 通过；最新覆盖率以当前提交 CI 为准。原生证据独立于 mock 与历史 CI。尚未完成 URL 解析、真实 Agent/MCP 全链路、图片权限全链路、解析取消、目标数据库恢复和原机器部署；正式 approval 未完成，保留 Draft，不关闭 #158。
+
+## 前次验收检查点（2026-10-11，另一机器续做）
 
 继续原 `feat/knowledge-phase-a` 和关联 Draft PR，不新建替代功能分支。下方 2026-10-10 的部署缓存与未提交 worktree 描述属于原机器历史，不能视为当前可交付源码。
 

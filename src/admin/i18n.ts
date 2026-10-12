@@ -418,7 +418,7 @@ const translations = {
     knowledgeCurrentStage: '当前阶段',
     knowledgeAttempt: '解析轮次',
     knowledgeNoOriginal: '此资料没有可预览的原文件。',
-    knowledgeToggleUnavailable: '当前 WeKnora 接口不支持资料级启停；已停用的资料不会自动启用。',
+    knowledgeDocumentEnableHint: '停用资料后不会参与检索；解析未完成时只能设置保持停用。',
     knowledgeFileOnlyPreview: '原文件预览受文件类型与企业权限控制；嵌入图片暂不可单独下载。',
     knowledgeSource: '来源',
     knowledgeEnableState: '资料状态',
@@ -1441,8 +1441,8 @@ const translations = {
     knowledgeCurrentStage: 'Current stage',
     knowledgeAttempt: 'Parse attempt',
     knowledgeNoOriginal: 'This item has no previewable original file.',
-    knowledgeToggleUnavailable:
-      'The current WeKnora API does not support per-document enable/disable; disabled items stay disabled.',
+    knowledgeDocumentEnableHint:
+      'Disabled documents are excluded from retrieval. Documents still being parsed can only be kept disabled.',
     knowledgeFileOnlyPreview:
       'Original-file preview is controlled by file type and enterprise access; embedded images cannot be downloaded separately yet.',
     knowledgeSource: 'Source',

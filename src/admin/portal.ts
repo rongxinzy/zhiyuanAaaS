@@ -795,7 +795,7 @@ export class PortalClient {
         !nonEmptyString(chunk.id) ||
         typeof chunk.content !== 'string' ||
         !isFiniteNumber(chunk.content_revision) ||
-        chunk.content_revision < 1 ||
+        chunk.content_revision < 0 ||
         !['ready', 'processing', 'failed'].includes(String(chunk.index_status))
       ) {
         throw invalidManagedResponse();
@@ -819,11 +819,12 @@ export class PortalClient {
     keyword = '',
     signal?: AbortSignal,
   ): Promise<readonly ManagedKnowledgeTag[]> {
-    const params = new URLSearchParams({ page: '1', page_size: '200' });
+    // Portal owns complete-list pagination; its public query allows keyword only.
+    const params = new URLSearchParams();
     if (keyword) params.set('keyword', keyword);
     const { status, data } = await this.#request(
       'GET',
-      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/tags?${params.toString()}`,
+      `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/tags${params.size ? `?${params.toString()}` : ''}`,
       undefined,
       undefined,
       signal,

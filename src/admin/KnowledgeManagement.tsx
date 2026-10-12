@@ -123,7 +123,7 @@ const copyKeys = {
   currentStage: 'knowledgeCurrentStage',
   attempt: 'knowledgeAttempt',
   knowledgeNoOriginal: 'knowledgeNoOriginal',
-  knowledgeToggleUnavailable: 'knowledgeToggleUnavailable',
+  knowledgeDocumentEnableHint: 'knowledgeDocumentEnableHint',
   knowledgeFileOnlyPreview: 'knowledgeFileOnlyPreview',
   knowledgeSource: 'knowledgeSource',
   knowledgeEnableState: 'knowledgeEnableState',
@@ -1148,7 +1148,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
               <Alert
                 showIcon
                 type="info"
-                title={t('knowledgeToggleUnavailable')}
+                title={t('knowledgeDocumentEnableHint')}
                 description={t('knowledgeFileOnlyPreview')}
               />
               <Table<ManagedKnowledgeDocument>

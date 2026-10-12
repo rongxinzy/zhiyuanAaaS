@@ -27,6 +27,8 @@
     "verify:electron-rc": "node scripts/verify-electron-rc.mjs",
     "verify:model-acceptance": "node scripts/verify-model-acceptance.mjs",
     "verify:knowledge:api": "node scripts/verify-knowledge-api.mjs",
+    "verify:knowledge:managed": "node scripts/verify-managed-knowledge.mjs",
+    "verify:knowledge:native-engine": "node scripts/verify-managed-knowledge-native-engine.mjs",
     "verify:package-inputs": "node scripts/verify-package-inputs.mjs",
     "verify:electron-package": "node scripts/verify-electron-package.mjs",
     "verify:release-artifacts": "node scripts/verify-release-artifacts.mjs",
