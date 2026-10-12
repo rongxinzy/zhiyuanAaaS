@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
+import { AepProblem } from '@aep/sdk-node';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
@@ -957,16 +958,19 @@ describe('admin resources', () => {
           ...emptyResources,
           skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
         }),
+        // Skill packages travel through the generated SDK, so the console sees
+        // AepProblem; the second attempt covers the handwritten request path,
+        // and the third an unmapped code.
         uploadSkillVersion: vi
           .fn()
           .mockRejectedValueOnce(
-            new AdminRequestError(
-              400,
-              'INVALID_SKILL_PACKAGE',
-              'the Skill package does not contain SKILL.md at its root',
-            ),
+            AepProblem.from(400, {
+              code: 'INVALID_SKILL_PACKAGE',
+              detail: 'the Skill package does not contain SKILL.md at its root',
+            }),
           )
-          .mockRejectedValueOnce(new AdminRequestError(500, 'INTERNAL_ERROR', 'unavailable')),
+          .mockRejectedValueOnce(new AdminRequestError(400, 'INVALID_SKILL_VERSION', 'invalid version'))
+          .mockRejectedValueOnce(AepProblem.from(500, { code: 'INTERNAL_ERROR', detail: 'unavailable' })),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
       rtlRender(<AdminNotificationViewport />);
@@ -977,17 +981,20 @@ describe('admin resources', () => {
       const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' });
       Object.defineProperty(archive, 'arrayBuffer', { value: async () => new Uint8Array([1, 2, 3]).buffer });
       fireEvent.change(fileInput(), { target: { files: [archive] } });
-      fireEvent.click(screen.getByRole('button', { name: '上传版本' }));
+      const upload = () => screen.getByText('上传版本', { selector: 'button span' }).closest('button')!;
+      const attempt = async () => {
+        await waitFor(() => expect(upload()).not.toHaveClass('ant-btn-loading'));
+        fireEvent.click(upload());
+      };
+      await attempt();
       // A rejected package names the package contract; the generic notice would
       // send the operator looking at a ZIP file that is already valid.
       expect(
         await screen.findByText('技能包无效：必须是 ZIP 压缩包，且根目录包含 SKILL.md（不能放在子目录里）。'),
       ).toBeInTheDocument();
-      // The button returns to rest before a retry; this failure is not a
-      // package problem, so the generic notice stays.
-      const retry = screen.getByText('上传版本', { selector: 'button span' }).closest('button');
-      await waitFor(() => expect(retry).not.toHaveClass('ant-btn-loading'));
-      fireEvent.click(retry!);
+      await attempt();
+      expect(await screen.findByText('版本号只能包含字母、数字和 . _ + -。')).toBeInTheDocument();
+      await attempt();
       expect(await screen.findByText('版本上传失败，请检查 ZIP 文件和版本号。')).toBeInTheDocument();
     },
     TIMEOUT,
@@ -1012,7 +1019,9 @@ describe('admin resources', () => {
         }),
         publishSkillVersion: vi
           .fn()
-          .mockRejectedValue(new AdminRequestError(404, 'RESOURCE_NOT_FOUND', 'The Skill version was not found.')),
+          .mockRejectedValue(
+            AepProblem.from(404, { code: 'RESOURCE_NOT_FOUND', detail: 'The Skill version was not found.' }),
+          ),
       };
       render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
       rtlRender(<AdminNotificationViewport />);

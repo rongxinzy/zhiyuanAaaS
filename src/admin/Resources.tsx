@@ -6,7 +6,16 @@
  *
  */
 
-import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
+import {
+  type AdminModel,
+  AepProblem,
+  type JsonObject,
+  type ModelAssignment,
+  type Permission,
+  type PlatformUser,
+  type Role,
+  type Team,
+} from '@aep/sdk-node';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -351,26 +360,27 @@ function NameCell({ name, detail }: { readonly name: string; readonly detail: st
 
 type MutationRunner = (operation: () => Promise<void>) => Promise<void>;
 
-// The server names why a Skill package or version was refused
-// (INVALID_SKILL_PACKAGE, PACKAGE_TOO_LARGE, ...). Showing that reason tells
-// the operator what to change; the generic per-action notice cannot, and for a
-// rejected package it is actively misleading, because a ZIP that is perfectly
-// valid on its own is the common failure.
-function skillRequestFailure(error: unknown): AdminTranslationKey | null {
-  if (!(error instanceof AdminRequestError)) return null;
-  switch (error.code) {
-    case 'INVALID_SKILL_PACKAGE':
-      return 'skillPackageInvalid';
-    case 'PACKAGE_TOO_LARGE':
-      return 'skillPackageTooLarge';
-    case 'INVALID_SKILL_VERSION':
-      return 'skillVersionInvalid';
-    case 'RESOURCE_NOT_FOUND':
-      return 'skillVersionGone';
-    default:
-      return null;
-  }
+// The console talks to two client layers. Skill packages go through the
+// generated SDK, which throws AepProblem; the handwritten request path (used by
+// Skill deletion, for example) throws AdminRequestError. Read the code off
+// either, so a refusal is named instead of collapsing into one generic notice.
+function problemCode(error: unknown): string | null {
+  if (error instanceof AepProblem || error instanceof AdminRequestError) return error.code;
+  return null;
 }
+
+// Each action names only the refusals it can actually produce. A missing version
+// means the version is gone when publishing, but a missing Skill when uploading,
+// so the upload list deliberately omits RESOURCE_NOT_FOUND.
+const uploadFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_PACKAGE: 'skillPackageInvalid',
+  PACKAGE_TOO_LARGE: 'skillPackageTooLarge',
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+};
+const publishFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+  RESOURCE_NOT_FOUND: 'skillVersionGone',
+};
 
 function useMutationRunner(onChanged: () => Promise<void>, onError: () => void) {
   const [pending, setPending] = useState(false);
@@ -3889,7 +3899,8 @@ function VersionManager({
       await onChanged();
       notify(AdminNotificationKind.Success, t('versionUploaded'));
     } catch (error) {
-      notify(AdminNotificationKind.Error, t(skillRequestFailure(error) ?? 'skillUploadFailed'));
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? uploadFailureCopy[code] : undefined) ?? 'skillUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -3901,7 +3912,8 @@ function VersionManager({
       await onChanged();
       notify(AdminNotificationKind.Success, t('changesSaved'));
     } catch (error) {
-      notify(AdminNotificationKind.Error, t(skillRequestFailure(error) ?? 'skillPublishFailed'));
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? publishFailureCopy[code] : undefined) ?? 'skillPublishFailed'));
     } finally {
       setPendingVersion(null);
     }
