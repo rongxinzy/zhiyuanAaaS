@@ -20,7 +20,7 @@ import {
 import dayjs, { type Dayjs } from 'dayjs';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AdminPermission, hasAdminPermission } from './client.js';
-import { GatewayMetricNote, GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
+import { GatewayMetricNote, GatewayTrend } from './GatewayTrend.js';
 import type {
   GatewayDimension,
   GatewayLogRow,
@@ -159,17 +159,19 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         groupBy: GatewayDimension | 'none',
         scoped = true,
       ): Promise<MetricValue> => {
-        if (!available.metrics.includes(metric)) return { failed: false };
+        if (!available.metrics.includes(metric) || (metric === 'calls' && !available.sources.loki))
+          return { failed: false };
         try {
-          return {
-            result: await client.queryGatewayMetrics({
-              ...(scoped ? window : { start: window.start, end: window.end }),
-              metric,
-              groupBy,
-              step: Number(step),
-            }),
-            failed: false,
-          };
+          const result = await client.queryGatewayMetrics({
+            ...(scoped ? window : { start: window.start, end: window.end }),
+            metric,
+            ...(metric === 'calls' ? { source: 'loki' as const, expectedDefinition: 'gateway_access_requests' } : {}),
+            groupBy,
+            step: Number(step),
+          });
+          if (metric === 'calls' && (result.source !== 'loki' || result.definition.id !== 'gateway_access_requests'))
+            return { failed: true };
+          return { result, failed: false };
         } catch {
           return { failed: true };
         }
@@ -410,6 +412,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         {new Date(window.start).toLocaleString()} — {new Date(window.end).toLocaleString()}
       </Typography.Text>
       <Alert type="info" showIcon title={t('gatewayWindowHint')} description={t('gatewayNativeOnly')} />
+      <Typography.Text type="secondary">{t('gatewayDisplayFloorHint')}</Typography.Text>
       {queryFailed ? <GatewayLoadError retry={data.retry} /> : null}
       <Row gutter={[token.margin, token.margin]}>
         {(['calls', 'failures', 'input_tokens', 'output_tokens'] as const).map((metric) => {
@@ -428,17 +431,9 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         })}
       </Row>
       <Row gutter={[token.marginLG, token.marginLG]}>
-        <Col xs={24} xl={12}>
+        <Col xs={24}>
           <GatewayTrend
             calls={data.value?.summary.calls?.result}
-            failures={data.value?.summary.failures?.result}
-            group={chartGroup}
-            window={window}
-            loading={data.loading}
-          />
-        </Col>
-        <Col xs={24} xl={12}>
-          <GatewayTokenTrend
             input={data.value?.summary.input_tokens?.result}
             output={data.value?.summary.output_tokens?.result}
             group={chartGroup}
@@ -700,7 +695,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
                               ? 'gatewayFirstTokenMean'
                               : 'gatewayServiceMean',
                       ),
-                      children: detail.fields[field] || t('gatewayNotProvided'),
+                      children: formatGatewayNumber(detail.fields[field]?.trim() ? Number(detail.fields[field]) : null),
                     }),
                   ),
                 ]}
