@@ -22,6 +22,7 @@ import { formatGatewayNumber } from './gateway-ui.js';
 import { administratorIdentity } from './test-fixtures.js';
 
 vi.mock('./notifications.js', () => ({ notify: vi.fn() }));
+vi.mock('@ant-design/plots', () => ({ Line: () => null }));
 configure({ asyncUtilTimeout: 5000 });
 function render(ui: ReactElement) {
   return renderReact(
@@ -293,7 +294,7 @@ test('observation displays native samples without totals, queries all subjects a
   expect(screen.getAllByText('23').length).toBeGreaterThan(0);
   expect(screen.queryByText('34')).not.toBeInTheDocument();
   expect(screen.getAllByText('未提供').length).toBeGreaterThan(0);
-  expect(screen.getByRole('img', { name: '调用与失败趋势' })).toBeInTheDocument();
+  expect(screen.getByRole('img', { name: '调用趋势' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('switch', { name: '仅显示 HTTP 错误' }));
   expect(screen.getByRole('row', { name: /r1 / })).toBeInTheDocument();
   for (const [label, name] of [
@@ -415,11 +416,11 @@ test('custom time inputs reach AEP, survive refresh and return to preset windows
   const start = dayjs().subtract(2, 'hour').startOf('minute');
   const end = dayjs().subtract(1, 'hour').startOf('minute');
   fireEvent.focus(inputs[0]!);
-  fireEvent.change(inputs[0]!, { target: { value: start.format('MM-DD HH:mm') } });
+  fireEvent.change(inputs[0]!, { target: { value: start.format('YYYY-MM-DD HH:mm') } });
   fireEvent.keyDown(inputs[0]!, { key: 'Tab', code: 'Tab' });
   fireEvent.blur(inputs[0]!);
   fireEvent.focus(inputs[1]!);
-  fireEvent.change(inputs[1]!, { target: { value: end.format('MM-DD HH:mm') } });
+  fireEvent.change(inputs[1]!, { target: { value: end.format('YYYY-MM-DD HH:mm') } });
   fireEvent.keyDown(inputs[1]!, { key: 'Enter', code: 'Enter' });
   fireEvent.blur(inputs[1]!);
   await waitFor(() =>

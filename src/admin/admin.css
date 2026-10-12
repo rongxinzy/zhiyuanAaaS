@@ -31,6 +31,22 @@ body {
   /* Keep the picker's animated active bar inside its field during resize. */
   overflow: clip;
 }
+.gateway-range-popup,
+.gateway-range-popup .ant-picker-panel-container {
+  max-width: calc(100vw - var(--ant-padding) * 2);
+}
+.gateway-range-popup .ant-picker-panel-container {
+  overflow-x: auto;
+}
+.gateway-group-table {
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-border-radius-lg);
+}
+.gateway-group-table .ant-table-pagination {
+  margin: 0;
+  padding: var(--ant-padding);
+  border-top: var(--ant-line-width) solid var(--ant-color-border-secondary);
+}
 .gateway-workbench .ant-space {
   min-width: 0;
 }

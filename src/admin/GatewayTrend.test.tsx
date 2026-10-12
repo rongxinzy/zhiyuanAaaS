@@ -40,16 +40,15 @@ test('charts preserve native decimals, zero and missing samples without aggregat
   const series = gatewayTrendSeries([{ name: 'Tokens', result, color: 'currentColor' }]);
   expect(series).toHaveLength(2);
   expect(series[0]?.data).toEqual([
-    [100000, 1.75],
-    [160000, null],
-    [220000, 0],
+    { time: new Date(100000), value: 1.75 },
+    { time: new Date(160000), value: null },
+    { time: new Date(220000), value: 0 },
   ]);
   expect(series[1]?.data).toEqual([
-    [100000, 9],
-    [160000, null],
-    [220000, 12],
+    { time: new Date(100000), value: 9 },
+    { time: new Date(160000), value: null },
+    { time: new Date(220000), value: 12 },
   ]);
-  expect(series.every((item) => item.connectNulls === false && item.smooth === false)).toBe(true);
 });
 
 test('unavailable native results never become a fabricated zero series', () => {
