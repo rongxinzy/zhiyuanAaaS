@@ -191,3 +191,37 @@ body {
 .ant-descriptions-item-content {
   overflow-wrap: anywhere;
 }
+
+.admin-permission-tree {
+  max-block-size: min(40vh, calc(var(--ant-control-height) * 10));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--ant-padding-sm);
+  border: var(--ant-line-width) var(--ant-line-type) var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
+  background: var(--ant-color-bg-container);
+}
+.admin-permission-tree .ant-tree-treenode {
+  align-items: flex-start;
+}
+.admin-permission-tree .ant-tree-node-content-wrapper {
+  display: inline-flex;
+  align-items: flex-start;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.admin-permission-tree .ant-tree-iconEle {
+  flex-shrink: 0;
+}
+.admin-permission-tree .ant-tree-title {
+  min-width: 0;
+}
+.admin-permission-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--ant-margin-xs);
+  max-width: 100%;
+}
