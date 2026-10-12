@@ -75,7 +75,7 @@ export function KnowledgeAudit({
         <Form.Item name="actorUserId" label={t('knowledgeAuditActor')}>
           <Input maxLength={256} />
         </Form.Item>
-        <Button htmlType="submit" loading={loading}>
+        <Button htmlType="submit" aria-label={t('knowledgeAuditQuery')} loading={loading}>
           {t('knowledgeAuditQuery')}
         </Button>
         <Button

@@ -559,7 +559,7 @@ try {
   await page.getByText('admin-e2e', { exact: true }).waitFor();
   await page.getByText('uncertain', { exact: true }).waitFor();
   await page.getByLabel('操作人 ID', { exact: true }).fill('admin-e2e');
-  await page.getByRole('button', { name: /^查\s*询$/ }).click();
+  await page.getByRole('button', { name: '查询', exact: true }).click();
   await waitForValue(
     () =>
       state.requests.some(
