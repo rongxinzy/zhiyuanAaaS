@@ -18,9 +18,9 @@ import {
   theme,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminPermission, hasAdminPermission } from './client.js';
-import { GatewayMetricNote, GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
+import { type GatewayChartZoom, GatewayMetricNote, GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
 import type {
   GatewayDimension,
   GatewayLogRow,
@@ -104,7 +104,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
   const [end, setEnd] = useState(() => Date.now());
   const [customRange, setCustomRange] = useState<[number, number]>();
   const [rangeError, setRangeError] = useState(false);
-  const chartGroup = useId();
+  const [chartZoom, setChartZoom] = useState<GatewayChartZoom>();
   const [source, setSource] = useState<'all' | 'gateway' | 'authorizer'>('all');
   const [errorsOnly, setErrorsOnly] = useState(true);
   const [detail, setDetail] = useState<GatewayLogRow>();
@@ -337,7 +337,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         ))}
       </Row>
       <Row gutter={[token.margin, token.margin]}>
-        <Col xs={24} sm={8}>
+        <Col xs={12} lg={6}>
           <GatewayField
             label={t('gatewayPeriod')}
             value={period}
@@ -359,7 +359,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
             ]}
           />
         </Col>
-        <Col xs={24} sm={8}>
+        <Col xs={12} lg={6}>
           <GatewayField
             label={t('gatewaySampling')}
             value={step}
@@ -371,7 +371,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
             ]}
           />
         </Col>
-        <Col xs={24} sm={8}>
+        <Col xs={24} lg={12}>
           <Form layout="vertical">
             <Form.Item
               label={t('gatewaySelectedTime')}
@@ -381,13 +381,33 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
             >
               <DatePicker.RangePicker
                 className="gateway-time-range"
+                classNames={{ popup: { root: 'gateway-range-popup' } }}
                 aria-label={t('gatewaySelectedTime')}
                 value={pickerRange}
                 showTime
-                needConfirm={false}
-                format="MM-DD HH:mm"
+                needConfirm
+                format="YYYY-MM-DD HH:mm"
                 allowClear={false}
                 maxDate={dayjs()}
+                disabledDate={(date, { from }) =>
+                  date.isAfter(dayjs(), 'day') || Boolean(from && Math.abs(date.diff(from, 'day')) > 31)
+                }
+                disabledTime={(date) => {
+                  const now = dayjs();
+                  if (!date?.isSame(now, 'day')) return {};
+                  return {
+                    disabledHours: () =>
+                      Array.from({ length: 24 }, (_, hour) => hour).filter((hour) => hour > now.hour()),
+                    disabledMinutes: (hour) =>
+                      hour === now.hour()
+                        ? Array.from({ length: 60 }, (_, minute) => minute).filter((minute) => minute > now.minute())
+                        : [],
+                    disabledSeconds: (hour, minute) =>
+                      hour === now.hour() && minute === now.minute()
+                        ? Array.from({ length: 60 }, (_, second) => second).filter((second) => second > now.second())
+                        : [],
+                  };
+                }}
                 style={{ width: '100%' }}
                 onChange={(values) => {
                   if (!values?.[0] || !values[1]) return;
@@ -431,8 +451,8 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         <Col xs={24} xl={12}>
           <GatewayTrend
             calls={data.value?.summary.calls?.result}
-            failures={data.value?.summary.failures?.result}
-            group={chartGroup}
+            zoom={chartZoom}
+            onZoom={setChartZoom}
             window={window}
             loading={data.loading}
           />
@@ -441,7 +461,8 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
           <GatewayTokenTrend
             input={data.value?.summary.input_tokens?.result}
             output={data.value?.summary.output_tokens?.result}
-            group={chartGroup}
+            zoom={chartZoom}
+            onZoom={setChartZoom}
             window={window}
             loading={data.loading}
           />
@@ -482,6 +503,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
         </Col>
       </Row>
       <Table
+        className="gateway-group-table"
         aria-label={t('gatewayGroups')}
         rowKey="key"
         loading={data.loading}

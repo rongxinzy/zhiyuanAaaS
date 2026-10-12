@@ -6,3 +6,4 @@ coverage/
 .env.*
 !.env.example
 build/model-pricing-browser/
+build/gateway-trend-browser/
