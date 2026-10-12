@@ -7,6 +7,16 @@ import { type AgentControlClient, ControlTaskType, type InboxItem, InboxState, t
 
 const CONTROL_CURSOR_KEY = 'control_cursor';
 const DEFAULT_RETRY_DELAY_MS = 5_000;
+// Rejection codes the service will never accept on retry: the event was valid
+// enough to be examined and permanently refused. Everything else stays queued
+// so a transient or newly introduced retryable code is not silently dropped.
+const ABANDONED_TELEMETRY_CODES: Record<string, true> = {
+  INVALID_EVENT_ID: true,
+  INVALID_TYPE: true,
+  INVALID_RESULT: true,
+  INVALID_OCCURRED_AT: true,
+  EVENT_ID_CONFLICT: true,
+};
 const MAX_HEARTBEAT_DELAY_MS = 5 * 60_000;
 const MAX_ERROR_MESSAGE_LENGTH = 1_024;
 
@@ -85,15 +95,16 @@ export class AgentControlRuntime {
     if (events.length === 0) return;
     const response = await this.#options.client.uploadEventBatch(events);
     const accepted = Array.isArray(response.accepted) ? response.accepted.map(String) : [];
-    // An event the service refused for a non-transient reason must leave the
+    // An event the service refused for a known-permanent reason must leave the
     // outbox: it sits at the head (oldest first) and would otherwise block
-    // every later event forever. A transient storage failure stays queued.
+    // every later event forever. Anything else stays queued so a transient or
+    // newly introduced retryable code is not silently dropped.
     const abandoned = Array.isArray(response.rejected)
       ? response.rejected.flatMap((item) => {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
           const record = item as Record<string, unknown>;
-          if (typeof record.eventId !== 'string' || record.code === 'INTERNAL_ERROR') return [];
-          return [record.eventId];
+          if (typeof record.eventId !== 'string' || typeof record.code !== 'string') return [];
+          return ABANDONED_TELEMETRY_CODES[record.code] === true ? [record.eventId] : [];
         })
       : [];
     if (abandoned.length > 0) {
