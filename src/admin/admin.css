@@ -31,6 +31,22 @@ body {
   /* Keep the picker's animated active bar inside its field during resize. */
   overflow: clip;
 }
+.gateway-range-popup,
+.gateway-range-popup .ant-picker-panel-container {
+  max-width: calc(100vw - var(--ant-padding) * 2);
+}
+.gateway-range-popup .ant-picker-panel-container {
+  overflow-x: auto;
+}
+.gateway-group-table {
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-border-radius-lg);
+}
+.gateway-group-table .ant-table-pagination {
+  margin: 0;
+  padding: var(--ant-padding);
+  border-top: var(--ant-line-width) solid var(--ant-color-border-secondary);
+}
 .gateway-workbench .ant-space {
   min-width: 0;
 }
@@ -174,4 +190,38 @@ body {
 }
 .ant-descriptions-item-content {
   overflow-wrap: anywhere;
+}
+
+.admin-permission-tree {
+  max-block-size: min(40vh, calc(var(--ant-control-height) * 10));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--ant-padding-sm);
+  border: var(--ant-line-width) var(--ant-line-type) var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
+  background: var(--ant-color-bg-container);
+}
+.admin-permission-tree .ant-tree-treenode {
+  align-items: flex-start;
+}
+.admin-permission-tree .ant-tree-node-content-wrapper {
+  display: inline-flex;
+  align-items: flex-start;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.admin-permission-tree .ant-tree-iconEle {
+  flex-shrink: 0;
+}
+.admin-permission-tree .ant-tree-title {
+  min-width: 0;
+}
+.admin-permission-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--ant-margin-xs);
+  max-width: 100%;
 }
