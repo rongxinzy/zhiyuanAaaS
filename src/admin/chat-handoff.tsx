@@ -1,7 +1,8 @@
 // 管理端"开始使用"跳转：员工对话由独立前端 zhiyuanBotUI 承载（自带登录），
 // 这里只做深链（#/emp/<name>），不再铸造 portal 会话。
-import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Button, Modal } from 'antd';
+
+import { Alert, Modal } from 'antd';
+import { type ReactNode, useCallback, useState } from 'react';
 import { botUIBaseURL, type PortalEmployee } from './portal.js';
 
 interface ChatHandoff {
@@ -9,10 +10,7 @@ interface ChatHandoff {
   readonly kind: 'blocked';
 }
 
-export function useChatHandoff(_: {
-  readonly client?: unknown;
-  readonly portal?: unknown;
-}): {
+export function useChatHandoff(_: { readonly client?: unknown; readonly portal?: unknown }): {
   readonly handoff: ChatHandoff | null;
   readonly openChat: (employee: PortalEmployee) => void;
   readonly retry: () => void;
@@ -44,14 +42,7 @@ export function ChatHandoffModal({
 }) {
   if (!handoff) return null;
   return (
-    <Modal
-      open
-      okText="重试打开"
-      cancelText="关闭"
-      onOk={onRetry}
-      onCancel={onClose}
-      title="对话窗口被浏览器拦截"
-    >
+    <Modal open okText="重试打开" cancelText="关闭" onOk={onRetry} onCancel={onClose} title="对话窗口被浏览器拦截">
       <Alert
         type="warning"
         showIcon
