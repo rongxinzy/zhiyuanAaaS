@@ -348,6 +348,119 @@ test('request drawer uses detail API, ignores completion after close and support
   fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]!);
   expect(await screen.findByText('请求详情无法获取或已过期')).toBeInTheDocument();
 });
+test('request details query all sources and keep trusted identities and source values separate', async () => {
+  const selected = logs(1);
+  const origin = selected.data.data.result[0]!;
+  origin.stream.aep_source = 'authorizer';
+  const [timestamp, line] = origin.values[0]!;
+  const fields = JSON.parse(line!) as Record<string, string>;
+  delete fields.input_token;
+  delete fields.output_token;
+  delete fields.llm_first_token_duration;
+  delete fields.llm_service_duration;
+  origin.values[0] = [timestamp!, JSON.stringify(fields)];
+  const gateway = {
+    ...fields,
+    status: '200',
+    input_token: '17',
+    output_token: '3',
+    llm_first_token_duration: '0',
+    llm_service_duration: '10',
+  };
+  const result = {
+    ...selected,
+    data: {
+      data: {
+        result: [
+          origin,
+          {
+            stream: { aep_source: 'gateway' },
+            values: [
+              [String(BigInt(timestamp!) - 1000000n), JSON.stringify(gateway)],
+              [timestamp!, JSON.stringify({ ...gateway, user_id: 'other-user', llm_service_duration: '987' })],
+              [timestamp!, JSON.stringify({ ...gateway, model_id: 'other-model', llm_service_duration: '988' })],
+              [
+                timestamp!,
+                JSON.stringify({ ...gateway, deployment_id: 'other-deployment', llm_service_duration: '989' }),
+              ],
+              [timestamp!, JSON.stringify({ ...gateway, request_id: 'other-request', llm_service_duration: '990' })],
+            ],
+          },
+        ],
+      },
+    },
+  };
+  const client = stub({
+    searchGatewayRequests: vi.fn().mockResolvedValue(selected),
+    getGatewayRequest: vi.fn().mockResolvedValue(result),
+  });
+  render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
+  await select('错误来源', '鉴权服务');
+  fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[0]!);
+  await screen.findByText('按请求 ID 读取各来源原始记录；每条记录独立显示，不合并计算。');
+  expect(client.getGatewayRequest).toHaveBeenLastCalledWith(
+    'r0',
+    expect.objectContaining({ source: 'all', userId: 'u1', modelId: 'model-a' }),
+  );
+  const drawer = within(screen.getByRole('dialog'));
+  expect(drawer.getByText('HTTP 503')).toBeInTheDocument();
+  expect(drawer.getByText('HTTP 200')).toBeInTheDocument();
+  expect(drawer.getByText('0')).toBeInTheDocument();
+  expect(drawer.getByText('10')).toBeInTheDocument();
+  expect(drawer.getAllByText('未提供')).toHaveLength(4);
+  for (const value of ['987', '988', '989', '990']) expect(drawer.queryByText(value)).not.toBeInTheDocument();
+});
+
+test('request details preserve active user, model and organization filters', async () => {
+  const client = stub();
+  render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
+  await screen.findByRole('row', { name: /r0 / });
+  await select('团队', '团队甲');
+  await select('角色', '角色甲');
+  await select('用户', '用户甲');
+  await select('模型', '测试模型');
+  await waitFor(() => expect(screen.getByRole('button', { name: '刷新查询' })).toBeEnabled());
+  fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]!);
+  await waitFor(() =>
+    expect(client.getGatewayRequest).toHaveBeenLastCalledWith(
+      'r0',
+      expect.objectContaining({ source: 'all', userId: 'u1', modelId: 'model-a', teamId: 't1', roleId: 'role' }),
+    ),
+  );
+});
+
+test('authorizer-only details explain missing gateway data without inventing usage', async () => {
+  const result = logs(1);
+  result.data.data.result[0]!.stream.aep_source = 'authorizer';
+  const client = stub({
+    searchGatewayRequests: vi.fn().mockResolvedValue(result),
+    getGatewayRequest: vi.fn().mockResolvedValue(result),
+  });
+  render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
+  fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[0]!);
+  expect(
+    await screen.findByText('未找到匹配的网关记录；请求可能在鉴权阶段被拒绝、日志尚未到达或已过期。'),
+  ).toBeInTheDocument();
+});
+
+test('reused request IDs show independent records and a warning', async () => {
+  const selected = logs(1);
+  const stream = selected.data.data.result[0]!;
+  const [timestamp, line] = stream.values[0]!;
+  const result = logs(1);
+  result.data.data.result[0]!.values.push([String(BigInt(timestamp!) - 1000000n), line!]);
+  const client = stub({
+    searchGatewayRequests: vi.fn().mockResolvedValue(selected),
+    getGatewayRequest: vi.fn().mockResolvedValue(result),
+  });
+  render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
+  fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[0]!);
+  expect(
+    await screen.findByText('同一请求 ID 存在多条同来源记录，可能被重复使用；请结合各条时间判断。'),
+  ).toBeInTheDocument();
+  expect(within(screen.getByRole('dialog')).getAllByText('HTTP 503')).toHaveLength(2);
+});
+
 test('native query failure is visible; refresh recovers without synthesizing data', async () => {
   const client = stub({
     queryGatewayMetrics: vi.fn().mockRejectedValue(new Error('source offline')),
