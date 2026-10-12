@@ -33,8 +33,6 @@ const copy = {
     more: '加载更多',
     eventId: '记录标识',
     resourceId: '对象标识',
-    scope: '范围',
-    scopeId: '范围标识',
     empty: '当前条件下暂无记录',
     scopeNote: '只展示接口返回的元数据；对话正文、密钥与原始业务内容不在此展示。',
     execution: '配置执行记录',
@@ -80,8 +78,6 @@ const copy = {
     more: 'Load more',
     eventId: 'Record ID',
     resourceId: 'Object ID',
-    scope: 'Scope',
-    scopeId: 'Scope ID',
     empty: 'No matching records',
     scopeNote:
       'Only metadata returned by the API is shown. Conversation contents, secrets and raw business data are excluded.',
