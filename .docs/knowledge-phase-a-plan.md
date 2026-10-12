@@ -6,6 +6,20 @@
 
 ## 当前验收检查点（2026-10-12，无 Docker 原生进程）
 
+### Windows 原机器续做（2026-10-12，未更新运行部署）
+
+三个最新远端提交已在独立工作树接手：管理台 `22ec25a`、治理 `0695233`、引擎 `133b206`。原目录旧未提交改动全部保留，没有 reset、stash 或覆盖。三个 PR 的适用 CI 已查通过；这是接手提交的结果，不替代后续新提交 CI。
+
+- 独立审核发现 Portal 对话上下文只放在顶层 `context`，固定 DeerFlow backend `1470ffc` 的 Gateway 白名单会丢弃这些扩展字段；现在同时写入 Gateway 支持的 `config.context`，覆盖调用方伪造身份并移除 `configurable` 同名字段。补齐 `api/` 前缀与无状态 `/runs/wait`、`/runs/stream` 注入。回归先复现前缀漏注入，修复后覆盖线程/无状态路径、非法/null 配置、非 run/GET 原文保持和超限拒绝。主代理 Linux Go 1.26.9 全量复验通过（7.025s，83.4%）；未完成真实 Agent 对话，不把源码数据流和 handler 测试计作完整链路。
+- 管理台 live runner 增加真实解析图片来源、有权/无权/跨资料/撤权旧凭据读取与真实 actor 审计断言，以及显式受控解析器取消测试。图片来源必须来自实际解析后的分块，不构造假 handle；任一检查或审计失败均保留未验收标记。取消改为 PDF 文件上传，必须观察 processing 再调用取消并确认 cancelled；受控解析器证据不等于生产解析器验收。
+- 合成图像 PDF 使用 256×256 像素与符合现有解析筛选的页面面积。主代理通过现有 DocReader Pod 的 PDFium，仅从标准输入解码合成内容，确认 1 页、文本标记及 256×256 图片；未写资料或数据库。这只证明 fixture 可解析，不证明新部署的图片权限链路。
+- 主代理完整 `npm run check` 通过：55 文件、536/536；新增 fixture/runner 定向 13 项通过；既有页面 mock 浏览器 22 项、553 请求、console error 为 0（接手后运行）。Python MCP 固定新源码的 pytest 26 项通过。mock、fixture 与真实产品 HTTP 证据保持独立。
+- 人工测试步骤与 bug 记录方式见 [knowledge-user-acceptance.md](knowledge-user-acceptance.md)。开始测试前仍需核对匹配部署，不将本文件当作部署成功通知。
+- 本机 k3s 的七个目标 Deployment 可见且 Ready，但仍是旧运行版本；Portal/MCP 配置与匹配业务制品、独立 DocReader、数据库保护及恢复门仍需准备。已提交 kind 更新器不能直接用于本机 default k3s；本机适配器仍在审核，未运行 build/import/apply/迁移。
+- 真实 DeerFlow backend 已定位固定构建来源 `1470ffc`；WSL 锁定依赖安装遭遇网络/缓存问题，Windows 公共 PyPI 经进程级代理可达，正在核对锁与目标 wheel 准备方式。没有更改全局代理、旧 venv 或付费模型配置。
+
+当前 `fullPlanAccepted=false`，三个功能 PR 继续 Draft。真实 URL、Agent/MCP、图片权限、生产解析取消与本机部署/恢复/浏览器验收及正式 approval 仍未完成。
+
 按用户要求不使用 Docker，不依赖当前无法获得的业务镜像。继续更新原 AaaS #165、治理 #45、引擎 #3；没有部署到原 Windows K3s 或共享环境。
 
 - 主代理复核并修复 Bearer 调用检索却额外要求 Portal cookie 的接入问题；拒绝的 Bearer 不得借用有效 cookie。Cookie 与 runtime handle 路径保留持久会话撤销检查。

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { syntheticPDF } from './verify-knowledge-api.mjs';
+import { syntheticImagePDF } from './verify-managed-knowledge-fixtures.mjs';
 
 class AcceptanceError extends Error {
   constructor(stage, code, status) {
@@ -52,6 +53,19 @@ export function validateManagedOptions(options) {
     'configuration',
     'invalid-url-import-scope',
   );
+  ensure(
+    options.includeCancelParse === undefined || typeof options.includeCancelParse === 'boolean',
+    'configuration',
+    'invalid-cancel-parse-scope',
+  );
+  if (options.includeCancelParse === true) {
+    ensure(
+      options.cancelParserMode === 'controlled-testparser',
+      'configuration',
+      'controlled-testparser-prerequisite-required',
+    );
+    ensure(safeID(options.cancelParserMarker), 'configuration', 'controlled-testparser-marker-required');
+  }
   for (const key of ['adminToken', 'userAToken', 'userBToken']) {
     ensure(
       typeof options[key] === 'string' && options[key].length > 0 && !/[\r\n;]/.test(options[key]),
@@ -99,14 +113,15 @@ export async function runManagedKnowledgeAcceptance(options) {
     cleanup: 'not-needed',
     fullPlanAccepted: false,
     importKinds,
-    // HTTP acceptance cannot prove UI, live Agent/MCP calls, image provenance or restore drills.
+    // The image check is only cleared after live parser, authorization and audit assertions pass.
     unverified: [
       'browser-interaction',
       'agent-mcp-runtime',
       'image-source-authorization',
       'backup-restore',
       'restart-recovery',
-      'parse-failure-cancel',
+      'controlled-testparser-cancel',
+      'production-parser-cancel',
       ...(options.includeURLImport === false ? ['url-import'] : []),
     ],
   };
@@ -129,9 +144,12 @@ export async function runManagedKnowledgeAcceptance(options) {
   let employeeCreated = false;
   let employeeCreationAttempted = false;
   const operations = [];
-  const record = (stage) => report.checks.push({ stage, result: 'passed' });
+  const record = (stage, details = {}) => report.checks.push({ stage, result: 'passed', ...details });
   const pathBase = (id) => `/api/v1/knowledge/managed/bases/${id}`;
   const pathDoc = (id) => `/api/v1/knowledge/managed/documents/${id}`;
+  const unverify = (stage) => {
+    report.unverified = report.unverified.filter((item) => item !== stage);
+  };
 
   async function request(
     stage,
@@ -144,6 +162,7 @@ export async function runManagedKnowledgeAcceptance(options) {
       binary = false,
       expectedMIME,
       expectedMarker,
+      expectedBytesPrefix,
       expectedErrorCode,
       requestTimeout = timeout,
     } = {},
@@ -196,12 +215,23 @@ export async function runManagedKnowledgeAcceptance(options) {
           await reader.cancel();
         }
         ensure(size > 0, stage, 'empty-file');
+        const bytes = Buffer.concat(parts);
+        if (expectedBytesPrefix)
+          ensure(
+            bytes.subarray(0, expectedBytesPrefix.length).equals(expectedBytesPrefix),
+            stage,
+            'unexpected-file-signature',
+          );
         ensure(
-          Buffer.concat(parts).includes(Buffer.from(expectedMarker)),
+          expectedMarker === undefined || bytes.includes(Buffer.from(expectedMarker)),
           stage,
           'downloaded-synthetic-marker-missing',
         );
-        return { status: response.status };
+        return {
+          status: response.status,
+          bytesRead: size,
+          contentType: response.headers.get('content-type')?.split(';')[0].trim(),
+        };
       }
       const data = await response.json();
       ensure(data && typeof data === 'object' && !Array.isArray(data), stage, 'invalid-json-envelope');
@@ -278,6 +308,82 @@ export async function runManagedKnowledgeAcceptance(options) {
     ensure(chunk && safeID(chunk.id), stage, 'synthetic-marker-missing-from-parsed-content');
     record(stage);
     return chunk;
+  }
+
+  async function parsedImage(id, baseID, marker) {
+    await poll('parse-image-pdf', async (requestTimeout) => {
+      const result = await request('parse-image-pdf', pathDoc(id), { requestTimeout });
+      const doc = result.data.data;
+      ensure(doc?.id === id && doc.knowledge_base_id === baseID, 'parse-image-pdf', 'document-parent-mismatch');
+      ensure(
+        ['pending', 'processing', 'finalizing', 'completed'].includes(doc.parse_status),
+        'parse-image-pdf',
+        'parse-failed-or-unknown',
+      );
+      return doc.parse_status === 'completed';
+    });
+    const chunks = await request('parse-image-pdf', `${pathDoc(id)}/chunks?page=1&page_size=100`);
+    ensure(Array.isArray(chunks.data.data), 'parse-image-pdf', 'invalid-chunks');
+    ensure(
+      chunks.data.data.some((item) => item.knowledge_id === id && item.content?.includes(marker)),
+      'parse-image-pdf',
+      'synthetic-marker-missing-from-parsed-content',
+    );
+    const chunk = chunks.data.data.find(
+      (item) => item.knowledge_id === id && Array.isArray(item.images) && item.images.length > 0,
+    );
+    ensure(chunk && safeID(chunk.id), 'parse-image-pdf', 'real-parser-image-handle-missing');
+    ensure(
+      chunk.images.every(
+        (image) =>
+          Number.isInteger(image.index) &&
+          image.index >= 0 &&
+          typeof image.url === 'string' &&
+          image.url.startsWith('/api/v1/knowledge/managed/documents/'),
+      ),
+      'parse-image-pdf',
+      'invalid-protected-image-reference',
+    );
+    record('parse-image-pdf');
+    return chunk;
+  }
+
+  async function cancelControlledParse(baseID) {
+    const marker = options.cancelParserMarker;
+    const upload = new FormData();
+    upload.append(
+      'file',
+      new Blob([syntheticImagePDF(`cancel-${marker}`)], { type: 'application/pdf' }),
+      `cancel-${marker}.pdf`,
+    );
+    const doc = mutation(
+      await request('import-cancel-parse', `${pathBase(baseID)}/documents/file`, {
+        method: 'POST',
+        statuses: [202],
+        body: upload,
+      }),
+      'import-cancel-parse',
+    );
+    ensure(safeID(doc?.id) && doc.knowledge_base_id === baseID, 'import-cancel-parse', 'import-parent-mismatch');
+    await poll('cancel-parse-processing', async (requestTimeout) => {
+      const current = await request('cancel-parse-processing', pathDoc(doc.id), { requestTimeout });
+      const status = current.data.data?.parse_status;
+      if (status === 'processing') return true;
+      ensure(status === 'pending', 'cancel-parse-processing', 'controlled-parser-did-not-hold-processing');
+      return false;
+    });
+    mutation(
+      await request('cancel-parse-action', `${pathDoc(doc.id)}/cancel-parse`, { method: 'POST', statuses: [202] }),
+      'cancel-parse-action',
+    );
+    await poll('cancel-parse-terminal', async (requestTimeout) => {
+      const current = await request('cancel-parse-terminal', pathDoc(doc.id), { requestTimeout });
+      const status = current.data.data?.parse_status;
+      ensure(status === 'cancelled' || status === 'processing', 'cancel-parse-terminal', 'unexpected-terminal-status');
+      return status === 'cancelled';
+    });
+    record('controlled-testparser-cancel');
+    unverify('controlled-testparser-cancel');
   }
 
   try {
@@ -363,6 +469,29 @@ export async function runManagedKnowledgeAcceptance(options) {
         }
       }
     }
+    const imageMarker = `managed-image-${runID}`;
+    const imageUpload = new FormData();
+    imageUpload.append(
+      'file',
+      new Blob([syntheticImagePDF(imageMarker)], { type: 'application/pdf' }),
+      'acceptance-image.pdf',
+    );
+    const imageDoc = mutation(
+      await request('import-image-pdf', `${pathBase(documentID)}/documents/file`, {
+        method: 'POST',
+        statuses: [202],
+        body: imageUpload,
+      }),
+      'import-image-pdf',
+    );
+    ensure(
+      safeID(imageDoc?.id) && imageDoc.knowledge_base_id === documentID,
+      'import-image-pdf',
+      'import-parent-mismatch',
+    );
+    record('import-image-pdf');
+    const imageChunk = await parsedImage(imageDoc.id, documentID, imageMarker);
+    if (options.includeCancelParse === true) await cancelControlledParse(documentID);
     const primary = documents[0];
     mutation(
       await request('reparse', `${pathDoc(primary.id)}/reparse`, { method: 'POST', statuses: [202] }),
@@ -459,6 +588,40 @@ export async function runManagedKnowledgeAcceptance(options) {
     employeeCreated = true;
     for (const user of ['a', 'b'])
       await request('employee-access-preflight', `/api/v1/employees/${employeeName}`, { user });
+    const imageRef = imageChunk.images[0];
+    const managedImagePath = `${pathDoc(imageDoc.id)}/chunks/${imageChunk.id}/images/${imageRef.index}`;
+    const imagePath = `/api/v1/knowledge/employees/${employeeName}/documents/${imageDoc.id}/chunks/${imageChunk.id}/images/${imageRef.index}`;
+    ensure(
+      imageRef.url === managedImagePath && imageRef.index >= 0,
+      'employee-image',
+      'image-route-does-not-match-real-parser-reference',
+    );
+    const imageRead = await request('employee-image', imagePath, {
+      user: 'a',
+      binary: true,
+      // DocReader decodes the PDF XObject and currently emits a JPEG resource.
+      expectedMIME: 'image/jpeg',
+      expectedBytesPrefix: Buffer.from([0xff, 0xd8, 0xff]),
+    });
+    ensure(imageRead.bytesRead > 3, 'employee-image', 'image-bytes-too-short');
+    const unauthorizedImage = await request('unauthorized-employee-image', imagePath, {
+      user: 'b',
+      statuses: [403],
+    });
+    const otherChunk = documents.find((doc) => doc.id !== imageDoc.id)?.chunk;
+    ensure(otherChunk && safeID(otherChunk.id), 'employee-image-cross-document', 'second-document-chunk-required');
+    const crossDocumentImage = await request(
+      'employee-image-cross-document',
+      `/api/v1/knowledge/employees/${employeeName}/documents/${imageDoc.id}/chunks/${otherChunk.id}/images/0`,
+      { user: 'a', statuses: [404] },
+    );
+    record('employee-image-authorization-bytes-and-cross-document', {
+      authorizedStatus: imageRead.status,
+      mime: imageRead.contentType,
+      bytes: imageRead.bytesRead,
+      unauthorizedStatus: unauthorizedImage.status,
+      crossDocumentStatus: crossDocumentImage.status,
+    });
     await request('referenced-delete-protection', pathBase(documentID), {
       method: 'DELETE',
       statuses: [409],
@@ -588,6 +751,11 @@ export async function runManagedKnowledgeAcceptance(options) {
         { user, statuses: [403] },
       );
     }
+    const revokedImage = await request('revoked-old-session-image-denial', imagePath, {
+      user: 'a',
+      statuses: [403],
+    });
+    record('revoked-old-session-image-denial', { status: revokedImage.status });
     record('revoked-old-session-denial');
     // A grant does not bypass the employee's explicit knowledge whitelist.
     await grants(documentID, [{ type: 'user', id: options.userAID }]);
@@ -618,6 +786,7 @@ export async function runManagedKnowledgeAcceptance(options) {
       ['employee_search', documentID, options.userAID],
       ['employee_search', documentID, options.userBID],
       ['employee_read_source', primary.id, options.userAID],
+      ['read_chunk_image', imageDoc.id, options.userAID],
     ]) {
       const query = new URLSearchParams({ action, resourceId, actorUserId, limit: '100' });
       const audit = await request('grant-and-retrieval-audit', `/api/v1/knowledge/managed/audit?${query}`);
@@ -634,6 +803,7 @@ export async function runManagedKnowledgeAcceptance(options) {
       );
     }
     record('persisted-operation-audit');
+    unverify('image-source-authorization');
   } catch (error) {
     report.failure = failure(error);
   } finally {
@@ -723,6 +893,9 @@ export async function main(env = process.env) {
     sourceURL: env.ZHIYUAN_MANAGED_SYNTHETIC_SOURCE_URL,
     sourceMarker: env.ZHIYUAN_MANAGED_SYNTHETIC_SOURCE_MARKER,
     includeURLImport: env.ZHIYUAN_MANAGED_SKIP_URL_IMPORT !== '1',
+    includeCancelParse: env.ZHIYUAN_MANAGED_VERIFY_CANCEL_PARSE === '1',
+    cancelParserMode: env.ZHIYUAN_MANAGED_CANCEL_PARSER_MODE,
+    cancelParserMarker: env.ZHIYUAN_MANAGED_CANCEL_PARSER_MARKER,
     allowWrites: env.ZHIYUAN_MANAGED_ALLOW_TEMPORARY_WRITES === '1',
   });
   console.log(JSON.stringify(report, null, 2));

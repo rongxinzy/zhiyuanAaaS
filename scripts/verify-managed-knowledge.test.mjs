@@ -28,6 +28,15 @@ function transport({
   brokenParse = false,
   failAudit = false,
   unknownCreate = false,
+  controlledParser = false,
+  missingImage = false,
+  badImageMIME = false,
+  badImageSignature = false,
+  unauthorizedImageSucceeds = false,
+  crossDocumentImageSucceeds = false,
+  revokedImageSucceeds = false,
+  missingImageAudit = false,
+  cancelNoTerminal = false,
 } = {}) {
   const bases = new Map();
   const docs = new Map();
@@ -48,7 +57,13 @@ function transport({
   const calls = [];
   const fetcher = async (url, init) => {
     const { pathname: path, searchParams } = new URL(url);
-    calls.push({ path, method: init.method, authorization: init.headers.Authorization, cookie: init.headers.Cookie });
+    calls.push({
+      path,
+      method: init.method,
+      authorization: init.headers.Authorization,
+      cookie: init.headers.Cookie,
+      uploadName: init.body instanceof FormData ? init.body.get('file')?.name : undefined,
+    });
     const user =
       init.headers.Authorization === `Bearer ${options.userAToken}`
         ? 'a'
@@ -102,13 +117,18 @@ function transport({
       }
       if (suffix.startsWith('/documents/')) {
         const docID = `doc-${docs.size + 1}`;
-        const marker =
-          body instanceof FormData
-            ? (await body.get('file').text()).match(/managed-(?:txt|pdf)-[\w-]+/)[0]
-            : body.url
-              ? options.sourceMarker
-              : body.content.match(/managed-manual-[\w-]+/)[0];
-        const doc = { id: docID, knowledge_base_id: id, parse_status: 'completed', marker };
+        const fileText = body instanceof FormData ? await body.get('file').text() : undefined;
+        const marker = fileText
+          ? (fileText.match(/managed-(?:txt|pdf|image)-[\w-]+|cancel-fixture-marker/)?.[0] ?? 'file-marker')
+          : body.url
+            ? options.sourceMarker
+            : (body.content.match(/managed-manual-[\w-]+|cancel-fixture-marker/)?.[0] ?? 'cancel-fixture-marker');
+        const doc = {
+          id: docID,
+          knowledge_base_id: id,
+          parse_status: controlledParser && fileText?.includes('cancel-fixture-marker') ? 'processing' : 'completed',
+          marker,
+        };
         docs.set(docID, doc);
         return mutation(doc, 202);
       }
@@ -131,6 +151,10 @@ function transport({
       const [, id, suffix] = docMatch;
       const doc = docs.get(id);
       if (!suffix) return response({ data: { ...doc, ...(brokenParse ? { parse_status: 'failed' } : {}) } });
+      if (suffix === '/cancel-parse') {
+        if (!cancelNoTerminal) doc.parse_status = 'cancelled';
+        return mutation(doc, 202, 'succeeded');
+      }
       if (suffix === '/reparse') return mutation(doc, 202, 'succeeded');
       if (suffix === '/enable-status') {
         doc.enable_status = body.enabled ? 'enabled' : 'disabled';
@@ -142,40 +166,64 @@ function transport({
           headers: { 'Content-Type': doc.marker.includes('-pdf-') ? 'application/pdf' : 'text/plain' },
         });
       }
-      const chunk = { id: `chunk-${id}`, knowledge_id: id, content: `Synthetic ${doc.marker}`, content_revision: 1 };
+      const chunk = {
+        id: `chunk-${id}`,
+        knowledge_id: id,
+        content: `Synthetic ${doc.marker}`,
+        content_revision: 1,
+        ...(!missingImage && doc.marker.includes('managed-image-')
+          ? { images: [{ index: 0, url: `/api/v1/knowledge/managed/documents/${id}/chunks/chunk-${id}/images/0` }] }
+          : {}),
+      };
       if (suffix === '/chunks') return response({ data: [chunk] });
       if (suffix.startsWith('/chunks/')) return mutation({ ...chunk, content_revision: 2 });
       return response({ data: { knowledge_id: id, trace: {} } });
     }
     if (path.endsWith('/audit'))
       return response({
-        items: failAudit
-          ? []
-          : [
-              {
-                operationId: searchParams.get('operationId'),
-                action: searchParams.get('action'),
-                resourceId: searchParams.get('resourceId'),
-                outcome:
-                  mutations.find((operation) => operation.operationId === searchParams.get('operationId'))?.outcome ??
-                  'succeeded',
-                actorUserId: searchParams.get('actorUserId') ?? 'admin-a',
-              },
-            ],
+        items:
+          failAudit || (missingImageAudit && searchParams.get('action') === 'read_chunk_image')
+            ? []
+            : [
+                {
+                  operationId: searchParams.get('operationId'),
+                  action: searchParams.get('action'),
+                  resourceId: searchParams.get('resourceId'),
+                  outcome:
+                    mutations.find((operation) => operation.operationId === searchParams.get('operationId'))?.outcome ??
+                    'succeeded',
+                  actorUserId: searchParams.get('actorUserId') ?? 'admin-a',
+                },
+              ],
       });
     const employeePath = path.match(/\/knowledge\/employees\/[^/]+\/(.*)/)?.[1];
     if (employeePath) {
+      const pathParts = employeePath.split('/');
+      const documentID = pathParts[0] === 'documents' ? pathParts[1] : undefined;
       const doc =
         employeePath === 'search'
           ? [...docs.values()].find((item) => item.knowledge_base_id === body.knowledge_base_ids[0])
-          : docs.get(employeePath.split('/')[1]);
+          : docs.get(documentID);
       const baseID = employeePath === 'search' ? body.knowledge_base_ids[0] : doc.knowledge_base_id;
+      const imageRoute = employeePath.includes('/images/');
+      const requestedChunkID = imageRoute ? pathParts[3] : undefined;
+      const grants = grantSets.get(baseID) ?? [];
       const allowed =
         whitelist.includes(baseID) &&
-        grantSets
-          .get(baseID)
-          ?.some((grant) => grant.type === 'team' || grant.id === (user === 'a' ? options.userAID : options.userBID));
-      if (!allowed) return response({}, unauthenticatedDenial ? 401 : 403);
+        grants.some(
+          (grant) => grant.type === 'team' || grant.id === (user === 'a' ? options.userAID : options.userBID),
+        );
+      if (imageRoute && requestedChunkID !== `chunk-${doc.id}` && !crossDocumentImageSucceeds) return response({}, 404);
+      const forcedImageSuccess =
+        imageRoute &&
+        ((user === 'b' && unauthorizedImageSucceeds) || (user === 'a' && revokedImageSucceeds && grants.length === 0));
+      if (!allowed && !forcedImageSuccess) return response({}, unauthenticatedDenial ? 401 : 403);
+      if (imageRoute) {
+        const bytes = badImageSignature ? Buffer.from([0, 1, 2, 3]) : Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+        return new Response(bytes, {
+          headers: { 'Content-Type': badImageMIME ? 'text/plain' : 'image/jpeg' },
+        });
+      }
       if (employeePath.endsWith('/download'))
         return new Response(doc.marker, { headers: { 'Content-Type': 'text/plain' } });
       const matches = [...docs.values()].filter(
@@ -219,6 +267,84 @@ describe('managed knowledge live acceptance runner contract', () => {
     expect(result).toMatchObject({ passed: false, cleanup: 'not-needed', failure: { stage: 'configuration' } });
   });
 
+  it('fails closed when controlled parser cancellation is requested without its explicit test-parser prerequisite', async () => {
+    const fake = transport();
+    const report = await runManagedKnowledgeAcceptance({
+      ...options,
+      includeCancelParse: true,
+      fetcher: fake.fetcher,
+    });
+    expect(report).toMatchObject({
+      passed: false,
+      failure: { stage: 'configuration', code: 'controlled-testparser-prerequisite-required' },
+    });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('only reports controlled-parser cancellation after observing processing and cancelled terminal states', async () => {
+    const fake = transport({ controlledParser: true });
+    const report = await runManagedKnowledgeAcceptance({
+      ...options,
+      includeCancelParse: true,
+      cancelParserMode: 'controlled-testparser',
+      cancelParserMarker: 'cancel-fixture-marker',
+      fetcher: fake.fetcher,
+    });
+    expect(report.failure).toBeUndefined();
+    expect(report.checks.map((item) => item.stage)).toContain('controlled-testparser-cancel');
+    expect(report.unverified).toContain('production-parser-cancel');
+    expect(report.unverified).not.toContain('controlled-testparser-cancel');
+    expect(report).toMatchObject({ passed: true, mode: 'runner-contract-test', fullPlanAccepted: false });
+    expect(fake.calls.some((call) => call.uploadName === 'cancel-cancel-fixture-marker.pdf')).toBe(true);
+  });
+
+  it('keeps image authorization unverified and fails for missing parser images, MIME, signature, or authorization regressions', async () => {
+    const cases = [
+      [{ missingImage: true }, 'parse-image-pdf', 'real-parser-image-handle-missing'],
+      [{ badImageMIME: true }, 'employee-image', 'unexpected-file-type'],
+      [{ badImageSignature: true }, 'employee-image', 'unexpected-file-signature'],
+      [{ unauthorizedImageSucceeds: true }, 'unauthorized-employee-image', 'unexpected-status'],
+      [{ crossDocumentImageSucceeds: true }, 'employee-image-cross-document', 'unexpected-status'],
+      [{ revokedImageSucceeds: true }, 'revoked-old-session-image-denial', 'unexpected-status'],
+      [{ missingImageAudit: true }, 'grant-and-retrieval-audit', 'real-actor-audit-missing'],
+    ];
+    for (const [config, stage, code] of cases) {
+      const fake = transport(config);
+      const report = await runManagedKnowledgeAcceptance({ ...options, fetcher: fake.fetcher });
+      expect(report).toMatchObject({ passed: false, failure: { stage, code } });
+      expect(report.unverified).toContain('image-source-authorization');
+      expect(report.mode).toBe('runner-contract-test');
+    }
+  });
+
+  it('does not report controlled cancellation when processing is never observed or cancelled is never terminal', async () => {
+    const base = {
+      ...options,
+      includeCancelParse: true,
+      cancelParserMode: 'controlled-testparser',
+      cancelParserMarker: 'cancel-fixture-marker',
+    };
+    const noProcessing = await runManagedKnowledgeAcceptance({
+      ...base,
+      fetcher: transport().fetcher,
+    });
+    expect(noProcessing).toMatchObject({
+      passed: false,
+      failure: { stage: 'cancel-parse-processing', code: 'controlled-parser-did-not-hold-processing' },
+    });
+    expect(noProcessing.unverified).toContain('controlled-testparser-cancel');
+
+    const noTerminal = await runManagedKnowledgeAcceptance({
+      ...base,
+      fetcher: transport({ controlledParser: true, cancelNoTerminal: true }).fetcher,
+    });
+    expect(noTerminal).toMatchObject({
+      passed: false,
+      failure: { stage: 'cancel-parse-terminal', code: 'poll-timeout' },
+    });
+    expect(noTerminal.unverified).toContain('controlled-testparser-cancel');
+  });
+
   it('executes the entire contract and labels transport-backed evidence separately from live acceptance', async () => {
     const fake = transport();
     const report = await runManagedKnowledgeAcceptance({ ...options, fetcher: fake.fetcher });
@@ -229,6 +355,8 @@ describe('managed knowledge live acceptance runner contract', () => {
       fullPlanAccepted: false,
       cleanup: 'passed',
     });
+    expect(report.unverified).toContain('controlled-testparser-cancel');
+    expect(report.unverified).toContain('production-parser-cancel');
     expect(report.checks.map((item) => item.stage)).toEqual(
       expect.arrayContaining([
         'parse-txt',
