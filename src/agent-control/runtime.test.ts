@@ -164,6 +164,7 @@ describe('Agent control runtime', () => {
       await runtime.flushTelemetry();
       expect(state.listTelemetry()).toEqual([{ eventId: 'later', type: 'skill.sync.completed' }]);
       expect(onError).toHaveBeenCalledOnce();
+      expect(String(onError.mock.calls[0]?.[0])).toContain('poison (INVALID_TYPE)');
     } finally {
       state.close();
     }

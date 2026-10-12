@@ -104,15 +104,14 @@ export class AgentControlRuntime {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
           const record = item as Record<string, unknown>;
           if (typeof record.eventId !== 'string' || typeof record.code !== 'string') return [];
-          return ABANDONED_TELEMETRY_CODES[record.code] === true ? [record.eventId] : [];
+          return ABANDONED_TELEMETRY_CODES[record.code] === true ? [{ id: record.eventId, code: record.code }] : [];
         })
       : [];
     if (abandoned.length > 0) {
-      this.#options.onError?.(
-        new Error(`${abandoned.length} telemetry event(s) were rejected and dropped: ${abandoned.join(', ')}`),
-      );
+      const detail = abandoned.map((item) => `${item.id} (${item.code})`).join(', ');
+      this.#options.onError?.(new Error(`${abandoned.length} telemetry event(s) were rejected and dropped: ${detail}`));
     }
-    this.#options.state.removeTelemetry([...accepted, ...abandoned]);
+    this.#options.state.removeTelemetry([...accepted, ...abandoned.map((item) => item.id)]);
   }
 
   #schedule(delayMs: number): void {
