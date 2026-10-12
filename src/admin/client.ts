@@ -48,6 +48,7 @@ import type {
   GatewayRequestQuery,
   GatewayTestAccess,
 } from './gateway-api.js';
+import type { ModelPricing, ModelPricingWrite } from './model-pricing-api.js';
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -738,6 +739,21 @@ export class AdminConsoleClient {
         : Promise.resolve({ assignments: [] }),
     ]);
     return { models: models.models, assignments: assignments.assignments };
+  }
+
+  getModelPricing(modelId: string): Promise<ModelPricing> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
+    });
+  }
+
+  putModelPricing(modelId: string, input: ModelPricingWrite): Promise<ModelPricing> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
+      body: { ...input, pricing: input.pricing ? { ...input.pricing } : null },
+    });
   }
 
   async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {

@@ -1,7 +1,7 @@
 // 管理端"开始使用"跳转：员工对话由独立前端 zhiyuanBotUI 承载（自带登录），
 // 这里只做深链（#/emp/<name>），不再铸造 portal 会话。
 
-import { Alert, Button, Modal } from 'antd';
+import { Alert, Modal } from 'antd';
 import { type ReactNode, useCallback, useState } from 'react';
 import { botUIBaseURL, type PortalEmployee } from './portal.js';
 

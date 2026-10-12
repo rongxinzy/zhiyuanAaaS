@@ -37,7 +37,6 @@ try {
   // The workbench surface is plain antd: the Tea theme belongs to the
   // desktop renderer bundle only and must never leak into the admin build.
   assert.doesNotMatch(css, /\.tea-theme-/, 'Admin CSS must not include the Tea theme.');
-  const chunks = await fs.readdir(path.join(root, 'assets'));
   console.log(JSON.stringify({ status: 'passed', origin: `http://127.0.0.1:${port}`, assets }));
 } finally {
   child.kill();
