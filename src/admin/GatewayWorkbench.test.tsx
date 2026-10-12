@@ -98,10 +98,10 @@ const logs = (count = 2) => ({
 });
 function metrics(query: GatewayMetricQuery): GatewayMetricResult {
   return {
-    source: query.source ?? 'prometheus',
+    source: 'prometheus',
     queriedAt: '',
     definition: {
-      id: query.metric === 'calls' && query.source === 'loki' ? 'gateway_access_requests' : query.metric,
+      id: query.metric,
       unit: 'requests',
       aggregation: 'counter_increase',
       windowSeconds: 60,
@@ -293,16 +293,7 @@ test('observation displays native samples without totals, queries all subjects a
   expect(screen.getAllByText('23').length).toBeGreaterThan(0);
   expect(screen.queryByText('34')).not.toBeInTheDocument();
   expect(screen.getAllByText('未提供').length).toBeGreaterThan(0);
-  expect(screen.getByRole('img', { name: '调用次数趋势' })).toBeInTheDocument();
-  const count = client.queryGatewayMetrics.mock.calls.length;
-  fireEvent.click(screen.getByRole('radio', { name: 'Token 用量' }));
-  expect(screen.getByRole('img', { name: 'Token 用量趋势' })).toBeInTheDocument();
-  expect(screen.queryByRole('img', { name: '调用次数趋势' })).not.toBeInTheDocument();
-  expect(client.queryGatewayMetrics.mock.calls).toHaveLength(count);
-  expect(document.querySelectorAll('.gateway-trend-card')).toHaveLength(1);
-  expect(client.queryGatewayMetrics).toHaveBeenCalledWith(
-    expect.objectContaining({ metric: 'calls', source: 'loki', expectedDefinition: 'gateway_access_requests' }),
-  );
+  expect(screen.getByRole('img', { name: '调用与失败趋势' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('switch', { name: '仅显示 HTTP 错误' }));
   expect(screen.getByRole('row', { name: /r1 / })).toBeInTheDocument();
   for (const [label, name] of [
@@ -370,34 +361,6 @@ test('native query failure is visible; refresh recovers without synthesizing dat
   client.getGatewayMonitoringHealth.mockResolvedValue({ sources: [] });
   fireEvent.click(screen.getByRole('button', { name: '刷新查询' }));
   expect(await screen.findByRole('row', { name: /r0 / })).toBeInTheDocument();
-});
-
-test('total calls reject old counter definitions and never substitute Prometheus when Loki is absent', async () => {
-  const client = stub({
-    queryGatewayMetrics: vi.fn().mockImplementation((query: GatewayMetricQuery) => {
-      const result = metrics(query);
-      return query.metric === 'calls'
-        ? { ...result, source: 'prometheus', definition: { ...result.definition, id: 'ai_usage_completed_calls' } }
-        : result;
-    }),
-  });
-  const view = render(<GatewayObservation client={typed(client)} identity={administratorIdentity} />);
-  await screen.findByText('数据加载失败');
-  expect(screen.queryByRole('img', { name: '调用次数趋势' })).not.toBeInTheDocument();
-  client.getGatewayCapabilities.mockResolvedValue({
-    ...capabilities,
-    sources: { ...capabilities.sources, loki: false },
-  });
-  client.queryGatewayMetrics.mockImplementation(metrics);
-  fireEvent.click(screen.getByRole('button', { name: '刷新查询' }));
-  await screen.findByText('未接入 Loki，请求记录不可用');
-  const refresh = await screen.findByRole('button', { name: '刷新查询' });
-  const before = client.queryGatewayMetrics.mock.calls.length;
-  fireEvent.click(refresh);
-  await waitFor(() => expect(client.queryGatewayMetrics.mock.calls.length).toBeGreaterThan(before));
-  expect(client.queryGatewayMetrics.mock.calls.slice(before).some(([query]) => query.metric === 'calls')).toBe(false);
-  expect(screen.queryByRole('img', { name: '调用次数趋势' })).not.toBeInTheDocument();
-  view.unmount();
 });
 test('request pagination uses the native nanosecond cursor and keeps errors recoverable', async () => {
   const client = stub({

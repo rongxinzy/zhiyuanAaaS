@@ -129,15 +129,8 @@ export function GatewayLoadError({ retry }: { retry: () => void }) {
     />
   );
 }
-// Display-only precision; the API payload and source definitions stay intact.
-export function gatewayDisplayValue(value: number | null | undefined): number | null {
-  return value === null || value === undefined || !Number.isFinite(value) ? null : Math.floor(value);
-}
 export function formatGatewayNumber(value: number | null | undefined): string {
-  const displayed = gatewayDisplayValue(value);
-  return displayed === null
+  return value === null || value === undefined || !Number.isFinite(value)
     ? gatewayT('gatewayNotProvided')
-    : new Intl.NumberFormat(ADMIN_LANGUAGE === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: 0 }).format(
-        displayed,
-      );
+    : new Intl.NumberFormat(ADMIN_LANGUAGE === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: 3 }).format(value);
 }
