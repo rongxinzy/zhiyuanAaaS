@@ -42,7 +42,27 @@ body {
   background: var(--ant-color-bg-container);
   border-radius: var(--ant-border-radius-lg);
 }
-.gateway-group-table .ant-table-pagination {
+.admin-table-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ant-margin-sm);
+  min-width: 0;
+}
+.admin-table-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ant-margin-sm);
+}
+.admin-policy-card .ant-descriptions-view {
+  border: 0;
+}
+.admin-policy-card .ant-skeleton {
+  padding: var(--ant-padding-lg);
+}
+.gateway-group-table .ant-table-pagination,
+.admin-table-card .ant-table-pagination {
   margin: 0;
   padding: var(--ant-padding);
   border-top: var(--ant-line-width) solid var(--ant-color-border-secondary);
