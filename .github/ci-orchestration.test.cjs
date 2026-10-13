@@ -18,6 +18,7 @@ function fixture() {
   const state = { runs: [] };
   const workflowRun = (workflow, overrides = {}) => ({
     id: 1,
+    name: workflow.name,
     event: 'pull_request',
     head_sha: pr.head.sha,
     head_branch: pr.head.ref,
@@ -85,4 +86,13 @@ test('completion of the new entry resolves only the current associated PR', asyn
   assert.deepEqual(await eventPullNumbers(f), [7]);
   f.state.runs[0].head_sha = 'old';
   assert.deepEqual(await eventPullNumbers(f), []);
+});
+
+test('renaming the existing entry does not make old heads skip the other checks', async () => {
+  const f = fixture();
+  f.config.workflows = [f.legacy, { name: 'Old CI', path: f.orchestrator.path }];
+  f.state.runs = [f.workflowRun({ name: 'Old CI', path: f.orchestrator.path })];
+  assert.equal((await run(f)).status, 'queued', 'legacy security must still run');
+  f.state.runs = [f.workflowRun(f.orchestrator)];
+  assert.equal((await run(f)).conclusion, 'success');
 });
