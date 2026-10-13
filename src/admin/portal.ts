@@ -682,9 +682,14 @@ export class PortalClient {
   async uploadManagedKnowledgeDocument(
     id: string,
     file: File,
+    relativePath?: string,
   ): Promise<ManagedKnowledgeMutation<ManagedKnowledgeDocument>> {
     const form = new FormData();
     form.append('file', file);
+    // Folder uploads carry their folder structure in WeKnora's `fileName`
+    // field (the upstream splits it into folder path + name); the portal
+    // forwards it verbatim.
+    if (relativePath) form.append('fileName', relativePath);
     const { status, data } = await this.#request(
       'POST',
       `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents/file`,

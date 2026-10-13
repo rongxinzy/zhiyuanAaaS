@@ -4,6 +4,7 @@ import {
   EditOutlined,
   EyeOutlined,
   FileTextOutlined,
+  FolderOpenOutlined,
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -98,6 +99,17 @@ const copyKeys = {
   search: 'knowledgeSearchDocs',
   upload: 'knowledgeUpload',
   chooseFile: 'knowledgeChooseFile',
+  chooseFolder: 'knowledgeChooseFolder',
+  uploadFolder: 'knowledgeUploadFolder',
+  folderQueued: 'knowledgeFolderQueued',
+  folderUploading: 'knowledgeFolderUploading',
+  folderAccepted: 'knowledgeFolderAccepted',
+  folderFailed: 'knowledgeFolderFailed',
+  folderRetryFailed: 'knowledgeFolderRetryFailed',
+  folderClear: 'knowledgeFolderClear',
+  folderFiles: 'knowledgeFolderFiles',
+  folderLimit: 'knowledgeFolderLimit',
+  folderHint: 'knowledgeFolderHint',
   fileLimit: 'knowledgeFileLimit',
   uploadAccepted: 'knowledgeUploadAccepted',
   knowledgeImportUrl: 'knowledgeImportUrl',
@@ -184,6 +196,25 @@ function isUncertain(error: unknown): boolean {
   return !(error instanceof PortalError) || error.status >= 500;
 }
 
+/**
+ * One file of a folder upload. The folder structure travels as WeKnora's
+ * `fileName` (the upstream splits it into folder path + file name), so the
+ * console only has to keep the browser-provided relative path intact.
+ */
+interface FolderUploadItem {
+  readonly key: string;
+  readonly label: string;
+  readonly relativePath: string;
+  readonly file: File;
+  readonly status: 'queued' | 'uploading' | 'accepted' | 'failed';
+  readonly detail?: string;
+}
+
+/** Matches WeKnora's own upload queue: a small bound keeps the pipe full
+ *  without piling hashing work on the upstream. */
+const FOLDER_UPLOAD_CONCURRENCY = 3;
+const FOLDER_UPLOAD_MAX_FILES = 200;
+
 export function KnowledgeManagement({ portal }: { readonly portal: PortalClient }) {
   const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
   const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
@@ -195,6 +226,8 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
   const [files, setFiles] = useState<UploadFile[]>([]);
+  const [folderQueue, setFolderQueue] = useState<readonly FolderUploadItem[]>([]);
+  const [folderUploading, setFolderUploading] = useState(false);
   const [docsRefresh, setDocsRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
   const [docsLoading, setDocsLoading] = useState(false);
@@ -507,6 +540,82 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
     } finally {
       setUploading(false);
     }
+  };
+
+  const queueFolderFiles = (entries: readonly UploadFile[]) => {
+    const items = entries
+      .map((entry, index): FolderUploadItem | null => {
+        const file = entry.originFileObj;
+        if (!file) return null;
+        const relativePath = (file as File & { readonly webkitRelativePath?: string }).webkitRelativePath ?? '';
+        return {
+          key: entry.uid || `folder-${index}-${relativePath || file.name}`,
+          label: relativePath || file.name,
+          relativePath,
+          file,
+          status: 'queued',
+        };
+      })
+      .filter((item): item is FolderUploadItem => item !== null);
+    if (items.length === 0) return;
+    if (items.length > FOLDER_UPLOAD_MAX_FILES) {
+      setWriteNotice(t('folderLimit'));
+      return;
+    }
+    setFolderQueue((current) => {
+      // Re-picking a folder must not double-queue the same file.
+      const seen = new Set(current.map((item) => `${item.relativePath}|${item.file.size}`));
+      return [...current, ...items.filter((item) => !seen.has(`${item.relativePath}|${item.file.size}`))];
+    });
+  };
+
+  const runFolderUpload = async (items: readonly FolderUploadItem[]) => {
+    const baseId = selectedId;
+    if (!baseId || items.length === 0 || folderUploading) return;
+    setFolderUploading(true);
+    setWriteNotice(null);
+    let cursor = 0;
+    let accepted = 0;
+    let failed = 0;
+    const worker = async () => {
+      for (;;) {
+        const item = items[cursor];
+        cursor += 1;
+        if (!item) return;
+        setFolderQueue((current) =>
+          current.map((entry) => (entry.key === item.key ? { ...entry, status: 'uploading' } : entry)),
+        );
+        try {
+          const result = await portal.uploadManagedKnowledgeDocument(baseId, item.file, item.relativePath);
+          accepted += 1;
+          setFolderQueue((current) =>
+            current.map((entry) =>
+              entry.key === item.key
+                ? { ...entry, status: 'accepted', detail: `${t('operation')}: ${result.operationId}` }
+                : entry,
+            ),
+          );
+        } catch (cause) {
+          failed += 1;
+          if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+          if (isUncertain(cause)) setUncertainWrite(true);
+          setFolderQueue((current) =>
+            current.map((entry) =>
+              entry.key === item.key ? { ...entry, status: 'failed', detail: errorText(cause) } : entry,
+            ),
+          );
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(FOLDER_UPLOAD_CONCURRENCY, items.length) }, worker));
+    setFolderUploading(false);
+    setWriteNotice(
+      `${t('folderAccepted')} ${accepted} · ${t('folderFailed')} ${failed} · ${items.length} ${t('folderFiles')}`,
+    );
+    pollRounds.current = 0;
+    setPollTick(0);
+    setPage(1);
+    setDocsRefresh((current) => current + 1);
   };
 
   const submitImport = async () => {
@@ -902,6 +1011,9 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
   ];
 
   const modelState = readiness?.embeddingModel.state;
+  const queuedFolderItems = folderQueue.filter((item) => item.status === 'queued');
+  const failedFolderItems = folderQueue.filter((item) => item.status === 'failed');
+  const acceptedFolderCount = folderQueue.filter((item) => item.status === 'accepted').length;
   const spanTree = (span: ManagedKnowledgeSpans['trace']): SpanTreeNode => ({
     key: span.span_id,
     title: (
@@ -1085,6 +1197,19 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                       {t('chooseFile')}
                     </Button>
                   </Upload>
+                  <Upload
+                    directory
+                    multiple
+                    showUploadList={false}
+                    fileList={[]}
+                    disabled={uploading || folderUploading || writeBlocked}
+                    beforeUpload={() => false}
+                    onChange={(info) => queueFolderFiles(info.fileList)}
+                  >
+                    <Button icon={<FolderOpenOutlined />} disabled={uploading || folderUploading}>
+                      {t('chooseFolder')}
+                    </Button>
+                  </Upload>
                   <Button
                     icon={<LinkOutlined />}
                     disabled={writeBlocked || importing || uploading}
@@ -1112,6 +1237,15 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                     onClick={() => void uploadFile()}
                   >
                     {t('upload')}
+                  </Button>
+                  <Button
+                    disabled={folderUploading || writeBlocked || queuedFolderItems.length === 0}
+                    loading={folderUploading}
+                    onClick={() => void runFolderUpload(queuedFolderItems)}
+                  >
+                    {queuedFolderItems.length > 0
+                      ? `${t('uploadFolder')} (${queuedFolderItems.length})`
+                      : t('uploadFolder')}
                   </Button>
                 </div>
                 <Space.Compact>
@@ -1145,6 +1279,58 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
                   />
                 </Space.Compact>
               </div>
+              {folderQueue.length > 0 && (
+                <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Typography.Text type="secondary">
+                      {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
+                    </Typography.Text>
+                    <Space size="small">
+                      <Button
+                        size="small"
+                        disabled={folderUploading || failedFolderItems.length === 0}
+                        onClick={() => void runFolderUpload(failedFolderItems)}
+                      >
+                        {t('folderRetryFailed')}
+                      </Button>
+                      <Button size="small" disabled={folderUploading} onClick={() => setFolderQueue([])}>
+                        {t('folderClear')}
+                      </Button>
+                    </Space>
+                  </div>
+                  <div className="max-h-48 overflow-auto">
+                    {folderQueue.map((item) => (
+                      <div key={item.key} className="flex items-center justify-between gap-2 py-0.5 text-xs">
+                        <span className="truncate" title={item.relativePath || item.file.name}>
+                          {item.label}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {item.detail ? <Typography.Text type="secondary">{item.detail}</Typography.Text> : null}
+                          <Tag
+                            color={
+                              item.status === 'accepted'
+                                ? 'green'
+                                : item.status === 'failed'
+                                  ? 'red'
+                                  : item.status === 'uploading'
+                                    ? 'blue'
+                                    : 'default'
+                            }
+                          >
+                            {item.status === 'accepted'
+                              ? t('folderAccepted')
+                              : item.status === 'failed'
+                                ? t('folderFailed')
+                                : item.status === 'uploading'
+                                  ? t('folderUploading')
+                                  : t('folderQueued')}
+                          </Tag>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <Alert
                 showIcon
                 type="info"

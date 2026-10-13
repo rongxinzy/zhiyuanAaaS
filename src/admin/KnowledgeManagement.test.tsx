@@ -12,10 +12,32 @@ vi.mock('antd', async (importOriginal) => {
   function UploadForStateTest({
     children,
     onChange,
+    directory,
+    multiple,
   }: {
     readonly children: ReactNode;
     readonly onChange?: (info: { readonly fileList: UploadFile[] }) => void;
+    readonly directory?: boolean;
+    readonly multiple?: boolean;
   }) {
+    const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
+      const picked = Array.from(event.currentTarget.files ?? []);
+      if (picked.length === 0) return;
+      onChange?.({
+        fileList: picked.map((file, index) => ({
+          uid: `test-file-${index}`,
+          name: file.name,
+          originFileObj: file as NonNullable<UploadFile['originFileObj']>,
+        })),
+      });
+    };
+    if (directory)
+      return (
+        <div>
+          <input aria-label="test folder picker" type="file" multiple={multiple} onChange={selectFiles} />
+          {children}
+        </div>
+      );
     const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.currentTarget.files?.[0];
       if (file)
@@ -250,6 +272,74 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByText(/文件已受理/)).toBeInTheDocument();
     expect(await screen.findByText(/排队中 · pending/)).toBeInTheDocument();
     expect(portal.uploadManagedKnowledgeDocument).toHaveBeenCalledTimes(1);
+  });
+
+  test('uploads a picked folder file by file, keeping each relative path', async () => {
+    const upload = vi.fn().mockResolvedValue({
+      data: {
+        id: 'doc-folder',
+        knowledge_base_id: base.id,
+        name: 'day-one.md',
+        file_name: 'day-one.md',
+        parse_status: 'pending',
+        created_at: '2026-10-13T00:00:00Z',
+      },
+      operationId: 'kbop-folder-1',
+    });
+    const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
+    render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
+    const nested = new File(['day one'], 'day-one.md', { type: 'text/markdown' });
+    Object.defineProperty(nested, 'webkitRelativePath', { value: 'handbook/onboarding/day-one.md' });
+    const top = new File(['readme'], 'README.md', { type: 'text/markdown' });
+    Object.defineProperty(top, 'webkitRelativePath', { value: 'handbook/README.md' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [nested, top] });
+    fireEvent.change(picker);
+
+    expect(await screen.findByText('handbook/onboarding/day-one.md')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(2\)/ }));
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    // The folder structure travels as WeKnora's fileName argument.
+    expect(upload).toHaveBeenNthCalledWith(1, base.id, nested, 'handbook/onboarding/day-one.md');
+    expect(upload).toHaveBeenNthCalledWith(2, base.id, top, 'handbook/README.md');
+    expect(await screen.findByText(/已受理 2 · 失败 0/)).toBeInTheDocument();
+  });
+
+  test('keeps failed folder files queued for a retry', async () => {
+    const upload = vi
+      .fn()
+      .mockRejectedValueOnce(new PortalError(400, '文件类型不受支持'))
+      .mockResolvedValue({
+        data: {
+          id: 'doc-retry',
+          knowledge_base_id: base.id,
+          name: 'spec.txt',
+          file_name: 'spec.txt',
+          parse_status: 'pending',
+          created_at: '2026-10-13T00:00:00Z',
+        },
+        operationId: 'kbop-retry',
+      });
+    const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
+    render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
+    const file = new File(['spec'], 'spec.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'docs/spec.txt' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+    fireEvent.change(picker);
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(1\)/ }));
+
+    expect(await screen.findByText(/失败 1/)).toBeInTheDocument();
+    expect(screen.getByText('文件类型不受支持')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /重试失败项/ }));
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/已受理 1 · 失败 0/)).toBeInTheDocument();
   });
 
   test('imports a URL and manual text through the fixed managed document actions', async () => {
