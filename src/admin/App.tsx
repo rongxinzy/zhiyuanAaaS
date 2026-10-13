@@ -82,6 +82,7 @@ const DeploymentSettings = lazy(() =>
     default: m.DeploymentSettingsView,
   })),
 );
+const ComputeResources = lazy(() => import('./ComputeResources.js').then((m) => ({ default: m.ComputeResources })));
 const Events = lazy(() => import('./Events.js').then((m) => ({ default: m.Events })));
 const GatewayCall = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayCall })));
 const GatewayObservation = lazy(() => import('./GatewayWorkbench.js').then((m) => ({ default: m.GatewayObservation })));
@@ -481,7 +482,12 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           key: ModelGatewayRoute.Observe,
           label: translate('zh', 'gatewayObserve'),
           permission: P.ModelsRead,
-          children: <GatewayObservation {...props} />,
+          children: (
+            <GatewayObservation
+              {...props}
+              onPrices={() => navigate(`${ModelGatewayRoute.Page}/${ModelGatewayRoute.Catalog}`)}
+            />
+          ),
         },
         {
           key: ModelGatewayRoute.Limits,
@@ -508,6 +514,12 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           key: 'settings',
           label: c.settings,
           children: <DeploymentSettings {...props} />,
+        },
+        {
+          key: 'resources',
+          label: c.resources,
+          permission: P.DeploymentRead,
+          children: <ComputeResources {...props} />,
         },
         {
           key: 'licenses',

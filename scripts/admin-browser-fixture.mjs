@@ -171,6 +171,49 @@ export const state = {
     modelGatewayOverride: null,
     envGatewayBaseUrl: 'https://gateway.example.test/v1',
   },
+  compute: {
+    // 'retired' stays in the catalog but is rejected at write time, simulating
+    // a stale catalog entry so the 422 INVALID_COMPUTE_TIER path is reachable.
+    tiers: [
+      {
+        name: 'standard',
+        description: '默认档位',
+        cpuRequest: '250m',
+        cpuLimit: '1000m',
+        memoryRequest: '512Mi',
+        memoryLimit: '1Gi',
+      },
+      {
+        name: 'performance',
+        description: '高性能档位',
+        cpuRequest: '1',
+        cpuLimit: '2',
+        memoryRequest: '2Gi',
+        memoryLimit: '4Gi',
+      },
+      {
+        name: 'retired',
+        description: '已下线档位',
+        cpuRequest: '500m',
+        cpuLimit: '1500m',
+        memoryRequest: '1Gi',
+        memoryLimit: '2Gi',
+      },
+    ],
+    agents: [
+      { agentId: 'agent-1', agentName: 'E2E 销售助理' },
+      { agentId: 'agent-2', agentName: 'E2E 数据助理' },
+    ],
+    overrides: {
+      'agent-1': { tier: 'performance', updatedAt: '2026-10-10T08:00:00Z', updatedBy: 'admin-1' },
+    },
+    defaultTier: 'standard',
+    hibernateSeconds: 300,
+    concurrencyCap: 10,
+    defaultTierOverride: null,
+    hibernateOverride: null,
+    concurrencyOverride: null,
+  },
   requests: [],
   failNext: null,
   nextId: 1,
@@ -1162,8 +1205,45 @@ async function route(method, pathname, rawBody, response, query) {
           });
         state.deploymentSettings.modelGatewayOverride = value;
       }
+      if (Object.hasOwn(input, 'computeDefaultTier')) {
+        const value = input.computeDefaultTier;
+        if (value !== null && !['standard', 'performance'].includes(value))
+          return writeJson(response, 422, {
+            code: 'INVALID_DEPLOYMENT_SETTINGS',
+            detail: 'The computeDefaultTier is not in the compute tier catalog.',
+          });
+        state.compute.defaultTierOverride = value;
+      }
+      if (Object.hasOwn(input, 'computeIdleHibernateSeconds')) {
+        state.compute.hibernateOverride = input.computeIdleHibernateSeconds;
+      }
+      if (Object.hasOwn(input, 'computeConcurrencyCap')) {
+        state.compute.concurrencyOverride = input.computeConcurrencyCap;
+      }
       return writeJson(response, 200, deploymentSettingsPayload());
     }
+  }
+  if (method === 'GET' && pathname === '/aep/v1/admin/compute/tiers') {
+    return writeJson(response, 200, { items: state.compute.tiers.map((tier) => ({ ...tier, source: 'deployment' })) });
+  }
+  if (method === 'GET' && pathname === '/aep/v1/admin/compute/assignments') {
+    return writeJson(response, 200, { items: state.compute.agents.map(computeAssignmentItem) });
+  }
+  const assignmentMatch = pathname.match(/^\/aep\/v1\/admin\/compute\/assignments\/([^/]+)$/);
+  if (assignmentMatch && method === 'PUT') {
+    const agentId = decodeURIComponent(assignmentMatch[1]);
+    const agent = state.compute.agents.find((item) => item.agentId === agentId);
+    if (!agent) return writeJson(response, 404, { code: 'RESOURCE_NOT_FOUND', detail: 'The agent does not exist.' });
+    const input = jsonBody(rawBody);
+    const tier = input.tier;
+    if (tier !== null && !['standard', 'performance'].includes(tier))
+      return writeJson(response, 422, {
+        code: 'INVALID_COMPUTE_TIER',
+        detail: 'The tier is not in the compute tier catalog.',
+      });
+    if (tier === null) delete state.compute.overrides[agentId];
+    else state.compute.overrides[agentId] = { tier, updatedAt: new Date().toISOString(), updatedBy: 'admin-1' };
+    return writeJson(response, 200, computeAssignmentItem(agent));
   }
   return writeJson(response, 404, { code: 'NOT_FOUND', path: pathname });
 }
@@ -1177,6 +1257,31 @@ function deploymentSettingsPayload() {
       effectiveValue: override ?? env ?? null,
       source: override ? 'override' : env ? 'env' : 'unset',
     },
+    computeDefaultTier: settingValue(state.compute.defaultTierOverride, state.compute.defaultTier),
+    computeIdleHibernateSeconds: settingValue(state.compute.hibernateOverride, state.compute.hibernateSeconds),
+    computeConcurrencyCap: settingValue(state.compute.concurrencyOverride, state.compute.concurrencyCap),
+  };
+}
+
+function settingValue(override, env) {
+  return {
+    override,
+    effectiveValue: override ?? env ?? null,
+    source:
+      override !== null && override !== undefined ? 'override' : env !== null && env !== undefined ? 'env' : 'unset',
+  };
+}
+
+function computeAssignmentItem(agent) {
+  const override = state.compute.overrides[agent.agentId] ?? null;
+  const effectiveDefault = state.compute.defaultTierOverride ?? state.compute.defaultTier ?? '';
+  return {
+    agentId: agent.agentId,
+    agentName: agent.agentName,
+    tier: override
+      ? { override: override.tier, effective: override.tier, source: 'override' }
+      : { override: null, effective: effectiveDefault, source: 'default' },
+    ...(override ? { updatedAt: override.updatedAt, updatedBy: override.updatedBy } : {}),
   };
 }
 

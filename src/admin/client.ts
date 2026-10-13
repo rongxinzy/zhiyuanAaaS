@@ -48,6 +48,7 @@ import type {
   GatewayRequestQuery,
   GatewayTestAccess,
 } from './gateway-api.js';
+import type { ModelPricing, ModelPricingWrite } from './model-pricing-api.js';
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -112,6 +113,7 @@ export const AdminPermission = {
   DataPlaneWrite: 'data_plane.write',
   DeploymentRead: 'deployment.read',
   DeploymentWrite: 'deployment.write',
+  AgentsComputeWrite: 'agents.compute.write',
 } as const;
 export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermission];
 
@@ -258,14 +260,48 @@ export interface AdminDeploymentSettingValue {
   readonly source: AdminDeploymentSettingSource;
 }
 
+export interface AdminDeploymentIntegerSettingValue {
+  readonly override: number | null;
+  readonly effectiveValue: number | null;
+  readonly source: AdminDeploymentSettingSource;
+}
+
 export interface AdminDeploymentSettings {
   readonly modelGatewayBaseUrl: AdminDeploymentSettingValue;
+  readonly computeDefaultTier: AdminDeploymentSettingValue;
+  readonly computeIdleHibernateSeconds: AdminDeploymentIntegerSettingValue;
+  readonly computeConcurrencyCap: AdminDeploymentIntegerSettingValue;
 }
 
 // Omitted fields stay unchanged; an explicit null clears the runtime override
 // so the environment-configured value applies again.
 export interface AdminDeploymentSettingsUpdate {
   readonly modelGatewayBaseUrl?: string | null;
+  readonly computeDefaultTier?: string | null;
+  readonly computeIdleHibernateSeconds?: number | null;
+  readonly computeConcurrencyCap?: number | null;
+}
+
+export interface AdminComputeTier {
+  readonly name: string;
+  readonly description?: string;
+  readonly cpuRequest: string;
+  readonly cpuLimit: string;
+  readonly memoryRequest: string;
+  readonly memoryLimit: string;
+  readonly source: 'deployment';
+}
+
+export interface AdminComputeAssignment {
+  readonly agentId: string;
+  readonly agentName?: string;
+  readonly tier: {
+    readonly override: string | null;
+    readonly effective: string;
+    readonly source: 'override' | 'default';
+  };
+  readonly updatedAt?: string;
+  readonly updatedBy?: string;
 }
 
 export const AdminModelGatewayUrlProblem = {
@@ -362,8 +398,6 @@ export interface AdminEventRecord {
   readonly resourceType?: string;
   readonly resourceId?: string;
   readonly result?: string;
-  readonly scopeType?: string;
-  readonly scopeId?: string;
   readonly receivedAt?: string;
   readonly createdAt?: string;
 }
@@ -740,6 +774,21 @@ export class AdminConsoleClient {
     return { models: models.models, assignments: assignments.assignments };
   }
 
+  getModelPricing(modelId: string): Promise<ModelPricing> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
+    });
+  }
+
+  putModelPricing(modelId: string, input: ModelPricingWrite): Promise<ModelPricing> {
+    return this.#request(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
+      body: { ...input, pricing: input.pricing ? { ...input.pricing } : null },
+    });
+  }
+
   async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {
     await this.#requireClient().createModel(input);
   }
@@ -987,12 +1036,44 @@ export class AdminConsoleClient {
   async updateDeploymentSettings(input: AdminDeploymentSettingsUpdate): Promise<AdminDeploymentSettings> {
     const body: JsonObject = {};
     if ('modelGatewayBaseUrl' in input) body.modelGatewayBaseUrl = input.modelGatewayBaseUrl ?? null;
+    if ('computeDefaultTier' in input) body.computeDefaultTier = input.computeDefaultTier ?? null;
+    if ('computeIdleHibernateSeconds' in input)
+      body.computeIdleHibernateSeconds = input.computeIdleHibernateSeconds ?? null;
+    if ('computeConcurrencyCap' in input) body.computeConcurrencyCap = input.computeConcurrencyCap ?? null;
     const settings = await this.#request<JsonObject>(this.#requireClient(), {
       method: HttpMethod.Put,
       path: '/aep/v1/admin/deployment/settings',
       body,
     });
     return parseDeploymentSettings(settings);
+  }
+
+  // Compute governance endpoints (AEP compute governance contract): like the
+  // deployment settings they predate the pinned SDK release, so they use the
+  // same handwritten transport path.
+  async computeTierCatalog(): Promise<AdminComputeTier[]> {
+    const catalog = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/compute/tiers',
+    });
+    return parseComputeTierCatalog(catalog);
+  }
+
+  async computeAssignments(): Promise<AdminComputeAssignment[]> {
+    const list = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: '/aep/v1/admin/compute/assignments',
+    });
+    return parseComputeAssignmentList(list);
+  }
+
+  async updateComputeAssignment(agentId: string, tier: string | null): Promise<AdminComputeAssignment> {
+    const assignment = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Put,
+      path: `/aep/v1/admin/compute/assignments/${encodeURIComponent(agentId)}`,
+      body: { tier },
+    });
+    return parseComputeAssignment(assignment);
   }
 
   async identitySources(): Promise<AdminIdentitySourcePage> {
@@ -1110,8 +1191,6 @@ export class AdminConsoleClient {
           ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
           ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
           ...(typeof record.result === 'string' ? { result: record.result } : {}),
-          ...(typeof record.scopeType === 'string' ? { scopeType: record.scopeType } : {}),
-          ...(typeof record.scopeId === 'string' ? { scopeId: record.scopeId } : {}),
           ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
           ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
         },
@@ -1422,9 +1501,95 @@ function parseDeploymentSettingValue(value: unknown): AdminDeploymentSettingValu
   };
 }
 
+function parseDeploymentIntegerSettingValue(value: unknown): AdminDeploymentIntegerSettingValue {
+  const record = isRecord(value) ? value : {};
+  const source = record.source;
+  if (
+    source !== AdminDeploymentSettingSource.Override &&
+    source !== AdminDeploymentSettingSource.Env &&
+    source !== AdminDeploymentSettingSource.Unset
+  ) {
+    throw new Error('The AEP deployment settings response is invalid.');
+  }
+  const override = record.override;
+  const effectiveValue = record.effectiveValue;
+  if (
+    (override !== null && override !== undefined && typeof override !== 'number') ||
+    (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'number')
+  ) {
+    throw new Error('The AEP deployment settings response is invalid.');
+  }
+  return {
+    override: typeof override === 'number' ? override : null,
+    effectiveValue: typeof effectiveValue === 'number' ? effectiveValue : null,
+    source,
+  };
+}
+
+// Older control services do not return the compute keys at all; absent keys
+// parse as unset so panels keep working against both generations.
+function parseOptionalDeploymentSettingValue(value: unknown): AdminDeploymentSettingValue {
+  if (value === undefined) return { override: null, effectiveValue: null, source: 'unset' };
+  return parseDeploymentSettingValue(value);
+}
+
+function parseOptionalDeploymentIntegerSettingValue(value: unknown): AdminDeploymentIntegerSettingValue {
+  if (value === undefined) return { override: null, effectiveValue: null, source: 'unset' };
+  return parseDeploymentIntegerSettingValue(value);
+}
+
 function parseDeploymentSettings(value: unknown): AdminDeploymentSettings {
   const record = isRecord(value) ? value : {};
-  return { modelGatewayBaseUrl: parseDeploymentSettingValue(record.modelGatewayBaseUrl) };
+  return {
+    modelGatewayBaseUrl: parseDeploymentSettingValue(record.modelGatewayBaseUrl),
+    computeDefaultTier: parseOptionalDeploymentSettingValue(record.computeDefaultTier),
+    computeIdleHibernateSeconds: parseOptionalDeploymentIntegerSettingValue(record.computeIdleHibernateSeconds),
+    computeConcurrencyCap: parseOptionalDeploymentIntegerSettingValue(record.computeConcurrencyCap),
+  };
+}
+
+function parseComputeTierCatalog(value: unknown): AdminComputeTier[] {
+  const record = isRecord(value) ? value : {};
+  const items = Array.isArray(record.items) ? record.items : [];
+  return items.map((item) => {
+    const tier = isRecord(item) ? item : {};
+    return {
+      name: typeof tier.name === 'string' ? tier.name : '',
+      ...(typeof tier.description === 'string' ? { description: tier.description } : {}),
+      cpuRequest: typeof tier.cpuRequest === 'string' ? tier.cpuRequest : '',
+      cpuLimit: typeof tier.cpuLimit === 'string' ? tier.cpuLimit : '',
+      memoryRequest: typeof tier.memoryRequest === 'string' ? tier.memoryRequest : '',
+      memoryLimit: typeof tier.memoryLimit === 'string' ? tier.memoryLimit : '',
+      source: 'deployment' as const,
+    };
+  });
+}
+
+function parseComputeAssignment(value: unknown): AdminComputeAssignment {
+  const record = isRecord(value) ? value : {};
+  const tier = isRecord(record.tier) ? record.tier : {};
+  const override = tier.override;
+  const source = tier.source;
+  if (source !== 'override' && source !== 'default') {
+    throw new Error('The AEP compute assignment response is invalid.');
+  }
+  return {
+    agentId: typeof record.agentId === 'string' ? record.agentId : '',
+    ...(typeof record.agentName === 'string' ? { agentName: record.agentName } : {}),
+    tier: {
+      override: typeof override === 'string' ? override : null,
+      effective: typeof tier.effective === 'string' ? tier.effective : '',
+      source,
+    },
+    ...(typeof record.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}),
+    ...(typeof record.updatedBy === 'string' ? { updatedBy: record.updatedBy } : {}),
+  };
+}
+
+function parseComputeAssignmentList(value: unknown): AdminComputeAssignment[] {
+  const record = isRecord(value) ? value : {};
+  const items = Array.isArray(record.items) ? record.items : [];
+  return items.map((item) => parseComputeAssignment(item));
 }
 
 const DATA_PLANE_STATES: readonly string[] = ['pending', 'applying', 'ready', 'degraded', 'error'];

@@ -380,6 +380,80 @@ try {
   assert.ok(generatedSkill?.id, 'skill id must be generated server-side');
   await page.screenshot({ path: path.join(screenshots, 'skills.png'), fullPage: true, animations: 'disabled' });
   checks.push('skill registration and four detail tabs');
+
+  // Compute governance: the resources tab renders the deployment tier
+  // catalog, edits the default policy, adjusts per-agent tiers, and keeps the
+  // unknown-tier 422 inside the modal.
+  await page.getByRole('menuitem', { name: '系统管理', exact: true }).click();
+  await page.getByRole('tab', { name: '资源分配', exact: true }).click();
+  assert.match(page.url(), /#system\/resources$/);
+  await page.getByRole('heading', { name: '数字员工资源分配', exact: true }).waitFor();
+  await page.waitForLoadState('networkidle');
+  const tiersCard = page.getByRole('region', { name: '运行档位', exact: true }).locator('.ant-card');
+  await tiersCard.getByRole('row').filter({ hasText: 'standard' }).waitFor();
+  await tiersCard.getByRole('row').filter({ hasText: 'performance' }).waitFor();
+  assert.ok((await tiersCard.getByText('部署配置').count()) >= 2, 'tier rows must carry the deployment source tag');
+  await page.screenshot({
+    path: path.join(screenshots, 'compute-resources.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+
+  const policyCard = page.getByRole('region', { name: '默认策略', exact: true });
+  await policyCard.getByText('5 分钟（300 秒）', { exact: true }).waitFor();
+  await policyCard.getByRole('button', { name: '编辑', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('空闲休眠').fill('600');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await policyCard.getByText('10 分钟（600 秒）', { exact: true }).waitFor();
+  await policyCard.getByText('运行时覆盖', { exact: true }).first().waitFor();
+  assert.equal(state.compute.hibernateOverride, 600);
+
+  const assignmentsCard = page.getByRole('region', { name: '员工档位指派', exact: true }).locator('.ant-card');
+  const agentTwoRow = assignmentsCard.getByRole('row').filter({ hasText: 'E2E 数据助理' });
+  await agentTwoRow.getByText('standard', { exact: true }).waitFor();
+  await agentTwoRow.getByRole('button', { name: '调整', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: '默认档位' }).click();
+  await page
+    .locator('.ant-select-item-option')
+    .filter({ hasText: /^performance$/ })
+    .click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await agentTwoRow.getByText('performance', { exact: true }).waitFor();
+  await agentTwoRow.getByText('覆盖', { exact: true }).waitFor();
+  assert.equal(state.compute.overrides['agent-2'].tier, 'performance');
+
+  // A stale catalog tier keeps the 422 inside the modal instead of closing it.
+  expectedFailurePaths.add('/aep/v1/admin/compute/assignments/agent-2');
+  await agentTwoRow.getByRole('button', { name: '调整', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: '默认档位' }).click();
+  await page
+    .locator('.ant-select-item-option')
+    .filter({ hasText: /^retired$/ })
+    .click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.getByText('档位不存在，请从目录中选择。', { exact: true }).waitFor();
+  assert.equal(state.compute.overrides['agent-2'].tier, 'performance');
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  expectedFailurePaths.delete('/aep/v1/admin/compute/assignments/agent-2');
+
+  const agentOneRow = assignmentsCard.getByRole('row').filter({ hasText: 'E2E 销售助理' });
+  await agentOneRow.getByRole('button', { name: '调整', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.locator('.ant-select-clear').click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await agentOneRow.getByText('默认', { exact: true }).waitFor();
+  assert.equal(state.compute.overrides['agent-1'], undefined);
+  checks.push(
+    'compute resources: tier catalog, policy edit roundtrip, assignment adjust, stale-tier 422, override clear',
+  );
+
   await page.getByRole('menuitem', { name: '模型网关', exact: true }).click();
   await page.getByRole('tab', { name: '模型列表', exact: true }).waitFor();
   assert.match(page.url(), /#model-gateway$/);

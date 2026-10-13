@@ -52,6 +52,7 @@ import {
 } from './client.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { ModelConnectionSelect } from './ModelConnectionSelect.js';
+import { ModelPricingDrawer } from './ModelPricing.js';
 import { modelsT } from './models-copy.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
@@ -176,6 +177,7 @@ export function Models({
   const [detail, setDetail] = useState<AdminModel | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminModel | null>(null);
+  const [pricingModel, setPricingModel] = useState<AdminModel | null>(null);
   const [deleting, setDeleting] = useState<AdminModel | null>(null);
   // Gateway sync state loads independently: a data-plane failure must not
   // block the catalog, and must not be shown as "applied".
@@ -328,6 +330,11 @@ export function Models({
             <Button type="link" size="small" onClick={() => setDetail(model)}>
               {translate(language, 'viewDetails')}
             </Button>
+            {hasAdminPermission(identity, AdminPermission.ModelsRead) ? (
+              <Button type="link" size="small" onClick={() => setPricingModel(model)}>
+                {translate(language, 'modelPricingTitle')}
+              </Button>
+            ) : null}
             {canWrite ? (
               <Button type="link" size="small" onClick={() => setEditing(model)}>
                 {translate(language, 'editModel')}
@@ -507,6 +514,15 @@ export function Models({
         }
         onDelete={(model) => setDeleting(model)}
       />
+      {pricingModel ? (
+        <ModelPricingDrawer
+          key={pricingModel.id}
+          client={client}
+          model={pricingModel}
+          canWrite={canWrite}
+          onClose={() => setPricingModel(null)}
+        />
+      ) : null}
     </div>
   );
 }

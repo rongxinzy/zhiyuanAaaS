@@ -245,16 +245,6 @@ function AuditRecords({ client }: { client: AdminConsoleClient }) {
                 children: shown(selected.resourceId),
               },
               {
-                key: 'scope',
-                label: c.scope,
-                children: shown(selected.scopeType),
-              },
-              {
-                key: 'scopeId',
-                label: c.scopeId,
-                children: shown(selected.scopeId),
-              },
-              {
                 key: 'result',
                 label: c.result,
                 children: shown(selected.result),
