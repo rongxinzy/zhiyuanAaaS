@@ -122,81 +122,94 @@ export function ComputeResources({
         />
       ) : null}
 
-      <Card title={t('computeTiersCard')}>
-        <Table
-          rowKey="name"
-          columns={tierColumns()}
-          dataSource={tiers ? [...tiers] : []}
-          loading={loading && tiers === null}
-          scroll={{ x: 760 }}
-          locale={{
-            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('computeTiersEmpty')} />,
-          }}
-          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
-        />
-      </Card>
+      <section className="admin-table-section" aria-labelledby="compute-tiers-title">
+        <Typography.Title level={5} id="compute-tiers-title" style={{ margin: 0 }}>
+          {t('computeTiersCard')}
+        </Typography.Title>
+        <Card className="admin-table-card" styles={{ body: { padding: 0 } }}>
+          <Table
+            rowKey="name"
+            columns={tierColumns()}
+            dataSource={tiers ? [...tiers] : []}
+            loading={loading && tiers === null}
+            scroll={{ x: 760 }}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('computeTiersEmpty')} />,
+            }}
+            pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+          />
+        </Card>
+      </section>
 
-      <Card
-        title={t('computePolicyCard')}
-        extra={
-          canWrite && settings ? (
+      <section className="admin-table-section" aria-labelledby="compute-policy-title">
+        <div className="admin-table-section-header">
+          <Typography.Title level={5} id="compute-policy-title" style={{ margin: 0 }}>
+            {t('computePolicyCard')}
+          </Typography.Title>
+          {canWrite && settings ? (
             <Button onClick={() => setPolicyEditing(true)}>{t('edit')}</Button>
           ) : (
             <Tooltip title={t('computeReadonlyHint')}>
               <Button disabled>{t('edit')}</Button>
             </Tooltip>
-          )
-        }
-      >
-        {loading && settings === null ? (
-          <Skeleton active paragraph={{ rows: 2 }} />
-        ) : settings ? (
-          <Descriptions bordered column={1} size="small">
-            <Descriptions.Item label={t('computeDefaultTierLabel')}>
-              <Space size="small">
-                <SettingText value={settings.computeDefaultTier.effectiveValue} />
-                {settingSourceTag(settings.computeDefaultTier.source)}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('computeHibernateLabel')}>
-              <Space size="small">
-                {settings.computeIdleHibernateSeconds.effectiveValue !== null ? (
-                  <Typography.Text>
-                    {formatHibernateSeconds(settings.computeIdleHibernateSeconds.effectiveValue)}
-                  </Typography.Text>
-                ) : (
-                  <Typography.Text type="secondary">{t('computeNotConfigured')}</Typography.Text>
-                )}
-                {settingSourceTag(settings.computeIdleHibernateSeconds.source)}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label={t('computeConcurrencyLabel')}>
-              <Space size="small">
-                {settings.computeConcurrencyCap.effectiveValue !== null ? (
-                  <Typography.Text>{settings.computeConcurrencyCap.effectiveValue}</Typography.Text>
-                ) : (
-                  <Typography.Text type="secondary">{t('computeNotConfigured')}</Typography.Text>
-                )}
-                {settingSourceTag(settings.computeConcurrencyCap.source)}
-              </Space>
-            </Descriptions.Item>
-          </Descriptions>
-        ) : null}
-      </Card>
+          )}
+        </div>
+        <Card className="admin-table-card admin-policy-card" styles={{ body: { padding: 0 } }}>
+          {loading && settings === null ? (
+            <Skeleton active paragraph={{ rows: 2 }} />
+          ) : settings ? (
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label={t('computeDefaultTierLabel')}>
+                <Space size="small">
+                  <SettingText value={settings.computeDefaultTier.effectiveValue} />
+                  {settingSourceTag(settings.computeDefaultTier.source)}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('computeHibernateLabel')}>
+                <Space size="small">
+                  {settings.computeIdleHibernateSeconds.effectiveValue !== null ? (
+                    <Typography.Text>
+                      {formatHibernateSeconds(settings.computeIdleHibernateSeconds.effectiveValue)}
+                    </Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary">{t('computeNotConfigured')}</Typography.Text>
+                  )}
+                  {settingSourceTag(settings.computeIdleHibernateSeconds.source)}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('computeConcurrencyLabel')}>
+                <Space size="small">
+                  {settings.computeConcurrencyCap.effectiveValue !== null ? (
+                    <Typography.Text>{settings.computeConcurrencyCap.effectiveValue}</Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary">{t('computeNotConfigured')}</Typography.Text>
+                  )}
+                  {settingSourceTag(settings.computeConcurrencyCap.source)}
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+          ) : null}
+        </Card>
+      </section>
 
-      <Card title={t('computeAssignmentsCard')}>
-        <Table
-          rowKey="agentId"
-          columns={assignmentColumns(canWrite, (assignment) => setAdjusting(assignment))}
-          dataSource={assignments ? [...assignments] : []}
-          loading={loading && assignments === null}
-          scroll={{ x: 900 }}
-          locale={{
-            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('computeAssignmentEmpty')} />,
-          }}
-          pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
-        />
-      </Card>
+      <section className="admin-table-section" aria-labelledby="compute-assignments-title">
+        <Typography.Title level={5} id="compute-assignments-title" style={{ margin: 0 }}>
+          {t('computeAssignmentsCard')}
+        </Typography.Title>
+        <Card className="admin-table-card" styles={{ body: { padding: 0 } }}>
+          <Table
+            rowKey="agentId"
+            columns={assignmentColumns(canWrite, (assignment) => setAdjusting(assignment))}
+            dataSource={assignments ? [...assignments] : []}
+            loading={loading && assignments === null}
+            scroll={{ x: 900 }}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('computeAssignmentEmpty')} />,
+            }}
+            pagination={{ hideOnSinglePage: true, showSizeChanger: false }}
+          />
+        </Card>
+      </section>
 
       {settings ? (
         <PolicyEditModal
