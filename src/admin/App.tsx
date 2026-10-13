@@ -405,7 +405,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       );
       break;
     case 'knowledge':
-      content = <Knowledge client={client} />;
+      content = <Knowledge client={client} baseId={subpage ?? null} onNavigate={navigate} />;
       break;
     case 'skills':
       content = <Resources {...props} tab="skills" />;

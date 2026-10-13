@@ -54,7 +54,43 @@ vi.mock('antd', async (importOriginal) => {
       </div>
     );
   }
-  return { ...actual, Upload: UploadForStateTest };
+  // antd's real Dropdown renders its menu in a portal whose popup does not open
+  // under this file's mocked module, so the stub renders the trigger plus the
+  // menu items inline. Wiring (which item calls which handler) stays covered
+  // here; the real popup behaviour is exercised by the pages that use antd
+  // unmocked (Resources).
+  function DropdownForStateTest({
+    children,
+    menu,
+  }: {
+    readonly children: ReactNode;
+    readonly menu?: {
+      readonly items?: readonly (Record<string, unknown> | null | undefined)[];
+      readonly onClick?: (info: { readonly key: string; readonly domEvent: { stopPropagation: () => void } }) => void;
+    };
+  }) {
+    const items = (menu?.items ?? []).filter(
+      (item): item is { key: string; label?: ReactNode; disabled?: boolean } =>
+        typeof item === 'object' && item !== null && typeof item.key === 'string',
+    );
+    return (
+      <div>
+        {children}
+        {items.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="menuitem"
+            disabled={item.disabled === true}
+            onClick={() => menu?.onClick?.({ key: item.key, domEvent: { stopPropagation: () => {} } })}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  return { ...actual, Dropdown: DropdownForStateTest, Upload: UploadForStateTest };
 });
 
 // These parent tests focus on knowledge-base lifecycle state. Each managed
@@ -71,6 +107,11 @@ import { type ManagedKnowledgeBase, type PortalClient, PortalError } from './por
 function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   return rtlRender(<ConfigProvider wave={{ disabled: true }}>{ui}</ConfigProvider>);
 }
+
+// The detail page (Tabs + Descriptions + a row menu) makes antd's cssinjs
+// style computation noticeably heavier in jsdom, so the tests that open a
+// document Modal get an explicit budget instead of the default 5 s.
+const TIMEOUT = 60000;
 
 const base: ManagedKnowledgeBase = {
   id: 'kb-test-1',
@@ -147,7 +188,7 @@ describe('KnowledgeManagement component state', () => {
         }),
     );
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    const { container } = render(<KnowledgeManagement portal={portal} />);
+    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
     const input = container.querySelector('input[type="file"]');
@@ -173,18 +214,19 @@ describe('KnowledgeManagement component state', () => {
     const portal = makePortal({
       listManagedKnowledgeDocuments: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByText('没有权限访问知识库管理。')).toBeInTheDocument();
     expect(screen.queryByText('暂无文档')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /新建知识库/ })).toBeDisabled();
+    // 文档读取被拒时写操作整体锁住，而不是伪装成空列表。
+    expect(screen.getByRole('button', { name: /上传文档/ })).toBeDisabled();
   });
 
   test('keeps a referenced knowledge base selected when protected delete is rejected', async () => {
     const portal = makePortal({
       deleteManagedKnowledgeBase: vi.fn().mockRejectedValue(new PortalError(409, 'in use', 'KNOWLEDGE_BASE_IN_USE')),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /删除/ }));
@@ -202,9 +244,9 @@ describe('KnowledgeManagement component state', () => {
       getManagedKnowledgeBase: vi.fn().mockResolvedValueOnce(base).mockResolvedValue(created),
       createManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: created, operationId: 'kbop-create-test' }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
 
-    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    expect(await screen.findByText('Research')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /新建知识库/ }));
     const dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('名称'), { target: { value: 'New research' } });
@@ -226,7 +268,7 @@ describe('KnowledgeManagement component state', () => {
       listManagedKnowledgeBases: vi.fn().mockResolvedValueOnce([base]).mockResolvedValue([updated]),
       updateManagedKnowledgeBase: vi.fn().mockResolvedValue({ data: updated, operationId: 'kbop-update-test' }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /编辑/ }));
@@ -259,7 +301,7 @@ describe('KnowledgeManagement component state', () => {
         .mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       uploadManagedKnowledgeDocument: vi.fn().mockResolvedValue({ data: doc, operationId: 'kbop-upload-success' }),
     });
-    const { container } = render(<KnowledgeManagement portal={portal} />);
+    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
     const input = container.querySelector('input[type="file"]')!;
     Object.defineProperty(input, 'files', {
@@ -287,7 +329,7 @@ describe('KnowledgeManagement component state', () => {
       operationId: 'kbop-folder-1',
     });
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
@@ -324,7 +366,7 @@ describe('KnowledgeManagement component state', () => {
         operationId: 'kbop-retry',
       });
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
@@ -355,7 +397,7 @@ describe('KnowledgeManagement component state', () => {
       operationId: 'kbop-small',
     });
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
@@ -393,7 +435,7 @@ describe('KnowledgeManagement component state', () => {
         operationId: 'kbop-manual-import',
       }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: /导入 URL/ })[0]!);
@@ -441,7 +483,7 @@ describe('KnowledgeManagement component state', () => {
         operationId: 'kbop-disable',
       }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
     const row = screen.getByText('Lifecycle guide').closest('tr')!;
     const toggle = within(row).getByRole('switch', { name: '解析完成后保持停用' });
@@ -458,10 +500,10 @@ describe('KnowledgeManagement component state', () => {
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       runManagedKnowledgeDocumentAction: vi.fn().mockResolvedValue({ operationId: 'kbop-doc-action' }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi().getByRole('button', { name: /重新解析/ }));
+    const _rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /重新解析/ }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'reparse'));
   });
 
@@ -471,10 +513,10 @@ describe('KnowledgeManagement component state', () => {
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       runManagedKnowledgeDocumentAction: vi.fn().mockResolvedValue({ operationId: 'kbop-doc-action' }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi().getByRole('button', { name: /删除资料/ }));
+    const _rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /删除资料/ }));
     fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'delete'));
   });
@@ -485,11 +527,22 @@ describe('KnowledgeManagement component state', () => {
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       runManagedKnowledgeDocumentAction: vi.fn().mockResolvedValue({ operationId: 'kbop-cancel' }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi.getByRole('button', { name: /取消解析/ }));
+    const _rowUi = within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /取消解析/ }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'cancel-parse'));
+  });
+
+  test('renders base detail heading summary and business tabs', async () => {
+    const portal = makePortal();
+    render(<KnowledgeManagement portal={portal} baseId={base.id} onNavigate={vi.fn()} />);
+    expect(await screen.findByRole('tab', { name: '文档管理' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '检索与来源' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '知识库访问授权' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '知识运营' })).toBeInTheDocument();
+    // 对象摘要里 UUID 可复制
+    expect(screen.getByText('kb-test-1')).toBeInTheDocument();
   });
 
   test('renders chunk content as readable managed details', async () => {
@@ -509,10 +562,10 @@ describe('KnowledgeManagement component state', () => {
         ],
       }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi().getByRole('button', { name: /分块与来源/ }));
+    const _rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /分块与来源/ }));
     expect(await screen.findByText('source excerpt')).toBeInTheDocument();
   });
 
@@ -536,10 +589,10 @@ describe('KnowledgeManagement component state', () => {
         },
       }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi().getByRole('button', { name: /处理过程/ }));
+    const _rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /处理过程/ }));
     expect(await screen.findByText('parse')).toBeInTheDocument();
     expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
   });
@@ -577,10 +630,10 @@ describe('KnowledgeManagement component state', () => {
         pageSize: 50,
       }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const row = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(row().getByRole('button', { name: /分块与来源/ }));
+    const _row = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /分块与来源/ }));
     expect(await screen.findByText('diagram source')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /查看分块图片 1/ }));
     await waitFor(() => expect(getImage).toHaveBeenCalledOnce());
@@ -590,48 +643,55 @@ describe('KnowledgeManagement component state', () => {
     expect(createURL).toHaveBeenCalledOnce();
   });
 
-  test('edits a chunk with its content revision and reports failed indexing separately', async () => {
-    const doc = lifecycleDocument('completed');
-    const chunk = {
-      id: 'chunk-edit',
-      knowledge_id: doc.id,
-      seq_id: 1,
-      content: 'original body',
-      chunk_type: 'text',
-      is_enabled: true,
-      content_revision: 4,
-      index_status: 'ready' as const,
-      images: [],
-    };
-    const updateChunk = vi.fn().mockResolvedValue({
-      data: { ...chunk, content: 'updated body', content_revision: 5, index_status: 'failed' },
-      operationId: 'op-chunk-edit',
-    });
-    const portal = makePortal({
-      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
-      listManagedKnowledgeChunks: vi.fn().mockResolvedValue({ data: [chunk], total: 1, page: 1, pageSize: 50 }),
-      updateManagedKnowledgeChunk: updateChunk,
-    });
-    render(<KnowledgeManagement portal={portal} />);
-    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const row = within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(row.getByRole('button', { name: new RegExp(translate(ADMIN_LANGUAGE, 'knowledgeChunks')) }));
-    expect(await screen.findByText('original body')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeChunkEdit') }));
-    const dialogs = screen.getAllByRole('dialog');
-    const editor = within(dialogs[dialogs.length - 1]!);
-    fireEvent.change(editor.getByRole('textbox'), { target: { value: 'updated body' } });
-    const saveLabel = translate(ADMIN_LANGUAGE, 'knowledgeSave');
-    fireEvent.click(editor.getByRole('button', { name: new RegExp([...saveLabel].join('\\s*')) }));
-    await waitFor(() =>
-      expect(updateChunk).toHaveBeenCalledWith(doc.id, chunk.id, {
-        content: 'updated body',
-        expected_revision: 4,
-      }),
-    );
-    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeChunkIndexFailed'))).toBeInTheDocument();
-    expect(screen.getAllByText('updated body').length).toBeGreaterThan(0);
-  });
+  test(
+    'edits a chunk with its content revision and reports failed indexing separately',
+    async () => {
+      const doc = lifecycleDocument('completed');
+      const chunk = {
+        id: 'chunk-edit',
+        knowledge_id: doc.id,
+        seq_id: 1,
+        content: 'original body',
+        chunk_type: 'text',
+        is_enabled: true,
+        content_revision: 4,
+        index_status: 'ready' as const,
+        images: [],
+      };
+      const updateChunk = vi.fn().mockResolvedValue({
+        data: { ...chunk, content: 'updated body', content_revision: 5, index_status: 'failed' },
+        operationId: 'op-chunk-edit',
+      });
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+        listManagedKnowledgeChunks: vi.fn().mockResolvedValue({ data: [chunk], total: 1, page: 1, pageSize: 50 }),
+        updateManagedKnowledgeChunk: updateChunk,
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+      // 行内次级动作在「更多」菜单里（测试替身把菜单项内联渲染）。
+      fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(translate(ADMIN_LANGUAGE, 'knowledgeChunks')) }));
+      expect(await screen.findByText('original body')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeChunkEdit') }));
+      // jsdom 下按 accessible name 查大 DOM 极慢，这里直接按结构取最后一个弹层。
+      const editorModal = [...document.querySelectorAll('.ant-modal')].at(-1)!;
+      fireEvent.change(editorModal.querySelector('textarea')!, { target: { value: 'updated body' } });
+      fireEvent.click(editorModal.querySelector('.ant-btn-primary')!);
+      await waitFor(() =>
+        expect(updateChunk).toHaveBeenCalledWith(doc.id, chunk.id, {
+          content: 'updated body',
+          expected_revision: 4,
+        }),
+      );
+      expect(
+        await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeChunkIndexFailed'), undefined, {
+          timeout: TIMEOUT,
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByText('updated body').length).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
 
   test('aborts chunk image reads on unmount and discards late responses', async () => {
     const doc = lifecycleDocument('completed');
@@ -663,10 +723,10 @@ describe('KnowledgeManagement component state', () => {
       }),
       getManagedKnowledgeChunkImage: getImage,
     });
-    const view = render(<KnowledgeManagement portal={portal} />);
+    const view = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const row = within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(row.getByRole('button', { name: /分块与来源/ }));
+    const _row = within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /分块与来源/ }));
     expect(await screen.findByText('diagram source')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /查看分块图片 1/ }));
     await waitFor(() => expect(getImage).toHaveBeenCalledOnce());
@@ -704,11 +764,11 @@ describe('KnowledgeManagement component state', () => {
         .mockResolvedValueOnce({ data: firstPage, total: 51, page: 1, pageSize: 50 })
         .mockResolvedValueOnce({ data: lastPage, total: 51, page: 2, pageSize: 50 }),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi.getByRole('button', { name: /分块与来源/ }));
+    const _rowUi = within(screen.getByText('Lifecycle guide').closest('tr')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: /分块与来源/ }));
     expect(await screen.findByText('chunk text 1')).toBeInTheDocument();
     expect((await screen.findAllByText(/分块总数:\s*51/)).length).toBeGreaterThan(0);
 
@@ -721,23 +781,28 @@ describe('KnowledgeManagement component state', () => {
     });
   });
 
-  test('previews only the selected document original through the managed API', async () => {
-    const doc = lifecycleDocument('failed');
-    const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-preview');
-    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const portal = makePortal({
-      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
-      getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['original'])),
-    });
-    render(<KnowledgeManagement portal={portal} />);
-    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
-    expect(await screen.findByTitle('guide.txt')).toHaveAttribute('src', 'blob:test-preview');
-    expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'preview');
-    expect(objectUrl).toHaveBeenCalledOnce();
-    expect(revokeObjectUrl).not.toHaveBeenCalled();
-  });
+  test(
+    'previews only the selected document original through the managed API',
+    async () => {
+      const doc = lifecycleDocument('failed');
+      const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-preview');
+      const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['original'])),
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+      const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      const frame = await screen.findByTitle('guide.txt', undefined, { timeout: TIMEOUT });
+      expect(frame).toHaveAttribute('src', 'blob:test-preview');
+      expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'preview');
+      expect(objectUrl).toHaveBeenCalledOnce();
+      expect(revokeObjectUrl).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
 
   test('downloads only the selected document original through the managed API', async () => {
     const doc = lifecycleDocument('failed');
@@ -753,9 +818,9 @@ describe('KnowledgeManagement component state', () => {
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['original'])),
     });
-    render(<KnowledgeManagement portal={portal} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    const _rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
     const realSetTimeout = window.setTimeout.bind(window);
     let releaseDownloadUrl: (() => void) | undefined;
     const timeout = vi.spyOn(window, 'setTimeout').mockImplementation((handler, delay, ...args) => {
@@ -765,7 +830,7 @@ describe('KnowledgeManagement component state', () => {
       }
       return realSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof window.setTimeout>;
     });
-    fireEvent.click(rowUi().getByRole('button', { name: /下载原文件/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /下载原文件/ }));
     await waitFor(() => expect(anchorClick).toHaveBeenCalled());
     expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'download');
     expect(anchorClick).toHaveBeenCalled();

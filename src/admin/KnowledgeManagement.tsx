@@ -1,23 +1,23 @@
 import {
   DeleteOutlined,
-  DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   LinkOutlined,
+  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
-  StopOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import type { UploadFile } from 'antd';
+import type { MenuProps, UploadFile } from 'antd';
 import {
   Alert,
   Button,
   Card,
   Descriptions,
+  Dropdown,
   Empty,
   Form,
   Image,
@@ -30,6 +30,7 @@ import {
   Spin,
   Switch,
   Table,
+  Tabs,
   Tag,
   Tree,
   Typography,
@@ -110,6 +111,21 @@ const copyKeys = {
   folderFiles: 'knowledgeFolderFiles',
   folderLimit: 'knowledgeFolderLimit',
   folderHint: 'knowledgeFolderHint',
+  tabDocuments: 'knowledgeTabDocuments',
+  tabRetrieval: 'knowledgeRetrieval',
+  tabGrants: 'knowledgeGrants',
+  tabOperations: 'knowledgeOperations',
+  manageDocuments: 'knowledgeManageDocuments',
+  columnScope: 'knowledgeColumnScope',
+  columnUpdated: 'knowledgeColumnUpdated',
+  columnDocs: 'knowledgeColumnDocs',
+  baseType: 'knowledgeBaseType',
+  notStatistic: 'knowledgeNotStatistic',
+  sectionSummary: 'knowledgeSummary',
+  fieldTenant: 'knowledgeTenant',
+  fieldEmbeddingModel: 'knowledgeEmbeddingModel',
+  moreActions: 'knowledgeMoreActions',
+  backToList: 'knowledgeBackToList',
   fileLimit: 'knowledgeFileLimit',
   uploadAccepted: 'knowledgeUploadAccepted',
   knowledgeImportUrl: 'knowledgeImportUrl',
@@ -218,10 +234,21 @@ const FOLDER_UPLOAD_MAX_FILES = 200;
  *  body itself, so an oversized member would only fail upstream. */
 const FOLDER_UPLOAD_MAX_FILE_BYTES = 63 * 1024 * 1024;
 
-export function KnowledgeManagement({ portal }: { readonly portal: PortalClient }) {
+export function KnowledgeManagement({
+  portal,
+  baseId = null,
+  onNavigate,
+}: {
+  readonly portal: PortalClient;
+  /** Route-selected knowledge base; the list page renders when absent. */
+  readonly baseId?: string | null;
+  /** Route navigation for the list ⇄ detail hop, so the URL stays authoritative. */
+  readonly onNavigate?: ((route: string) => void) | undefined;
+}) {
   const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
   const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(baseId);
+  const [detailTab, setDetailTab] = useState('documents');
   const [docs, setDocs] = useState<ManagedKnowledgePage | null>(null);
   const [docsContext, setDocsContext] = useState('');
   const [detail, setDetail] = useState<ManagedKnowledgeBase | null>(null);
@@ -298,6 +325,27 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
     },
     [],
   );
+  // The route owns which base is open: a deep link (/knowledge/<id>) selects it,
+  // and going back to /knowledge returns to the list.
+  useEffect(() => {
+    setSelectedId((current) => (current === baseId ? current : baseId));
+  }, [baseId]);
+
+  const openBase = (id: string | null) => {
+    chunkRequestGeneration.current += 1;
+    chunkSaveGeneration.current += 1;
+    setSelectedId(id);
+    setDetailTab('documents');
+    setPage(1);
+    setFiles([]);
+    setInspector(null);
+    setChunksLoading(false);
+    setChunkSavingId(null);
+    setChunkEditor(null);
+    setChunkEditorText('');
+    onNavigate?.(id ? `knowledge/${id}` : 'knowledge');
+  };
+
   const selected = useMemo(
     () => (detail?.id === selectedId ? detail : (bases.find((item) => item.id === selectedId) ?? null)),
     [bases, detail, selectedId],
@@ -324,9 +372,7 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
         setReadiness(ready);
         setBases(items);
         setAccessBlocked(false);
-        setSelectedId((current) =>
-          current && items.some((item) => item.id === current) ? current : (items[0]?.id ?? null),
-        );
+        setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
       } catch (cause) {
         if (signal?.aborted || generation !== listGeneration.current) return;
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
@@ -948,8 +994,19 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
       render: (_: unknown, row: ManagedKnowledgeDocument) => {
         const actionBusy = documentActionId === row.id;
         const canCancel = ['pending', 'processing', 'finalizing'].includes(row.parse_status);
+        const writesDisabled = writeBlocked || actionBusy || uploading || importing;
+        const moreItems: MenuProps['items'] = [
+          { key: 'download', label: t('knowledgeDownload'), disabled: !row.file_name || actionBusy },
+          { key: 'chunks', label: t('knowledgeChunks'), disabled: actionBusy },
+          { key: 'spans', label: t('knowledgeSpans'), disabled: actionBusy },
+          { type: 'divider' },
+          { key: 'reparse', label: t('knowledgeRetryParse'), disabled: writesDisabled },
+          ...(canCancel ? [{ key: 'cancel-parse', label: t('knowledgeCancelParse'), disabled: writesDisabled }] : []),
+          { type: 'divider' },
+          { key: 'delete', label: t('knowledgeDeleteDocument'), danger: true, disabled: writesDisabled },
+        ];
         return (
-          <Space size={4} wrap>
+          <Space size={4}>
             <Button
               size="small"
               icon={<EyeOutlined />}
@@ -958,61 +1015,29 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
             >
               {t('knowledgePreview')}
             </Button>
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              disabled={!row.file_name || actionBusy}
-              onClick={() => void openDocumentFile(row, 'download')}
+            <Dropdown
+              menu={{
+                items: moreItems,
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'download') return void openDocumentFile(row, 'download');
+                  if (key === 'chunks') return void inspectDocument(row, 'chunks');
+                  if (key === 'spans') return void inspectDocument(row, 'spans');
+                  if (key === 'delete')
+                    return modal.confirm({
+                      title: t('knowledgeDeleteDocument'),
+                      content: t('knowledgeDeleteDocumentHint'),
+                      okText: t('knowledgeDeleteConfirm'),
+                      cancelText: t('cancel'),
+                      okButtonProps: { danger: true },
+                      onOk: () => runDocumentAction(row, 'delete'),
+                    });
+                  return void runDocumentAction(row, key === 'cancel-parse' ? 'cancel-parse' : 'reparse');
+                },
+              }}
             >
-              {t('knowledgeDownload')}
-            </Button>
-            <Button
-              size="small"
-              icon={<FileTextOutlined />}
-              disabled={actionBusy}
-              onClick={() => void inspectDocument(row, 'chunks')}
-            >
-              {t('knowledgeChunks')}
-            </Button>
-            <Button size="small" disabled={actionBusy} onClick={() => void inspectDocument(row, 'spans')}>
-              {t('knowledgeSpans')}
-            </Button>
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              disabled={writeBlocked || actionBusy || uploading || importing}
-              onClick={() => void runDocumentAction(row, 'reparse')}
-            >
-              {t('knowledgeRetryParse')}
-            </Button>
-            {canCancel && (
-              <Button
-                size="small"
-                icon={<StopOutlined />}
-                disabled={writeBlocked || actionBusy || uploading || importing}
-                onClick={() => void runDocumentAction(row, 'cancel-parse')}
-              >
-                {t('knowledgeCancelParse')}
-              </Button>
-            )}
-            <Button
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={writeBlocked || actionBusy || uploading || importing}
-              onClick={() =>
-                modal.confirm({
-                  title: t('knowledgeDeleteDocument'),
-                  content: t('knowledgeDeleteDocumentHint'),
-                  okText: t('knowledgeDeleteConfirm'),
-                  cancelText: t('cancel'),
-                  okButtonProps: { danger: true },
-                  onOk: () => runDocumentAction(row, 'delete'),
-                })
-              }
-            >
-              {t('knowledgeDeleteDocument')}
-            </Button>
+              <Button type="text" size="small" aria-label={t('moreActions')} icon={<MoreOutlined />} />
+            </Dropdown>
           </Space>
         );
       },
@@ -1037,351 +1062,432 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
     ),
     ...(span.children?.length ? { children: span.children.map(spanTree) } : {}),
   });
+  const baseColumns = [
+    {
+      title: t('name'),
+      key: 'name',
+      render: (_: unknown, row: ManagedKnowledgeBase) => (
+        <Space orientation="vertical" size={0}>
+          <Typography.Text strong>{row.name}</Typography.Text>
+          <Typography.Text type="secondary" className="text-xs">
+            {row.id}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: t('descriptionField'),
+      dataIndex: 'description',
+      key: 'description',
+      render: (value: string | undefined) => value || t('notStatistic'),
+    },
+    // 文档数 / 解析状态 / 使用范围 / 更新时间：列表接口当前不返回，按后台设计约定显示「暂未统计」。
+    { title: t('columnDocs'), key: 'documents', render: () => t('notStatistic') },
+    { title: t('parse'), key: 'parse', render: () => t('notStatistic') },
+    { title: t('columnScope'), key: 'scope', render: () => t('notStatistic') },
+    { title: t('columnUpdated'), key: 'updated', render: () => t('notStatistic') },
+    {
+      title: t('knowledgeActions'),
+      key: 'actions',
+      render: (_: unknown, row: ManagedKnowledgeBase) => (
+        <Button type="link" style={{ paddingInline: 0 }} onClick={() => openBase(row.id)}>
+          {t('manageDocuments')}
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Typography.Title level={4} style={{ marginBottom: 4 }}>
-            {t('title')}
-          </Typography.Title>
-          <Typography.Text type="secondary">{t('description')}</Typography.Text>
-        </div>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadBases()}>
-            {t('refresh')}
-          </Button>
-          <Button
-            icon={<LinkOutlined />}
-            disabled={!selectedId || writeBlocked || importing || uploading}
-            onClick={() => {
-              importForm.resetFields();
-              setImportKind('url');
-            }}
-          >
-            {t('knowledgeImportUrl')}
-          </Button>
-          <Button
-            icon={<FileTextOutlined />}
-            disabled={!selectedId || writeBlocked || importing || uploading}
-            onClick={() => {
-              importForm.resetFields();
-              setImportKind('manual');
-            }}
-          >
-            {t('knowledgeImportManual')}
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} disabled={!canCreate || writeBlocked} onClick={openCreate}>
-            {t('add')}
-          </Button>
-        </Space>
-      </div>
+      {!selectedId ? (
+        <>
+          <div>
+            <Typography.Text type="secondary">{t('bases')}</Typography.Text>
+          </div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <Typography.Title level={4} style={{ marginBottom: 4 }}>
+                {t('title')}
+              </Typography.Title>
+              <Typography.Text type="secondary">{t('description')}</Typography.Text>
+            </div>
+            <Space wrap>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadBases()}>
+                {t('refresh')}
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} disabled={!canCreate || writeBlocked} onClick={openCreate}>
+                {t('add')}
+              </Button>
+            </Space>
+          </div>
 
-      {readiness && (
-        <Alert
-          showIcon
-          type={modelState === 'configured' ? 'info' : 'warning'}
-          title={`${t('readiness')} · ${modelState === 'configured' ? t('modelReady') : modelState === 'unavailable' ? t('modelUnavailable') : t('modelMissing')}`}
-          description={`${t('unverified')} (${readiness.storage}, ${readiness.parser})`}
-        />
-      )}
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          title={error}
-          action={
-            <Button size="small" onClick={() => void loadBases()}>
-              {t('retry')}
-            </Button>
-          }
-        />
-      )}
-      {writeNotice && (
-        <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
-      )}
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(250px,0.32fr)_minmax(0,1fr)]">
-        <Card
-          size="small"
-          title={t('bases')}
-          extra={<Typography.Text type="secondary">{bases.length}</Typography.Text>}
-        >
-          {bases.length === 0 && !loading && !error ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <Space orientation="vertical" size={2}>
-                  <span>{t('empty')}</span>
-                  <Typography.Text type="secondary">{t('emptyHint')}</Typography.Text>
-                </Space>
+          {readiness && (
+            <Alert
+              showIcon
+              type={modelState === 'configured' ? 'info' : 'warning'}
+              title={`${t('readiness')} · ${modelState === 'configured' ? t('modelReady') : modelState === 'unavailable' ? t('modelUnavailable') : t('modelMissing')}`}
+              description={`${t('unverified')} (${readiness.storage}, ${readiness.parser})`}
+            />
+          )}
+          {error && (
+            <Alert
+              type="error"
+              showIcon
+              title={error}
+              action={
+                <Button size="small" onClick={() => void loadBases()}>
+                  {t('retry')}
+                </Button>
               }
             />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {bases.map((base) => (
-                <button
-                  key={base.id}
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => {
-                    chunkRequestGeneration.current += 1;
-                    chunkSaveGeneration.current += 1;
-                    setSelectedId(base.id);
-                    setPage(1);
-                    setFiles([]);
-                    setInspector(null);
-                    setChunksLoading(false);
-                    setChunkSavingId(null);
-                    setChunkEditor(null);
-                    setChunkEditorText('');
-                  }}
-                  className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${base.id === selectedId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
-                >
-                  <span className="block font-medium">{base.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{base.id}</span>
-                </button>
-              ))}
-            </div>
           )}
-        </Card>
+          {writeNotice && (
+            <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
+          )}
 
-        <Card size="small" loading={loading && !selected}>
-          {!selected ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
-          ) : (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <Typography.Title level={5} style={{ margin: 0 }}>
-                    {selected.name}
-                  </Typography.Title>
-                  <Typography.Text type="secondary">{selected.id}</Typography.Text>
-                  {selected.description && (
-                    <Typography.Paragraph style={{ margin: '8px 0 0' }}>{selected.description}</Typography.Paragraph>
-                  )}
-                </div>
-                <Space wrap>
-                  <Button
-                    icon={<EditOutlined />}
-                    disabled={writeBlocked || uploading}
-                    onClick={() => openEdit(selected)}
-                  >
-                    {t('edit')}
-                  </Button>
-                  <Button
-                    danger
-                    icon={<DeleteOutlined />}
-                    loading={deleting}
-                    disabled={writeBlocked || uploading}
-                    onClick={() =>
-                      modal.confirm({
-                        title: t('deleteTitle'),
-                        content: t('deleteHint'),
-                        okText: t('deleteConfirm'),
-                        cancelText: t('cancel'),
-                        okButtonProps: { danger: true },
-                        onOk: removeBase,
-                      })
+          <Card size="small">
+            <Table<ManagedKnowledgeBase>
+              rowKey="id"
+              size="small"
+              loading={loading}
+              columns={baseColumns}
+              dataSource={bases}
+              locale={{ emptyText: error ? t('error') : t('empty') }}
+              pagination={false}
+              scroll={{ x: 760 }}
+            />
+          </Card>
+        </>
+      ) : (
+        <>
+          <div>
+            <Typography.Text type="secondary">
+              <Button type="link" style={{ paddingInline: 0 }} onClick={() => openBase(null)}>
+                {t('bases')}
+              </Button>
+              {` / ${selected?.name ?? selectedId}`}
+            </Typography.Text>
+          </div>
+          <Card size="small" loading={loading && !selected}>
+            {!selected ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
+            ) : (
+              <div className="flex flex-col gap-4">
+                {error && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    title={error}
+                    action={
+                      <Button size="small" onClick={() => void loadBases()}>
+                        {t('retry')}
+                      </Button>
                     }
-                  >
-                    {t('remove')}
-                  </Button>
-                </Space>
-              </div>
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Upload
-                    accept=".txt,.pdf"
-                    maxCount={1}
-                    fileList={files}
-                    disabled={uploading || writeBlocked}
-                    beforeUpload={() => false}
-                    onChange={(info) => setFiles(info.fileList.slice(-1))}
-                    onRemove={() => {
-                      setFiles([]);
-                      return true;
-                    }}
-                  >
-                    <Button icon={<UploadOutlined />} disabled={uploading}>
-                      {t('chooseFile')}
-                    </Button>
-                  </Upload>
-                  <Upload
-                    directory
-                    multiple
-                    showUploadList={false}
-                    fileList={[]}
-                    disabled={uploading || folderUploading || writeBlocked}
-                    beforeUpload={() => false}
-                    onChange={(info) => queueFolderFiles(info.fileList)}
-                  >
-                    <Button icon={<FolderOpenOutlined />} disabled={uploading || folderUploading}>
-                      {t('chooseFolder')}
-                    </Button>
-                  </Upload>
-                  <Button
-                    icon={<LinkOutlined />}
-                    disabled={writeBlocked || importing || uploading}
-                    onClick={() => {
-                      importForm.resetFields();
-                      setImportKind('url');
-                    }}
-                  >
-                    {t('knowledgeImportUrl')}
-                  </Button>
-                  <Button
-                    icon={<FileTextOutlined />}
-                    disabled={writeBlocked || importing || uploading}
-                    onClick={() => {
-                      importForm.resetFields();
-                      setImportKind('manual');
-                    }}
-                  >
-                    {t('knowledgeImportManual')}
-                  </Button>
-                  <Button
-                    type="primary"
-                    disabled={!files.length || uploading || writeBlocked}
-                    loading={uploading}
-                    onClick={() => void uploadFile()}
-                  >
-                    {t('upload')}
-                  </Button>
-                  <Button
-                    disabled={folderUploading || writeBlocked || queuedFolderItems.length === 0}
-                    loading={folderUploading}
-                    onClick={() => void runFolderUpload(queuedFolderItems)}
-                  >
-                    {queuedFolderItems.length > 0
-                      ? `${t('uploadFolder')} (${queuedFolderItems.length})`
-                      : t('uploadFolder')}
-                  </Button>
-                </div>
-                <Space.Compact>
-                  <Input
-                    allowClear
-                    value={keyword}
-                    placeholder={t('search')}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    onPressEnter={() => {
-                      setPage(1);
-                      setSearch(keyword.trim());
-                    }}
-                    onClear={() => {
-                      setKeyword('');
-                      setSearch('');
-                      setPage(1);
-                    }}
                   />
-                  <Button
-                    icon={<SearchOutlined />}
-                    onClick={() => {
-                      setPage(1);
-                      setSearch(keyword.trim());
-                    }}
-                  />
-                  <Button
-                    icon={<ReloadOutlined />}
-                    aria-label={t('refresh')}
-                    loading={docsLoading}
-                    onClick={() => void loadDocuments()}
-                  />
-                </Space.Compact>
-              </div>
-              {folderQueue.length > 0 && (
-                <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Typography.Text type="secondary">
-                      {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
-                    </Typography.Text>
-                    <Space size="small">
-                      <Button
-                        size="small"
-                        disabled={folderUploading || failedFolderItems.length === 0}
-                        onClick={() => void runFolderUpload(failedFolderItems)}
-                      >
-                        {t('folderRetryFailed')}
-                      </Button>
-                      <Button size="small" disabled={folderUploading} onClick={() => setFolderQueue([])}>
-                        {t('folderClear')}
-                      </Button>
-                    </Space>
+                )}
+                {writeNotice && (
+                  <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
+                )}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <Typography.Title level={5} style={{ margin: 0 }}>
+                      {selected.name}
+                    </Typography.Title>
+                    {selected.description && (
+                      <Typography.Paragraph style={{ margin: '4px 0 0' }}>{selected.description}</Typography.Paragraph>
+                    )}
                   </div>
-                  <div className="max-h-48 overflow-auto">
-                    {folderQueue.map((item) => (
-                      <div key={item.key} className="flex items-center justify-between gap-2 py-0.5 text-xs">
-                        <span className="truncate" title={item.relativePath || item.file.name}>
-                          {item.label}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          {item.detail ? <Typography.Text type="secondary">{item.detail}</Typography.Text> : null}
-                          <Tag
-                            color={
-                              item.status === 'accepted'
-                                ? 'green'
-                                : item.status === 'failed'
-                                  ? 'red'
-                                  : item.status === 'uploading'
-                                    ? 'blue'
-                                    : 'default'
-                            }
-                          >
-                            {item.status === 'accepted'
-                              ? t('folderAccepted')
-                              : item.status === 'failed'
-                                ? t('folderFailed')
-                                : item.status === 'uploading'
-                                  ? t('folderUploading')
-                                  : t('folderQueued')}
-                          </Tag>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <Space wrap>
+                    <Button
+                      icon={<EditOutlined />}
+                      disabled={writeBlocked || uploading}
+                      onClick={() => openEdit(selected)}
+                    >
+                      {t('edit')}
+                    </Button>
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      loading={deleting}
+                      disabled={writeBlocked || uploading}
+                      onClick={() =>
+                        modal.confirm({
+                          title: t('deleteTitle'),
+                          content: t('deleteHint'),
+                          okText: t('deleteConfirm'),
+                          cancelText: t('cancel'),
+                          okButtonProps: { danger: true },
+                          onOk: removeBase,
+                        })
+                      }
+                    >
+                      {t('remove')}
+                    </Button>
+                  </Space>
                 </div>
-              )}
-              <Alert
-                showIcon
-                type="info"
-                title={t('knowledgeDocumentEnableHint')}
-                description={t('knowledgeFileOnlyPreview')}
-              />
-              <Table<ManagedKnowledgeDocument>
-                rowKey="id"
-                size="small"
-                loading={docsLoading}
-                columns={columns}
-                dataSource={visibleDocs?.data ?? []}
-                locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
-                pagination={{
-                  current: visibleDocs?.page ?? page,
-                  pageSize: visibleDocs?.pageSize ?? 10,
-                  total: visibleDocs?.total ?? 0,
-                  showSizeChanger: false,
-                  onChange: (next) => setPage(next),
-                  showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
-                }}
-                scroll={{ x: 560 }}
-              />
-              <KnowledgeRetrieval key={`retrieval:${selected.id}`} portal={portal} baseId={selected.id} />
-              <KnowledgeGrants
-                key={`grants:${selected.id}`}
-                portal={portal}
-                baseId={selected.id}
-                disabled={writeBlocked || uploading}
-              />
-              <KnowledgeOperations
-                key={`operations:${selected.id}`}
-                portal={portal}
-                baseId={selected.id}
-                baseType={selected.type}
-                documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
-                disabled={writeBlocked || uploading}
-              />
-            </div>
-          )}
-        </Card>
-      </div>
+
+                <Descriptions
+                  size="small"
+                  column={{ xs: 1, sm: 2, xl: 3 }}
+                  items={[
+                    {
+                      key: 'id',
+                      label: t('id'),
+                      children: (
+                        <Space size={4}>
+                          <Typography.Text code>{selected.id}</Typography.Text>
+                          <Typography.Text copyable={{ text: selected.id }} />
+                        </Space>
+                      ),
+                    },
+                    { key: 'type', label: t('baseType'), children: selected.type || t('notStatistic') },
+                    {
+                      key: 'embedding',
+                      label: t('fieldEmbeddingModel'),
+                      children: readiness?.embeddingModel.id ?? t('notStatistic'),
+                    },
+                    {
+                      key: 'documents',
+                      label: t('columnDocs'),
+                      children: visibleDocs ? (visibleDocs.total ?? 0) : t('notStatistic'),
+                    },
+                    { key: 'scope', label: t('columnScope'), children: t('notStatistic') },
+                    { key: 'tenant', label: t('fieldTenant'), children: selected.tenant_id || t('notStatistic') },
+                  ]}
+                />
+
+                <Tabs
+                  activeKey={detailTab}
+                  onChange={setDetailTab}
+                  items={[
+                    {
+                      key: 'documents',
+                      label: t('tabDocuments'),
+                      children: (
+                        <>
+                          <div className="flex flex-wrap items-end justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Upload
+                                accept=".txt,.pdf"
+                                maxCount={1}
+                                fileList={files}
+                                disabled={uploading || writeBlocked}
+                                beforeUpload={() => false}
+                                onChange={(info) => setFiles(info.fileList.slice(-1))}
+                                onRemove={() => {
+                                  setFiles([]);
+                                  return true;
+                                }}
+                              >
+                                <Button icon={<UploadOutlined />} disabled={uploading}>
+                                  {t('chooseFile')}
+                                </Button>
+                              </Upload>
+                              <Upload
+                                directory
+                                multiple
+                                showUploadList={false}
+                                fileList={[]}
+                                disabled={uploading || folderUploading || writeBlocked}
+                                beforeUpload={() => false}
+                                onChange={(info) => queueFolderFiles(info.fileList)}
+                              >
+                                <Button icon={<FolderOpenOutlined />} disabled={uploading || folderUploading}>
+                                  {t('chooseFolder')}
+                                </Button>
+                              </Upload>
+                              <Button
+                                icon={<LinkOutlined />}
+                                disabled={writeBlocked || importing || uploading}
+                                onClick={() => {
+                                  importForm.resetFields();
+                                  setImportKind('url');
+                                }}
+                              >
+                                {t('knowledgeImportUrl')}
+                              </Button>
+                              <Button
+                                icon={<FileTextOutlined />}
+                                disabled={writeBlocked || importing || uploading}
+                                onClick={() => {
+                                  importForm.resetFields();
+                                  setImportKind('manual');
+                                }}
+                              >
+                                {t('knowledgeImportManual')}
+                              </Button>
+                              <Button
+                                type="primary"
+                                disabled={!files.length || uploading || writeBlocked}
+                                loading={uploading}
+                                onClick={() => void uploadFile()}
+                              >
+                                {t('upload')}
+                              </Button>
+                              <Button
+                                disabled={folderUploading || writeBlocked || queuedFolderItems.length === 0}
+                                loading={folderUploading}
+                                onClick={() => void runFolderUpload(queuedFolderItems)}
+                              >
+                                {queuedFolderItems.length > 0
+                                  ? `${t('uploadFolder')} (${queuedFolderItems.length})`
+                                  : t('uploadFolder')}
+                              </Button>
+                            </div>
+                            <Space.Compact>
+                              <Input
+                                allowClear
+                                value={keyword}
+                                placeholder={t('search')}
+                                onChange={(event) => setKeyword(event.target.value)}
+                                onPressEnter={() => {
+                                  setPage(1);
+                                  setSearch(keyword.trim());
+                                }}
+                                onClear={() => {
+                                  setKeyword('');
+                                  setSearch('');
+                                  setPage(1);
+                                }}
+                              />
+                              <Button
+                                icon={<SearchOutlined />}
+                                onClick={() => {
+                                  setPage(1);
+                                  setSearch(keyword.trim());
+                                }}
+                              />
+                              <Button
+                                icon={<ReloadOutlined />}
+                                aria-label={t('refresh')}
+                                loading={docsLoading}
+                                onClick={() => void loadDocuments()}
+                              />
+                            </Space.Compact>
+                          </div>
+                          {folderQueue.length > 0 && (
+                            <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Typography.Text type="secondary">
+                                  {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
+                                </Typography.Text>
+                                <Space size="small">
+                                  <Button
+                                    size="small"
+                                    disabled={folderUploading || failedFolderItems.length === 0}
+                                    onClick={() => void runFolderUpload(failedFolderItems)}
+                                  >
+                                    {t('folderRetryFailed')}
+                                  </Button>
+                                  <Button size="small" disabled={folderUploading} onClick={() => setFolderQueue([])}>
+                                    {t('folderClear')}
+                                  </Button>
+                                </Space>
+                              </div>
+                              <div className="max-h-48 overflow-auto">
+                                {folderQueue.map((item) => (
+                                  <div
+                                    key={item.key}
+                                    className="flex items-center justify-between gap-2 py-0.5 text-xs"
+                                  >
+                                    <span className="truncate" title={item.relativePath || item.file.name}>
+                                      {item.label}
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-2">
+                                      {item.detail ? (
+                                        <Typography.Text type="secondary">{item.detail}</Typography.Text>
+                                      ) : null}
+                                      <Tag
+                                        color={
+                                          item.status === 'accepted'
+                                            ? 'green'
+                                            : item.status === 'failed'
+                                              ? 'red'
+                                              : item.status === 'uploading'
+                                                ? 'blue'
+                                                : 'default'
+                                        }
+                                      >
+                                        {item.status === 'accepted'
+                                          ? t('folderAccepted')
+                                          : item.status === 'failed'
+                                            ? t('folderFailed')
+                                            : item.status === 'uploading'
+                                              ? t('folderUploading')
+                                              : t('folderQueued')}
+                                      </Tag>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <Alert
+                            showIcon
+                            type="info"
+                            title={t('knowledgeDocumentEnableHint')}
+                            description={t('knowledgeFileOnlyPreview')}
+                          />
+                          <Table<ManagedKnowledgeDocument>
+                            rowKey="id"
+                            size="small"
+                            loading={docsLoading}
+                            columns={columns}
+                            dataSource={visibleDocs?.data ?? []}
+                            locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
+                            pagination={{
+                              current: visibleDocs?.page ?? page,
+                              pageSize: visibleDocs?.pageSize ?? 10,
+                              total: visibleDocs?.total ?? 0,
+                              showSizeChanger: false,
+                              onChange: (next) => setPage(next),
+                              showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
+                            }}
+                            scroll={{ x: 560 }}
+                          />
+                        </>
+                      ),
+                    },
+                    {
+                      key: 'retrieval',
+                      label: t('tabRetrieval'),
+                      children: (
+                        <KnowledgeRetrieval key={`retrieval:${selected.id}`} portal={portal} baseId={selected.id} />
+                      ),
+                    },
+                    {
+                      key: 'grants',
+                      label: t('tabGrants'),
+                      children: (
+                        <KnowledgeGrants
+                          key={`grants:${selected.id}`}
+                          portal={portal}
+                          baseId={selected.id}
+                          disabled={writeBlocked || uploading}
+                        />
+                      ),
+                    },
+                    {
+                      key: 'operations',
+                      label: t('tabOperations'),
+                      children: (
+                        <KnowledgeOperations
+                          key={`operations:${selected.id}`}
+                          portal={portal}
+                          baseId={selected.id}
+                          baseType={selected.type}
+                          documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+                          disabled={writeBlocked || uploading}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            )}
+          </Card>
+        </>
+      )}
 
       {modalContext}
       <Modal

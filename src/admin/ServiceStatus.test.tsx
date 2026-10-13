@@ -169,12 +169,19 @@ describe('admin service status views', () => {
     'KnowledgeView uses managed APIs, shows parse status, and never links to WeKnora UI',
     async () => {
       const portal = makePortal();
-      render(<KnowledgeView client={client as never} portal={portal} />);
-      expect(await screen.findAllByText('销售产品资料')).toHaveLength(2);
-      expect(await screen.findByText(/解析中 · processing/)).toBeInTheDocument();
-      expect(screen.getByText(/可用性未验证/)).toBeInTheDocument();
+      // 列表页：readiness 提示与「暂未统计」占位；不跳转 WeKnora 页面。
+      const list = render(<KnowledgeView client={client as never} portal={portal} />);
+      expect(await screen.findByText(/可用性未验证/)).toBeInTheDocument();
+      expect(screen.getAllByText('暂未统计').length).toBeGreaterThan(0);
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
       expect(portal.listManagedKnowledgeBases).toHaveBeenCalled();
+      list.unmount();
+
+      // 详情页：正文与解析状态来自受管接口。
+      render(<KnowledgeView client={client as never} portal={portal} baseId={managedBase.id} />);
+      expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
+      expect(await screen.findByText(/解析中 · processing/)).toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
       expect(portal.getManagedKnowledgeBase).toHaveBeenCalledWith(managedBase.id, expect.any(AbortSignal));
     },
     TIMEOUT,

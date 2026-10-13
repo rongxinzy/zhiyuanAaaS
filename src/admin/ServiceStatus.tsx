@@ -660,11 +660,17 @@ function MemorySearchBox({
 export function KnowledgeView({
   client,
   portal,
+  baseId,
+  onNavigate,
 }: {
   readonly client: AdminConsoleClient;
   /** Test seam: injected portal helpers (defaults to a bearer client). */
   readonly portal?: PortalClient | undefined;
+  /** Route-selected knowledge base; the list page renders when absent. */
+  readonly baseId?: string | null;
+  /** Route navigation so the base detail stays deep-linkable. */
+  readonly onNavigate?: (route: string) => void;
 }) {
   const resolvedPortal = useResolvedPortal(client, portal);
-  return <KnowledgeManagement portal={resolvedPortal} />;
+  return <KnowledgeManagement portal={resolvedPortal} baseId={baseId ?? null} onNavigate={onNavigate} />;
 }
