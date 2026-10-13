@@ -167,9 +167,6 @@ async function run({ github, context, core, config }) {
       pr.base.ref,
     ),
   );
-  core.info(
-    `Required existing workflows: ${expected.map((workflow) => workflow.name).join(', ') || 'none for this diff'}`,
-  );
   const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
     ...context.repo,
     event: 'pull_request',
@@ -177,6 +174,9 @@ async function run({ github, context, core, config }) {
     per_page: 100,
   });
   const selected = selectWorkflows(config, runs, pr, expected);
+  core.info(
+    `Required existing workflows: ${selected.map((workflow) => workflow.name).join(', ') || 'none for this diff'}`,
+  );
   const { waiting, failed } = evaluateRuns(selected, runs, pr.head.sha, pr);
   if (failed.length) throw new Error(failed.join('\n'));
   if (waiting.length) {
@@ -202,7 +202,7 @@ async function eventPullNumbers({ github, context, config }) {
     .data;
   if (
     run.event !== 'pull_request' ||
-    ![...config.workflows, ...(config.orchestrator ? [config.orchestrator] : [])].some(
+    ![...(config.legacyWorkflows ?? config.workflows), ...(config.orchestrator ? [config.orchestrator] : [])].some(
       (workflow) => workflow.path === run.path?.split('@')[0],
     )
   )
