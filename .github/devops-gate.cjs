@@ -235,7 +235,8 @@ async function refresh({ github, context, core, config }) {
     ).data;
     let result;
     try {
-      result = await run({ github, context: { ...context, payload: { pull_request: pr } }, core, config });
+      // Actions Context.repo is a prototype getter; spreading Context drops it.
+      result = await run({ github, context: { repo: context.repo, payload: { pull_request: pr } }, core, config });
     } catch (error) {
       result = { status: 'completed', conclusion: 'failure', summary: String(error.message).slice(0, 20000) };
     }

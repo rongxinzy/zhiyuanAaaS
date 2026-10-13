@@ -230,7 +230,7 @@ try {
   assert.match(page.url(), /#system\/resources$/);
   await page.getByRole('heading', { name: '数字员工资源分配', exact: true }).waitFor();
   await page.waitForLoadState('networkidle');
-  const tiersCard = page.locator('.ant-card').filter({ hasText: '运行档位' });
+  const tiersCard = page.getByRole('region', { name: '运行档位', exact: true }).locator('.ant-card');
   await tiersCard.getByRole('row').filter({ hasText: 'standard' }).waitFor();
   await tiersCard.getByRole('row').filter({ hasText: 'performance' }).waitFor();
   assert.ok((await tiersCard.getByText('部署配置').count()) >= 2, 'tier rows must carry the deployment source tag');
@@ -240,7 +240,7 @@ try {
     animations: 'disabled',
   });
 
-  const policyCard = page.locator('.ant-card').filter({ hasText: '默认策略' });
+  const policyCard = page.getByRole('region', { name: '默认策略', exact: true });
   await policyCard.getByText('5 分钟（300 秒）', { exact: true }).waitFor();
   await policyCard.getByRole('button', { name: '编辑', exact: true }).click();
   dialog = page.getByRole('dialog');
@@ -251,7 +251,7 @@ try {
   await policyCard.getByText('运行时覆盖', { exact: true }).first().waitFor();
   assert.equal(state.compute.hibernateOverride, 600);
 
-  const assignmentsCard = page.locator('.ant-card').filter({ hasText: '员工档位指派' });
+  const assignmentsCard = page.getByRole('region', { name: '员工档位指派', exact: true }).locator('.ant-card');
   const agentTwoRow = assignmentsCard.getByRole('row').filter({ hasText: 'E2E 数据助理' });
   await agentTwoRow.getByText('standard', { exact: true }).waitFor();
   await agentTwoRow.getByRole('button', { name: '调整', exact: true }).click();
