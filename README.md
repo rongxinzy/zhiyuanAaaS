@@ -1,14 +1,13 @@
-# Zhiyuan Enterprise Extension
+# Zhiyuan Admin Console
 
-This repository builds the enterprise extension loaded by the public Zhiyuan application.
-Enterprise AEP configuration, policy, release inputs, and implementation remain isolated here; the
-public application contains only the versioned extension host.
+This repository builds the closed-source Zhiyuan Admin Console, a standalone browser application
+for enterprise operators, plus its deployment manifests (`deploy/`). The console talks to the AEP
+control service over HTTP; it has no Electron or Node runtime surface.
 
-## Pinned Inputs
-
-`build/build-manifest.json` is the source of truth for release inputs. It pins the exact public
-core and AEP protocol commits, extension version, host API version, AEP SDK Release asset, and SDK
-SHA-256 digest. Branches are never accepted as release inputs.
+The enterprise client extension, enterprise renderer, license, agent-control, and Windows
+packaging/signing moved to [rongxinzy/RongxinAI](https://github.com/rongxinzy/RongxinAI) (the
+`enterprise/` directory; installers are built by its `Build Zhiyuan Enterprise Windows package`
+workflow).
 
 ## Development
 
@@ -23,8 +22,6 @@ The Admin Console is a standalone browser entrypoint for enterprise operators.
 
 Admin UI changes follow [DESIGN.md](DESIGN.md) and the Admin Console section of
 [AGENTS.md](AGENTS.md): use Ant Design components and the existing root `ConfigProvider` tokens.
-The browser console's `src/admin` styles are separate from the enterprise renderer's `src/ui`
-styles; Tea/shadcn reference assets are not the Admin Console design system.
 
 Start the AEP control service first, then run the console in a second terminal:
 
@@ -49,190 +46,19 @@ npm run serve:admin
 The server serves the console and proxies `/aep/*` to `ZHIYUAN_AEP_BASE_URL` (default
 `http://localhost:8080`). Set `ZHIYUAN_ADMIN_PORT` to change the listen port.
 
-`npm run build` emits the Node extension at `dist/extension.cjs`, the enterprise session UI at
-`dist/ui/index.html`, and the standalone Admin Console at `dist/admin/index.html`. During public
-application development, set `ZHIYUAN_ENTERPRISE_EXTENSION_DEV_PATH` to the absolute path of the
-extension bundle. When packaging, set `ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE`,
-`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY`, `ZHIYUAN_ENTERPRISE_ADMIN_DIRECTORY`,
-`ZHIYUAN_ENTERPRISE_NOTICE_FILE`, and `ZHIYUAN_ENTERPRISE_CONFIG_FILE` to paths relative to the
-public application root. electron-builder resolves every `FileSet.from` against that root and does
-not accept Windows absolute paths for these entries.
-`build/electron-builder.overlay.yml` places all outputs under
-`resources/zhiyuan-enterprise` without overwriting public source files.
-
-The current extension provides API v1 lifecycle, password-session, enterprise renderer, enterprise
-account settings, managed model projection, and Agent control. Authenticated sessions automatically
-start the control loop, while sign-out and Electron shutdown stop it before releasing local state.
-
-## Agent Control Backend
-
-`createZhiyuanAgentControlBackend` creates the Node-only control runtime without requiring Electron.
-It persists the control cursor, inbox, telemetry outbox, applied Skill revision, and managed Skill
-ownership in SQLite. Events are stored before acknowledgement and resumed after restart. Skill ZIPs
-are size and SHA-256 checked, extracted with traversal and symbolic-link protection, and installed
-through staging and atomic directory replacement. Revocation removes only directories recorded as
-managed by Zhiyuan.
-
-The backend requires an authenticated AEP SDK client and explicit database and managed-Skill paths.
-The Electron extension shares the password session's client with this backend, stores its SQLite
-state under the application user-data directory, and installs assigned Skills only into the managed
-root allocated by the public host. Successful filesystem changes notify the host SkillManager. The
-headless factory remains exported for deterministic verification and service-independent testing.
-
-With a local AEP control service running on `http://localhost:8080`, run the real backend scenario:
+## Verification
 
 ```bash
-ZHIYUAN_AEP_ADMIN_PASSWORD=change-this-admin-password npm run verify:agent-control:e2e
+npm run typecheck
+npm test
+npm run test:coverage
+npm run verify:admin
+npm run verify:admin:e2e
 ```
 
-The command creates isolated test data, verifies install and revocation end to end, removes the Skill
-and assignment, and disables the temporary account while revoking all of its sessions. Disposable
-users receive the zero-permission `aaas-e2e-member` role rather than administrator access. Override
-the endpoint and administrator login with `ZHIYUAN_AEP_BASE_URL`, `ZHIYUAN_AEP_DEPLOYMENT_ID`,
-`ZHIYUAN_AEP_ADMIN_USERNAME`, and the required `ZHIYUAN_AEP_ADMIN_PASSWORD`. CI destroys its
-isolated Compose volumes after verification; persistent development deployments retain disabled
-user rows for audit and ownership references.
-
-Before invoking electron-builder, render the enterprise configuration for the target AEP
-deployment and verify the closed-source package inputs with:
-
-```bash
-node scripts/render-enterprise-config.mjs --base-url http://172.18.5.188:30196 --output build/.enterprise-config.generated.json
-npm run build
-npm run verify:package-inputs
-```
-
-The base URL may also come from `ZHIYUAN_AEP_BASE_URL`. The renderer accepts only http/https
-URLs without embedded credentials, query, or fragment, strips trailing slashes exactly like the
-runtime loader, and writes `"allowInsecureHttp": true` for http URLs and `false` for https. The
-generated file is git-ignored. Point `ZHIYUAN_ENTERPRISE_CONFIG_FILE` at it for
-`npm run verify:package-inputs`, and pass the same file to electron-builder as a path relative
-to the public application root (for example `..\build\.enterprise-config.generated.json`).
-Without this step, packaging falls back to the placeholder
-`build/enterprise-config.example.json`, which cannot reach a real AEP server.
-
-The check validates the extension bundle, Renderer entrypoint, legal notice, and enterprise
-configuration that the public application's `build/electron-builder.overlay.yml` injects under
-`resources/zhiyuan-enterprise`. It also prints SHA-256 values and the immutable core, protocol,
-and SDK pins used for the package. Override `ZHIYUAN_ENTERPRISE_EXTENSION_BUNDLE`,
-`ZHIYUAN_ENTERPRISE_RENDERER_DIRECTORY`, `ZHIYUAN_ENTERPRISE_NOTICE_FILE`, or
-`ZHIYUAN_ENTERPRISE_CONFIG_FILE` when packaging from a staging directory.
-
-After `electron-builder --dir` finishes, verify the generated application directory with:
-
-```bash
-npm run verify:electron-package
-```
-
-Set `ZHIYUAN_ELECTRON_PACKAGE_DIR` when the output is not the sibling
-`../zhiyuan-dev/dist/win-unpacked` directory. The check compares every injected enterprise file
-against the AaaS build output and fails on missing, extra, or mismatched Renderer assets.
-
-For a reproducible Windows installer, run the `Build Windows enterprise package` GitHub Actions
-workflow from `main` and provide the required version input in the form `vX.Y.Z` (for example,
-`v1.0.0`). The optional `aep_base_url` input is baked into
-`resources/zhiyuan-enterprise/config.json` through `scripts/render-enterprise-config.mjs`; it
-defaults to the internal test server `http://172.18.5.188:30196`, and clearing it packages the
-placeholder example config instead. The workflow checks out the exact Zhiyuan core
-commit pinned in `build/build-manifest.json`, prepares the pinned PortableGit, uv, Python, and
-Skill Python runtimes, builds the `知远企业版` overlay installer, verifies the packaged version and
-every injected enterprise asset and bundled runtime, and performs the install/upgrade/uninstall
-smoke test. Its artifact contains a versioned enterprise installer and `SHA256SUMS.txt` and is
-retained for 14 days.
-
-### Windows Code Signing
-
-Signing is centralized in the rongxinzy/RongxinAI repository, following the same model as
-pi-connect, engram-cjk, and xiaoruan-ai-agent. This repository holds no signing credentials and
-requires no GitHub secret: the Certum credentials (`CERTUM_USER_ID`, `CERTUM_OTP_URI`,
-`CERTUM_CERT_THUMBPRINT`) exist only in the RongxinAI `release` environment, and the certificate
-private key never leaves the Certum cloud HSM.
-
-- Unsigned installers are produced by this repository's `Build Windows enterprise package`
-  workflow and published as its run artifact.
-- Signed installers are produced by the `Sign Zhiyuan Enterprise Windows package` workflow in
-  rongxinzy/RongxinAI. Dispatch it with the run ID of one successful unsigned build from this
-  repository; it checks out this repository at the corresponding commit, connects Certum
-  SimplySign through the shared `setup-certum-signing` action, and repackages with
-  `build/electron-builder.overlay-signed.cjs` while injecting `CERTUM_CERT_THUMBPRINT`. The
-  signed overlay is parsed from the YAML overlay and only adds `win.signtoolOptions`, so
-  electron-builder signs the packaged executables and the NSIS installer in a single pass;
-  re-signing the installer afterwards would leave the inner executables unsigned. The workflow
-  then verifies every installer, the packaged `知远企业版.exe`, and the bundled uninstaller with
-  RongxinAI's own `scripts/ci/verify-windows-authenticode.ps1`.
-
-To obtain a signed build — including from a local development machine — dispatch the central
-workflow; do not install SimplySign Desktop locally for this repository. Centrally signed
-runtime binaries such as `engram.exe` keep their existing signatures; the host `win.signExts`
-configuration already excludes them from re-signing.
-
-Local packaging uses the same `build/electron-builder.overlay.yml`, but the public core's packaging
-hooks require reachable upstream release downloads or pre-populated offline inputs. In restricted
-networks, set `ZHIYUAN_PORTABLE_GIT_ARCHIVE` and `ZHIYUAN_PORTABLE_UV_ARCHIVE` to the pinned archives
-expected by the core scripts and prepare the uv-managed Python and Skill Python directories before
-running electron-builder. A package made by disabling the host `beforePack` or `afterPack` hooks is
-only suitable for renderer smoke testing and must not be published.
-
-## Password Session Foundation
-
-The extension provides a password-only AEP session service for Zhiyuan accounts. Operations are
-serialized, concurrent startup restoration is coalesced, and no username or password is retained.
-Only the refresh token is persisted through `ProtectedFileStorage`; callers must supply the
-platform encryption adapter through `SafeStorageProtector`. Access and model tokens remain in the
-AEP SDK's in-memory session state.
-
-The session foundation is exposed through the public host's narrow session capability v1. The
-enterprise renderer uses the host's renderer capability v1 for password login, recoverable-session
-handling, and mandatory password changes. The renderer receives normalized session snapshots only;
-access, refresh, and model tokens never cross into the iframe.
-
-## Enterprise Account Settings
-
-The extension registers an `Enterprise account` / `企业账户` page through settings capability
-v1. The page reuses the sandboxed renderer bundle with a distinct `settings` surface and displays
-only the normalized identity snapshot supplied by the host. Authenticated users can review their
-user, email, enterprise, roles, and session expiry, change their password, or sign out. Signing out
-publishes the normalized session transition so the public application's session gate takes control.
-The extension also registers a separate `Enterprise models` / `企业模型` page with loading, empty,
-retry, and populated states. It reads only the public host's normalized model catalog; connection
-URLs and credentials remain unavailable to the sandboxed renderer. Account and model settings are
-separate peer entries in the application settings sidebar rather than tabs inside one page.
-
-## Managed Models
-
-The extension registers the managed `custom_enterprise` configuration source and projects only
-enabled, assigned, OpenAI-compatible gateway models returned by AEP into the public core's existing
-custom-provider configuration. The public renderer receives display metadata and conservative
-capability flags; it never receives the gateway URL or model access token. The source is exclusive,
-so enterprise builds hide community and local model configuration and reject model references
-outside the AEP-authorized catalog even while the control plane is unavailable.
-
-AEP reasoning compatibility metadata is projected into the custom model's existing Pi runtime
-configuration. A DeepSeek-compatible assignment enables reasoning-effort forwarding and preserves
-assistant `reasoning_content` when a tool-call conversation continues. No second model runtime is
-introduced.
-
-The provider snapshot resolves its connection from the authenticated SDK session. Session
-transitions trigger an immediate refresh, while a 30-second poll refreshes assignments and the
-short-lived model token. Temporary control-plane failures clear the managed snapshot without
-reopening personal providers; the exclusive policy remains active independently.
-
-## Runtime Configuration
-
-Enterprise packaging must provide `resources/zhiyuan-enterprise/config.json`; use
-`build/enterprise-config.example.json` as the schema reference and generate real deployments with
-`node scripts/render-enterprise-config.mjs --base-url <url> --output <file>` (or set
-`ZHIYUAN_AEP_BASE_URL`). The config contains the AEP base URL and
-the explicit insecure-HTTP development switch. License files and vendor public keys belong only
-to the Control Service deployment; the client requests activation from the authenticated server
-and never receives License material. Each installation creates a stable UUID under the application
-user-data directory for session compatibility.
-
-The extension registers its password-session provider through public session capability v1 and its
-managed Skill root through Skill capability v1. It uses Electron platform encryption for refresh-token
-persistence, starts Agent control only while authenticated, and closes the control database before
-unregistering the managed root during shutdown. The renderer receives only normalized session and
-identity snapshots.
+`npm run verify:admin:real-e2e` exercises the console against a live AEP control service and needs
+disposable administrator credentials through `ZHIYUAN_AEP_ADMIN_PASSWORD` (see
+[AGENTS.md](AGENTS.md) for the local stack).
 
 ## License
 

@@ -52,7 +52,6 @@ import {
   Tabs,
   Tag,
   Tooltip,
-  Tree,
   Typography,
   theme,
   Upload,
@@ -75,6 +74,7 @@ import {
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import { PermissionTree } from './components/PermissionTree.js';
 import { formatTimestamp } from './format.js';
 import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
@@ -3192,27 +3192,8 @@ function RoleEditorModal({
         <Form.Item name="description" label={t('description')}>
           <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
         </Form.Item>
-        <Form.Item
-          name="permissions"
-          label={t('permissions')}
-          valuePropName="checkedKeys"
-          trigger="onCheck"
-          getValueFromEvent={(checked: readonly string[] | { readonly checked: readonly string[] }) =>
-            // Array.isArray cannot narrow a readonly array, so cast the
-            // object branch instead.
-            (Array.isArray(checked)
-              ? checked
-              : (checked as { readonly checked: readonly string[] }).checked) as string[]
-          }
-        >
-          <Tree
-            checkable
-            disabled={pending}
-            treeData={permissions.map((permission) => ({
-              key: permission.id,
-              title: permission.description ? `${permission.id} — ${permission.description}` : permission.id,
-            }))}
-          />
+        <Form.Item name="permissions" label={t('permissions')} extra={t('permissionTreeHint')}>
+          <PermissionTree permissions={permissions} existingPermissions={role?.permissions ?? []} disabled={pending} />
         </Form.Item>
         {editing ? (
           <Form.Item name="enabled" label={t('status')} valuePropName="checked">

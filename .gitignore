@@ -5,5 +5,5 @@ coverage/
 .env
 .env.*
 !.env.example
-build/.enterprise-config.generated.json
 build/model-pricing-browser/
+build/gateway-trend-browser/

@@ -2,7 +2,6 @@
 
 本文件约束知远企业控制台的 Web 管理端（`src/admin`），与 [AGENTS.md](AGENTS.md) 配套使用。
 组件、主题与交互写法以现有业务页面的 **Ant Design** 实现为基准。
-`src/ui` 的企业 renderer 独立构建，其样式、宿主主题和共享组件规则不自动适用于 Web 管理端。
 
 ## Agent 入口与源码职责
 
@@ -25,7 +24,6 @@
 | `src/admin/Operations.tsx` | 接入配置、配置生效状态及相关平台操作 |
 | `src/admin/Events.tsx` | 控管事件与审计查询 |
 | `src/admin/i18n.ts` | 用户可见的中英文文案 |
-| `src/ui/*` | 企业 renderer 的独立入口与样式资产；不作为 Admin 主题来源 |
 
 当需求与规则冲突时，优先级为：用户明确需求 > 本文件的项目规则 > 现有组件实现 > 单个页面的历史写法。
 发现文档与业务实现冲突时，应明确指出并同步修正规范，不能默默引入另一套设计系统。
@@ -37,9 +35,7 @@
 - 浏览器目标以 `vite.admin.config.ts` 为准，当前为 Chromium ≥130；桌面视口为主要使用场景，窄视口仍须可操作。
 - 主题只保留浅色、深色、跟随系统。浏览器存储被禁用时仍须正常渲染。
 - 复用现有 `antd` 依赖，不为 Admin 安装 shadcn 组件或强制加载 shadcn 技能。
-- 不从 `src/ui/components/ui/*` 导入 Admin 视觉原语，不在 Admin 入口加载 `src/ui/index.css` 或 `src/ui/tea-theme.css`。
-- `scripts/verify-admin-console.mjs` 明确检查 Admin CSS 不包含 Tea 主题。仓库中的 Tea/shadcn 文件和
-  [腾讯云 token 采集记录](docs/tencent-cloud-theme-tokens.md) 不是 Web 管理端的规范。
+- `scripts/verify-admin-console.mjs` 明确检查 Admin CSS 不包含 Tea 主题。
 - 技能可辅助设计审查，但必须服从本文件的组件和主题边界；不为加载技能修改应用依赖。
 
 ## 设计方向
@@ -74,7 +70,7 @@
 
 - React 自定义区域使用 `const { token } = theme.useToken()`；优先复用 AntD 组件自身的样式。
 - `admin.css` 使用现有 `--ant-*` CSS 变量，与根 `cssVar` 配置保持一致。
-- 不在 JSX 中按主题拼接两套配色，不用 `dark:` 颜色覆盖，也不引入 Tea → shadcn 的语义映射。
+- 不在 JSX 中按主题拼接两套配色，不用 `dark:` 颜色覆盖，也不引入其他主题体系的语义映射。
 - Tailwind 可以保留现有布局工具类；不要使用默认颜色刻度或 `bg-card`、`text-muted-foreground` 等
   依赖另一套主题桥接的颜色类来定义 Admin 表面。
 
@@ -126,7 +122,7 @@ CSS 对应写法如 `var(--ant-color-bg-container)`、`var(--ant-color-bg-elevat
 ### 固定壳层
 
 复用 `App.tsx` 的 Layout：左侧导航 + 顶部行 + 内容区。登录、工作台和管理台的会话门控不另起实现。
-布局类由 `admin.css` 管理；不要用 renderer 的 shell 类或 CSS reset 覆盖 Admin。
+布局类由 `admin.css` 管理；不要引入外部 shell 类或 CSS reset 覆盖 Admin。
 
 当前一级目的地为概览、数字员工、知识库、技能管理、用户管理、模型网关、日志审计、系统管理。
 实际可见项由 `App.tsx` 的权限规则决定。增加或移动目的地时同时更新路由、兼容映射、权限、文案与测试；
@@ -149,7 +145,7 @@ CSS 对应写法如 `var(--ant-color-bg-container)`、`var(--ant-color-bg-elevat
 
 ### 字体、间距、圆角与边框
 
-- 保留根主题的 `fontSize: 14`，标题与正文优先由 Typography 选择，不套用 Tea 字号、字重或零圆角规则。
+- 保留根主题的 `fontSize: 14`，标题与正文优先由 Typography 选择，不套用外部字号、字重或零圆角规则。
 - 自定义区域读取 `fontFamily`、`fontFamilyCode`、`fontSize*`、`fontWeightStrong`，不增加字体文件。
 - 新增布局优先使用 Row/Col、Space、Flex 的标准能力，以及 token 的 margin/padding 档位。
   既有 shell 的布局值以 `admin.css` 为准，不为对齐组件重置整页间距。
@@ -186,10 +182,10 @@ CSS 对应写法如 `var(--ant-color-bg-container)`、`var(--ant-color-bg-elevat
 
 - 切换统一调用 `applyAdminTheme` / `persistAdminTheme`，枚举使用 `AdminThemeMode`。
 - `theme.ts` 在 documentElement 上维护 `.dark`、`theme-mode` 和 `theme-enable`；
-  根 ConfigProvider 根据同一状态选择算法，这些属性不代表 Admin 加载了 Tea CSS。
+  根 ConfigProvider 根据同一状态选择算法。
 - system 模式持续监听 `prefers-color-scheme`；存储读写必须容忍被禁用。
 - 对比相邻业务页检查 Card、Select、菜单、Tooltip、Table、Modal 的背景、边框、焦点与 disabled 状态。
-- 不覆盖 AntD Menu 的选中颜色为 Tea 色值；导航状态由同一主题的 Menu 组件 token 表达。
+- 不覆盖 AntD Menu 的选中颜色；导航状态由同一主题的 Menu 组件 token 表达。
 
 ## 交互、异步状态与动效
 
@@ -244,7 +240,7 @@ git diff --check
 - [ ] 组件来自 AntD 或已有 Admin 业务组合，未自造基础控件。
 - [ ] 使用唯一根 ConfigProvider，颜色与尺寸消费 AntD token。
 - [ ] Card、Select、浮层与相邻业务页一致；没有页面级配色或透明卡片。
-- [ ] 没有引入 renderer 的 Tea/shadcn 样式或 Electron/Node 能力。
+- [ ] 没有引入 Electron/Node 能力或另一套样式体系。
 - [ ] 导航、权限、路由兼容和页面归属正确，同级页签使用统一下划线。
 - [ ] 双语文案、键盘焦点、加载、错误、空数据及禁用状态完整。
 - [ ] 桌面与窄视口、浅色与深色实际检查过，长内容无整页溢出。
