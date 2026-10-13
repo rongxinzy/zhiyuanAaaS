@@ -60,6 +60,30 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
 
 describe('gateway API adapters', () => {
   afterEach(() => vi.unstubAllGlobals());
+  test('preserves team default role arrays through the published SDK transport', async () => {
+    const requests: { url: URL; init: RequestInit }[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/aep/v1/metadata') return Response.json(serverMetadata);
+      if (url.pathname === '/aep/v1/auth/password/login') return Response.json(loginTokens);
+      if (url.pathname === '/aep/v1/user/me') return Response.json(adminMe);
+      requests.push({ url, init });
+      return Response.json({ id: 'team-1', defaultRoleIds: JSON.parse(String(init.body)).defaultRoleIds });
+    });
+    const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+    await client.login({ username: 'admin', password: 'test-password' });
+    expect(await client.createTeam({ name: 'Team', defaultRoleIds: ['reader', 'operator'] })).toMatchObject({
+      defaultRoleIds: ['reader', 'operator'],
+    });
+    await client.updateTeam('team-1', { defaultRoleIds: [] });
+    await client.updateTeam('team-1', { name: 'Rename only' });
+    expect(requests.map(({ init }) => JSON.parse(String(init.body)))).toEqual([
+      { name: 'Team', defaultRoleIds: ['reader', 'operator'] },
+      { defaultRoleIds: [] },
+      { name: 'Rename only' },
+    ]);
+    expect(new Headers(requests[0]?.init.headers).get('Authorization')).toBe(`Bearer ${loginTokens.accessToken}`);
+  });
   test('saves model prices through the authenticated API with exact decimals and versioned clear', async () => {
     const requests: { url: URL; init: RequestInit }[] = [];
     const record = { modelId: 'model/one', version: 7, updatedAt: null, pricing: null };
