@@ -342,6 +342,40 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByText(/已受理 1 · 失败 0/)).toBeInTheDocument();
   });
 
+  test('skips oversized files in a folder pick and keeps the rest queued', async () => {
+    const upload = vi.fn().mockResolvedValue({
+      data: {
+        id: 'doc-small',
+        knowledge_base_id: base.id,
+        name: '正常.txt',
+        file_name: '正常.txt',
+        parse_status: 'pending',
+        created_at: '2026-10-13T00:00:00Z',
+      },
+      operationId: 'kbop-small',
+    });
+    const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
+    render(<KnowledgeManagement portal={portal} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
+    const big = new File(['x'], '大文件.txt', { type: 'text/plain' });
+    Object.defineProperty(big, 'size', { value: 64 * 1024 * 1024 });
+    Object.defineProperty(big, 'webkitRelativePath', { value: '边界/大文件.txt' });
+    const small = new File(['ok'], '正常.txt', { type: 'text/plain' });
+    Object.defineProperty(small, 'webkitRelativePath', { value: '边界/正常.txt' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [big, small] });
+    fireEvent.change(picker);
+
+    expect(await screen.findByText('边界/正常.txt')).toBeInTheDocument();
+    expect(screen.queryByText('边界/大文件.txt')).not.toBeInTheDocument();
+    expect(screen.getByText(/单文件需小于等于 63 MiB/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(1\)/ }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(upload).toHaveBeenCalledWith(base.id, small, '边界/正常.txt');
+  });
+
   test('imports a URL and manual text through the fixed managed document actions', async () => {
     const portal = makePortal({
       importManagedKnowledgeURL: vi.fn().mockResolvedValue({

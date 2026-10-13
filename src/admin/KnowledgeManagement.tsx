@@ -214,6 +214,9 @@ interface FolderUploadItem {
  *  without piling hashing work on the upstream. */
 const FOLDER_UPLOAD_CONCURRENCY = 3;
 const FOLDER_UPLOAD_MAX_FILES = 200;
+/** Same ceiling the single-file picker enforces; the portal caps the multipart
+ *  body itself, so an oversized member would only fail upstream. */
+const FOLDER_UPLOAD_MAX_FILE_BYTES = 63 * 1024 * 1024;
 
 export function KnowledgeManagement({ portal }: { readonly portal: PortalClient }) {
   const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
@@ -562,10 +565,16 @@ export function KnowledgeManagement({ portal }: { readonly portal: PortalClient 
       setWriteNotice(t('folderLimit'));
       return;
     }
+    // Keep the single-file size rule for folder batches too: the portal caps the
+    // whole multipart body, so an oversized member would only fail upstream.
+    const oversized = items.filter((item) => item.file.size > FOLDER_UPLOAD_MAX_FILE_BYTES);
+    const acceptedItems = items.filter((item) => item.file.size <= FOLDER_UPLOAD_MAX_FILE_BYTES);
+    if (oversized.length > 0) setWriteNotice(`${t('fileLimit')} (${oversized.length} ${t('folderFiles')})`);
+    if (acceptedItems.length === 0) return;
     setFolderQueue((current) => {
       // Re-picking a folder must not double-queue the same file.
       const seen = new Set(current.map((item) => `${item.relativePath}|${item.file.size}`));
-      return [...current, ...items.filter((item) => !seen.has(`${item.relativePath}|${item.file.size}`))];
+      return [...current, ...acceptedItems.filter((item) => !seen.has(`${item.relativePath}|${item.file.size}`))];
     });
   };
 
