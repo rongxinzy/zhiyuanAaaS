@@ -6,7 +6,16 @@
  *
  */
 
-import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role, Team } from '@aep/sdk-node';
+import {
+  type AdminModel,
+  AepProblem,
+  type JsonObject,
+  type ModelAssignment,
+  type Permission,
+  type PlatformUser,
+  type Role,
+  type Team,
+} from '@aep/sdk-node';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -350,6 +359,28 @@ function NameCell({ name, detail }: { readonly name: string; readonly detail: st
 }
 
 type MutationRunner = (operation: () => Promise<void>) => Promise<void>;
+
+// The console talks to two client layers. Skill packages go through the
+// generated SDK, which throws AepProblem; the handwritten request path (used by
+// Skill deletion, for example) throws AdminRequestError. Read the code off
+// either, so a refusal is named instead of collapsing into one generic notice.
+function problemCode(error: unknown): string | null {
+  if (error instanceof AepProblem || error instanceof AdminRequestError) return error.code;
+  return null;
+}
+
+// Each action names only the refusals it can actually produce. A missing version
+// means the version is gone when publishing, but a missing Skill when uploading,
+// so the upload list deliberately omits RESOURCE_NOT_FOUND.
+const uploadFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_PACKAGE: 'skillPackageInvalid',
+  PACKAGE_TOO_LARGE: 'skillPackageTooLarge',
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+};
+const publishFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+  RESOURCE_NOT_FOUND: 'skillVersionGone',
+};
 
 function useMutationRunner(onChanged: () => Promise<void>, onError: () => void) {
   const [pending, setPending] = useState(false);
@@ -3848,8 +3879,9 @@ function VersionManager({
       setArchive(null);
       await onChanged();
       notify(AdminNotificationKind.Success, t('versionUploaded'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillUploadFailed'));
+    } catch (error) {
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? uploadFailureCopy[code] : undefined) ?? 'skillUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -3860,8 +3892,9 @@ function VersionManager({
       await client.publishSkillVersion(skill.id, candidate);
       await onChanged();
       notify(AdminNotificationKind.Success, t('changesSaved'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillPublishFailed'));
+    } catch (error) {
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? publishFailureCopy[code] : undefined) ?? 'skillPublishFailed'));
     } finally {
       setPendingVersion(null);
     }

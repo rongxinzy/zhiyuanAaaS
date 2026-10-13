@@ -1,5 +1,15 @@
 {
   "eventDrivenGate": true,
+  "orchestrator": {
+    "name": "CI validation",
+    "path": ".github/workflows/ci.yml",
+    "callers": {
+      "codeql": ".github/workflows/codeql.yml",
+      "gate-tests": ".github/workflows/devops-gate-tests.yml"
+    },
+    "localNeeds": ["verify", "coverage-ratchet"],
+    "needs": ["verify", "coverage-ratchet", "codeql", "gate-tests"]
+  },
   "workflows": [
     {
       "name": "CI",
