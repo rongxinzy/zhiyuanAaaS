@@ -949,6 +949,73 @@ describe('admin resources', () => {
   );
 
   test(
+    'shows what Agents reported about a Skill',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+        }),
+        skillInstallations: vi.fn().mockResolvedValue({
+          skillId: 's1',
+          summary: {
+            granted: 3,
+            reported: 2,
+            installed: 1,
+            missing: 1,
+            unreported: 1,
+            latestReportedAt: '2026-10-13T05:00:00Z',
+          },
+          items: [
+            {
+              userId: 'user-a',
+              state: 'missing',
+              revision: 'revision-2',
+              reportedAt: '2026-10-13T05:00:00Z',
+              itemStatus: 'removed',
+            },
+            { userId: 'user-b', state: 'unreported' },
+          ],
+          truncated: false,
+        }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /安装情况/ }));
+      // The counts are scoped to granted users and the list holds only the ones
+      // needing attention; the raw reported action is passed through untouched.
+      expect(await screen.findByText('授权人数')).toBeInTheDocument();
+      expect(await screen.findByText('user-a')).toBeInTheDocument();
+      expect(screen.getByText('user-b')).toBeInTheDocument();
+      expect(screen.getByText('removed')).toBeInTheDocument();
+      // 未上报 labels the summary count and the row tag alike.
+      expect(screen.getAllByText('未上报').length).toBeGreaterThan(1);
+      expect(client.skillInstallations).toHaveBeenCalledWith('s1');
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'degrades when the installation view is unavailable',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+        }),
+        skillInstallations: vi.fn().mockRejectedValue(new Error('installations unavailable')),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /安装情况/ }));
+      expect(await screen.findByText('暂无法获取安装情况，请稍后重试。')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'uploads and publishes a Skill version',
     async () => {
       const client = {
