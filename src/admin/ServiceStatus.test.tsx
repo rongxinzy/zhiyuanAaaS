@@ -180,7 +180,9 @@ describe('admin service status views', () => {
       // 详情页：正文与解析状态来自受管接口。
       render(<KnowledgeView client={client as never} portal={portal} baseId={managedBase.id} />);
       expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
-      expect(await screen.findByText(/解析中 · processing/)).toBeInTheDocument();
+      // 状态只显示中文标签，原始枚举值退到 title 属性里。
+      expect(await screen.findByText('解析中')).toBeInTheDocument();
+      expect(screen.queryByText(/processing/)).not.toBeInTheDocument();
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
       expect(portal.getManagedKnowledgeBase).toHaveBeenCalledWith(managedBase.id, expect.any(AbortSignal));
     },

@@ -312,7 +312,7 @@ describe('KnowledgeManagement component state', () => {
     fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
 
     expect(await screen.findByText(/文件已受理/)).toBeInTheDocument();
-    expect(await screen.findByText(/排队中 · pending/)).toBeInTheDocument();
+    expect(await screen.findByText('排队中')).toBeInTheDocument();
     expect(portal.uploadManagedKnowledgeDocument).toHaveBeenCalledTimes(1);
   });
 
@@ -472,6 +472,23 @@ describe('KnowledgeManagement component state', () => {
     file_name: 'guide.txt',
     parse_status,
     created_at: '2026-10-09T00:00:00Z',
+  });
+
+  test('renders upstream enums in Chinese for source, document status and base type', async () => {
+    const doc = { ...lifecycleDocument('completed'), source: 'file', enable_status: 'enabled' };
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+    expect(screen.getAllByText('已完成').length).toBeGreaterThan(0);
+    const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+    expect(rowUi().getByText('文件')).toBeInTheDocument();
+    expect(rowUi().getByText('已启用')).toBeInTheDocument();
+    expect(screen.getByText('文档库')).toBeInTheDocument();
+    // 原始枚举值不再直接展示（退到 title 属性）。
+    expect(screen.queryByText('enabled')).not.toBeInTheDocument();
+    expect(screen.queryByText('file')).not.toBeInTheDocument();
   });
 
   test('persists keep-disabled intent for processing documents without enabling them', async () => {

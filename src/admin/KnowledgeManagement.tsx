@@ -153,6 +153,16 @@ const copyKeys = {
   knowledgeFileOnlyPreview: 'knowledgeFileOnlyPreview',
   knowledgeSource: 'knowledgeSource',
   knowledgeEnableState: 'knowledgeEnableState',
+  sourceFile: 'knowledgeSourceFile',
+  sourceUrl: 'knowledgeSourceUrl',
+  sourceManual: 'knowledgeSourceManual',
+  sourceFaq: 'knowledgeSourceFaq',
+  sourceWeb: 'knowledgeSourceWeb',
+  sourceFolder: 'knowledgeSourceFolder',
+  enableEnabled: 'knowledgeEnableEnabled',
+  enableDisabled: 'knowledgeEnableDisabled',
+  baseTypeDocument: 'knowledgeBaseTypeDocument',
+  baseTypeFaq: 'knowledgeBaseTypeFaq',
   enableDocument: 'knowledgeEnableDocument',
   disableDocument: 'knowledgeDisableDocument',
   keepDisabledAfterParse: 'knowledgeKeepDisabledAfterParse',
@@ -194,6 +204,27 @@ const parseStatusCopy: Readonly<Record<string, CopyKey>> = {
   failed: 'failed',
   cancelled: 'cancelled',
   deleting: 'deleting',
+};
+
+/** 上游枚举 → 中文（未收录的值原样显示，不隐藏信息）。 */
+const sourceCopy: Readonly<Record<string, CopyKey>> = {
+  file: 'sourceFile',
+  url: 'sourceUrl',
+  link: 'sourceUrl',
+  manual: 'sourceManual',
+  faq: 'sourceFaq',
+  web: 'sourceWeb',
+  folder: 'sourceFolder',
+};
+
+const baseTypeCopy: Readonly<Record<string, CopyKey>> = {
+  document: 'baseTypeDocument',
+  faq: 'baseTypeFaq',
+};
+
+const baseTypeLabel = (value: string | undefined): string => {
+  if (!value) return t('notStatistic');
+  return baseTypeCopy[value] ? t(baseTypeCopy[value]!) : value;
 };
 
 function errorText(error: unknown): string {
@@ -1020,8 +1051,8 @@ export function KnowledgeManagement({
       key: 'parse_status',
       render: (value: string) => (
         <Space size={4} wrap>
-          <Tag color={value === 'completed' ? 'success' : value === 'failed' ? 'error' : 'default'}>
-            {parseStatusCopy[value] ? t(parseStatusCopy[value]!) : t('unknown')} · {value}
+          <Tag color={value === 'completed' ? 'success' : value === 'failed' ? 'error' : 'default'} title={value}>
+            {parseStatusCopy[value] ? t(parseStatusCopy[value]!) : t('unknown')}
           </Tag>
         </Space>
       ),
@@ -1031,7 +1062,11 @@ export function KnowledgeManagement({
       dataIndex: 'source',
       key: 'source',
       ellipsis: true,
-      render: (value: string, row: ManagedKnowledgeDocument) => value || row.type || '—',
+      render: (value: string, row: ManagedKnowledgeDocument) => {
+        const raw = value || row.type || '';
+        if (!raw) return '—';
+        return sourceCopy[raw] ? t(sourceCopy[raw]!) : raw;
+      },
     },
     {
       title: t('knowledgeEnableState'),
@@ -1044,7 +1079,9 @@ export function KnowledgeManagement({
         const label = completed ? (enabled ? t('disableDocument') : t('enableDocument')) : t('keepDisabledAfterParse');
         return (
           <Space>
-            <Tag>{value || '—'}</Tag>
+            <Tag title={value}>
+              {value === 'enabled' ? t('enableEnabled') : value === 'disabled' ? t('enableDisabled') : (value ?? '—')}
+            </Tag>
             <Switch
               checked={enabled}
               aria-label={label}
@@ -1310,7 +1347,7 @@ export function KnowledgeManagement({
                         </Space>
                       ),
                     },
-                    { key: 'type', label: t('baseType'), children: selected.type || t('notStatistic') },
+                    { key: 'type', label: t('baseType'), children: baseTypeLabel(selected.type) },
                     {
                       key: 'embedding',
                       label: t('fieldEmbeddingModel'),
