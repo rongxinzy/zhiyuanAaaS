@@ -1,29 +1,38 @@
+// @vitest-environment jsdom
 import type { AepTokens } from '@aep/sdk-node';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
 
 import { SessionTokenStore } from './client.js';
 
+// `SessionTokenStore` is localStorage-backed so a page refresh restores the
+// session. The tests must therefore run against a real `window.localStorage`
+// (jsdom) and assert across *separate instances*, which is the only way the
+// persistence contract can actually fail: a same-instance read would be
+// served by the in-memory fast path regardless of whether anything was
+// stored.
 describe('Admin Console session token storage', () => {
-  test('keeps tokens only in the current in-memory store', async () => {
-    const store = new SessionTokenStore();
-    const sessionStorage = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
-    Object.defineProperty(globalThis, 'sessionStorage', {
-      configurable: true,
-      get: () => {
-        throw new Error('persistent browser storage must not be accessed');
-      },
-    });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
 
-    try {
-      await store.set(tokens());
-      await expect(store.get()).resolves.toMatchObject({ refreshToken: 'refresh-token' });
-      await expect(new SessionTokenStore().get()).resolves.toBeNull();
-      await store.clear();
-      await expect(store.get()).resolves.toBeNull();
-    } finally {
-      if (sessionStorage) Object.defineProperty(globalThis, 'sessionStorage', sessionStorage);
-      else delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
-    }
+  test('persists tokens so a fresh instance restores the session', async () => {
+    const store = new SessionTokenStore();
+
+    await store.set(tokens());
+
+    // A new instance has an empty memory store; it can only return tokens by
+    // reading them back from localStorage.
+    await expect(new SessionTokenStore().get()).resolves.toEqual(tokens());
+  });
+
+  test('clear removes the persisted session for future instances', async () => {
+    const store = new SessionTokenStore();
+
+    await store.set(tokens());
+    await expect(new SessionTokenStore().get()).resolves.toEqual(tokens());
+
+    await store.clear();
+    await expect(new SessionTokenStore().get()).resolves.toBeNull();
   });
 });
 
