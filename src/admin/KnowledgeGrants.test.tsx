@@ -181,7 +181,12 @@ describe('KnowledgeGrants', () => {
     const portal = makePortal();
     renderGrants(portal);
     expect(await screen.findByText('user-1')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') }));
+    // 撤销全部就放在「保存会完整替换当前授权」这条提示里，别埋到表格下面。
+    const banner = screen
+      .getByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsReplaceHint'))
+      .closest('.ant-alert') as HTMLElement;
+    const revoke = within(banner).getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') });
+    fireEvent.click(revoke);
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(
       within(dialog).getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') }),

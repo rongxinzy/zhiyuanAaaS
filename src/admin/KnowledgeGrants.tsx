@@ -162,7 +162,31 @@ export function KnowledgeGrants({
       ) : (
         <Space orientation="vertical" style={{ width: '100%' }}>
           <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
-          <Alert showIcon type="warning" title={tr('knowledgeGrantsReplaceHint')} />
+          <Alert
+            showIcon
+            type="warning"
+            title={tr('knowledgeGrantsReplaceHint')}
+            action={
+              <Button
+                size="small"
+                danger
+                disabled={
+                  disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId || !grants.length
+                }
+                onClick={() =>
+                  modal.confirm({
+                    title: tr('knowledgeGrantsRevokeConfirm'),
+                    okText: tr('knowledgeGrantsRevokeAll'),
+                    cancelText: tr('knowledgeCancel'),
+                    okButtonProps: { danger: true },
+                    onOk: () => save([]),
+                  })
+                }
+              >
+                {tr('knowledgeGrantsRevokeAll')}
+              </Button>
+            }
+          />
           <Space wrap>
             <Input
               aria-label={tr('knowledgeGrantUser')}
@@ -207,33 +231,14 @@ export function KnowledgeGrants({
             locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
             scroll={{ x: 480 }}
           />
-          <Space>
-            <Button
-              type="primary"
-              loading={saving}
-              disabled={disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId}
-              onClick={() => void save()}
-            >
-              {tr('knowledgeGrantsSave')}
-            </Button>
-            <Button
-              danger
-              disabled={
-                disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId || !grants.length
-              }
-              onClick={() =>
-                modal.confirm({
-                  title: tr('knowledgeGrantsRevokeConfirm'),
-                  okText: tr('knowledgeGrantsRevokeAll'),
-                  cancelText: tr('knowledgeCancel'),
-                  okButtonProps: { danger: true },
-                  onOk: () => save([]),
-                })
-              }
-            >
-              {tr('knowledgeGrantsRevokeAll')}
-            </Button>
-          </Space>
+          <Button
+            type="primary"
+            loading={saving}
+            disabled={disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId}
+            onClick={() => void save()}
+          >
+            {tr('knowledgeGrantsSave')}
+          </Button>
         </Space>
       )}
       {modalContext}
