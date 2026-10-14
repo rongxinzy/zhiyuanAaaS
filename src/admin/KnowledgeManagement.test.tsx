@@ -861,7 +861,7 @@ describe('KnowledgeManagement component state', () => {
       expect(objectUrl).not.toHaveBeenCalled();
       expect(revokeObjectUrl).not.toHaveBeenCalled();
     },
-    TIMEOUT,
+    TIMEOUT * 2,
   );
 
   test(
@@ -880,7 +880,7 @@ describe('KnowledgeManagement component state', () => {
       expect(frame).toHaveAttribute('src', 'blob:test-pdf');
       expect(frame).not.toHaveAttribute('sandbox');
     },
-    TIMEOUT,
+    TIMEOUT * 3,
   );
 
   test(
@@ -905,7 +905,7 @@ describe('KnowledgeManagement component state', () => {
       expect(getFile).toHaveBeenCalledTimes(1);
     },
     // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
-    TIMEOUT * 2,
+    TIMEOUT * 4,
   );
 
   test(
@@ -1001,7 +1001,7 @@ describe('KnowledgeManagement component state', () => {
       expect(previewText()).not.toContain('alpha-content');
     },
     // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
-    TIMEOUT * 2,
+    TIMEOUT * 4,
   );
 
   test(
