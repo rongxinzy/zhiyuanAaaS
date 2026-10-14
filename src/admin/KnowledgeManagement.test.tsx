@@ -494,6 +494,29 @@ describe('KnowledgeManagement component state', () => {
     expect(within(row).getByRole('switch', { name: '解析完成后保持停用' })).toBeChecked();
   });
 
+  test('explains an upstream that lacks the enable-status API instead of leaking the raw message', async () => {
+    const doc = { ...lifecycleDocument('completed'), enable_status: 'enabled' };
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      setManagedKnowledgeDocumentEnabled: vi
+        .fn()
+        .mockRejectedValue(
+          new PortalError(502, '资料状态响应无法安全验证', 'KNOWLEDGE_UPSTREAM_INVALID', 'kbop-1791948895062669018'),
+        ),
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+    const row = screen.getByText('Lifecycle guide').closest('tr')!;
+    fireEvent.click(within(row).getByRole('switch', { name: '停用资料' }));
+    expect(
+      await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeUpstreamInvalidManaged').slice(0, 12), {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/kbop-1791948895062669018/)).toBeInTheDocument();
+    expect(screen.queryByText(/资料状态响应无法安全验证/)).not.toBeInTheDocument();
+  });
+
   test('retries parsing through the managed action', async () => {
     const doc = lifecycleDocument('failed');
     const portal = makePortal({

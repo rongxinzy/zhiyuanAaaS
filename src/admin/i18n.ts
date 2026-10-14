@@ -498,6 +498,8 @@ const translations = {
     knowledgeNotConfiguredManaged: '知识库服务未配置',
     knowledgeForbiddenManaged: '没有权限访问知识库管理。',
     knowledgeConfigErrorManaged: '知识库服务配置不完整，暂时无法管理。',
+    knowledgeUpstreamInvalidManaged:
+      '知识库服务未提供该操作需要的接口（多为版本过旧），升级知识库服务后再重试；操作编号可用于核对。',
     knowledgeLoginExpired: '登录状态已过期，请重新登录后继续。',
     knowledgeCancel: '取消',
     knowledgeSave: '保存',
@@ -1678,6 +1680,8 @@ const translations = {
     knowledgeNotConfiguredManaged: 'Knowledge service is not configured',
     knowledgeForbiddenManaged: 'You do not have permission to manage knowledge bases.',
     knowledgeConfigErrorManaged: 'Knowledge service configuration is incomplete.',
+    knowledgeUpstreamInvalidManaged:
+      'The knowledge service does not expose the API this action needs (usually an older build); upgrade it and retry. Quote the operation id when checking.',
     knowledgeLoginExpired: 'Your session has expired. Sign in again to continue.',
     knowledgeCancel: 'Cancel',
     knowledgeSave: 'Save',

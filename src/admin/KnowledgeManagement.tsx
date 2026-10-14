@@ -180,6 +180,7 @@ const copyKeys = {
   notConfigured: 'knowledgeNotConfiguredManaged',
   forbidden: 'knowledgeForbiddenManaged',
   configError: 'knowledgeConfigErrorManaged',
+  upstreamInvalid: 'knowledgeUpstreamInvalidManaged',
   loginExpired: 'knowledgeLoginExpired',
 } as const satisfies Record<string, AdminTranslationKey>;
 type CopyKey = keyof typeof copyKeys;
@@ -202,6 +203,8 @@ function errorText(error: unknown): string {
     if (error.code === 'KNOWLEDGE_NOT_CONFIGURED' || error.code === 'KNOWLEDGE_CREDENTIAL_UNAVAILABLE')
       return t('configError');
     if (error.code === 'KNOWLEDGE_BASE_IN_USE') return t('protected');
+    // 上游缺接口/返回无法核对（如 WeKnora 版本过旧）时说清怎么办，别只丢一句“无法安全验证”。
+    if (error.code === 'KNOWLEDGE_UPSTREAM_INVALID') return t('upstreamInvalid');
   }
   return error instanceof Error ? error.message : String(error);
 }
