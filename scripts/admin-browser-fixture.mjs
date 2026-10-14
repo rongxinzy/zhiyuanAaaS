@@ -535,6 +535,25 @@ async function route(method, pathname, rawBody, response, query) {
     });
     return writeJson(response, 201, { message: '已创建，等待部署' });
   }
+  if (method === 'GET' && pathname === '/api/v1/contacts')
+    return writeJson(response, 200, {
+      contacts: state.users
+        .filter((user) => user.id !== state.sessionUserId && user.status === 'active')
+        .map((user) => ({
+          userId: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          teams: state.teams
+            .filter((team) => team.enabled !== false && user.teamIds?.includes(team.id))
+            .map((team) => ({ id: team.id, name: team.name })),
+        })),
+    });
+  if (method === 'GET' && pathname === '/api/v1/departments')
+    return writeJson(response, 200, {
+      departments: state.teams
+        .filter((team) => team.enabled !== false)
+        .map((team) => ({ id: team.id, name: team.name })),
+    });
   if (method === 'GET' && pathname === '/api/v1/me') {
     const user = sessionUser();
     return writeJson(response, 200, {

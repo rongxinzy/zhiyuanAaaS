@@ -18,6 +18,14 @@ let browser;
 let page;
 const errors = [];
 const checks = [];
+state.users.push({
+  id: 'user-e2e',
+  username: 'e2e-grantee',
+  displayName: 'E2E 授权用户',
+  status: 'active',
+  roleIds: ['member'],
+  teamIds: [],
+});
 state.roles.push(
   { id: 'default-reader', name: '模型只读', enabled: true, builtIn: false, permissions: ['models.read'] },
   { id: 'default-observer', name: '审计观察', enabled: true, builtIn: false, permissions: ['events.read'] },
@@ -104,7 +112,11 @@ try {
   checks.push('shell sidebar and header stay pinned during content scroll');
 
   async function visit(route, expected) {
-    await page.goto(`${origin}/#${route}`);
+    const target = `${origin}/#${route}`;
+    // Creating a base can open local detail state without changing the hash.
+    // Revisiting that same URL must reload the route's initial list view.
+    if (page.url() === target) await page.reload();
+    else await page.goto(target);
     await page.locator('.admin-page').getByText(expected, { exact: true }).first().waitFor();
     await page.waitForLoadState('networkidle');
     assert.equal(await page.locator('vite-error-overlay').count(), 0);
@@ -156,19 +168,30 @@ try {
     'Create knowledge base must call the fixed managed API',
   );
   checks.push('native managed knowledge registry and create operation');
-  await page.getByRole('tab', { name: '标签', exact: true }).click();
-  await page.getByPlaceholder('标签名称').fill('E2E 标签');
-  await page.getByRole('button', { name: '新建标签', exact: true }).click();
-  await page.getByText('E2E 标签', { exact: true }).waitFor();
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  const knowledgeOperations = page.getByRole('region', { name: '知识运营', exact: true });
+  await knowledgeOperations.getByRole('tab', { name: '标签', exact: true }).click();
+  await knowledgeOperations.getByPlaceholder('标签名称').fill('E2E 标签');
+  await knowledgeOperations.getByRole('button', { name: '新建标签', exact: true }).click();
+  await knowledgeOperations.getByText('E2E 标签', { exact: true }).waitFor();
   assert.ok(state.knowledgeTags.some((item) => item.name === 'E2E 标签'));
   assert.ok(
     state.requests.some((item) => item.method === 'POST' && item.path.endsWith('/tags')),
     'Tag creation must call the fixed managed knowledge tag endpoint',
   );
   checks.push('native managed knowledge tag operation');
-  const grants = page.locator('section[aria-label="知识库访问授权"]').last();
+  await page.getByRole('tab', { name: '知识库访问授权', exact: true }).click();
+  const grants = page.getByRole('region', { name: '知识库访问授权', exact: true });
   await grants.getByText('user-1', { exact: true }).waitFor();
-  await grants.getByPlaceholder('输入用户 ID').fill('user-e2e');
+  const grantUser = grants.getByRole('combobox', { name: '用户', exact: true });
+  await grantUser.and(page.locator(':enabled')).waitFor();
+  await grantUser.fill('E2E 授权用户');
+  await page
+    .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+    .filter({ hasText: 'E2E 授权用户 · user-e2e' })
+    .click();
+  assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/contacts'));
+  assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/departments'));
   await grants.getByRole('button', { name: '添加用户', exact: true }).click();
   await grants.getByRole('button', { name: '保存授权', exact: true }).click();
   await grants.getByText('user-e2e', { exact: true }).waitFor();
@@ -194,8 +217,8 @@ try {
   assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
   checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
 
-  await visit('knowledge', 'E2E 产品资料');
-  const retrieval = page.locator('section').filter({ hasText: '选择数字员工' }).last();
+  await page.getByRole('tab', { name: '检索与来源', exact: true }).click();
+  const retrieval = page.getByRole('region', { name: '检索与来源', exact: true });
   await retrieval.locator('.ant-select').first().click();
   await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
   await retrieval.getByLabel('输入知识检索问题').fill('退款期限');
@@ -215,12 +238,18 @@ try {
     ),
   );
   checks.push('employee knowledge search and verified source document/chunk');
-  await page.getByRole('button').filter({ hasText: 'kb-1' }).first().click();
+  await visit('knowledge', 'E2E 产品资料');
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'E2E 产品资料' })
+    .getByRole('button', { name: '管理文档', exact: true })
+    .click();
   const chunkRow = page.getByRole('row').filter({ hasText: 'chunk-e2e.txt' });
-  await chunkRow.getByRole('button').nth(2).click();
+  await chunkRow.getByRole('button', { name: '更多', exact: true }).click();
+  await page.getByRole('menuitem', { name: '分块与来源', exact: true }).click();
   const chunkText = 'original chunk line one\noriginal chunk line two';
   const chunkInspector = page.getByRole('dialog').first();
-  await chunkInspector.locator('.ant-modal-body button').first().click();
+  await chunkInspector.getByRole('button', { name: '编辑分块', exact: true }).click();
   const chunkEditor = page.getByRole('dialog').nth(1);
   const chunkTextarea = chunkEditor.getByRole('textbox');
   await chunkTextarea.waitFor();
@@ -238,6 +267,7 @@ try {
   await chunkInspector.waitFor({ state: 'hidden' });
   checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
 
+  await visit('knowledge', 'E2E 产品资料');
   await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
   const faqBaseDialog = page.getByRole('dialog');
   await faqBaseDialog.getByLabel('名称', { exact: true }).fill('E2E 新建 FAQ 库');
@@ -247,30 +277,40 @@ try {
   await faqBaseDialog.waitFor({ state: 'hidden' });
   await page.getByRole('heading', { name: 'E2E 新建 FAQ 库', exact: true }).waitFor();
   assert.equal(state.knowledgeBases.find((item) => item.name === 'E2E 新建 FAQ 库')?.type, 'faq');
-  await page.getByRole('tab', { name: 'FAQ', exact: true }).click();
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
   await page.getByRole('button', { name: '新建 FAQ', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').first().waitFor();
   await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
   checks.push('create FAQ library and enter native FAQ editor without upstream login');
-  await page.getByRole('button').filter({ hasText: 'kb-faq-e2e' }).first().click();
-  await page.locator('.ant-tabs-tab').filter({ hasText: 'FAQ' }).click();
+  await visit('knowledge', 'E2E 常见问题');
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'E2E 常见问题' })
+    .getByRole('button', { name: '管理文档', exact: true })
+    .click();
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
   await page.getByRole('button', { name: '\u65b0\u5efa FAQ', exact: true }).click();
   let faqDialog = page.getByRole('dialog');
-  const faqFields = faqDialog.getByRole('textbox');
-  await faqFields.nth(0).fill('new question');
-  await faqFields.nth(1).fill('new answer line one\nnew answer line two');
+  await faqDialog.getByLabel('标准问题', { exact: true }).fill('new question');
+  await faqDialog.getByLabel('答案 1', { exact: true }).fill('new answer line one\nnew answer line two');
+  await faqDialog.getByRole('button', { name: '添加答案', exact: true }).click();
+  await faqDialog.getByLabel('答案 2', { exact: true }).fill('second new answer');
   await faqDialog.locator('.ant-select').click();
   await page.locator('.ant-select-item-option').filter({ hasText: 'Refund' }).click();
   await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
   await faqDialog.waitFor({ state: 'hidden' });
   const faqCollectionPath = '/api/v1/knowledge/managed/bases/kb-faq-e2e/faq/entries';
   const createFAQWrite = state.requests.findLast((item) => item.method === 'POST' && item.path === faqCollectionPath);
-  assert.deepEqual(createFAQWrite?.body?.answers, ['new answer line one', 'new answer line two']);
+  assert.deepEqual(createFAQWrite?.body?.answers, ['new answer line one\nnew answer line two', 'second new answer']);
   assert.equal(createFAQWrite?.body?.tag_id, 44);
   const existingFAQRow = page.getByRole('row').filter({ hasText: 'seed-question' });
   await existingFAQRow.getByRole('button').first().click();
   faqDialog = page.getByRole('dialog');
-  await faqDialog.getByRole('textbox').nth(0).fill('updated standard question');
+  assert.equal(await faqDialog.getByLabel('答案 1', { exact: true }).inputValue(), 'answer line one\nanswer line two');
+  assert.equal(await faqDialog.getByLabel('答案 2', { exact: true }).inputValue(), 'second answer intact');
+  await faqDialog.getByLabel('标准问题', { exact: true }).fill('updated standard question');
   await faqDialog.locator('.ant-select-clear').click();
   await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
   await faqDialog.waitFor({ state: 'hidden' });
