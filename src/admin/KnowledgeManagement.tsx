@@ -38,11 +38,11 @@ import {
 } from 'antd';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
 import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import { KnowledgeGrants } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
+import { usePageCrumb } from './page-crumb.js';
 import {
   type ManagedKnowledgeBase,
   type ManagedKnowledgeChunk,
@@ -352,6 +352,8 @@ export function KnowledgeManagement({
     () => (detail?.id === selectedId ? detail : (bases.find((item) => item.id === selectedId) ?? null)),
     [bases, detail, selectedId],
   );
+  // 详情页把当前知识库名报给外壳，面包屑渲染成 企业管理后台 / 知识库 / <名称>。
+  usePageCrumb(selectedId ? (selected?.name ?? null) : null);
   const queryContext = `${selectedId ?? ''}:${page}:${search}`;
   const queryContextRef = useRef(queryContext);
   queryContextRef.current = queryContext;

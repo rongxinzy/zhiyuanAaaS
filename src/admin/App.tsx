@@ -49,6 +49,7 @@ import {
 } from './client.js';
 import { translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
+import { PageCrumbContext } from './page-crumb.js';
 import { botUIBaseURL, PortalClient, type PortalEmployee } from './portal.js';
 import { shellCopy as c } from './shell-copy.js';
 import {
@@ -233,6 +234,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<'signInFailed' | 'signInMetadataFailed' | null>(null);
   const [route, setRoute] = useState(readRoute);
+  const [crumbTail, setCrumbTail] = useState<string | null>(null);
   const [navigationOpen, setNavigationOpen] = useState(false);
   useEffect(() => {
     let live = true;
@@ -583,12 +585,16 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
                   (selected?.label ?? c.notFound)
                 ),
               },
+              // 页面把自己的对象名报上来（如知识库名），补在分区之后。
+              ...(crumbTail ? [{ title: crumbTail }] : []),
             ]}
           />
           <div className="admin-page">
             <Suspense fallback={<Skeleton active />}>
               <div key={page}>
-                {accessible ? content : selected ? <Result status="403" title={c.forbidden} /> : content}
+                <PageCrumbContext value={setCrumbTail}>
+                  {accessible ? content : selected ? <Result status="403" title={c.forbidden} /> : content}
+                </PageCrumbContext>
               </div>
             </Suspense>
           </div>
