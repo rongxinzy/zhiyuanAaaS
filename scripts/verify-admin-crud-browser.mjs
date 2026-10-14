@@ -18,6 +18,10 @@ let browser;
 let page;
 const errors = [];
 const checks = [];
+state.roles.push(
+  { id: 'default-reader', name: '模型只读', enabled: true, builtIn: false, permissions: ['models.read'] },
+  { id: 'default-observer', name: '审计观察', enabled: true, builtIn: false, permissions: ['events.read'] },
+);
 const expectedFailurePaths = new Set();
 try {
   await fs.mkdir(screenshots, { recursive: true });
@@ -300,9 +304,48 @@ try {
   await page.getByRole('button', { name: /新增团队$/ }).click();
   let dialog = page.getByRole('dialog');
   await dialog.getByLabel('名称', { exact: true }).fill('E2E 业务团队');
+  await dialog.getByRole('combobox', { name: '默认角色', exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '模型只读' }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '审计观察' }).click();
+  await dialog.getByRole('combobox', { name: '默认角色', exact: true }).press('Escape');
+  await page.waitForTimeout(300);
+  await page.screenshot({
+    path: path.join(screenshots, 'team-default-roles-light.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.getByText('E2E 业务团队', { exact: true }).first().waitFor();
+  assert.deepEqual(state.teams.find((team) => team.name === 'E2E 业务团队').defaultRoleIds, [
+    'default-reader',
+    'default-observer',
+  ]);
+  for (const themeMode of ['light', 'dark']) {
+    for (const width of [1440, 390]) {
+      await page.evaluate((mode) => localStorage.setItem('zhiyuan.admin.theme', mode), themeMode);
+      await page.setViewportSize({ width, height: 1000 });
+      await page.reload({ waitUntil: 'networkidle' });
+      await page
+        .getByRole('row')
+        .filter({ hasText: 'E2E 业务团队' })
+        .getByRole('button', { name: '编辑', exact: true })
+        .click();
+      dialog = page.getByRole('dialog');
+      await dialog.getByRole('combobox', { name: '默认角色', exact: true }).waitFor();
+      await page.waitForTimeout(300);
+      await page.screenshot({
+        path: path.join(screenshots, `team-default-roles-${themeMode}-${width}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      });
+      await dialog.getByRole('button', { name: '取消', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+    }
+  }
+  await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload({ waitUntil: 'networkidle' });
   await visit('users', '用户列表');
   await page.getByRole('button', { name: /新增用户$/ }).click();
   dialog = page.getByRole('dialog');
@@ -311,6 +354,7 @@ try {
   await dialog.getByLabel('临时密码', { exact: true }).fill('e2e-temporary-password');
   await dialog.getByRole('combobox', { name: '选择角色' }).click();
   await page.locator('.ant-select-item-option').filter({ hasText: '企业成员' }).click();
+  await dialog.getByRole('combobox', { name: '选择角色' }).press('Escape');
   await dialog.getByRole('combobox', { name: '选择团队' }).click();
   await page.locator('.ant-select-item-option').filter({ hasText: 'E2E 业务团队' }).click();
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
@@ -320,6 +364,8 @@ try {
   assert.equal(member.teamIds.length, 1);
   assert.deepEqual(member.roleIds, ['member']);
   const memberRow = page.getByRole('row').filter({ hasText: 'E2E 业务成员' });
+  assert.equal(await memberRow.getByText('模型只读 · 团队继承', { exact: true }).count(), 1);
+  assert.equal(await memberRow.getByText('审计观察 · 团队继承', { exact: true }).count(), 1);
   await memberRow.getByRole('button', { name: '查看', exact: true }).click();
   for (const label of ['基本信息', '团队与角色', '访问权限', '关联账号', '登录会话']) {
     await page
@@ -598,6 +644,9 @@ try {
           await page.getByText('gateway-e2e-r1', { exact: true }).waitFor();
         }
         if (tab === 'limits') {
+          // Hash navigation can finish before the new page's API queries do.
+          // Wait for loaded write readiness, preserving the enabled assertion.
+          await page.getByRole('button', { name: '保存规则', exact: true }).and(page.locator(':enabled')).waitFor();
           assert.equal(await page.getByRole('button', { name: '保存规则', exact: true }).isDisabled(), false);
         }
         assert.equal(await page.getByRole('tablist').count(), 1);

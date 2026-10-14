@@ -20,11 +20,11 @@ import {
   theme,
 } from 'antd';
 import { useCallback, useState } from 'react';
+import { GatewayUserSelect } from './GatewayUserSelect.js';
 import type { GatewayDimension, GatewayLimit, GatewayLimitWrite } from './gateway-api.js';
 import {
   dimensionLabels,
   formatGatewayNumber,
-  GatewayField,
   GatewayHeading,
   GatewayLoadError,
   GatewayPage,
@@ -122,6 +122,7 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
   }
   function edit(rule: GatewayLimit) {
     setEditing(rule);
+    form.resetFields(['scopeId']);
     form.setFieldsValue({ ...rule.configuration, id: rule.id });
   }
   function reset() {
@@ -365,13 +366,24 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
                       label={t('gatewaySubject')}
                       rules={[{ required: true, message: t('gatewaySubjectRequired') }]}
                     >
-                      <Select
-                        aria-label={t('gatewaySubject')}
-                        showSearch
-                        optionFilterProp="label"
-                        options={options(scope as GatewayDimension)}
-                        loading={subjects.loading}
-                      />
+                      {scope === 'user' ? (
+                        <GatewayUserSelect
+                          aria-label={t('gatewaySubject')}
+                          users={subjects.value?.users ?? []}
+                          teams={subjects.value?.teams ?? []}
+                          roles={subjects.value?.roles ?? []}
+                          loading={subjects.loading}
+                          disabled={busy || subjects.error}
+                        />
+                      ) : (
+                        <Select
+                          aria-label={t('gatewaySubject')}
+                          showSearch
+                          optionFilterProp="label"
+                          options={options(scope as GatewayDimension)}
+                          loading={subjects.loading}
+                        />
+                      )}
                     </Form.Item>
                   </Col>
                 ) : null}
@@ -440,14 +452,20 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
             {!capabilities.value?.sources.quota && !capabilities.loading ? (
               <Alert showIcon type="warning" title={t('gatewayQuotaUnavailable')} />
             ) : null}
-            <GatewayField
-              label={t('gatewayUser')}
-              value={quotaUser}
-              options={options('user')}
-              onChange={setQuotaUser}
-              loading={subjects.loading}
-              disabled={busy || !capabilities.value?.sources.quota}
-            />
+            <Form layout="vertical">
+              <Form.Item label={t('gatewayUser')} style={{ marginBottom: 0 }}>
+                <GatewayUserSelect
+                  aria-label={t('gatewayUser')}
+                  value={quotaUser}
+                  onChange={(value) => setQuotaUser(value ?? '')}
+                  users={subjects.value?.users ?? []}
+                  teams={subjects.value?.teams ?? []}
+                  roles={subjects.value?.roles ?? []}
+                  loading={subjects.loading}
+                  disabled={busy || subjects.error || !capabilities.value?.sources.quota}
+                />
+              </Form.Item>
+            </Form>
             {quota.error ? <GatewayLoadError retry={quota.retry} /> : null}
             <Descriptions
               column={1}

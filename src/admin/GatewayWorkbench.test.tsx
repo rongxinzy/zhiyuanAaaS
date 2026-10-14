@@ -630,6 +630,46 @@ test('version conflicts retain edits and allow explicit refresh; capabilities an
   await waitFor(() => expect(client.listGatewayLimits).toHaveBeenCalledTimes(2));
   expect(screen.getByLabelText('最大数量')).toHaveValue('77');
 });
+
+test('user filters clear excluded quota targets and rule subjects without changing other users', async () => {
+  const client = stub({
+    gatewaySubjects: vi.fn().mockResolvedValue({
+      models,
+      users: [
+        { id: 'u1', displayName: '用户甲', username: 'alice', teamIds: ['t1'], roleIds: ['role'] },
+        { id: 'u2', displayName: '用户乙', username: 'bob', teamIds: ['t2'], roleIds: ['role'] },
+      ],
+      teams: [
+        { id: 't1', name: '团队甲' },
+        { id: 't2', name: '团队乙' },
+      ],
+      roles: [{ id: 'role', name: '角色甲' }],
+    }),
+  });
+  render(<GatewayLimits client={typed(client)} identity={administratorIdentity} />);
+  await screen.findByText('rule-a');
+  await select('指定主体', '用户甲 (alice)');
+  await select('筛选团队', '团队乙');
+  fireEvent.change(screen.getByLabelText('规则 ID'), { target: { value: 'filtered-rule' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
+  await screen.findByText('请选择指定主体');
+  expect(client.putGatewayLimit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+  expect(screen.getByText('用户甲 (alice)')).toBeInTheDocument();
+  expect(screen.getByLabelText('规则 ID')).toHaveValue('rule-a');
+  fireEvent.click(screen.getByText('Token 余额配额', { exact: true }));
+  await select('用户', '用户甲 (alice)');
+  await waitFor(() => expect(client.getGatewayQuota).toHaveBeenCalledWith('u1'));
+  await select('筛选团队', '团队乙');
+  expect(screen.getByRole('button', { name: '调整余额' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '重置余额' })).toBeDisabled();
+  await select('筛选角色', '角色甲');
+  await select('用户', '用户乙 (bob)');
+  await waitFor(() => expect(client.getGatewayQuota).toHaveBeenLastCalledWith('u2'));
+  await confirm('调整余额', '按输入的正数或负数调整此用户余额？');
+  expect(client.changeGatewayQuota).toHaveBeenCalledWith('u2', 1000);
+  expect(client.refreshGatewayQuota).not.toHaveBeenCalled();
+});
 test('quota actions are per-user, confirmed, accept signed delta and reject negative resets', async () => {
   const client = stub();
   render(<GatewayLimits client={typed(client)} />);
