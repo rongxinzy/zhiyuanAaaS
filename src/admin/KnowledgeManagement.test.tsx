@@ -796,7 +796,9 @@ describe('KnowledgeManagement component state', () => {
       const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
       fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
       // 文本走内联渲染：内容出现、没有 iframe、也不用建 object URL。
-      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      const body = await screen.findByText('original', undefined, { timeout: TIMEOUT });
+      // 弹窗正文固定高度，不随文件长短跳动。
+      expect((body.parentElement as HTMLElement).style.height).toBe('70vh');
       expect(screen.queryByTitle('guide.txt')).not.toBeInTheDocument();
       expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'preview');
       expect(objectUrl).not.toHaveBeenCalled();
@@ -820,6 +822,28 @@ describe('KnowledgeManagement component state', () => {
       const frame = await screen.findByTitle('manual.pdf', undefined, { timeout: TIMEOUT });
       expect(frame).toHaveAttribute('src', 'blob:test-pdf');
       expect(frame).not.toHaveAttribute('sandbox');
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'reuses the cached original when the same document is previewed again',
+    async () => {
+      const doc = lifecycleDocument('failed');
+      const getFile = vi.fn().mockResolvedValue(new Blob(['original']));
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: getFile,
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+      const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      // 再点一次同一条：命中缓存，不再走网络。
+      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      expect(getFile).toHaveBeenCalledTimes(1);
     },
     TIMEOUT,
   );

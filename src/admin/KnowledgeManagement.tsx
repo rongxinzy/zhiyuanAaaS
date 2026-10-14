@@ -217,6 +217,22 @@ function isUncertain(error: unknown): boolean {
  */
 type PreviewKind = 'text' | 'image' | 'pdf';
 
+interface PreviewEntry {
+  readonly kind: PreviewKind;
+  readonly url: string;
+  readonly name: string;
+  /** Only for `text`: decoded 原文，直接内联显示（iframe 会被自身 CSP 的 frame-ancestors 拦掉）。 */
+  readonly text?: string;
+}
+
+interface PreviewState extends PreviewEntry {
+  /** 首次拉取中：弹窗先按固定尺寸打开，内容位置先放占位。 */
+  readonly loading?: boolean;
+}
+
+/** 预览缓存上限：超出后按最久未预览淘汰（blob URL 一并回收，防止内存随浏览增长）。 */
+const PREVIEW_CACHE_LIMIT = 6;
+
 function previewKindOf(fileName: string): PreviewKind | null {
   if (/\.(txt|md|csv)$/i.test(fileName)) return 'text';
   if (/\.(png|jpe?g|gif|webp)$/i.test(fileName)) return 'image';
@@ -312,13 +328,19 @@ export function KnowledgeManagement({
   const [chunkImageLoading, setChunkImageLoading] = useState<string | null>(null);
   const chunkImageURLsRef = useRef<Record<string, string>>({});
   const chunkImageRequests = useRef(new Map<string, AbortController>());
-  const [preview, setPreview] = useState<{
-    readonly kind: PreviewKind;
-    readonly url: string;
-    readonly name: string;
-    /** Only for `text`: decoded原文，直接内联显示（iframe 会被自身 CSP 的 frame-ancestors 拦掉）。 */
-    readonly text?: string;
-  } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  // 预览缓存：同一资料重复点预览不再走网络；超过上限按最久未用淘汰并回收 blob URL。
+  const previewCache = useRef(new Map<string, PreviewEntry>());
+  const previewGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      for (const entry of previewCache.current.values()) {
+        if (entry.url) URL.revokeObjectURL(entry.url);
+      }
+      previewCache.current.clear();
+    },
+    [],
+  );
   const [form] = Form.useForm<{ name: string; description: string }>();
   const [importForm] = Form.useForm<{ url: string; title: string; content: string }>();
   const [modal, modalContext] = Modal.useModal();
@@ -327,12 +349,7 @@ export function KnowledgeManagement({
   const pollRounds = useRef(0);
   const chunkRequestGeneration = useRef(0);
   const chunkSaveGeneration = useRef(0);
-  useEffect(
-    () => () => {
-      if (preview) URL.revokeObjectURL(preview.url);
-    },
-    [preview],
-  );
+  // 预览 blob URL 的生命周期交给预览缓存（淘汰与卸载时回收），这里不再逐个 revoke。
   useEffect(
     () => () => {
       chunkRequestGeneration.current += 1;
@@ -919,35 +936,65 @@ export function KnowledgeManagement({
     }
   };
 
+  const rememberPreview = (key: string, entry: PreviewEntry) => {
+    const cache = previewCache.current;
+    cache.delete(key);
+    cache.set(key, entry);
+    while (cache.size > PREVIEW_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      const dropped = cache.get(oldest);
+      cache.delete(oldest);
+      if (dropped?.url) URL.revokeObjectURL(dropped.url);
+    }
+  };
+
   const openDocumentFile = async (document: ManagedKnowledgeDocument, kind: 'preview' | 'download') => {
     const previewKind = previewKindOf(document.file_name);
     if (kind === 'preview' && !previewKind) {
       setWriteNotice(t('knowledgeNoOriginal'));
       return;
     }
+    const name = document.file_name || document.name;
+    if (kind === 'preview' && previewKind) {
+      // 命中缓存直接开；否则先按固定尺寸开弹窗占位，内容到位再填。
+      const cached = previewCache.current.get(`${document.id}:preview`);
+      setPreview(cached ?? { kind: previewKind, url: '', name, loading: true });
+      if (cached) return;
+      const generation = ++previewGeneration.current;
+      setDocumentActionId(document.id);
+      try {
+        const blob = await portal.getManagedKnowledgeFile(document.id, 'preview');
+        // 文本直接读正文，不需要 object URL；图片/PDF 才建 blob: 链接。
+        const entry: PreviewEntry =
+          previewKind === 'text'
+            ? { kind: 'text', url: '', name, text: await blob.text() }
+            : { kind: previewKind, url: URL.createObjectURL(blob), name };
+        rememberPreview(`${document.id}:preview`, entry);
+        // 期间又点了别的预览就不要把旧结果盖回去。
+        if (previewGeneration.current === generation) setPreview(entry);
+      } catch (cause) {
+        if (previewGeneration.current === generation) setPreview(null);
+        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+        setWriteNotice(errorText(cause));
+      } finally {
+        setDocumentActionId(null);
+      }
+      return;
+    }
     setDocumentActionId(document.id);
     try {
       const blob = await portal.getManagedKnowledgeFile(document.id, kind);
-      if (kind === 'preview' && previewKind) {
-        const name = document.file_name || document.name;
-        // 文本直接读正文，不需要 object URL；图片/PDF 才建 blob: 链接。
-        setPreview(
-          previewKind === 'text'
-            ? { kind: 'text', url: '', name, text: await blob.text() }
-            : { kind: previewKind, url: URL.createObjectURL(blob), name },
-        );
-      } else {
-        const url = URL.createObjectURL(blob);
-        const anchor = window.document.createElement('a');
-        anchor.href = url;
-        anchor.download = document.file_name || document.name || document.id;
-        anchor.hidden = true;
-        window.document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-        // Give the browser time to start consuming the object URL for download.
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = url;
+      anchor.download = name || document.id;
+      anchor.hidden = true;
+      window.document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      // Give the browser time to start consuming the object URL for download.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       setWriteNotice(errorText(cause));
@@ -1740,25 +1787,38 @@ export function KnowledgeManagement({
         destroyOnHidden
       >
         {preview &&
-          (preview.kind === 'text' ? (
-            <pre
-              className="whitespace-pre-wrap break-words"
-              style={{ maxHeight: '70vh', margin: 0, overflow: 'auto', fontSize: 13 }}
+          (preview.loading ? (
+            <div
+              style={{
+                alignItems: 'center',
+                display: 'flex',
+                height: '70vh',
+                justifyContent: 'center',
+              }}
             >
-              {preview.text}
-            </pre>
-          ) : preview.kind === 'image' ? (
-            <img
-              src={preview.url}
-              alt={preview.name}
-              style={{ display: 'block', margin: '0 auto', maxHeight: '70vh', maxWidth: '100%' }}
-            />
+              <Spin />
+            </div>
           ) : (
-            <iframe
-              title={preview.name}
-              src={preview.url}
-              style={{ display: 'block', width: '100%', height: '70vh', border: 0 }}
-            />
+            // 固定高度：不随文件长短跳动；内容超出在框内滚动/缩放。
+            <div style={{ height: '70vh', overflow: 'auto' }}>
+              {preview.kind === 'text' ? (
+                <pre className="whitespace-pre-wrap break-words" style={{ fontSize: 13, margin: 0 }}>
+                  {preview.text}
+                </pre>
+              ) : preview.kind === 'image' ? (
+                <img
+                  src={preview.url}
+                  alt={preview.name}
+                  style={{ display: 'block', margin: '0 auto', maxHeight: '100%', maxWidth: '100%' }}
+                />
+              ) : (
+                <iframe
+                  title={preview.name}
+                  src={preview.url}
+                  style={{ border: 0, display: 'block', height: '100%', width: '100%' }}
+                />
+              )}
+            </div>
           ))}
       </Modal>
     </div>
