@@ -841,4 +841,25 @@ describe('KnowledgeManagement component state', () => {
     timeout.mockRestore();
     expect(objectUrl).toHaveBeenCalledOnce();
   });
+
+  test(
+    'dismisses the document hint and keeps it dismissed on the next visit',
+    async () => {
+      const hint = translate(ADMIN_LANGUAGE, 'knowledgeDocumentEnableHint');
+      localStorage.removeItem('admin-knowledge-doc-hint-dismissed');
+      const portal = makePortal();
+      const view = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText(hint)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(hint).closest('.ant-alert')!.querySelector('.ant-alert-close-icon')!);
+      await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument());
+      expect(localStorage.getItem('admin-knowledge-doc-hint-dismissed')).toBe('1');
+      view.unmount();
+
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findAllByText('Research')).not.toHaveLength(0);
+      expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
 });

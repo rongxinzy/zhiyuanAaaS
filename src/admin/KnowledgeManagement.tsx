@@ -234,6 +234,9 @@ const FOLDER_UPLOAD_MAX_FILES = 200;
  *  body itself, so an oversized member would only fail upstream. */
 const FOLDER_UPLOAD_MAX_FILE_BYTES = 63 * 1024 * 1024;
 
+/** 「文档管理」上方那条口径说明被关掉后记住，别再每次占位。 */
+const DOC_HINT_DISMISSED_KEY = 'admin-knowledge-doc-hint-dismissed';
+
 export function KnowledgeManagement({
   portal,
   baseId = null,
@@ -249,6 +252,7 @@ export function KnowledgeManagement({
   const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(baseId);
   const [detailTab, setDetailTab] = useState('documents');
+  const [docHintVisible, setDocHintVisible] = useState(() => localStorage.getItem(DOC_HINT_DISMISSED_KEY) !== '1');
   const [docs, setDocs] = useState<ManagedKnowledgePage | null>(null);
   const [docsContext, setDocsContext] = useState('');
   const [detail, setDetail] = useState<ManagedKnowledgeBase | null>(null);
@@ -1422,12 +1426,19 @@ export function KnowledgeManagement({
                               </div>
                             </div>
                           )}
-                          <Alert
-                            showIcon
-                            type="info"
-                            title={t('knowledgeDocumentEnableHint')}
-                            description={t('knowledgeFileOnlyPreview')}
-                          />
+                          {docHintVisible && (
+                            <Alert
+                              showIcon
+                              closable
+                              type="info"
+                              title={t('knowledgeDocumentEnableHint')}
+                              description={t('knowledgeFileOnlyPreview')}
+                              onClose={() => {
+                                localStorage.setItem(DOC_HINT_DISMISSED_KEY, '1');
+                                setDocHintVisible(false);
+                              }}
+                            />
+                          )}
                           <Table<ManagedKnowledgeDocument>
                             rowKey="id"
                             size="small"
