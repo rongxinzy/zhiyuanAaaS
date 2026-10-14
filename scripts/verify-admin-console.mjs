@@ -18,11 +18,12 @@ try {
   const contentSecurityPolicy = response.headers.get('content-security-policy') ?? '';
   assert.match(contentSecurityPolicy, /script-src 'self'/);
   assert.doesNotMatch(contentSecurityPolicy, /script-src[^;]*'unsafe-inline'/);
-  assert.match(contentSecurityPolicy, /frame-ancestors 'none'/);
+  // 同源框架放行是为了文档预览（blob: iframe 显示 PDF）；外部站点仍嵌不进来。
+  assert.match(contentSecurityPolicy, /frame-ancestors 'self'/);
   assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
-  assert.equal(response.headers.get('x-frame-options'), 'DENY');
+  assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
   const html = await response.text();
   assert.match(html, /<div id="root"><\/div>/);
   const assets = [...html.matchAll(/(?:src|href)="\.\/([^"?]+)"/g)].map((match) => match[1]);

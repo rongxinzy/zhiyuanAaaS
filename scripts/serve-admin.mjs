@@ -26,11 +26,13 @@ const securityHeaders = Object.freeze({
     "connect-src 'self'",
     "font-src 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
-    // Embedded conversation pane: the chat UI is a different origin (same
-    // host, NodePort 30195). default-src 'self' would block the frame.
-    "frame-src 'self' http://*:30195 https://*:30195",
-    "img-src 'self' data:",
+    // 同源框架放行：文档预览要把 blob: 放进同源 iframe 显示 PDF；
+    // frame-ancestors/X-Frame-Options 会连同源一起拦，改 'self'/SAMEORIGIN
+    // 后仍挡住其它站点嵌入。
+    "frame-ancestors 'self'",
+    // 预览用的 blob: URL 显式放行（图片 <img>、PDF iframe 都由页面自己创建）。
+    "frame-src 'self' blob: http://*:30195 https://*:30195",
+    "img-src 'self' data: blob:",
     "object-src 'none'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
@@ -40,7 +42,7 @@ const securityHeaders = Object.freeze({
   'permissions-policy': 'camera=(), geolocation=(), microphone=()',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
-  'x-frame-options': 'DENY',
+  'x-frame-options': 'SAMEORIGIN',
 });
 
 const server = http.createServer(async (request, response) => {

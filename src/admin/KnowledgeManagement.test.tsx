@@ -782,7 +782,7 @@ describe('KnowledgeManagement component state', () => {
   });
 
   test(
-    'previews only the selected document original through the managed API',
+    'renders the selected text original inline instead of framing it',
     async () => {
       const doc = lifecycleDocument('failed');
       const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-preview');
@@ -795,11 +795,51 @@ describe('KnowledgeManagement component state', () => {
       expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
       const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
       fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
-      const frame = await screen.findByTitle('guide.txt', undefined, { timeout: TIMEOUT });
-      expect(frame).toHaveAttribute('src', 'blob:test-preview');
+      // 文本走内联渲染：内容出现、没有 iframe、也不用建 object URL。
+      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      expect(screen.queryByTitle('guide.txt')).not.toBeInTheDocument();
       expect(portal.getManagedKnowledgeFile).toHaveBeenCalledWith(doc.id, 'preview');
-      expect(objectUrl).toHaveBeenCalledOnce();
+      expect(objectUrl).not.toHaveBeenCalled();
       expect(revokeObjectUrl).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'frames a PDF original from a blob URL without a sandbox',
+    async () => {
+      const pdf = { ...lifecycleDocument('completed'), id: 'doc-pdf', name: 'Manual', file_name: 'manual.pdf' };
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-pdf');
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [pdf], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['%PDF-1.4'])),
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Manual')).toBeInTheDocument();
+      fireEvent.click(within(screen.getByText('Manual').closest('tr')!).getByRole('button', { name: /预览/ }));
+      const frame = await screen.findByTitle('manual.pdf', undefined, { timeout: TIMEOUT });
+      expect(frame).toHaveAttribute('src', 'blob:test-pdf');
+      expect(frame).not.toHaveAttribute('sandbox');
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'shows an image original directly instead of framing it',
+    async () => {
+      const image = { ...lifecycleDocument('completed'), id: 'doc-image', name: 'Chart', file_name: 'chart.png' };
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-image');
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [image], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['png'])),
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Chart')).toBeInTheDocument();
+      fireEvent.click(within(screen.getByText('Chart').closest('tr')!).getByRole('button', { name: /预览/ }));
+      expect(await screen.findByAltText('chart.png', undefined, { timeout: TIMEOUT })).toHaveAttribute(
+        'src',
+        'blob:test-image',
+      );
     },
     TIMEOUT,
   );

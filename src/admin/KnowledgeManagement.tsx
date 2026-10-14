@@ -211,6 +211,20 @@ function isUncertain(error: unknown): boolean {
 }
 
 /**
+ * 原文件预览按类型分流：文本内联渲染，图片用 <img>，PDF 才用 iframe。
+ * 页面自身的 CSP 有 frame-ancestors（原来 'none'），把文本/图片塞进 iframe
+ * 会被浏览器直接拦成「该内容被屏蔽了」。
+ */
+type PreviewKind = 'text' | 'image' | 'pdf';
+
+function previewKindOf(fileName: string): PreviewKind | null {
+  if (/\.(txt|md|csv)$/i.test(fileName)) return 'text';
+  if (/\.(png|jpe?g|gif|webp)$/i.test(fileName)) return 'image';
+  if (/\.pdf$/i.test(fileName)) return 'pdf';
+  return null;
+}
+
+/**
  * One file of a folder upload. The folder structure travels as WeKnora's
  * `fileName` (the upstream splits it into folder path + file name), so the
  * console only has to keep the browser-provided relative path intact.
@@ -298,7 +312,13 @@ export function KnowledgeManagement({
   const [chunkImageLoading, setChunkImageLoading] = useState<string | null>(null);
   const chunkImageURLsRef = useRef<Record<string, string>>({});
   const chunkImageRequests = useRef(new Map<string, AbortController>());
-  const [preview, setPreview] = useState<{ readonly url: string; readonly name: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    readonly kind: PreviewKind;
+    readonly url: string;
+    readonly name: string;
+    /** Only for `text`: decoded原文，直接内联显示（iframe 会被自身 CSP 的 frame-ancestors 拦掉）。 */
+    readonly text?: string;
+  } | null>(null);
   const [form] = Form.useForm<{ name: string; description: string }>();
   const [importForm] = Form.useForm<{ url: string; title: string; content: string }>();
   const [modal, modalContext] = Modal.useModal();
@@ -900,17 +920,24 @@ export function KnowledgeManagement({
   };
 
   const openDocumentFile = async (document: ManagedKnowledgeDocument, kind: 'preview' | 'download') => {
-    if (kind === 'preview' && !/\.(pdf|png|jpe?g|gif|webp|txt|md|csv)$/i.test(document.file_name)) {
+    const previewKind = previewKindOf(document.file_name);
+    if (kind === 'preview' && !previewKind) {
       setWriteNotice(t('knowledgeNoOriginal'));
       return;
     }
     setDocumentActionId(document.id);
     try {
       const blob = await portal.getManagedKnowledgeFile(document.id, kind);
-      const url = URL.createObjectURL(blob);
-      if (kind === 'preview') {
-        setPreview({ url, name: document.file_name || document.name });
+      if (kind === 'preview' && previewKind) {
+        const name = document.file_name || document.name;
+        // 文本直接读正文，不需要 object URL；图片/PDF 才建 blob: 链接。
+        setPreview(
+          previewKind === 'text'
+            ? { kind: 'text', url: '', name, text: await blob.text() }
+            : { kind: previewKind, url: URL.createObjectURL(blob), name },
+        );
       } else {
+        const url = URL.createObjectURL(blob);
         const anchor = window.document.createElement('a');
         anchor.href = url;
         anchor.download = document.file_name || document.name || document.id;
@@ -1712,14 +1739,27 @@ export function KnowledgeManagement({
         width={960}
         destroyOnHidden
       >
-        {preview && (
-          <iframe
-            title={preview.name}
-            src={preview.url}
-            sandbox=""
-            style={{ display: 'block', width: '100%', height: '70vh', border: 0 }}
-          />
-        )}
+        {preview &&
+          (preview.kind === 'text' ? (
+            <pre
+              className="whitespace-pre-wrap break-words"
+              style={{ maxHeight: '70vh', margin: 0, overflow: 'auto', fontSize: 13 }}
+            >
+              {preview.text}
+            </pre>
+          ) : preview.kind === 'image' ? (
+            <img
+              src={preview.url}
+              alt={preview.name}
+              style={{ display: 'block', margin: '0 auto', maxHeight: '70vh', maxWidth: '100%' }}
+            />
+          ) : (
+            <iframe
+              title={preview.name}
+              src={preview.url}
+              style={{ display: 'block', width: '100%', height: '70vh', border: 0 }}
+            />
+          ))}
       </Modal>
     </div>
   );
