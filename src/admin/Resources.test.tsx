@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
+import { AepProblem } from '@aep/sdk-node';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { AdminRequestError } from './client.js';
+import { AdminNotificationViewport } from './notifications.js';
 import { PortalError } from './portal.js';
 import { AdminResourceTab, Resources } from './Resources.js';
 import { administratorIdentity } from './test-fixtures.js';
@@ -772,7 +774,15 @@ describe('admin resources', () => {
         resources: vi.fn().mockResolvedValue({
           ...emptyResources,
           teams: [
-            { id: 'team-1', name: '旧名称', description: '旧描述', builtIn: false, enabled: true, memberCount: 2 },
+            {
+              id: 'team-1',
+              name: '旧名称',
+              description: '旧描述',
+              builtIn: false,
+              enabled: true,
+              memberCount: 2,
+              defaultRoleIds: [],
+            },
           ],
         }),
         updateTeam: vi.fn().mockResolvedValue(undefined),
@@ -788,6 +798,66 @@ describe('admin resources', () => {
           description: '旧描述',
           enabled: true,
           defaultRoleIds: [],
+        }),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'creates a team without an unsupported defaults field until roles are selected',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          roles: [{ id: 'reader', name: '模型只读', enabled: true }],
+        }),
+        createTeam: vi.fn().mockResolvedValue({ id: 'team-1' }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增团队$/ }));
+      let modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '无默认角色团队' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(client.createTeam).toHaveBeenCalledWith({ name: '无默认角色团队', description: '' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /新增团队$/ }));
+      modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '有默认角色团队' } });
+      await pickOption(within(modal).getByLabelText('默认角色'), '模型只读（reader）');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createTeam).toHaveBeenLastCalledWith({
+          name: '有默认角色团队',
+          description: '',
+          defaultRoleIds: ['reader'],
+        }),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'edits legacy team metadata without sending an unknown defaults field',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '旧团队', description: '', enabled: true }],
+        }),
+        updateTeam: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+      fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '新名称' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.updateTeam).toHaveBeenCalledWith('team-1', {
+          name: '新名称',
+          description: '',
+          enabled: true,
         }),
       );
     },
@@ -1030,6 +1100,90 @@ describe('admin resources', () => {
       fireEvent.click(await modalButton('删除'));
       expect(await screen.findByText(/无权查看数字员工关联/)).toBeInTheDocument();
       expect(screen.queryByText('没有数字员工启用该技能。')).not.toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'names why a Skill package was refused',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [{ id: 's1', name: '写作', description: '', enabled: true, state: 'active', versions: [] }],
+        }),
+        // Skill packages travel through the generated SDK, so the console sees
+        // AepProblem; the second attempt covers the handwritten request path,
+        // and the third an unmapped code.
+        uploadSkillVersion: vi
+          .fn()
+          .mockRejectedValueOnce(
+            AepProblem.from(400, {
+              code: 'INVALID_SKILL_PACKAGE',
+              detail: 'the Skill package does not contain SKILL.md at its root',
+            }),
+          )
+          .mockRejectedValueOnce(new AdminRequestError(400, 'INVALID_SKILL_VERSION', 'invalid version'))
+          .mockRejectedValueOnce(AepProblem.from(500, { code: 'INTERNAL_ERROR', detail: 'unavailable' })),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      rtlRender(<AdminNotificationViewport />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /版本记录/ }));
+      fireEvent.change(await screen.findByLabelText('版本号'), { target: { value: '1.0.0' } });
+      const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' });
+      Object.defineProperty(archive, 'arrayBuffer', { value: async () => new Uint8Array([1, 2, 3]).buffer });
+      fireEvent.change(fileInput(), { target: { files: [archive] } });
+      const upload = () => screen.getByText('上传版本', { selector: 'button span' }).closest('button')!;
+      const attempt = async () => {
+        await waitFor(() => expect(upload()).not.toHaveClass('ant-btn-loading'));
+        fireEvent.click(upload());
+      };
+      await attempt();
+      // A rejected package names the package contract; the generic notice would
+      // send the operator looking at a ZIP file that is already valid.
+      expect(
+        await screen.findByText('技能包无效：必须是 ZIP 压缩包，且根目录包含 SKILL.md（不能放在子目录里）。'),
+      ).toBeInTheDocument();
+      await attempt();
+      expect(await screen.findByText('版本号只能包含字母、数字和 . _ + -。')).toBeInTheDocument();
+      await attempt();
+      expect(await screen.findByText('版本上传失败，请检查 ZIP 文件和版本号。')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'names a missing Skill version when publishing',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [
+            {
+              id: 's1',
+              name: '写作',
+              description: '',
+              enabled: true,
+              state: 'active',
+              versions: [{ version: '1.0.0', state: 'draft', sha256: 'a'.repeat(64), size: 3 }],
+            },
+          ],
+        }),
+        publishSkillVersion: vi
+          .fn()
+          .mockRejectedValue(
+            AepProblem.from(404, { code: 'RESOURCE_NOT_FOUND', detail: 'The Skill version was not found.' }),
+          ),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      rtlRender(<AdminNotificationViewport />);
+      expect(await screen.findByText('写作')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '查看' }));
+      fireEvent.click(await screen.findByRole('tab', { name: /版本记录/ }));
+      fireEvent.click(await screen.findByText('发布', { selector: 'button span' }));
+      expect(await screen.findByText('这个版本已不存在，请刷新后重试。')).toBeInTheDocument();
     },
     TIMEOUT,
   );

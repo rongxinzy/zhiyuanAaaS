@@ -6,7 +6,15 @@
  *
  */
 
-import type { AdminModel, JsonObject, ModelAssignment, Permission, PlatformUser, Role } from '@aep/sdk-node';
+import {
+  type AdminModel,
+  AepProblem,
+  type JsonObject,
+  type ModelAssignment,
+  type Permission,
+  type PlatformUser,
+  type Role,
+} from '@aep/sdk-node';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -351,6 +359,28 @@ function NameCell({ name, detail }: { readonly name: string; readonly detail: st
 }
 
 type MutationRunner = (operation: () => Promise<void>) => Promise<void>;
+
+// The console talks to two client layers. Skill packages go through the
+// generated SDK, which throws AepProblem; the handwritten request path (used by
+// Skill deletion, for example) throws AdminRequestError. Read the code off
+// either, so a refusal is named instead of collapsing into one generic notice.
+function problemCode(error: unknown): string | null {
+  if (error instanceof AepProblem || error instanceof AdminRequestError) return error.code;
+  return null;
+}
+
+// Each action names only the refusals it can actually produce. A missing version
+// means the version is gone when publishing, but a missing Skill when uploading,
+// so the upload list deliberately omits RESOURCE_NOT_FOUND.
+const uploadFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_PACKAGE: 'skillPackageInvalid',
+  PACKAGE_TOO_LARGE: 'skillPackageTooLarge',
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+};
+const publishFailureCopy: Record<string, AdminTranslationKey> = {
+  INVALID_SKILL_VERSION: 'skillVersionInvalid',
+  RESOURCE_NOT_FOUND: 'skillVersionGone',
+};
 
 function useMutationRunner(onChanged: () => Promise<void>, onError: () => void) {
   const [pending, setPending] = useState(false);
@@ -2703,12 +2733,17 @@ function TeamEditorModal({
     setPending(true);
     try {
       let teamId = team?.id ?? '';
+      const defaultRoleIds = values.defaultRoleIds ?? [];
+      // Older AEP versions reject unknown fields. An absent defaults field
+      // with no selected roles needs no write; a known field must still send
+      // [] so clearing existing defaults remains explicit.
+      const defaultsWrite = team?.defaultRoleIds !== undefined || defaultRoleIds.length > 0 ? { defaultRoleIds } : {};
       if (team)
         await client.updateTeam(team.id, {
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
-          defaultRoleIds: values.defaultRoleIds ?? [],
+          ...defaultsWrite,
         });
       else {
         // The team id is server-generated from the name and anchors the
@@ -2716,7 +2751,7 @@ function TeamEditorModal({
         const created = await client.createTeam({
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
-          defaultRoleIds: values.defaultRoleIds ?? [],
+          ...defaultsWrite,
         });
         teamId = created.id;
       }
@@ -3930,8 +3965,9 @@ function VersionManager({
       setArchive(null);
       await onChanged();
       notify(AdminNotificationKind.Success, t('versionUploaded'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillUploadFailed'));
+    } catch (error) {
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? uploadFailureCopy[code] : undefined) ?? 'skillUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -3942,8 +3978,9 @@ function VersionManager({
       await client.publishSkillVersion(skill.id, candidate);
       await onChanged();
       notify(AdminNotificationKind.Success, t('changesSaved'));
-    } catch {
-      notify(AdminNotificationKind.Error, t('skillPublishFailed'));
+    } catch (error) {
+      const code = problemCode(error);
+      notify(AdminNotificationKind.Error, t((code ? publishFailureCopy[code] : undefined) ?? 'skillPublishFailed'));
     } finally {
       setPendingVersion(null);
     }
