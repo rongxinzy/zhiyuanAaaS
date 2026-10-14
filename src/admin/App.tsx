@@ -572,7 +572,19 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           </Space>
         </Layout.Header>
         <Layout.Content className="admin-content">
-          <Breadcrumb items={[{ title: c.admin }, { title: selected?.label ?? c.notFound }]} />
+          <Breadcrumb
+            items={[
+              { title: c.admin },
+              {
+                // 单一面包屑：有子页时把分区项做成回分区根（列表）的链接。
+                title: subpage ? (
+                  <a href={`#/${page}`}>{selected?.label ?? c.notFound}</a>
+                ) : (
+                  (selected?.label ?? c.notFound)
+                ),
+              },
+            ]}
+          />
           <div className="admin-page">
             <Suspense fallback={<Skeleton active />}>
               <div key={page}>

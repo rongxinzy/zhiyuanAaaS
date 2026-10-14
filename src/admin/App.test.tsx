@@ -240,6 +240,19 @@ describe('Ant Design admin shell', () => {
     expect(screen.getByRole('menuitem', { name: '模型网关' })).toHaveClass('ant-menu-item-selected');
     expect(screen.getAllByRole('tablist')).toHaveLength(1);
   });
+  test('keeps one breadcrumb that links back to the section root on a subpage', async () => {
+    authenticated();
+    window.location.hash = 'knowledge/kb-test-1';
+    render(<AdminApp />);
+    expect(await screen.findByText('knowledge-content')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '知识库' })).toHaveAttribute('href', '#/knowledge');
+    cleanup();
+    window.location.hash = 'knowledge';
+    render(<AdminApp />);
+    expect(await screen.findByText('knowledge-content')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '知识库' })).not.toBeInTheDocument();
+  });
+
   test.each([
     ['models.read', '模型列表', 'model-content', 3],
     ['credentials.read', '接入配置', 'credentials-content', 1],

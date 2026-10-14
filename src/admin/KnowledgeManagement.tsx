@@ -62,7 +62,6 @@ const copyKeys = {
   knowledgeFAQBase: 'knowledgeFAQBase',
   title: 'knowledgeManagementTitle',
   description: 'knowledgeManagementDescription',
-  bases: 'knowledgeBasesManaged',
   add: 'knowledgeCreate',
   refresh: 'statusRefresh',
   empty: 'knowledgeEmptyManaged',
@@ -125,7 +124,6 @@ const copyKeys = {
   fieldTenant: 'knowledgeTenant',
   fieldEmbeddingModel: 'knowledgeEmbeddingModel',
   moreActions: 'knowledgeMoreActions',
-  backToList: 'knowledgeBackToList',
   fileLimit: 'knowledgeFileLimit',
   uploadAccepted: 'knowledgeUploadAccepted',
   knowledgeImportUrl: 'knowledgeImportUrl',
@@ -1105,9 +1103,6 @@ export function KnowledgeManagement({
     <div className="flex w-full flex-col gap-4">
       {!selectedId ? (
         <>
-          <div>
-            <Typography.Text type="secondary">{t('bases')}</Typography.Text>
-          </div>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <Typography.Title level={4} style={{ marginBottom: 4 }}>
@@ -1164,14 +1159,6 @@ export function KnowledgeManagement({
         </>
       ) : (
         <>
-          <div>
-            <Typography.Text type="secondary">
-              <Button type="link" style={{ paddingInline: 0 }} onClick={() => openBase(null)}>
-                {t('bases')}
-              </Button>
-              {` / ${selected?.name ?? selectedId}`}
-            </Typography.Text>
-          </div>
           <Card size="small" loading={loading && !selected}>
             {!selected ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
