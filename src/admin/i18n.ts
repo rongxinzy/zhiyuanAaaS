@@ -380,7 +380,11 @@ const translations = {
     knowledgeFAQDeleteConfirm: '确定删除此 FAQ？',
     knowledgeFAQToggleAll: '切换本页启用状态',
     knowledgeFAQDeleteAll: '删除本页',
+    knowledgeFAQDeleteAllConfirm: '确定删除本页 {count} 条 FAQ？该操作不可恢复。',
     knowledgeFAQSetTags: '批量设置 FAQ 标签',
+    knowledgeFAQAnswersHint: '每条答案单独填写；同一条答案内的换行会原样保留。',
+    knowledgeFAQAddAnswer: '添加答案',
+    knowledgeFAQRemoveAnswer: '删除答案',
     knowledgeFAQEmpty: '暂无 FAQ',
     knowledgeCreate: '新建知识库',
     knowledgeEmptyManaged: '暂无已登记的知识库',
@@ -421,7 +425,7 @@ const translations = {
     knowledgeDeleted: '知识库已删除。',
     knowledgeOperation: '操作编号',
     knowledgeResourceId: '资源 ID',
-    knowledgeUncertain: '操作结果暂不确定。请先刷新确认服务端状态，再决定是否重试。',
+    knowledgeUncertain: '操作结果暂不确定。请先刷新确认服务端状态（刷新成功后写操作会自动恢复），再决定是否重试。',
     knowledgeDocsTitle: '文档',
     knowledgeDocName: '文档名称',
     knowledgeFileName: '文件',
@@ -517,6 +521,21 @@ const translations = {
     knowledgeConfigErrorManaged: '知识库服务配置不完整，暂时无法管理。',
     knowledgeUpstreamInvalidManaged:
       '知识库服务未提供该操作需要的接口（多为版本过旧），升级知识库服务后再重试；操作编号可用于核对。',
+    // portal 用 403 返回租户/部署错配这类配置问题；只按状态码会说成「没有权限」，所以按 code 优先映射。
+    knowledgeTenantMismatchManaged:
+      '知识库服务的租户与当前部署不匹配，管理操作已停用。请核对部署与知识库服务的租户配置后再试。',
+    knowledgeDeploymentMismatchManaged:
+      '当前会话所属部署与知识库服务不匹配，管理操作已停用。请确认打开的是本部署控制台后再试。',
+    knowledgeWriteRecovered: '刷新成功，写操作已恢复；请按服务端最新状态继续。',
+    // 后端按 UTF-8 字节（Go 的 len()）校验字段长度，提示必须给出字段名与当前字节数。
+    knowledgeByteLimitExceeded: '超出长度上限（按 UTF-8 字节计）',
+    knowledgeByteUnit: '字节',
+    knowledgeURLInvalid: '请填写完整的 http(s) 链接。',
+    knowledgeURLScheme: '仅支持 http/https 链接。',
+    knowledgeURLUserInfo: '链接不能包含用户名或密码。',
+    knowledgeURLFragment: '链接不能带 # 片段，请去掉后重试。',
+    knowledgeURLPrivateHost: '链接不能指向本机或内网地址。',
+    knowledgeChunkContent: '分块内容',
     knowledgeLoginExpired: '登录状态已过期，请重新登录后继续。',
     knowledgePreviewUnavailable:
       '未在框架中打开：服务端返回的内容类型不是 PDF，已停止渲染以避免执行非预期内容。可改用下载查看。',
@@ -1575,7 +1594,11 @@ const translations = {
     knowledgeFAQDeleteConfirm: 'Delete this FAQ?',
     knowledgeFAQToggleAll: 'Toggle enabled state on this page',
     knowledgeFAQDeleteAll: 'Delete this page',
+    knowledgeFAQDeleteAllConfirm: 'Delete all {count} FAQ entries on this page? This cannot be undone.',
     knowledgeFAQSetTags: 'Set tags on selected FAQ entries',
+    knowledgeFAQAnswersHint: 'Fill in each answer separately; line breaks inside one answer are kept as typed.',
+    knowledgeFAQAddAnswer: 'Add answer',
+    knowledgeFAQRemoveAnswer: 'Remove answer',
     knowledgeFAQEmpty: 'No FAQ entries',
     knowledgeCreate: 'Create knowledge base',
     knowledgeEmptyManaged: 'No registered knowledge bases',
@@ -1619,7 +1642,8 @@ const translations = {
     knowledgeDeleted: 'Knowledge base deleted.',
     knowledgeOperation: 'Operation ID',
     knowledgeResourceId: 'Resource ID',
-    knowledgeUncertain: 'The result is uncertain. Refresh and verify server state before deciding whether to retry.',
+    knowledgeUncertain:
+      'The result is uncertain. Refresh first to confirm the server state (a successful refresh re-enables write actions), then decide whether to retry.',
     knowledgeDocsTitle: 'Documents',
     knowledgeDocName: 'Document',
     knowledgeFileName: 'File',
@@ -1717,6 +1741,20 @@ const translations = {
     knowledgeConfigErrorManaged: 'Knowledge service configuration is incomplete.',
     knowledgeUpstreamInvalidManaged:
       'The knowledge service does not expose the API this action needs (usually an older build); upgrade it and retry. Quote the operation id when checking.',
+    knowledgeTenantMismatchManaged:
+      'The knowledge service tenant does not match this deployment, so management is disabled. Check the tenant configuration of the deployment and the knowledge service, then retry.',
+    knowledgeDeploymentMismatchManaged:
+      "This session belongs to a different deployment than the knowledge service, so management is disabled. Confirm you are on this deployment's console and retry.",
+    knowledgeWriteRecovered:
+      'Refresh succeeded; write actions are available again. Continue from the state the server reports.',
+    knowledgeByteLimitExceeded: 'Exceeds the length limit (counted in UTF-8 bytes)',
+    knowledgeByteUnit: 'bytes',
+    knowledgeURLInvalid: 'Enter a full http(s) URL.',
+    knowledgeURLScheme: 'Only http/https URLs are supported.',
+    knowledgeURLUserInfo: 'The URL must not contain a username or password.',
+    knowledgeURLFragment: 'The URL must not contain a # fragment. Remove it and retry.',
+    knowledgeURLPrivateHost: 'The URL must not point at a loopback or private address.',
+    knowledgeChunkContent: 'Chunk content',
     knowledgeLoginExpired: 'Your session has expired. Sign in again to continue.',
     knowledgePreviewUnavailable:
       'Not framed: the server did not return the PDF content type, so rendering was stopped to avoid executing unexpected content. Download the file instead.',

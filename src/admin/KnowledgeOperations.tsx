@@ -52,7 +52,8 @@ export function KnowledgeOperations({
   const [folderTo, setFolderTo] = useState('');
   const [folderEditor, setFolderEditor] = useState(false);
   const [faqEditor, setFaqEditor] = useState<ManagedKnowledgeFAQEntry | null | undefined>(undefined);
-  const [faqForm] = Form.useForm<{ question: string; answer: string; tagId?: number | undefined }>();
+  const [faqAnswers, setFaqAnswers] = useState<readonly string[]>(['']);
+  const [faqForm] = Form.useForm<{ question: string; tagId?: number | undefined }>();
   const loadGeneration = useRef(0);
   const tagOptions = useMemo(() => tags.map((tag) => ({ value: tag.seq_id, label: tag.name })), [tags]);
 
@@ -172,8 +173,19 @@ export function KnowledgeOperations({
     {
       title: tr('knowledgeFAQAnswer'),
       dataIndex: 'answers',
-      render: (answers: readonly string[]) => answers[0] ?? '—',
-      ellipsis: true,
+      // 上游 answers 是多条答案（每条内部允许换行），必须全部渲染；ellipsis 会吞掉换行，故不启用。
+      render: (answers: readonly string[]) =>
+        answers.length ? (
+          <Space orientation="vertical" size={0}>
+            {answers.map((answer, index) => (
+              <Typography.Text key={`${index.toString()}-${answer}`} style={{ whiteSpace: 'pre-wrap' }}>
+                {answer}
+              </Typography.Text>
+            ))}
+          </Space>
+        ) : (
+          '—'
+        ),
     },
     {
       title: tr('knowledgeFAQEnabled'),
@@ -194,9 +206,9 @@ export function KnowledgeOperations({
             onClick={() => {
               faqForm.setFieldsValue({
                 question: entry.standard_question,
-                answer: entry.answers[0] ?? '',
                 tagId: entry.tag_id || undefined,
               });
+              setFaqAnswers(entry.answers.length ? [...entry.answers] : ['']);
               setFaqEditor(entry);
             }}
           >
@@ -215,19 +227,22 @@ export function KnowledgeOperations({
     },
   ];
 
+  const faqAnswersNormalized = useMemo(
+    () => Array.from(new Set(faqAnswers.map((answer) => answer.trim()).filter(Boolean))),
+    [faqAnswers],
+  );
+
   const saveFAQ = async () => {
+    // 上游 answers 是答案列表：每条答案独立提交，空白行忽略，重复答案按上游 Normalize 去重。
+    const answers = Array.from(new Set(faqAnswers.map((answer) => answer.trim()).filter(Boolean)));
+    if (!answers.length) return;
     const values = await faqForm.validateFields();
     const succeeded = await mutate(() =>
       portal.saveManagedKnowledgeFAQ(baseId, faqEditor?.id ?? null, {
         standard_question: values.question,
         similar_questions: faqEditor?.similar_questions ?? [],
         negative_questions: faqEditor?.negative_questions ?? [],
-        answers: faqEditor
-          ? [values.answer, ...faqEditor.answers.slice(1)]
-          : values.answer
-              .split('\n')
-              .map((item) => item.trim())
-              .filter(Boolean),
+        answers,
         ...(faqEditor ? { answer_strategy: faqEditor.answer_strategy } : {}),
         ...(values.tagId ? { tag_id: values.tagId } : {}),
         is_enabled: faqEditor?.is_enabled ?? true,
@@ -394,6 +409,7 @@ export function KnowledgeOperations({
                             disabled={writesDisabled}
                             onClick={() => {
                               faqForm.resetFields();
+                              setFaqAnswers(['']);
                               setFaqEditor(null);
                             }}
                           >
@@ -412,10 +428,9 @@ export function KnowledgeOperations({
                           >
                             {tr('knowledgeFAQToggleAll')}
                           </Button>
-                          <Button
-                            danger
-                            disabled={writesDisabled || !faq.length}
-                            onClick={() =>
+                          <Popconfirm
+                            title={tr('knowledgeFAQDeleteAllConfirm').replace('{count}', String(faq.length))}
+                            onConfirm={() =>
                               void mutate(() =>
                                 portal.deleteManagedKnowledgeFAQEntries(
                                   baseId,
@@ -423,9 +438,12 @@ export function KnowledgeOperations({
                                 ),
                               )
                             }
+                            disabled={writesDisabled || !faq.length}
                           >
-                            {tr('knowledgeFAQDeleteAll')}
-                          </Button>
+                            <Button danger disabled={writesDisabled || !faq.length}>
+                              {tr('knowledgeFAQDeleteAll')}
+                            </Button>
+                          </Popconfirm>
                           <Select
                             allowClear
                             value={selectedFAQTag ?? undefined}
@@ -544,7 +562,7 @@ export function KnowledgeOperations({
         onCancel={() => setFaqEditor(undefined)}
         onOk={() => void saveFAQ()}
         confirmLoading={busy}
-        okButtonProps={{ disabled: writesDisabled }}
+        okButtonProps={{ disabled: writesDisabled || !faqAnswersNormalized.length }}
         destroyOnHidden
       >
         <Form form={faqForm} layout="vertical">
@@ -555,13 +573,39 @@ export function KnowledgeOperations({
           >
             <Input.TextArea rows={3} maxLength={2000} />
           </Form.Item>
-          <Form.Item
-            name="answer"
-            label={tr('knowledgeFAQAnswer')}
-            rules={[{ required: true, whitespace: true, max: 20000 }]}
-          >
-            <Input.TextArea rows={6} maxLength={20000} />
-          </Form.Item>
+          <div>
+            <Typography.Text>{tr('knowledgeFAQAnswer')}</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
+              {tr('knowledgeFAQAnswersHint')}
+            </Typography.Paragraph>
+            {faqAnswers.map((answer, index) => (
+              <Space key={index} align="start" style={{ width: '100%', marginBottom: 4 }}>
+                <Input.TextArea
+                  aria-label={`${tr('knowledgeFAQAnswer')} ${index + 1}`}
+                  rows={3}
+                  maxLength={20000}
+                  value={answer}
+                  onChange={(event) =>
+                    setFaqAnswers((current) =>
+                      current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)),
+                    )
+                  }
+                />
+                <Button
+                  size="small"
+                  danger
+                  aria-label={`${tr('knowledgeFAQRemoveAnswer')} ${index + 1}`}
+                  disabled={faqAnswers.length <= 1}
+                  onClick={() => setFaqAnswers((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                >
+                  {tr('knowledgeDelete')}
+                </Button>
+              </Space>
+            ))}
+            <Button size="small" onClick={() => setFaqAnswers((current) => [...current, ''])}>
+              {tr('knowledgeFAQAddAnswer')}
+            </Button>
+          </div>
           <Form.Item name="tagId" label={tr('knowledgeFAQTag')}>
             <Select allowClear options={tagOptions} />
           </Form.Item>

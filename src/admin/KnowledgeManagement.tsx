@@ -188,6 +188,15 @@ const copyKeys = {
   noSelection: 'knowledgeSelectBase',
   emptyDocs: 'knowledgeNoDocuments',
   page: 'knowledgeCreatedAt',
+  writeRecovered: 'knowledgeWriteRecovered',
+  byteLimitExceeded: 'knowledgeByteLimitExceeded',
+  byteUnit: 'knowledgeByteUnit',
+  urlInvalid: 'knowledgeURLInvalid',
+  urlScheme: 'knowledgeURLScheme',
+  urlUserInfo: 'knowledgeURLUserInfo',
+  urlFragment: 'knowledgeURLFragment',
+  urlPrivateHost: 'knowledgeURLPrivateHost',
+  chunkContent: 'knowledgeChunkContent',
 } as const satisfies Record<string, AdminTranslationKey>;
 type CopyKey = keyof typeof copyKeys;
 const t = (key: CopyKey) => translate(language, copyKeys[key]);
@@ -228,6 +237,108 @@ function isUncertain(error: unknown): boolean {
 }
 
 /**
+ * 长度口径：portal 用 Go 的 `len()` 校验这些字段，即 **UTF-8 字节**。
+ * 前端按字符数限会把「67 个汉字」当成 67，放行后由后端 400 打回，
+ * 而错误文案只有笼统的「名称或描述无效」，所以这里统一按字节判断并给出具体字节数。
+ */
+const byteLength = (value: string): number => new TextEncoder().encode(value).length;
+
+const NAME_MAX_BYTES = 200;
+const DESCRIPTION_MAX_BYTES = 2000;
+const TITLE_MAX_BYTES = 200;
+const URL_MAX_BYTES = 2048;
+/** portal 对正文的字段上限是 1<<20，但对整个 JSON body 也是 1<<20；
+ *  1,000,000 字节给标题与序列化开销留出余量，不会出现「正好卡在边界被 400」。 */
+const CONTENT_MAX_BYTES = 1_000_000;
+
+const byteLimitMessage = (label: string, limit: number, bytes: number): string =>
+  `${t('byteLimitExceeded')}：${label} ${bytes} ${t('byteUnit')} > ${limit} ${t('byteUnit')}`;
+
+/** 表单规则：值不超过 `limit` 字节，超限时报出字段名与当前字节数。 */
+const byteLimitRule = (label: string, limit: number) => ({
+  validator: (_rule: unknown, value: unknown) => {
+    const bytes = byteLength(typeof value === 'string' ? value : '');
+    if (bytes <= limit) return Promise.resolve();
+    return Promise.reject(new Error(byteLimitMessage(label, limit, bytes)));
+  },
+});
+
+/**
+ * portal 的 `validateManagedKnowledgeURL` 拒绝一切非公网字面量地址。这里复刻它的判定集合
+ * （IPv4 私网/环回/链路本地/CGNAT/组播保留、IPv6 环回/唯一本地/链路本地/组播）；
+ * 形如 `intranet.corp` 的域名控制台无法判定，留给 portal 的 DNS 结果兜底。
+ */
+function privateHost(host: string): boolean {
+  // URL 给 IPv6 保留方括号，portal（Go）的 Hostname() 不带。
+  const value = host.replace(/^\[|\]$/g, '').toLowerCase();
+  if (value.includes(':')) {
+    if (
+      value === '::' ||
+      value === '::1' ||
+      /^f[cd]/.test(value) || // fc00::/7 唯一本地
+      /^fe[89ab]/.test(value) || // fe80::/10 链路本地
+      /^ff/.test(value) // 组播
+    )
+      return true;
+    // IPv4-mapped（::ffff:0:0/96）会被 URL 序列化成十六进制，取低 32 位回到 IPv4 判定。
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(value);
+    if (!mapped) return false;
+    const high = Number.parseInt(mapped[1]!, 16);
+    const low = Number.parseInt(mapped[2]!, 16);
+    return privateHost(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
+  }
+  if (!/^[\d.]+$/.test(value)) return false;
+  const parts = value.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [a = 0, b = 0] = parts;
+  return (
+    a === 0 ||
+    a === 10 || // 10/8 私网
+    a === 127 || // 127/8 环回
+    (a === 169 && b === 254) || // 169.254/16 链路本地
+    (a === 172 && b >= 16 && b <= 31) || // 172.16/12 私网
+    (a === 192 && b === 168) || // 192.168/16 私网
+    (a === 100 && b >= 64 && b <= 127) || // 100.64/10 CGNAT
+    a >= 224 // 组播、保留与广播
+  );
+}
+
+/**
+ * 与 portal 的 `validateManagedKnowledgeURL` 同口径的提交前校验：只放行可公开访问的
+ * http(s) 来源。控制台不做 DNS 解析，域名解析到内网 IP 的情况仍由 portal 兜底。
+ */
+function sourceURLError(value: string): CopyKey | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    return 'urlInvalid';
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'urlScheme';
+  if (parsed.username || parsed.password) return 'urlUserInfo';
+  // portal 明确拒绝带 fragment 的地址（fragment 只对浏览器有意义，上游抓不到）。
+  if (parsed.hash) return 'urlFragment';
+  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
+  if (!host) return 'urlInvalid';
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return 'urlPrivateHost';
+  if (privateHost(host)) return 'urlPrivateHost';
+  return null;
+}
+
+/** URL 表单规则：先按字节卡长度（portal 用 len()），再做协议/私网预校验。 */
+const sourceURLRule = {
+  validator: (_rule: unknown, value: unknown) => {
+    const text = typeof value === 'string' ? value : '';
+    if (!text.trim()) return Promise.resolve();
+    const bytes = byteLength(text);
+    if (bytes > URL_MAX_BYTES)
+      return Promise.reject(new Error(byteLimitMessage(t('knowledgeUrl'), URL_MAX_BYTES, bytes)));
+    const problem = sourceURLError(text);
+    return problem ? Promise.reject(new Error(t(problem))) : Promise.resolve();
+  },
+};
+
+/**
  * 原文件预览按类型分流：文本内联渲染，图片用 <img>，PDF 才用 iframe。
  * 页面自身的 CSP 有 frame-ancestors（原来 'none'），把文本/图片塞进 iframe
  * 会被浏览器直接拦成「该内容被屏蔽了」。
@@ -266,6 +377,8 @@ function previewKindOf(fileName: string): PreviewKind | null {
  */
 interface FolderUploadItem {
   readonly key: string;
+  /** 入库归属：队列跨「切库」存在过，没有它会把 A 库挑的文件静默传进 B 库。 */
+  readonly baseId: string;
   readonly label: string;
   readonly relativePath: string;
   readonly file: File;
@@ -325,7 +438,9 @@ export function KnowledgeManagement({
   const [uploading, setUploading] = useState(false);
   const [importKind, setImportKind] = useState<'url' | 'manual' | null>(null);
   const [importing, setImporting] = useState(false);
-  const [documentActionId, setDocumentActionId] = useState<string | null>(null);
+  // 进行中的资料级动作按「行」记账（预览/下载/分块/重解析/启停）。单个全局 id 会在切库、
+  // 或另一行并发操作时把别的行永久锁死（旧实现里那些守卫只判 `documentActionId` 真值）。
+  const [documentActions, setDocumentActions] = useState<readonly string[]>([]);
   const [inspector, setInspector] = useState<
     | {
         readonly title: string;
@@ -396,6 +511,8 @@ export function KnowledgeManagement({
     setDetailTab('documents');
     setPage(1);
     setFiles([]);
+    setFolderQueue([]);
+    setDocumentActions([]);
     setInspector(null);
     setChunksLoading(false);
     setChunkSavingId(null);
@@ -417,6 +534,25 @@ export function KnowledgeManagement({
   const error = baseError ?? detailError ?? docsError;
   const canCreate = readiness?.embeddingModel.state === 'configured';
   const writeBlocked = accessBlocked || !!baseError || !!detailError || uncertainWrite;
+  // 「结果不确定」的写锁必须有复位路径：任意一次 5xx/断网都会置位，而它把编辑/删除/上传/
+  // 导入/开关/分块保存全部锁死。一次成功的读取（列表/详情/文档）说明上游重新可达，就地解锁并告知管理员。
+  const uncertainWriteRef = useRef(false);
+  const markUncertainWrite = () => {
+    uncertainWriteRef.current = true;
+    setUncertainWrite(true);
+  };
+  const clearUncertainWrite = useCallback(() => {
+    if (!uncertainWriteRef.current) return;
+    uncertainWriteRef.current = false;
+    setUncertainWrite(false);
+    setWriteNotice(t('writeRecovered'));
+  }, []);
+
+  const documentActionBusy = (id: string) => documentActions.includes(id);
+  const beginDocumentAction = (id: string) =>
+    setDocumentActions((current) => (current.includes(id) ? current : [...current, id]));
+  const endDocumentAction = (id: string) => setDocumentActions((current) => current.filter((item) => item !== id));
+  const chunkEditorOverLimit = byteLength(chunkEditorText) > CONTENT_MAX_BYTES;
 
   const loadBases = useCallback(
     async (signal?: AbortSignal) => {
@@ -429,6 +565,7 @@ export function KnowledgeManagement({
           if (generation !== listGeneration.current || signal?.aborted) return;
           setBases(items);
           setAccessBlocked(false);
+          clearUncertainWrite();
           setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
         } catch (cause) {
           if (signal?.aborted || generation !== listGeneration.current) return;
@@ -450,7 +587,7 @@ export function KnowledgeManagement({
       };
       await Promise.all([loadList(), loadReadiness()]);
     },
-    [portal],
+    [clearUncertainWrite, portal],
   );
 
   useEffect(() => {
@@ -462,6 +599,23 @@ export function KnowledgeManagement({
     };
   }, [loadBases]);
 
+  const loadDetail = useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      setDetailError(null);
+      try {
+        const base = await portal.getManagedKnowledgeBase(id, signal);
+        if (signal?.aborted) return;
+        setDetail(base);
+        clearUncertainWrite();
+      } catch (cause) {
+        if (signal?.aborted) return;
+        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+        setDetailError(knowledgeErrorText(cause));
+      }
+    },
+    [clearUncertainWrite, portal],
+  );
+
   useEffect(() => {
     if (!selectedId) {
       setDetail(null);
@@ -470,20 +624,9 @@ export function KnowledgeManagement({
     }
     const controller = new AbortController();
     setDetail(null);
-    setDetailError(null);
-    void portal
-      .getManagedKnowledgeBase(selectedId, controller.signal)
-      .then((base) => {
-        if (!controller.signal.aborted) setDetail(base);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-          setDetailError(knowledgeErrorText(cause));
-        }
-      });
+    void loadDetail(selectedId, controller.signal);
     return () => controller.abort();
-  }, [portal, selectedId]);
+  }, [loadDetail, selectedId]);
 
   useEffect(() => {
     chunkRequestGeneration.current += 1;
@@ -493,6 +636,10 @@ export function KnowledgeManagement({
     setChunkSavingId(null);
     setChunkEditor(null);
     setChunkEditorText('');
+    // 切库时必须清空队列与进行中的资料动作：它们属于上一个知识库，留着既会写错库，
+    // 也会让新库的行显示上一个库残留的忙碌/锁状态。
+    setFolderQueue([]);
+    setDocumentActions((current) => (current.length === 0 ? current : []));
   }, [selectedId]);
 
   useEffect(() => {
@@ -521,6 +668,7 @@ export function KnowledgeManagement({
         if (generation !== docGeneration.current || signal?.aborted) return;
         setDocs(result);
         setDocsContext(`${selectedId}:${page}:${search}`);
+        clearUncertainWrite();
         if (result.data.some((item) => pollable.has(item.parse_status))) {
           pollRounds.current += 1;
           setPollTick(pollRounds.current);
@@ -533,7 +681,7 @@ export function KnowledgeManagement({
         if (generation === docGeneration.current && !signal?.aborted) setDocsLoading(false);
       }
     },
-    [docsRefresh, page, portal, search, selectedId],
+    [clearUncertainWrite, docsRefresh, page, portal, search, selectedId],
   );
 
   const [pollTick, setPollTick] = useState(0);
@@ -569,6 +717,15 @@ export function KnowledgeManagement({
     };
   }, [hasActiveDocs, loadDocuments, pollTick, selectedId]);
 
+  // 详情页那条横幅合并了列表/详情/文档三种读取错误，重试必须重放**失败的那一个**请求：
+  // 旧实现一律调 loadBases()，详情读取失败时既没重试、detailError 也永不清除，整页一直只读。
+  const retryFailed = () => {
+    if (baseError) return void loadBases();
+    if (detailError && selectedId) return void loadDetail(selectedId);
+    if (docsError) return void loadDocuments();
+    return void loadBases();
+  };
+
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
@@ -601,7 +758,7 @@ export function KnowledgeManagement({
       if (!editing) setSelectedId(result.data.id);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
@@ -622,7 +779,7 @@ export function KnowledgeManagement({
       await loadBases();
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
@@ -651,7 +808,7 @@ export function KnowledgeManagement({
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
@@ -661,6 +818,8 @@ export function KnowledgeManagement({
   };
 
   const queueFolderFiles = (entries: readonly UploadFile[]) => {
+    const targetBase = selectedId;
+    if (!targetBase) return;
     const items = entries
       .map((entry, index): FolderUploadItem | null => {
         const file = entry.originFileObj;
@@ -668,6 +827,7 @@ export function KnowledgeManagement({
         const relativePath = (file as File & { readonly webkitRelativePath?: string }).webkitRelativePath ?? '';
         return {
           key: entry.uid || `folder-${index}-${relativePath || file.name}`,
+          baseId: targetBase,
           label: relativePath || file.name,
           relativePath,
           file,
@@ -695,7 +855,9 @@ export function KnowledgeManagement({
 
   const runFolderUpload = async (items: readonly FolderUploadItem[]) => {
     const baseId = selectedId;
-    if (!baseId || items.length === 0 || folderUploading) return;
+    // 只上传属于当前知识库的条目：队列里可能还留着别的库挑的文件（切库时也会被清空，这里是兜底）。
+    const targets = baseId ? items.filter((item) => item.baseId === baseId) : [];
+    if (!baseId || targets.length === 0 || folderUploading) return;
     setFolderUploading(true);
     setWriteNotice(null);
     let cursor = 0;
@@ -703,7 +865,7 @@ export function KnowledgeManagement({
     let failed = 0;
     const worker = async () => {
       for (;;) {
-        const item = items[cursor];
+        const item = targets[cursor];
         cursor += 1;
         if (!item) return;
         setFolderQueue((current) =>
@@ -722,7 +884,7 @@ export function KnowledgeManagement({
         } catch (cause) {
           failed += 1;
           if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-          if (isUncertain(cause)) setUncertainWrite(true);
+          if (isUncertain(cause)) markUncertainWrite();
           setFolderQueue((current) =>
             current.map((entry) =>
               entry.key === item.key ? { ...entry, status: 'failed', detail: knowledgeErrorText(cause) } : entry,
@@ -731,10 +893,10 @@ export function KnowledgeManagement({
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(FOLDER_UPLOAD_CONCURRENCY, items.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(FOLDER_UPLOAD_CONCURRENCY, targets.length) }, worker));
     setFolderUploading(false);
     setWriteNotice(
-      `${t('folderAccepted')} ${accepted} · ${t('folderFailed')} ${failed} · ${items.length} ${t('folderFiles')}`,
+      `${t('folderAccepted')} ${accepted} · ${t('folderFailed')} ${failed} · ${targets.length} ${t('folderFiles')}`,
     );
     pollRounds.current = 0;
     setPollTick(0);
@@ -770,7 +932,7 @@ export function KnowledgeManagement({
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
@@ -783,8 +945,8 @@ export function KnowledgeManagement({
     document: ManagedKnowledgeDocument,
     action: 'reparse' | 'cancel-parse' | 'delete',
   ) => {
-    if (writeBlocked || uploading || importing || documentActionId) return;
-    setDocumentActionId(document.id);
+    if (writeBlocked || uploading || importing || documentActionBusy(document.id)) return;
+    beginDocumentAction(document.id);
     setWriteNotice(null);
     try {
       const result = await portal.runManagedKnowledgeDocumentAction(document.id, action);
@@ -794,18 +956,18 @@ export function KnowledgeManagement({
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
-      setDocumentActionId(null);
+      endDocumentAction(document.id);
     }
   };
 
   const setDocumentEnabled = async (document: ManagedKnowledgeDocument, enabled: boolean) => {
-    if (writeBlocked || uploading || importing || documentActionId) return;
-    setDocumentActionId(document.id);
+    if (writeBlocked || uploading || importing || documentActionBusy(document.id)) return;
+    beginDocumentAction(document.id);
     setWriteNotice(null);
     const requestContext = queryContext;
     try {
@@ -822,12 +984,12 @@ export function KnowledgeManagement({
       );
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
       );
     } finally {
-      setDocumentActionId(null);
+      endDocumentAction(document.id);
     }
   };
 
@@ -863,7 +1025,7 @@ export function KnowledgeManagement({
     });
     chunkImageRequests.current.clear();
     const generation = ++chunkRequestGeneration.current;
-    setDocumentActionId(document.id);
+    beginDocumentAction(document.id);
     try {
       if (kind === 'chunks') {
         setChunksLoading(true);
@@ -888,10 +1050,10 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       setWriteNotice(knowledgeErrorText(cause));
     } finally {
-      if (generation === chunkRequestGeneration.current) {
-        setChunksLoading(false);
-        setDocumentActionId(null);
-      }
+      // 行锁必须无条件释放：旧实现只在代次相同时解锁，切库/关弹窗（代次已被推进）时
+      // 会把 documentActionId 永久留在这一行上，之后所有资料动作都被真值守卫静默吞掉。
+      endDocumentAction(document.id);
+      if (generation === chunkRequestGeneration.current) setChunksLoading(false);
     }
   };
 
@@ -955,7 +1117,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (saveGeneration !== chunkSaveGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) setUncertainWrite(true);
+      if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
       );
@@ -1004,7 +1166,7 @@ export function KnowledgeManagement({
       }
       // 未命中：先按固定尺寸开弹窗占位，内容到位再填。
       setPreview({ kind: previewKind, url: '', name, loading: true });
-      setDocumentActionId(document.id);
+      beginDocumentAction(document.id);
       try {
         const blob = await portal.getManagedKnowledgeFile(document.id, 'preview');
         // 文本直接读正文，不需要 object URL；图片/PDF 才建 blob: 链接。
@@ -1027,11 +1189,11 @@ export function KnowledgeManagement({
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
         setWriteNotice(knowledgeErrorText(cause));
       } finally {
-        setDocumentActionId(null);
+        endDocumentAction(document.id);
       }
       return;
     }
-    setDocumentActionId(document.id);
+    beginDocumentAction(document.id);
     try {
       const blob = await portal.getManagedKnowledgeFile(document.id, kind);
       const url = URL.createObjectURL(blob);
@@ -1048,7 +1210,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       setWriteNotice(knowledgeErrorText(cause));
     } finally {
-      setDocumentActionId(null);
+      endDocumentAction(document.id);
     }
   };
 
@@ -1090,7 +1252,7 @@ export function KnowledgeManagement({
       render: (value: string | undefined, row: ManagedKnowledgeDocument) => {
         const completed = row.parse_status === 'completed';
         const enabled = completed ? value === 'enabled' : row.manual_disabled === true;
-        const actionBusy = documentActionId === row.id;
+        const actionBusy = documentActionBusy(row.id);
         const label = completed ? (enabled ? t('disableDocument') : t('enableDocument')) : t('keepDisabledAfterParse');
         return (
           <Space>
@@ -1105,7 +1267,7 @@ export function KnowledgeManagement({
                 writeBlocked ||
                 uploading ||
                 importing ||
-                !!documentActionId ||
+                actionBusy ||
                 (!completed && (row.manual_disabled === undefined || enabled))
               }
               onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
@@ -1125,7 +1287,7 @@ export function KnowledgeManagement({
       key: 'actions',
       fixed: 'right' as const,
       render: (_: unknown, row: ManagedKnowledgeDocument) => {
-        const actionBusy = documentActionId === row.id;
+        const actionBusy = documentActionBusy(row.id);
         const canCancel = ['pending', 'processing', 'finalizing'].includes(row.parse_status);
         const writesDisabled = writeBlocked || actionBusy || uploading || importing;
         const moreItems: MenuProps['items'] = [
@@ -1301,7 +1463,7 @@ export function KnowledgeManagement({
                     showIcon
                     title={error}
                     action={
-                      <Button size="small" onClick={() => void loadBases()}>
+                      <Button size="small" onClick={retryFailed}>
                         {t('retry')}
                       </Button>
                     }
@@ -1643,12 +1805,19 @@ export function KnowledgeManagement({
           <Form.Item
             name="name"
             label={t('name')}
-            rules={[{ required: true, whitespace: true, message: t('nameRequired') }]}
+            rules={[
+              { required: true, whitespace: true, message: t('nameRequired') },
+              byteLimitRule(t('name'), NAME_MAX_BYTES),
+            ]}
           >
-            <Input maxLength={200} />
+            <Input maxLength={NAME_MAX_BYTES} />
           </Form.Item>
-          <Form.Item name="description" label={t('descriptionField')}>
-            <Input.TextArea rows={3} maxLength={2000} />
+          <Form.Item
+            name="description"
+            label={t('descriptionField')}
+            rules={[byteLimitRule(t('descriptionField'), DESCRIPTION_MAX_BYTES)]}
+          >
+            <Input.TextArea rows={3} maxLength={DESCRIPTION_MAX_BYTES} />
           </Form.Item>
         </Form>
       </Modal>
@@ -1667,11 +1836,15 @@ export function KnowledgeManagement({
         <Form form={importForm} layout="vertical" preserve={false}>
           {importKind === 'url' ? (
             <>
-              <Form.Item name="url" label={t('knowledgeUrl')} rules={[{ required: true, type: 'url', max: 2048 }]}>
-                <Input type="url" maxLength={2048} />
+              <Form.Item name="url" label={t('knowledgeUrl')} rules={[{ required: true }, sourceURLRule]}>
+                <Input type="url" maxLength={URL_MAX_BYTES} />
               </Form.Item>
-              <Form.Item name="title" label={t('knowledgeTitle')} rules={[{ max: 200 }]}>
-                <Input maxLength={200} />
+              <Form.Item
+                name="title"
+                label={t('knowledgeTitle')}
+                rules={[byteLimitRule(t('knowledgeTitle'), TITLE_MAX_BYTES)]}
+              >
+                <Input maxLength={TITLE_MAX_BYTES} />
               </Form.Item>
             </>
           ) : (
@@ -1679,16 +1852,16 @@ export function KnowledgeManagement({
               <Form.Item
                 name="title"
                 label={t('knowledgeTitle')}
-                rules={[{ required: true, whitespace: true, max: 200 }]}
+                rules={[{ required: true, whitespace: true }, byteLimitRule(t('knowledgeTitle'), TITLE_MAX_BYTES)]}
               >
-                <Input maxLength={200} />
+                <Input maxLength={TITLE_MAX_BYTES} />
               </Form.Item>
               <Form.Item
                 name="content"
                 label={t('knowledgeContent')}
-                rules={[{ required: true, whitespace: true, max: 1_000_000 }]}
+                rules={[{ required: true, whitespace: true }, byteLimitRule(t('knowledgeContent'), CONTENT_MAX_BYTES)]}
               >
-                <Input.TextArea rows={10} maxLength={1_000_000} showCount />
+                <Input.TextArea rows={10} maxLength={CONTENT_MAX_BYTES} showCount />
               </Form.Item>
             </>
           )}
@@ -1817,7 +1990,9 @@ export function KnowledgeManagement({
         onCancel={() => setChunkEditor(null)}
         onOk={() => chunkEditor && void saveChunk(chunkEditor, { content: chunkEditorText })}
         confirmLoading={chunkSavingId === chunkEditor?.id}
-        okButtonProps={{ disabled: writeBlocked || uncertainWrite || !chunkEditorText.trim() }}
+        okButtonProps={{
+          disabled: writeBlocked || uncertainWrite || !chunkEditorText.trim() || chunkEditorOverLimit,
+        }}
         okText={t('save')}
         cancelText={t('cancel')}
         destroyOnHidden
@@ -1825,11 +2000,18 @@ export function KnowledgeManagement({
         <Typography.Text type="secondary">
           {t('chunkRevision')}: {chunkEditor?.content_revision}
         </Typography.Text>
+        {chunkEditorOverLimit && (
+          <Alert
+            type="warning"
+            showIcon
+            title={byteLimitMessage(t('chunkContent'), CONTENT_MAX_BYTES, byteLength(chunkEditorText))}
+          />
+        )}
         <Input.TextArea
           value={chunkEditorText}
           onChange={(event) => setChunkEditorText(event.target.value)}
           rows={10}
-          maxLength={1_000_000}
+          maxLength={CONTENT_MAX_BYTES}
           showCount
         />
       </Modal>

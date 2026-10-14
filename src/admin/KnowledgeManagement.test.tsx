@@ -1133,4 +1133,211 @@ describe('KnowledgeManagement component state', () => {
     },
     TIMEOUT,
   );
+
+  // 断网/5xx 之后的「结果不确定」写锁必须能靠一次成功读取复位：否则编辑、删除、上传、
+  // 导入、开关、分块保存会永久禁用，连点「刷新」也回不来。
+  test('re-enables write actions after a successful refresh once a write result was uncertain', async () => {
+    const upload = vi.fn().mockRejectedValue(new Error('connection interrupted'));
+    const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
+    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    const input = container.querySelector('input[type="file"]');
+    expect(input).not.toBeNull();
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['notes'], 'notes.txt', { type: 'text/plain' })],
+    });
+    fireEvent.change(input!);
+    fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
+
+    expect(await screen.findByText(/操作结果暂不确定/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /上传文档/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /编辑/ })).toBeDisabled();
+
+    // 刷新成功 = 上游重新可达：解锁并告知管理员已恢复。
+    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'statusRefresh') }));
+
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeWriteRecovered'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /上传文档/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /编辑/ })).toBeEnabled();
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  // 资料级动作按行记账：上一个库在途的请求不能把新库的行锁住，切库时也必须清干净残留状态。
+  test('keeps document actions usable after an in-flight request from another knowledge base', async () => {
+    const other = { ...base, id: 'kb-test-2', name: 'Second base' };
+    const docA = { ...lifecycleDocument('failed'), id: 'doc-alpha', name: 'Alpha guide', file_name: 'alpha.txt' };
+    const docB = { ...lifecycleDocument('failed'), id: 'doc-beta', name: 'Beta guide', file_name: 'beta.txt' };
+    const runAction = vi.fn().mockResolvedValue({ operationId: 'kbop-doc-action' });
+    const portal = makePortal({
+      listManagedKnowledgeBases: vi.fn().mockResolvedValue([base, other]),
+      getManagedKnowledgeBase: vi
+        .fn()
+        .mockImplementation((id: string) => Promise.resolve(id === other.id ? other : base)),
+      listManagedKnowledgeDocuments: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve({ data: id === other.id ? [docB] : [docA], total: 1, page: 1, pageSize: 10 }),
+        ),
+      // 分块读取一直不返回：模拟「上一个库的请求还在途时切库」。
+      listManagedKnowledgeChunks: vi.fn(() => new Promise<never>(() => {})),
+      runManagedKnowledgeDocumentAction: runAction,
+    });
+    const view = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByText('Alpha guide')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /分块与来源/ }));
+
+    const showBase = (id: string) =>
+      view.rerender(
+        <ConfigProvider wave={{ disabled: true }}>
+          <KnowledgeManagement portal={portal} baseId={id} />
+        </ConfigProvider>,
+      );
+
+    showBase(other.id);
+    expect(await screen.findByText('Beta guide')).toBeInTheDocument();
+    // 别的行不能被上一行的在途动作静默吞掉（旧实现里守卫只判 documentActionId 真值）。
+    fireEvent.click(screen.getByRole('menuitem', { name: /重新解析/ }));
+    await waitFor(() => expect(runAction).toHaveBeenCalledWith(docB.id, 'reparse'));
+
+    // 切回原库：那一行的行锁已被切库清掉，不再显示残留的忙碌状态。
+    showBase(base.id);
+    expect(await screen.findByText('Alpha guide')).toBeInTheDocument();
+    const alphaRow = screen.getByText('Alpha guide').closest('tr')!;
+    expect(within(alphaRow).getByRole('switch').className).not.toContain('ant-switch-loading');
+  });
+
+  // 详情横幅的「重试」必须重放失败的那个请求，并在成功后清掉 detailError（否则整页一直只读）。
+  test('retries the failed detail read instead of reloading the base list', async () => {
+    const getBase = vi.fn().mockRejectedValueOnce(new PortalError(503, '知识库详情读取失败')).mockResolvedValue(base);
+    const portal = makePortal({ getManagedKnowledgeBase: getBase });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+
+    expect(await screen.findByText('知识库详情读取失败')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeRetryRead') }));
+
+    await waitFor(() => expect(getBase).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('知识库详情读取失败')).not.toBeInTheDocument());
+    expect(portal.listManagedKnowledgeBases).toHaveBeenCalledTimes(1);
+  });
+
+  // 文件夹队列必须带库归属：切库就丢弃，绝不能把 A 库挑的文件静默传进 B 库。
+  test('drops the queued folder upload when the knowledge base changes', async () => {
+    const other = { ...base, id: 'kb-test-2', name: 'Second base' };
+    const upload = vi.fn().mockResolvedValue({
+      data: {
+        id: 'doc-folder',
+        knowledge_base_id: other.id,
+        name: 'spec.txt',
+        file_name: 'spec.txt',
+        parse_status: 'pending',
+        created_at: '2026-10-13T00:00:00Z',
+      },
+      operationId: 'kbop-folder',
+    });
+    const portal = makePortal({
+      listManagedKnowledgeBases: vi.fn().mockResolvedValue([base, other]),
+      getManagedKnowledgeBase: vi
+        .fn()
+        .mockImplementation((id: string) => Promise.resolve(id === other.id ? other : base)),
+      uploadManagedKnowledgeDocument: upload,
+    });
+    const view = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
+    const file = new File(['spec'], 'spec.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'docs/spec.txt' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+    fireEvent.change(picker);
+    expect(await screen.findByText('docs/spec.txt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /上传文件夹 \(1\)/ })).toBeInTheDocument();
+
+    view.rerender(
+      <ConfigProvider wave={{ disabled: true }}>
+        <KnowledgeManagement portal={portal} baseId={other.id} />
+      </ConfigProvider>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Second base' })).toBeInTheDocument();
+
+    expect(screen.queryByText('docs/spec.txt')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeUploadFolder') })).toBeDisabled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  // 403 也可能是租户/部署错配（portal 用 403 + code 返回）：先按 code 映射，不能一律说成「没有权限」。
+  test('maps a 403 with a recognizable code to its configuration message', async () => {
+    const portal = makePortal({
+      getManagedKnowledgeBase: vi.fn().mockRejectedValue(new PortalError(403, '上游拒绝', 'KNOWLEDGE_TENANT_MISMATCH')),
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeTenantMismatchManaged'))).toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).not.toBeInTheDocument();
+  });
+
+  // portal 用 Go 的 len() 校验（UTF-8 字节）：67 个汉字就是 201 字节，前端必须同口径拦下并说清字段与字节数。
+  test('rejects base fields over the server byte limits with the offending field and size', async () => {
+    const name = '知'.repeat(66);
+    const create = vi
+      .fn()
+      .mockResolvedValue({ data: { ...base, id: 'kb-created-bytes', name }, operationId: 'kbop-bytes' });
+    const portal = makePortal({ createManagedKnowledgeBase: create });
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
+    expect(await screen.findByText('Research')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /新建知识库/ }));
+    const dialog = screen.getByRole('dialog');
+    const nameInput = within(dialog).getByLabelText('名称');
+    fireEvent.change(nameInput, { target: { value: '知'.repeat(67) } });
+    fireEvent.change(within(dialog).getByLabelText('描述'), { target: { value: '描述' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
+
+    expect(await screen.findByText(/超出长度上限/)).toBeInTheDocument();
+    expect(screen.getByText(/名称 201 字节/)).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+
+    fireEvent.change(nameInput, { target: { value: name } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ name });
+  });
+
+  // URL 导入的后端口径：只放行可公开访问的 http(s)，拒 ftp、拒 userinfo、拒本机/内网。
+  test('pre-validates an imported URL against the portal rules before submitting', async () => {
+    const importURL = vi.fn().mockResolvedValue({
+      data: { id: 'doc-url', knowledge_base_id: base.id, name: 'URL item', file_name: '', parse_status: 'pending' },
+      operationId: 'kbop-url-import',
+    });
+    const portal = makePortal({ importManagedKnowledgeURL: importURL });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /导入 URL/ })[0]!);
+    const dialog = screen.getByRole('dialog');
+    const urlInput = within(dialog).getByLabelText('来源 URL');
+    const submit = () => fireEvent.click(within(dialog).getByRole('button', { name: /导\s*入/ }));
+
+    fireEvent.change(urlInput, { target: { value: 'ftp://files.example.test/a.txt' } });
+    submit();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeURLScheme'))).toBeInTheDocument();
+
+    fireEvent.change(urlInput, { target: { value: 'https://user:pw@example.test/guide' } });
+    submit();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeURLUserInfo'))).toBeInTheDocument();
+
+    fireEvent.change(urlInput, { target: { value: 'http://[::ffff:127.0.0.1]/private' } });
+    submit();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeURLPrivateHost'))).toBeInTheDocument();
+
+    fireEvent.change(urlInput, { target: { value: 'http://kb.localhost/guide' } });
+    submit();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeURLPrivateHost'))).toBeInTheDocument();
+    expect(importURL).not.toHaveBeenCalled();
+
+    fireEvent.change(urlInput, { target: { value: 'https://docs.example.test/guide' } });
+    submit();
+    await waitFor(() => expect(importURL).toHaveBeenCalledWith(base.id, { url: 'https://docs.example.test/guide' }));
+  });
 });

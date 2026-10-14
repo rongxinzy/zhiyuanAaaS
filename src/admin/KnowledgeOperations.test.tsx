@@ -258,8 +258,12 @@ describe('KnowledgeOperations', () => {
     fireEvent.change(editor.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeFAQQuestion')), {
       target: { value: 'A new question?' },
     });
-    fireEvent.change(editor.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')), {
-      target: { value: 'A new answer.' },
+    fireEvent.change(editor.getByLabelText(`${translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')} 1`), {
+      target: { value: 'A new answer.\nSecond line of the same answer.' },
+    });
+    fireEvent.click(editor.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeFAQAddAnswer') }));
+    fireEvent.change(editor.getByLabelText(`${translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')} 2`), {
+      target: { value: 'A second answer.' },
     });
     fireEvent.click(editor.getByRole('button', { name: 'OK' }));
     await waitFor(() =>
@@ -268,7 +272,8 @@ describe('KnowledgeOperations', () => {
         null,
         expect.objectContaining({
           standard_question: 'A new question?',
-          answers: ['A new answer.'],
+          // 上游 answers 是「多条答案」：一条答案内的换行原样保留，不拆成多条。
+          answers: ['A new answer.\nSecond line of the same answer.', 'A second answer.'],
         }),
       ),
     );
@@ -308,12 +313,22 @@ describe('KnowledgeOperations', () => {
     });
     fireEvent.click(within(row).getByRole('button', { name: labelPattern('knowledgeEdit') }));
 
+    // 列表必须完整渲染全部答案（含每条答案内部的换行），而不是只显示第一条。
+    const rowText = row.textContent ?? '';
+    expect(rowText).toContain(entry.answers[0]!);
+    expect(rowText).toContain(entry.answers[1]!);
+
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
     if (!dialog) throw new Error('FAQ editor dialog did not open');
     const editor = within(dialog);
-    expect(editor.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer'))).toHaveValue(entry.answers[0]);
+    // 编辑必须完整回填全部答案（含每条答案内部的换行）。
+    expect(editor.getByLabelText(`${translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')} 1`)).toHaveValue(entry.answers[0]);
+    expect(editor.getByLabelText(`${translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')} 2`)).toHaveValue(entry.answers[1]);
     fireEvent.change(editor.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeFAQQuestion')), {
       target: { value: 'Updated question?' },
+    });
+    fireEvent.change(editor.getByLabelText(`${translate(ADMIN_LANGUAGE, 'knowledgeFAQAnswer')} 2`), {
+      target: { value: 'Edited secondary answer.\nStill two lines.' },
     });
     await act(async () => {
       fireEvent.click(editor.getByRole('button', { name: 'OK' }));
@@ -322,7 +337,7 @@ describe('KnowledgeOperations', () => {
           standard_question: 'Updated question?',
           similar_questions: entry.similar_questions,
           negative_questions: entry.negative_questions,
-          answers: entry.answers,
+          answers: [entry.answers[0], 'Edited secondary answer.\nStill two lines.'],
           answer_strategy: entry.answer_strategy,
           tag_id: entry.tag_id,
           is_enabled: entry.is_enabled,
@@ -367,7 +382,45 @@ describe('KnowledgeOperations', () => {
     fireEvent.click(screen.getByRole('button', { name: labelPattern('knowledgeFAQSetTags') }));
     await waitFor(() => expect(portal.updateManagedKnowledgeFAQTags).toHaveBeenCalledWith('kb-1', { 10: null }));
     fireEvent.click(screen.getByRole('button', { name: labelPattern('knowledgeFAQDeleteAll') }));
+    expect(portal.deleteManagedKnowledgeFAQEntries).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'OK' }));
     await waitFor(() => expect(portal.deleteManagedKnowledgeFAQEntries).toHaveBeenCalledWith('kb-1', [10]));
+  });
+
+  test('deleting the FAQ page requires a confirmation that states the affected count', async () => {
+    const entries = [10, 11].map((id) => ({
+      id,
+      knowledge_id: 'doc-1',
+      knowledge_base_id: 'kb-1',
+      tag_id: 0,
+      tag_name: '',
+      is_enabled: true,
+      is_recommended: false,
+      standard_question: `Question ${id}?`,
+      similar_questions: [],
+      negative_questions: [],
+      answers: [`Answer ${id}.`],
+      answer_strategy: '',
+      updated_at: '',
+      created_at: '',
+    }));
+    const portal = makePortal({
+      listManagedKnowledgeFAQ: vi.fn().mockResolvedValue({ data: entries, total: 2, page: 1, page_size: 20 }),
+    });
+    renderOperations(portal);
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+    expect(await screen.findByText('Question 10?')).toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: labelPattern('knowledgeFAQDeleteAll') });
+    fireEvent.click(trigger);
+    // 未点确认前不得发出删除请求。
+    expect(portal.deleteManagedKnowledgeFAQEntries).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeFAQDeleteAllConfirm').replace('{count}', '2')),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitFor(() => expect(portal.deleteManagedKnowledgeFAQEntries).toHaveBeenCalledWith('kb-1', [10, 11]));
   });
 
   test('renames a folder through the fixed folder endpoint', async () => {
