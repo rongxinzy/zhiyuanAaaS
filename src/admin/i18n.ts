@@ -336,8 +336,14 @@ const translations = {
     knowledgeGrantTeam: '团队',
     knowledgeGrantId: '主体 ID',
     knowledgeGrantBy: '授权人',
-    knowledgeGrantUserId: '输入用户 ID',
-    knowledgeGrantTeamId: '输入团队 ID',
+    knowledgeGrantUserSelect: '选择用户',
+    knowledgeGrantTeamSelect: '选择团队',
+    knowledgeGrantNoUserMatch: '没有匹配的用户',
+    knowledgeGrantNoTeamMatch: '没有匹配的团队',
+    knowledgeGrantUnknownSubject: '未知主体',
+    knowledgeGrantUnknownHint:
+      '标为「未知主体」的授权没有出现在候选清单里：可能是历史数据，也可能只是候选清单本身不完整。保存时服务端会逐个校验主体，若被拒绝请先移除这些行再保存。',
+    knowledgeGrantSubjectsIncomplete: '候选清单未能完整加载',
     knowledgeGrantAddUser: '添加用户',
     knowledgeGrantAddTeam: '添加团队',
     knowledgeGrantRemove: '移除',
@@ -512,6 +518,8 @@ const translations = {
     knowledgeUpstreamInvalidManaged:
       '知识库服务未提供该操作需要的接口（多为版本过旧），升级知识库服务后再重试；操作编号可用于核对。',
     knowledgeLoginExpired: '登录状态已过期，请重新登录后继续。',
+    knowledgePreviewUnavailable:
+      '未在框架中打开：服务端返回的内容类型不是 PDF，已停止渲染以避免执行非预期内容。可改用下载查看。',
     knowledgeCancel: '取消',
     knowledgeSave: '保存',
     digitalEmployeesDescription: '申请、管理数字员工，并直接进入对话。',
@@ -1523,8 +1531,14 @@ const translations = {
     knowledgeGrantTeam: 'Team',
     knowledgeGrantId: 'Subject ID',
     knowledgeGrantBy: 'Granted by',
-    knowledgeGrantUserId: 'Enter user ID',
-    knowledgeGrantTeamId: 'Enter team ID',
+    knowledgeGrantUserSelect: 'Select user',
+    knowledgeGrantTeamSelect: 'Select team',
+    knowledgeGrantNoUserMatch: 'No matching user',
+    knowledgeGrantNoTeamMatch: 'No matching team',
+    knowledgeGrantUnknownSubject: 'Unknown subject',
+    knowledgeGrantUnknownHint:
+      'Grants tagged "Unknown subject" are missing from the candidate list: either stale rows or an incomplete list. The server validates every subject on save, so remove these rows if saving is rejected.',
+    knowledgeGrantSubjectsIncomplete: 'Candidate list loaded only partially',
     knowledgeGrantAddUser: 'Add user',
     knowledgeGrantAddTeam: 'Add team',
     knowledgeGrantRemove: 'Remove',
@@ -1704,6 +1718,8 @@ const translations = {
     knowledgeUpstreamInvalidManaged:
       'The knowledge service does not expose the API this action needs (usually an older build); upgrade it and retry. Quote the operation id when checking.',
     knowledgeLoginExpired: 'Your session has expired. Sign in again to continue.',
+    knowledgePreviewUnavailable:
+      'Not framed: the server did not return the PDF content type, so rendering was stopped to avoid executing unexpected content. Download the file instead.',
     knowledgeCancel: 'Cancel',
     knowledgeSave: 'Save',
     digitalEmployeesDescription: 'Apply for and manage digital employees, then chat with them.',

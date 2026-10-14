@@ -10,11 +10,13 @@ const securityHeaders = {
   'Content-Security-Policy': [
     "default-src 'self'",
     "base-uri 'none'",
+    // dev 保留 ws/wss 供 HMR 连接，其余与生产 serve-admin.mjs 保持一致。
     "connect-src 'self' ws: wss:",
     "font-src 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
-    "img-src 'self' data:",
+    "frame-ancestors 'self'",
+    "frame-src 'self' blob:",
+    "img-src 'self' data: blob:",
     "object-src 'none'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",

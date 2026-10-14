@@ -871,7 +871,7 @@ describe('KnowledgeManagement component state', () => {
       vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-pdf');
       const portal = makePortal({
         listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [pdf], total: 1, page: 1, pageSize: 10 }),
-        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['%PDF-1.4'])),
+        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' })),
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Manual')).toBeInTheDocument();
@@ -904,6 +904,156 @@ describe('KnowledgeManagement component state', () => {
     },
     TIMEOUT,
   );
+
+  test(
+    'refuses to frame a PDF original whose blob is not application/pdf',
+    async () => {
+      const pdf = { ...lifecycleDocument('completed'), id: 'doc-fake-pdf', name: 'Manual', file_name: 'manual.pdf' };
+      const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake');
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [pdf], total: 1, page: 1, pageSize: 10 }),
+        // 服务端声称是 PDF，却回了 HTML：控制台不能把它塞进 iframe 当文档执行。
+        getManagedKnowledgeFile: vi.fn().mockResolvedValue(new Blob(['<html>oops</html>'], { type: 'text/html' })),
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Manual')).toBeInTheDocument();
+      fireEvent.click(within(screen.getByText('Manual').closest('tr')!).getByRole('button', { name: /预览/ }));
+      expect(await screen.findByText(/未在框架中打开/, undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      expect(screen.queryByTitle('manual.pdf')).not.toBeInTheDocument();
+      expect(createObjectUrl).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'does not reopen the preview modal when an in-flight response lands after close',
+    async () => {
+      const doc = lifecycleDocument('failed');
+      let resolveFile!: (blob: Blob) => void;
+      const getFile = vi.fn(
+        () =>
+          new Promise<Blob>((resolve) => {
+            resolveFile = resolve;
+          }),
+      );
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: getFile,
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
+      fireEvent.click(within(screen.getByText('Lifecycle guide').closest('tr')!).getByRole('button', { name: /预览/ }));
+      await waitFor(() => expect(getFile).toHaveBeenCalledTimes(1));
+      // 关闭弹窗：此时请求还在途。
+      fireEvent.click(document.querySelector('.ant-modal-close')!);
+      await waitFor(() => expect(screen.queryByText('original')).not.toBeInTheDocument());
+      // 在途响应此刻才到，不能把弹窗重新弹开。
+      await act(async () => {
+        resolveFile(new Blob(['original'], { type: 'text/plain' }));
+      });
+      expect(screen.queryByText('original')).not.toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'keeps the cached original when an older in-flight preview finishes later',
+    async () => {
+      const docA = { ...lifecycleDocument('failed'), id: 'doc-alpha', name: 'Alpha doc', file_name: 'alpha.txt' };
+      const docB = { ...lifecycleDocument('failed'), id: 'doc-beta', name: 'Beta doc', file_name: 'beta.txt' };
+      let resolveA!: (blob: Blob) => void;
+      const getFile = vi.fn((id: string) => {
+        if (id === docA.id)
+          return new Promise<Blob>((resolve) => {
+            resolveA = resolve;
+          });
+        return Promise.resolve(new Blob(['beta-content'], { type: 'text/plain' }));
+      });
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi
+          .fn()
+          .mockResolvedValue({ data: [docA, docB], total: 2, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: getFile,
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Beta doc')).toBeInTheDocument();
+      const rowUi = (name: string) => within(screen.getByText(name).closest('tr')!);
+      // 先把 B 缓存下来。
+      fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
+      expect(await screen.findByText('beta-content', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      // 再点 A：请求在途，弹窗先占位。
+      fireEvent.click(rowUi('Alpha doc').getByRole('button', { name: /预览/ }));
+      await waitFor(() => expect(getFile).toHaveBeenCalledWith(docA.id, 'preview'));
+      // 回到已缓存的 B。
+      fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
+      expect(await screen.findByText('beta-content', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      // A 迟到：不能把 B 盖回去。
+      await act(async () => {
+        resolveA(new Blob(['alpha-content'], { type: 'text/plain' }));
+      });
+      expect(screen.getByText('beta-content')).toBeInTheDocument();
+      expect(screen.queryByText('alpha-content')).not.toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'revokes the replaced blob URL when the same document is previewed concurrently',
+    async () => {
+      const doc = { ...lifecycleDocument('completed'), id: 'doc-concurrent', name: 'Manual', file_name: 'manual.pdf' };
+      const created = ['blob:first', 'blob:second'];
+      const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => created.shift()!);
+      const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      let resolveFirst!: (blob: Blob) => void;
+      const getFile = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<Blob>((resolve) => {
+              resolveFirst = resolve;
+            }),
+        )
+        .mockImplementationOnce(() => Promise.resolve(new Blob(['%PDF-2.0'], { type: 'application/pdf' })));
+      const portal = makePortal({
+        listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+        getManagedKnowledgeFile: getFile,
+      });
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      expect(await screen.findByText('Manual')).toBeInTheDocument();
+      const rowUi = () => within(screen.getByText('Manual').closest('tr')!);
+      // 同一条资料连点两次：第一次在途，第二次先返回并占用缓存。
+      // 两次点击放在同一个 act 里，避免第一次点击后行内按钮被置灰而吞掉第二次（真实双击同理）。
+      const previewButton = rowUi().getByRole('button', { name: /预览/ });
+      await act(async () => {
+        fireEvent.click(previewButton);
+        fireEvent.click(previewButton);
+      });
+      await waitFor(() => expect(getFile).toHaveBeenCalledTimes(2));
+      expect(await screen.findByTitle('manual.pdf', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      expect(createObjectUrl).toHaveBeenCalledTimes(1);
+      // 第一次返回后用新条目覆盖缓存：旧的 blob URL 必须被回收，否则泄漏一份文件大小的内容。
+      await act(async () => {
+        resolveFirst(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+      });
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:first');
+      expect(createObjectUrl).toHaveBeenCalledTimes(2);
+    },
+    TIMEOUT,
+  );
+
+  test('keeps the knowledge base list usable when the readiness probe fails', async () => {
+    // portal 把 readiness 字段改名/探针报错时，不能让列表和详情一起不可用。
+    const portal = makePortal({
+      managedKnowledgeReadiness: vi.fn().mockRejectedValue(new Error('readiness probe unavailable')),
+    });
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
+
+    expect(await screen.findByText('Research')).toBeInTheDocument();
+    expect(portal.listManagedKnowledgeBases).toHaveBeenCalled();
+    // readiness 失败只降级顶部横幅，不落成页面级错误。
+    expect(screen.queryByText('readiness probe unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('知识库操作失败')).not.toBeInTheDocument();
+  });
 
   test(
     'shows an image original directly instead of framing it',

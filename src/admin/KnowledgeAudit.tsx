@@ -2,6 +2,7 @@ import { Alert, Button, Form, Input, Space, Table, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import type { AdminConsoleClient } from './client.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { knowledgeErrorText } from './knowledge-error.js';
 import { type KnowledgeAuditRecord, PortalClient } from './portal.js';
 
 const t = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -39,7 +40,7 @@ export function KnowledgeAudit({
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted && generation === version.current)
-          setError(cause instanceof Error ? cause.message : t('knowledgeAuditError'));
+          setError(cause instanceof Error ? knowledgeErrorText(cause) : t('knowledgeAuditError'));
       })
       .finally(() => {
         if (!controller.signal.aborted && generation === version.current) setLoading(false);
@@ -60,7 +61,8 @@ export function KnowledgeAudit({
       setRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch (cause) {
-      if (generation === version.current) setError(cause instanceof Error ? cause.message : t('knowledgeAuditError'));
+      if (generation === version.current)
+        setError(cause instanceof Error ? knowledgeErrorText(cause) : t('knowledgeAuditError'));
     } finally {
       if (generation === version.current) setLoading(false);
     }

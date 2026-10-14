@@ -10,6 +10,17 @@ import { KnowledgeGrants } from './KnowledgeGrants.js';
 import type { PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
+const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
+
+const CONTACTS = [
+  { userId: 'user-1', username: 'zhangsan', displayName: '张三', teams: [{ id: 'team-1', name: '研发部' }] },
+  { userId: 'user-2', username: 'lisi', displayName: '李四', teams: [] },
+];
+const DEPARTMENTS = [
+  { id: 'team-1', name: '研发部' },
+  { id: 'team-2', name: '市场部' },
+];
+
 function makePortal(overrides: Partial<PortalClient> = {}) {
   return {
     listManagedKnowledgeGrants: vi.fn().mockResolvedValue({
@@ -22,8 +33,33 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
       tenant_id: 'tenant-1',
       grants,
     })),
+    listContacts: vi.fn().mockResolvedValue(CONTACTS),
+    listDepartments: vi.fn().mockResolvedValue(DEPARTMENTS),
     ...overrides,
   } as unknown as PortalClient;
+}
+
+// 下拉里当前渲染的选项标签（antd 把面板 portal 到 body 末尾，jsdom 不会跑关闭
+// 过渡，旧面板留在文档里，所以只读「最后一个未隐藏的下拉」）。
+function dropdownOptionLabels(): string[] {
+  const dropdowns = document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)');
+  const latest = dropdowns[dropdowns.length - 1];
+  return [...(latest?.querySelectorAll('.ant-select-item-option') ?? [])].map((item) => item.textContent ?? '');
+}
+
+// 打开下拉并点选标签匹配的选项；标签形如「显示名 · ID」。
+async function pickSubject(combobox: HTMLElement, label: string) {
+  fireEvent.mouseDown(combobox);
+  const option = await waitFor(() => {
+    const node = [
+      ...document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'),
+    ]
+      .reverse()
+      .find((item) => item.textContent?.includes(label));
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  fireEvent.click(option);
 }
 
 function renderGrants(portal: PortalClient) {
@@ -45,20 +81,15 @@ describe('KnowledgeGrants', () => {
       listManagedKnowledgeGrants: vi.fn().mockImplementation(() => new Promise((resolve) => (resolveGrants = resolve))),
     });
     renderGrants(portal);
-    expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') })).toBeDisabled();
-    expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') })).toBeDisabled();
-    fireEvent.change(screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeGrantUserId')), {
-      target: { value: 'user-2' },
-    });
-    fireEvent.keyDown(screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeGrantUserId')), {
-      key: 'Enter',
-      code: 'Enter',
-    });
-    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+    const save = screen.getByRole('button', { name: tr('knowledgeGrantsSave') });
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') })).toBeDisabled();
+    // 授权列表落定前主体下拉不可选：选不出东西，自然加不进去。
+    const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
+    expect(userSelect).toBeDisabled();
     resolveGrants({ knowledge_base_id: 'kb-1', tenant_id: 'tenant-1', grants: [] });
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') })).toBeEnabled(),
-    );
+    await waitFor(() => expect(save).toBeEnabled());
+    await waitFor(() => expect(userSelect).toBeEnabled());
   });
 
   test('ignores an old base response and clears the previous base draft', async () => {
@@ -153,19 +184,15 @@ describe('KnowledgeGrants', () => {
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsEmpty'))).not.toBeInTheDocument();
   });
 
-  test('loads the server grant set and replaces it with the edited user/team list', async () => {
+  test('loads the server grant set and replaces it with the picked user/team list', async () => {
     const portal = makePortal();
     renderGrants(portal);
     expect(await screen.findByText('user-1')).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeGrantUserId')), {
-      target: { value: 'user-2' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantAddUser') }));
-    fireEvent.change(screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeGrantTeamId')), {
-      target: { value: 'team-1' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantAddTeam') }));
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') }));
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四 · user-2');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }), '研发部 · team-1');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') }));
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
 
     await waitFor(() =>
       expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [
@@ -174,7 +201,7 @@ describe('KnowledgeGrants', () => {
         { type: 'team', id: 'team-1' },
       ]),
     );
-    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsSaved'))).toBeInTheDocument();
+    expect(await screen.findByText(tr('knowledgeGrantsSaved'))).toBeInTheDocument();
   });
 
   test('requires explicit confirmation before replacing all grants with an empty set', async () => {
@@ -199,7 +226,8 @@ describe('KnowledgeGrants', () => {
       listManagedKnowledgeGrants: vi.fn().mockRejectedValue(new PortalError(403, 'forbidden')),
     });
     renderGrants(portal);
-    expect(await screen.findByText('forbidden')).toBeInTheDocument();
+    // 403 现在走共享的错误文案映射（knowledge-error.ts），不再是上游原文。
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).toBeInTheDocument();
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsEmpty'))).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
@@ -216,6 +244,97 @@ describe('KnowledgeGrants', () => {
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeRetryRead') }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') })).toBeEnabled(),
+    );
+  });
+
+  test('offers the portal directory as subjects, tagged with display name and id', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
+    fireEvent.mouseDown(userSelect);
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('李四 · user-2'));
+    expect(dropdownOptionLabels()).toContain('张三 · user-1');
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }));
+    // 团队取通讯录成员所属团队与部门列表的并集：无成员的 team-2 只有部门列表才有。
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('市场部 · team-2'));
+    expect(dropdownOptionLabels()).toContain('研发部 · team-1');
+  });
+
+  test('filters candidates by name and by id before adding the picked one', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
+    fireEvent.mouseDown(userSelect);
+    fireEvent.change(userSelect, { target: { value: '李' } });
+    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四 · user-2']));
+    fireEvent.change(userSelect, { target: { value: 'user-2' } });
+    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四 · user-2']));
+    fireEvent.click(await screen.findByText('李四 · user-2'));
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
+    // 断言落在表格里：下拉面板（含 rc-select 给读屏用的隐藏虚拟节点）里也有这个 ID。
+    expect(await within(screen.getByRole('table')).findByText('user-2')).toBeInTheDocument();
+  });
+
+  test('does not add a subject that is already granted', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
+    await pickSubject(userSelect, '张三 · user-1');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+    await waitFor(() =>
+      expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [{ type: 'user', id: 'user-1' }]),
+    );
+    expect(within(screen.getByRole('table')).getAllByText('user-1')).toHaveLength(1);
+    expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument();
+  });
+
+  test('flags a grant missing from the candidate list so it can be removed before saving', async () => {
+    const portal = makePortal({
+      listManagedKnowledgeGrants: vi.fn().mockResolvedValue({
+        knowledge_base_id: 'kb-1',
+        tenant_id: 'tenant-1',
+        grants: [
+          { type: 'user', id: 'user-1' },
+          { type: 'team', id: 'team-legacy' },
+        ],
+      }),
+    });
+    renderGrants(portal);
+    expect(await screen.findByText('team-legacy')).toBeInTheDocument();
+    expect(screen.getAllByText(tr('knowledgeGrantUnknownSubject'))).toHaveLength(1);
+    expect(screen.getByText(tr('knowledgeGrantUnknownHint'))).toBeInTheDocument();
+    const row = screen.getByText('team-legacy').closest('tr');
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: /移\s*除/ }));
+    await waitFor(() => expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument());
+    expect(screen.queryByText(tr('knowledgeGrantUnknownHint'))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+    await waitFor(() =>
+      expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [{ type: 'user', id: 'user-1' }]),
+    );
+  });
+
+  test('withholds the unknown-subject flag when a candidate source failed', async () => {
+    const portal = makePortal({
+      listContacts: vi.fn().mockRejectedValue(new PortalError(502, '通讯录不可用')),
+      listManagedKnowledgeGrants: vi.fn().mockResolvedValue({
+        knowledge_base_id: 'kb-1',
+        tenant_id: 'tenant-1',
+        grants: [{ type: 'user', id: 'user-9' }],
+      }),
+    });
+    renderGrants(portal);
+    expect(await screen.findByText(tr('knowledgeGrantSubjectsIncomplete'))).toBeInTheDocument();
+    expect(screen.getByText('通讯录不可用')).toBeInTheDocument();
+    // 清单不完整时不下「未知主体」判断（可能是清单自己缺人），仍可删行、可保存。
+    expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument();
+    expect(screen.queryByText(tr('knowledgeGrantUnknownHint'))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+    await waitFor(() =>
+      expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [{ type: 'user', id: 'user-9' }]),
     );
   });
 });

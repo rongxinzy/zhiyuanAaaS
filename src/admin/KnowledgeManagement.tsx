@@ -42,6 +42,7 @@ import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate
 import { KnowledgeGrants } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
+import { knowledgeErrorText } from './knowledge-error.js';
 import { usePageCrumb } from './page-crumb.js';
 import {
   type ManagedKnowledgeBase,
@@ -85,7 +86,6 @@ const copyKeys = {
   deleteTitle: 'knowledgeDeleteTitle',
   deleteHint: 'knowledgeDeleteHint',
   deleteConfirm: 'knowledgeDeleteConfirm',
-  protected: 'knowledgeProtected',
   saveDone: 'knowledgeSaved',
   created: 'knowledgeCreated',
   deleted: 'knowledgeDeleted',
@@ -138,6 +138,7 @@ const copyKeys = {
   knowledgeDeleteDocumentHint: 'knowledgeDeleteDocumentHint',
   knowledgeDeleteConfirm: 'knowledgeDeleteConfirm',
   knowledgePreview: 'knowledgePreview',
+  knowledgePreviewUnavailable: 'knowledgePreviewUnavailable',
   knowledgeDownload: 'knowledgeDownload',
   knowledgeChunks: 'knowledgeChunks',
   chunkCount: 'knowledgeChunkCount',
@@ -187,11 +188,6 @@ const copyKeys = {
   noSelection: 'knowledgeSelectBase',
   emptyDocs: 'knowledgeNoDocuments',
   page: 'knowledgeCreatedAt',
-  notConfigured: 'knowledgeNotConfiguredManaged',
-  forbidden: 'knowledgeForbiddenManaged',
-  configError: 'knowledgeConfigErrorManaged',
-  upstreamInvalid: 'knowledgeUpstreamInvalidManaged',
-  loginExpired: 'knowledgeLoginExpired',
 } as const satisfies Record<string, AdminTranslationKey>;
 type CopyKey = keyof typeof copyKeys;
 const t = (key: CopyKey) => translate(language, copyKeys[key]);
@@ -227,19 +223,6 @@ const baseTypeLabel = (value: string | undefined): string => {
   return baseTypeCopy[value] ? t(baseTypeCopy[value]!) : value;
 };
 
-function errorText(error: unknown): string {
-  if (error instanceof PortalError) {
-    if (error.status === 401) return t('loginExpired');
-    if (error.status === 403) return t('forbidden');
-    if (error.code === 'KNOWLEDGE_NOT_CONFIGURED' || error.code === 'KNOWLEDGE_CREDENTIAL_UNAVAILABLE')
-      return t('configError');
-    if (error.code === 'KNOWLEDGE_BASE_IN_USE') return t('protected');
-    // 上游缺接口/返回无法核对（如 WeKnora 版本过旧）时说清怎么办，别只丢一句“无法安全验证”。
-    if (error.code === 'KNOWLEDGE_UPSTREAM_INVALID') return t('upstreamInvalid');
-  }
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isUncertain(error: unknown): boolean {
   return !(error instanceof PortalError) || error.status >= 500;
 }
@@ -257,6 +240,8 @@ interface PreviewEntry {
   readonly name: string;
   /** Only for `text`: decoded 原文，直接内联显示（iframe 会被自身 CSP 的 frame-ancestors 拦掉）。 */
   readonly text?: string;
+  /** PDF 路径专用：服务端下发的不是 `application/pdf` 时不进 iframe，改显示提示。 */
+  readonly incompatible?: boolean;
 }
 
 interface PreviewState extends PreviewEntry {
@@ -438,23 +423,32 @@ export function KnowledgeManagement({
       const generation = ++listGeneration.current;
       setLoading(true);
       setBaseError(null);
-      try {
-        const [ready, items] = await Promise.all([
-          portal.managedKnowledgeReadiness(signal),
-          portal.listManagedKnowledgeBases(signal),
-        ]);
-        if (generation !== listGeneration.current || signal?.aborted) return;
-        setReadiness(ready);
-        setBases(items);
-        setAccessBlocked(false);
-        setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
-      } catch (cause) {
-        if (signal?.aborted || generation !== listGeneration.current) return;
-        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setBaseError(errorText(cause));
-      } finally {
-        if (generation === listGeneration.current && !signal?.aborted) setLoading(false);
-      }
+      const loadList = async () => {
+        try {
+          const items = await portal.listManagedKnowledgeBases(signal);
+          if (generation !== listGeneration.current || signal?.aborted) return;
+          setBases(items);
+          setAccessBlocked(false);
+          setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
+        } catch (cause) {
+          if (signal?.aborted || generation !== listGeneration.current) return;
+          if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+          setBaseError(knowledgeErrorText(cause));
+        } finally {
+          if (generation === listGeneration.current && !signal?.aborted) setLoading(false);
+        }
+      };
+      // readiness 只是顶部横幅的信息来源；它单独失败（上游字段改名/探针报错）时
+      // 不能把知识库列表和详情一起拖下水，所以和列表并发但各自 try/catch。
+      const loadReadiness = async () => {
+        try {
+          const ready = await portal.managedKnowledgeReadiness(signal);
+          if (generation === listGeneration.current && !signal?.aborted) setReadiness(ready);
+        } catch {
+          if (generation === listGeneration.current && !signal?.aborted) setReadiness(null);
+        }
+      };
+      await Promise.all([loadList(), loadReadiness()]);
     },
     [portal],
   );
@@ -485,7 +479,7 @@ export function KnowledgeManagement({
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) {
           if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-          setDetailError(errorText(cause));
+          setDetailError(knowledgeErrorText(cause));
         }
       });
     return () => controller.abort();
@@ -534,7 +528,7 @@ export function KnowledgeManagement({
       } catch (cause) {
         if (signal?.aborted || generation !== docGeneration.current) return;
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setDocsError(errorText(cause));
+        setDocsError(knowledgeErrorText(cause));
       } finally {
         if (generation === docGeneration.current && !signal?.aborted) setDocsLoading(false);
       }
@@ -609,7 +603,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
       setSaving(false);
@@ -630,7 +624,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
       setDeleting(false);
@@ -659,7 +653,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
       setUploading(false);
@@ -731,7 +725,7 @@ export function KnowledgeManagement({
           if (isUncertain(cause)) setUncertainWrite(true);
           setFolderQueue((current) =>
             current.map((entry) =>
-              entry.key === item.key ? { ...entry, status: 'failed', detail: errorText(cause) } : entry,
+              entry.key === item.key ? { ...entry, status: 'failed', detail: knowledgeErrorText(cause) } : entry,
             ),
           );
         }
@@ -778,7 +772,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
       setImporting(false);
@@ -802,7 +796,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
     } finally {
       setDocumentActionId(null);
@@ -830,7 +824,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
+        `${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
       );
     } finally {
       setDocumentActionId(null);
@@ -855,7 +849,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (controller.signal.aborted || generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(errorText(cause));
+      setWriteNotice(knowledgeErrorText(cause));
     } finally {
       if (chunkImageRequests.current.get(key) === controller) chunkImageRequests.current.delete(key);
       if (!controller.signal.aborted && generation === chunkRequestGeneration.current) setChunkImageLoading(null);
@@ -892,7 +886,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(errorText(cause));
+      setWriteNotice(knowledgeErrorText(cause));
     } finally {
       if (generation === chunkRequestGeneration.current) {
         setChunksLoading(false);
@@ -919,7 +913,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(errorText(cause));
+      setWriteNotice(knowledgeErrorText(cause));
     } finally {
       if (generation === chunkRequestGeneration.current) setChunksLoading(false);
     }
@@ -963,7 +957,7 @@ export function KnowledgeManagement({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) setUncertainWrite(true);
       setWriteNotice(
-        `${errorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
       );
     } finally {
       if (saveGeneration === chunkSaveGeneration.current) setChunkSavingId(null);
@@ -972,6 +966,11 @@ export function KnowledgeManagement({
 
   const rememberPreview = (key: string, entry: PreviewEntry) => {
     const cache = previewCache.current;
+    // 同一资料的并发预览会用新条目覆盖旧条目；旧条目的 url 从此再无人引用，
+    // 必须先回收，否则每次并发预览都泄漏一份文件大小的 object URL。
+    const previous = cache.get(key);
+    if (previous?.url && previous.url !== entry.url) URL.revokeObjectURL(previous.url);
+    // Map 的插入顺序就是淘汰顺序：delete 后再 set 把这条挪到队尾。
     cache.delete(key);
     cache.set(key, entry);
     while (cache.size > PREVIEW_CACHE_LIMIT) {
@@ -991,26 +990,42 @@ export function KnowledgeManagement({
     }
     const name = document.file_name || document.name;
     if (kind === 'preview' && previewKind) {
-      // 命中缓存直接开；否则先按固定尺寸开弹窗占位，内容到位再填。
-      const cached = previewCache.current.get(`${document.id}:preview`);
-      setPreview(cached ?? { kind: previewKind, url: '', name, loading: true });
-      if (cached) return;
+      const cacheKey = `${document.id}:preview`;
+      // 每次进入预览分支都推进 generation：命中缓存的这一次也是新的预览意图，
+      // 否则先前在途的请求返回时会盖掉刚点开的缓存内容；关闭弹窗同样推进（见 onCancel）。
       const generation = ++previewGeneration.current;
+      const cached = previewCache.current.get(cacheKey);
+      if (cached) {
+        // 命中即刷新 LRU：只 get 不挪位时，淘汰顺序是「最早插入」而不是注释声称的「最久未用」。
+        previewCache.current.delete(cacheKey);
+        previewCache.current.set(cacheKey, cached);
+        setPreview(cached);
+        return;
+      }
+      // 未命中：先按固定尺寸开弹窗占位，内容到位再填。
+      setPreview({ kind: previewKind, url: '', name, loading: true });
       setDocumentActionId(document.id);
       try {
         const blob = await portal.getManagedKnowledgeFile(document.id, 'preview');
         // 文本直接读正文，不需要 object URL；图片/PDF 才建 blob: 链接。
-        const entry: PreviewEntry =
-          previewKind === 'text'
-            ? { kind: 'text', url: '', name, text: await blob.text() }
-            : { kind: previewKind, url: URL.createObjectURL(blob), name };
-        rememberPreview(`${document.id}:preview`, entry);
+        let entry: PreviewEntry;
+        if (previewKind === 'text') {
+          entry = { kind: 'text', url: '', name, text: await blob.text() };
+        } else if (previewKind === 'pdf' && blob.type !== 'application/pdf') {
+          // portal 对预览响应下发 `Content-Security-Policy: sandbox; default-src 'none'`，
+          // 但控制台把响应重新包成 blob: 后该响应头不再生效。所以这里自己按 Blob.type 把关：
+          // 服务端声称 PDF 却回了别的类型时绝不进 iframe，避免把非预期内容当文档渲染。
+          entry = { kind: 'pdf', url: '', name, incompatible: true };
+        } else {
+          entry = { kind: previewKind, url: URL.createObjectURL(blob), name };
+        }
+        rememberPreview(cacheKey, entry);
         // 期间又点了别的预览就不要把旧结果盖回去。
         if (previewGeneration.current === generation) setPreview(entry);
       } catch (cause) {
         if (previewGeneration.current === generation) setPreview(null);
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setWriteNotice(errorText(cause));
+        setWriteNotice(knowledgeErrorText(cause));
       } finally {
         setDocumentActionId(null);
       }
@@ -1031,7 +1046,7 @@ export function KnowledgeManagement({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(errorText(cause));
+      setWriteNotice(knowledgeErrorText(cause));
     } finally {
       setDocumentActionId(null);
     }
@@ -1822,7 +1837,11 @@ export function KnowledgeManagement({
         title={preview?.name ?? t('knowledgePreview')}
         open={preview !== null}
         footer={null}
-        onCancel={() => setPreview(null)}
+        onCancel={() => {
+          // 关闭也要推进 generation：在途预览返回时不能再把弹窗重新弹开。
+          previewGeneration.current += 1;
+          setPreview(null);
+        }}
         width={960}
         destroyOnHidden
       >
@@ -1850,6 +1869,13 @@ export function KnowledgeManagement({
                   src={preview.url}
                   alt={preview.name}
                   style={{ display: 'block', margin: '0 auto', maxHeight: '100%', maxWidth: '100%' }}
+                />
+              ) : preview.incompatible ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title={t('knowledgePreviewUnavailable')}
+                  description={`${t('fileName')}: ${preview.name}`}
                 />
               ) : (
                 <iframe

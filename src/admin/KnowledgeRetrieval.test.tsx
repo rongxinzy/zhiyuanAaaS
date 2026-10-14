@@ -182,7 +182,8 @@ describe('KnowledgeRetrieval', () => {
       target: { value: 'secret' },
     });
     fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
-    expect(await screen.findByText('knowledge access denied')).toBeInTheDocument();
+    // 403 走共用错误映射：显示可处置的中文提示，而不是上游英文串。
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).toBeInTheDocument();
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeSearchEmpty'))).not.toBeInTheDocument();
   });
 });

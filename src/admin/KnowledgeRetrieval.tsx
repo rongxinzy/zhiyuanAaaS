@@ -3,6 +3,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { knowledgeErrorText } from './knowledge-error.js';
 import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient, PortalEmployee } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -37,7 +38,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
         if (!controller.signal.aborted) setEmployees(items);
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setEmployeeError(cause instanceof Error ? cause.message : String(cause));
+        if (!controller.signal.aborted) setEmployeeError(knowledgeErrorText(cause));
       })
       .finally(() => {
         if (!controller.signal.aborted) setEmployeeLoading(false);
@@ -95,7 +96,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
       if (!controller.signal.aborted && generation === searchGeneration.current) setResults(response.results);
     } catch (cause) {
       if (!controller.signal.aborted && generation === searchGeneration.current)
-        setSearchError(cause instanceof Error ? cause.message : String(cause));
+        setSearchError(knowledgeErrorText(cause));
     } finally {
       if (!controller.signal.aborted && generation === searchGeneration.current) setSearching(false);
     }
@@ -123,7 +124,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
       if (!controller.signal.aborted && generation === sourceGeneration.current) setSource(response);
     } catch (cause) {
       if (!controller.signal.aborted && generation === sourceGeneration.current)
-        setSourceError(cause instanceof Error ? cause.message : String(cause));
+        setSourceError(knowledgeErrorText(cause));
     } finally {
       if (!controller.signal.aborted && generation === sourceGeneration.current) setSourceLoading(false);
     }

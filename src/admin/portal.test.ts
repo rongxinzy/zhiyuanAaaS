@@ -320,6 +320,32 @@ describe('portal client departments and lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
+  test('listContacts keeps the directory shape and tolerates an empty directory', async () => {
+    stubFetch(200, {
+      contacts: [{ userId: 'u1', username: 'zhangsan', displayName: '张三', teams: [{ id: 'rd', name: '研发部' }] }],
+    });
+    await expect(client().listContacts()).resolves.toEqual([
+      { userId: 'u1', username: 'zhangsan', displayName: '张三', teams: [{ id: 'rd', name: '研发部' }] },
+    ]);
+    vi.unstubAllGlobals();
+
+    stubFetch(200, { contacts: [] });
+    await expect(client().listContacts()).resolves.toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  test('listContacts rejects a row it cannot read as a subject', async () => {
+    // 缺 userId/username 的行不能降级成空 ID 的选项：宁可让整份目录按不可识别失败，
+    // 也别把管理员引到一个服务端必然拒绝的授权上。
+    stubFetch(200, { contacts: [{ username: 'zhangsan', teams: [] }] });
+    await expect(client().listContacts()).rejects.toBeInstanceOf(PortalError);
+    vi.unstubAllGlobals();
+
+    stubFetch(200, { contacts: [{ userId: 'u1', username: 'zhangsan', teams: [{ name: '研发部' }] }] });
+    await expect(client().listContacts()).rejects.toBeInstanceOf(PortalError);
+    vi.unstubAllGlobals();
+  });
+
   test('usageStats returns the aggregate payload', async () => {
     stubFetch(200, { totals: { employees: 5 }, byDepartment: {} });
     await expect(client().usageStats()).resolves.toMatchObject({ totals: { employees: 5 } });

@@ -3,13 +3,14 @@ import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { knowledgeErrorText } from './knowledge-error.js';
 import type { ManagedKnowledgeFAQEntry, ManagedKnowledgeFolder, ManagedKnowledgeTag, PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
 function operationError(cause: unknown): string {
-  const parts = [cause instanceof Error ? cause.message : String(cause)];
+  const parts = [knowledgeErrorText(cause)];
   if (cause instanceof PortalError && cause.operationId)
     parts.push(`${tr('knowledgeOperation')}: ${cause.operationId}`);
   if (cause instanceof PortalError && cause.resourceId) parts.push(`${tr('knowledgeResourceId')}: ${cause.resourceId}`);

@@ -475,6 +475,19 @@ export type PortalDepartmentMember = {
   readonly displayName: string;
 };
 
+// One row of the messenger directory (GET /api/v1/contacts). It is the only
+// user enumeration the portal exposes, so callers that need "pick a user"
+// (e.g. the knowledge-grant subject picker) read it here. Caveats the
+// portal applies server-side and that pickers must live with: the requester
+// themselves is dropped, disabled/agent accounts are dropped, and a team
+// whose name the upstream listing cannot resolve is dropped from `teams`.
+export type PortalContact = {
+  readonly userId: string;
+  readonly username: string;
+  readonly displayName: string;
+  readonly teams: readonly PortalDepartment[];
+};
+
 export type PortalUsageStats = {
   readonly totals: {
     readonly conversations: number;
@@ -1296,6 +1309,13 @@ export class PortalClient {
     return items.map(parseDepartment);
   }
 
+  async listContacts(signal?: AbortSignal): Promise<readonly PortalContact[]> {
+    const { status, data } = await this.#request('GET', '/api/v1/contacts', undefined, undefined, signal);
+    if (status !== 200) throw portalError(status, data);
+    const items = (data as { contacts?: unknown[] } | null)?.contacts ?? [];
+    return items.map(parseContact);
+  }
+
   async createDepartment(name: string): Promise<PortalDepartmentCreateResult> {
     // The department id is server-generated from the name (AEP team slug)
     // and keys the downstream memory/knowledge provisioning.
@@ -1508,6 +1528,28 @@ function parseDepartment(raw: unknown): PortalDepartment {
   return {
     id: String(department.id ?? ''),
     name: String(department.name ?? ''),
+  };
+}
+
+// 通讯录喂的是「选一个用户」的下拉，所以这里按契约严格解析：缺 id/username 的行
+// 直接判为不可识别的响应，而不是拼出一个空白 ID 的选项让管理员选中、再由服务端
+// 在保存时打回。displayName 允许为空（界面上回落到 username）；空的 contacts 数组
+// 是合法结果，表示目录确实没有可选项。
+function parseContact(raw: unknown): PortalContact {
+  const contact = objectOf(raw);
+  const userId = contact?.userId;
+  const username = contact?.username;
+  if (!contact || !nonEmptyString(userId) || !nonEmptyString(username)) throw invalidManagedResponse();
+  if (contact.teams !== undefined && !Array.isArray(contact.teams)) throw invalidManagedResponse();
+  return {
+    userId,
+    username,
+    displayName: typeof contact.displayName === 'string' ? contact.displayName : '',
+    teams: (contact.teams ?? []).map((rawTeam) => {
+      const team = objectOf(rawTeam);
+      if (!team || !nonEmptyString(team.id) || typeof team.name !== 'string') throw invalidManagedResponse();
+      return { id: team.id, name: team.name };
+    }),
   };
 }
 
