@@ -895,14 +895,17 @@ describe('KnowledgeManagement component state', () => {
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
       const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
+      // 直接读模态里的 <pre>：整个页面树很大，findByText 每轮都要遍历全 DOM，会慢到几十秒。
+      const previewText = () => document.querySelector('.ant-modal pre')?.textContent ?? '';
       fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
-      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      await waitFor(() => expect(previewText()).toBe('original'));
       // 再点一次同一条：命中缓存，不再走网络。
       fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
-      expect(await screen.findByText('original', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      await waitFor(() => expect(previewText()).toBe('original'));
       expect(getFile).toHaveBeenCalledTimes(1);
     },
-    TIMEOUT,
+    // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
+    TIMEOUT * 2,
   );
 
   test(
@@ -976,25 +979,29 @@ describe('KnowledgeManagement component state', () => {
         getManagedKnowledgeFile: getFile,
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
-      expect(await screen.findByText('Beta doc')).toBeInTheDocument();
+      // 等两行文档都渲染出来（页面里不止一个表格，按行名判断更稳）。
+      await waitFor(() => expect(screen.getAllByText(/Alpha doc|Beta doc/)).toHaveLength(2));
+      const previewText = () => document.querySelector('.ant-modal pre')?.textContent ?? '';
       const rowUi = (name: string) => within(screen.getByText(name).closest('tr')!);
       // 先把 B 缓存下来。
       fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
-      expect(await screen.findByText('beta-content', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      await waitFor(() => expect(previewText()).toBe('beta-content'));
       // 再点 A：请求在途，弹窗先占位。
       fireEvent.click(rowUi('Alpha doc').getByRole('button', { name: /预览/ }));
       await waitFor(() => expect(getFile).toHaveBeenCalledWith(docA.id, 'preview'));
       // 回到已缓存的 B。
       fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
-      expect(await screen.findByText('beta-content', undefined, { timeout: TIMEOUT })).toBeInTheDocument();
+      await waitFor(() => expect(previewText()).toBe('beta-content'));
       // A 迟到：不能把 B 盖回去。
       await act(async () => {
         resolveA(new Blob(['alpha-content'], { type: 'text/plain' }));
       });
-      expect(screen.getByText('beta-content')).toBeInTheDocument();
-      expect(screen.queryByText('alpha-content')).not.toBeInTheDocument();
+      await waitFor(() => expect(previewText()).toBe('beta-content'));
+      // 结构断言，别在整棵大树上做文本查询。
+      expect(previewText()).not.toContain('alpha-content');
     },
-    TIMEOUT,
+    // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
+    TIMEOUT * 2,
   );
 
   test(
