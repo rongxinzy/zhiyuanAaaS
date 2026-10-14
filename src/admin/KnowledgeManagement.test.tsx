@@ -110,8 +110,9 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
 
 // The detail page (Tabs + Descriptions + a row menu) makes antd's cssinjs
 // style computation noticeably heavier in jsdom, so the tests that open a
-// document Modal get an explicit budget instead of the default 5 s.
-const TIMEOUT = 60000;
+// document Modal get an explicit budget instead of the default 5 s. 90 s
+// covers the full-suite parallel run (34 files at once).
+const TIMEOUT = 90000;
 
 const base: ManagedKnowledgeBase = {
   id: 'kb-test-1',
@@ -478,6 +479,19 @@ describe('KnowledgeManagement component state', () => {
     const doc = { ...lifecycleDocument('completed'), source: 'file', enable_status: 'enabled' };
     const portal = makePortal({
       listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      managedKnowledgeReadiness: vi.fn().mockResolvedValue({
+        deploymentId: 'deployment-test',
+        tenantId: '10000',
+        tenant: 'verified',
+        embeddingModel: {
+          state: 'configured',
+          id: 'embedding-test',
+          name: 'bge-small-zh-v1.5',
+          availability: 'unverified',
+        },
+        storage: 'unverified',
+        parser: 'unverified',
+      }),
     });
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
@@ -486,6 +500,9 @@ describe('KnowledgeManagement component state', () => {
     expect(rowUi().getByText('文件')).toBeInTheDocument();
     expect(rowUi().getByText('已启用')).toBeInTheDocument();
     expect(screen.getByText('文档库')).toBeInTheDocument();
+    // 有模型名时显示名字，不再甩 UUID。
+    expect(screen.getByText('bge-small-zh-v1.5')).toBeInTheDocument();
+    expect(screen.queryByText('embedding-test')).not.toBeInTheDocument();
     // 原始枚举值不再直接展示（退到 title 属性）。
     expect(screen.queryByText('enabled')).not.toBeInTheDocument();
     expect(screen.queryByText('file')).not.toBeInTheDocument();

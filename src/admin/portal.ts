@@ -173,6 +173,8 @@ export type ManagedKnowledgeReadiness = {
   readonly embeddingModel: {
     readonly state: 'not_configured' | 'unavailable' | 'configured';
     readonly id: string;
+    /** 上游模型名（旧版 portal 不返回，回退显示 id）。 */
+    readonly name?: string;
     readonly availability: 'unverified';
   };
   readonly storage: 'unverified';

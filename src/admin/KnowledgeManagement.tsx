@@ -1351,7 +1351,7 @@ export function KnowledgeManagement({
                     {
                       key: 'embedding',
                       label: t('fieldEmbeddingModel'),
-                      children: readiness?.embeddingModel.id ?? t('notStatistic'),
+                      children: readiness?.embeddingModel.name || readiness?.embeddingModel.id || t('notStatistic'),
                     },
                     {
                       key: 'documents',
