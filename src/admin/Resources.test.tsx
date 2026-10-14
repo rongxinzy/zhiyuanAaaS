@@ -774,7 +774,15 @@ describe('admin resources', () => {
         resources: vi.fn().mockResolvedValue({
           ...emptyResources,
           teams: [
-            { id: 'team-1', name: '旧名称', description: '旧描述', builtIn: false, enabled: true, memberCount: 2 },
+            {
+              id: 'team-1',
+              name: '旧名称',
+              description: '旧描述',
+              builtIn: false,
+              enabled: true,
+              memberCount: 2,
+              defaultRoleIds: [],
+            },
           ],
         }),
         updateTeam: vi.fn().mockResolvedValue(undefined),
@@ -789,8 +797,154 @@ describe('admin resources', () => {
           name: '新名称',
           description: '旧描述',
           enabled: true,
+          defaultRoleIds: [],
         }),
       );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'creates a team without an unsupported defaults field until roles are selected',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          roles: [{ id: 'reader', name: '模型只读', enabled: true }],
+        }),
+        createTeam: vi.fn().mockResolvedValue({ id: 'team-1' }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+      fireEvent.click(await screen.findByRole('button', { name: /新增团队$/ }));
+      let modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '无默认角色团队' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(client.createTeam).toHaveBeenCalledWith({ name: '无默认角色团队', description: '' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /新增团队$/ }));
+      modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '有默认角色团队' } });
+      await pickOption(within(modal).getByLabelText('默认角色'), '模型只读（reader）');
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createTeam).toHaveBeenLastCalledWith({
+          name: '有默认角色团队',
+          description: '',
+          defaultRoleIds: ['reader'],
+        }),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'edits legacy team metadata without sending an unknown defaults field',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          teams: [{ id: 'team-1', name: '旧团队', description: '', enabled: true }],
+        }),
+        updateTeam: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+      fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+      const modal = await screen.findByRole('dialog');
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '新名称' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.updateTeam).toHaveBeenCalledWith('team-1', {
+          name: '新名称',
+          description: '',
+          enabled: true,
+        }),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'preserves team defaults on unrelated edits and clears them explicitly',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          roles: [
+            { id: 'reader', name: '模型只读', enabled: true },
+            { id: 'observer', name: '审计观察', enabled: true },
+          ],
+          teams: [
+            {
+              id: 'team-1',
+              name: '研发团队',
+              description: '',
+              builtIn: false,
+              enabled: true,
+              memberCount: 1,
+              defaultRoleIds: ['reader', 'observer'],
+            },
+          ],
+        }),
+        updateTeam: vi.fn().mockResolvedValue(undefined),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Teams} />);
+      fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+      let modal = await screen.findByRole('dialog');
+      expect(within(modal).getByLabelText('默认角色')).toBeInTheDocument();
+      fireEvent.change(within(modal).getByLabelText('名称'), { target: { value: '改名团队' } });
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.updateTeam).toHaveBeenCalledWith(
+          'team-1',
+          expect.objectContaining({ defaultRoleIds: ['reader', 'observer'] }),
+        ),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+      modal = await screen.findByRole('dialog');
+      const clear = modal.querySelector('.ant-select-clear');
+      expect(clear).not.toBeNull();
+      fireEvent.mouseDown(clear!);
+      fireEvent.click(clear!);
+      fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.updateTeam).toHaveBeenLastCalledWith('team-1', expect.objectContaining({ defaultRoleIds: [] })),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'labels inherited user roles without changing explicit user grants',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          users: [
+            {
+              id: 'u1',
+              username: 'member',
+              displayName: '团队成员',
+              status: 'active',
+              roleIds: ['member'],
+              teamIds: ['team-1'],
+            },
+          ],
+          roles: [
+            { id: 'member', name: '普通成员', enabled: true },
+            { id: 'reader', name: '模型只读', enabled: true },
+          ],
+          teams: [{ id: 'team-1', name: '研发团队', enabled: true, defaultRoleIds: ['reader'] }],
+        }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Users} />);
+      expect(await screen.findByText('模型只读 · 团队继承')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+      const modal = await screen.findByRole('dialog');
+      const selected = modal.querySelectorAll('.ant-select-selection-item');
+      expect([...selected].map((item) => item.textContent).join(' ')).toContain('普通成员');
+      expect([...selected].map((item) => item.textContent).join(' ')).not.toContain('模型只读');
     },
     TIMEOUT,
   );

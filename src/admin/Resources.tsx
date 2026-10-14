@@ -14,7 +14,6 @@ import {
   type Permission,
   type PlatformUser,
   type Role,
-  type Team,
 } from '@aep/sdk-node';
 import {
   DeleteOutlined,
@@ -71,6 +70,7 @@ import {
   AdminSubjectType,
   type AdminUserSession,
   hasAdminPermission,
+  type AdminTeam as Team,
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
@@ -509,6 +509,31 @@ function buildAccessRows(input: {
   return rows;
 }
 
+function inheritedRoleIds(user: PlatformUser, resources: AdminResources): readonly string[] {
+  const ownTeams = new Set(user.teamIds ?? []);
+  return [
+    ...new Set(
+      resources.teams
+        .filter((team) => team.enabled && ownTeams.has(team.id))
+        .flatMap((team) => team.defaultRoleIds ?? []),
+    ),
+  ];
+}
+
+function effectiveRoleIds(user: PlatformUser, resources: AdminResources): readonly string[] {
+  return [...new Set([...(user.roleIds ?? []), ...inheritedRoleIds(user, resources)])];
+}
+
+function teamSubjects(team: Team, resources: AdminResources) {
+  const roles = new Map(resources.roles.map((role) => [role.id, role]));
+  return [
+    { type: 'team' as const, id: team.id, label: team.name },
+    ...(team.defaultRoleIds ?? [])
+      .filter((id) => roles.get(id)?.enabled)
+      .map((id) => ({ type: 'role' as const, id, label: roles.get(id)?.name ?? id })),
+  ];
+}
+
 function userSubjects(
   user: PlatformUser,
   resources: AdminResources,
@@ -517,7 +542,7 @@ function userSubjects(
   const teams = new Map(resources.teams.map((team) => [team.id, team]));
   return [
     { type: 'user' as const, id: user.id, label: user.displayName },
-    ...(user.roleIds ?? [])
+    ...effectiveRoleIds(user, resources)
       .filter((id) => roles.get(id)?.enabled)
       .map((id) => ({ type: 'role' as const, id, label: roles.get(id)?.name ?? id })),
     ...(user.teamIds ?? [])
@@ -645,7 +670,7 @@ function UsersSection({
     return resources.users.filter((user) => {
       if (normalized && !`${user.displayName} ${user.username}`.toLowerCase().includes(normalized)) return false;
       if (filters.teamId && !(user.teamIds ?? []).includes(filters.teamId)) return false;
-      if (filters.roleId && !(user.roleIds ?? []).includes(filters.roleId)) return false;
+      if (filters.roleId && !effectiveRoleIds(user, resources).includes(filters.roleId)) return false;
       if (filters.status && user.status !== filters.status) return false;
       return true;
     });
@@ -677,10 +702,13 @@ function UsersSection({
       title: rc.accountRoles,
       key: 'roles',
       render: (_, user) =>
-        (user.roleIds ?? []).length > 0 ? (
+        effectiveRoleIds(user, resources).length > 0 ? (
           <Space size={4} wrap>
-            {(user.roleIds ?? []).map((id) => (
-              <Tag key={id}>{roleNames.get(id) ?? id}</Tag>
+            {effectiveRoleIds(user, resources).map((id) => (
+              <Tag key={id}>
+                {roleNames.get(id) ?? id}
+                {!(user.roleIds ?? []).includes(id) ? ` · ${t('teamInheritedRole')}` : ''}
+              </Tag>
             ))}
           </Space>
         ) : (
@@ -973,7 +1001,7 @@ function UserDetailDrawer({
   const userTeams = (user.teamIds ?? [])
     .map((id) => teamNames.get(id))
     .filter((team): team is NonNullable<typeof team> => Boolean(team));
-  const userRoles = (user.roleIds ?? [])
+  const userRoles = effectiveRoleIds(user, resources)
     .map((id) => roleNames.get(id))
     .filter((role): role is NonNullable<typeof role> => Boolean(role));
   return (
@@ -2288,6 +2316,21 @@ function TeamsSection({
     },
     { title: rc.memberCount, dataIndex: 'memberCount', key: 'memberCount', width: 100 },
     {
+      title: t('teamDefaultRoles'),
+      key: 'defaultRoles',
+      render: (_, team) => (
+        <Space wrap>
+          {(team.defaultRoleIds ?? []).length ? (
+            team.defaultRoleIds?.map((id) => (
+              <Tag key={id}>{resources.roles.find((role) => role.id === id)?.name ?? id}</Tag>
+            ))
+          ) : (
+            <Typography.Text type="secondary">{t('teamDefaultRolesEmpty')}</Typography.Text>
+          )}
+        </Space>
+      ),
+    },
+    {
       title: t('teamEmployees'),
       key: 'employees',
       width: 140,
@@ -2307,7 +2350,7 @@ function TeamsSection({
           rows={buildAccessRows({
             resources,
             modelResources,
-            subjects: [{ type: 'team', id: team.id, label: team.name }],
+            subjects: teamSubjects(team, resources),
             accountActive: team.enabled,
           })}
         />
@@ -2401,6 +2444,7 @@ function TeamsSection({
       <Table<Team>
         rowKey="id"
         columns={columns}
+        scroll={{ x: 'max-content' }}
         dataSource={[...rows]}
         pagination={PAGINATION}
         loading={loading}
@@ -2430,6 +2474,7 @@ function TeamsSection({
         <TeamEditorModal
           client={client}
           team={editor.id ? resources.teams.find((team) => team.id === editor.id) : undefined}
+          roles={resources.roles}
           open
           onOpenChange={(open) => {
             if (!open) setEditor(null);
@@ -2482,7 +2527,7 @@ function TeamDetailDrawer({
   const accessRows = buildAccessRows({
     resources,
     modelResources,
-    subjects: [{ type: 'team', id: team.id, label: team.name }],
+    subjects: teamSubjects(team, resources),
     accountActive: team.enabled,
   });
   return (
@@ -2552,6 +2597,15 @@ function TeamDetailDrawer({
             label: rc.teamAccessTab,
             children: (
               <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+                <Typography.Text strong>{t('teamDefaultRoles')}</Typography.Text>
+                <Space wrap>
+                  {(team.defaultRoleIds ?? []).length ? (
+                    team.defaultRoleIds?.map((id) => <Tag key={id}>{roleNames.get(id) ?? id}</Tag>)
+                  ) : (
+                    <Typography.Text type="secondary">{t('teamDefaultRolesEmpty')}</Typography.Text>
+                  )}
+                </Space>
+                <Typography.Text type="secondary">{t('teamDefaultRolesHint')}</Typography.Text>
                 <Typography.Text type="secondary">{rc.teamAccessNote}</Typography.Text>
                 <AccessTable
                   rows={accessRows}
@@ -2648,6 +2702,7 @@ function TeamEmployeesModal({
 function TeamEditorModal({
   client,
   team,
+  roles,
   open,
   onOpenChange,
   onChanged,
@@ -2657,6 +2712,7 @@ function TeamEditorModal({
 }: {
   readonly client: AdminConsoleClient;
   readonly team: Team | undefined;
+  readonly roles: readonly Role[];
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onChanged: () => Promise<void>;
@@ -2667,15 +2723,27 @@ function TeamEditorModal({
   const editing = Boolean(team);
   const [form] = Form.useForm();
   const [pending, setPending] = useState(false);
-  const submit = async (values: { name: string; description?: string; enabled?: boolean; ownerId?: string }) => {
+  const submit = async (values: {
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    ownerId?: string;
+    defaultRoleIds?: string[];
+  }) => {
     setPending(true);
     try {
       let teamId = team?.id ?? '';
+      const defaultRoleIds = values.defaultRoleIds ?? [];
+      // Older AEP versions reject unknown fields. An absent defaults field
+      // with no selected roles needs no write; a known field must still send
+      // [] so clearing existing defaults remains explicit.
+      const defaultsWrite = team?.defaultRoleIds !== undefined || defaultRoleIds.length > 0 ? { defaultRoleIds } : {};
       if (team)
         await client.updateTeam(team.id, {
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
           enabled: values.enabled !== false,
+          ...defaultsWrite,
         });
       else {
         // The team id is server-generated from the name and anchors the
@@ -2683,6 +2751,7 @@ function TeamEditorModal({
         const created = await client.createTeam({
           name: values.name.trim(),
           description: (values.description ?? '').trim(),
+          ...defaultsWrite,
         });
         teamId = created.id;
       }
@@ -2721,6 +2790,7 @@ function TeamEditorModal({
           description: team?.description ?? '',
           enabled: team?.enabled !== false,
           ownerId: initialOwnerId ?? undefined,
+          defaultRoleIds: [...(team?.defaultRoleIds ?? [])],
         }}
         onFinish={submit}
       >
@@ -2733,6 +2803,22 @@ function TeamEditorModal({
         </Form.Item>
         <Form.Item name="ownerId" label={t('teamOwner')}>
           <Input autoComplete="off" placeholder={t('teamOwnerPlaceholder')} disabled={pending} />
+        </Form.Item>
+        <Form.Item name="defaultRoleIds" label={t('teamDefaultRoles')} extra={t('teamDefaultRolesHint')}>
+          <Select
+            mode="multiple"
+            popupMatchSelectWidth
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t('teamDefaultRolesPlaceholder')}
+            disabled={pending || roles.length === 0}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: `${role.name}（${role.id}）`,
+              disabled: !role.enabled,
+            }))}
+          />
         </Form.Item>
         <Form.Item name="description" label={t('description')}>
           <Input.TextArea rows={2} placeholder={t('descriptionPlaceholder')} disabled={pending} />
@@ -2776,7 +2862,7 @@ function RolesSection({
   }, [resources.roles, filters]);
   const detailRole = detailRoleId ? (resources.roles.find((role) => role.id === detailRoleId) ?? null) : null;
   const memberCount = (roleId: string) =>
-    resources.users.filter((user) => (user.roleIds ?? []).includes(roleId)).length;
+    resources.users.filter((user) => effectiveRoleIds(user, resources).includes(roleId)).length;
   const columns: TableProps<Role>['columns'] = [
     {
       title: t('role'),
@@ -2968,7 +3054,7 @@ function RoleMembersModal({
   readonly open: boolean;
   readonly onClose: () => void;
 }) {
-  const members = role ? resources.users.filter((user) => (user.roleIds ?? []).includes(role.id)) : [];
+  const members = role ? resources.users.filter((user) => effectiveRoleIds(user, resources).includes(role.id)) : [];
   return (
     <Modal
       open={open}
@@ -3024,7 +3110,7 @@ function RoleDetailDrawer({
   const permissionDescriptions = new Map(
     resources.permissions.map((permission) => [permission.id, permission.description]),
   );
-  const subjects = resources.users.filter((user) => (user.roleIds ?? []).includes(role.id));
+  const subjects = resources.users.filter((user) => effectiveRoleIds(user, resources).includes(role.id));
   return (
     <Drawer
       open={open}
