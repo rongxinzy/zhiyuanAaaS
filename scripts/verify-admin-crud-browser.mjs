@@ -600,23 +600,38 @@ try {
   assert.equal(state.models[0].credentialId, state.credentials[0].id);
   checks.push('model registration reuses a server-only connection');
   // A freshly created model is catalog-publishable but not yet in the
-  // desired routes: the drift badge shows, then publish replaces the state.
+  // legacy desired routes. Async publication must not rewrite that legacy state.
   await page.getByText('待发布', { exact: true }).first().waitFor();
   await page
-    .getByRole('button', { name: /发布生效/ })
+    .getByRole('button', { name: /发布路由/ })
     .first()
     .click();
   await page
     .locator('.ant-popconfirm')
-    .getByRole('button', { name: /发布生效/ })
+    .getByRole('button', { name: /发布路由/ })
     .click();
-  await page.getByText('已发布，等待网关应用', { exact: true }).waitFor();
-  assert.ok(state.requests.some((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publish'));
-  assert.ok(state.dataPlane.desired.routes[0]?.modelId);
-  checks.push('catalog drift badge and publish');
+  await page.getByText('配置已投递', { exact: true }).waitFor();
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publications'),
+  );
+  assert.equal(
+    state.requests.some((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publish'),
+    false,
+  );
+  assert.equal(state.publications.length, 1);
+  checks.push('catalog drift and async publication without legacy fallback');
   await page.getByRole('tab', { name: '配置生效详情', exact: true }).click();
   assert.match(page.url(), /#model-gateway\/configuration$/);
-  await page.getByText('期望路由与模型目录一致', { exact: true }).waitFor();
+  await page.getByText('尚未提供独立的数据面生效证据', { exact: true }).waitFor();
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(state.publications[0].operationId, { exact: true }).waitFor();
+  assert.equal(state.publications.length, 1);
+  assert.equal(
+    state.requests.filter((item) => item.method === 'POST' && item.path === '/aep/v1/admin/data-plane/publications')
+      .length,
+    1,
+  );
+  checks.push('publication query restored after page reload, Ready remains unconfirmed');
   await visit('model-gateway/call', '模型调用检测');
   await page.getByRole('button', { name: '发起测试' }).click();
   await page.getByText('HTTP 200', { exact: true }).waitFor();

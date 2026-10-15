@@ -702,6 +702,68 @@ describe('model gateway URL pre-validation', () => {
   });
 });
 
+describe('admin asynchronous publication transport', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const operation = {
+    operationId: '11111111-1111-4111-8111-111111111111',
+    deploymentId: 'demo',
+    revision: 'r1',
+    contentHash: 'a'.repeat(64),
+    phase: 'projected',
+    createdAt: '2026-10-15T00:00:00Z',
+    updatedAt: '2026-10-15T00:00:01Z',
+    idempotencyExpiresAt: '2026-10-16T00:00:00Z',
+    errorCode: null,
+    conditions: ['Accepted', 'Applied', 'Ready'].map((type) => ({
+      type,
+      status: 'Unknown',
+      observedRevision: null,
+      reason: 'DataPlaneNotObserved',
+      lastTransitionTime: '2026-10-15T00:00:01Z',
+    })),
+  };
+  test('authenticates POST/GET, reuses the idempotency header after 401 refresh, and scopes pointers', async () => {
+    const requests: { path: string; init: RequestInit | undefined }[] = [];
+    let posts = 0;
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/aep/v1/metadata') return Response.json(serverMetadata);
+      if (path === '/aep/v1/auth/password/login') return Response.json(loginTokens);
+      if (path === '/aep/v1/user/me') return Response.json(adminMe);
+      requests.push({ path, init });
+      if (path === '/aep/v1/auth/refresh') return Response.json({ ...loginTokens, accessToken: 'refreshed-access' });
+      if (init?.method === 'POST' && posts++ === 0) return Response.json({ code: 'UNAUTHORIZED' }, { status: 401 });
+      return Response.json(operation, { status: init?.method === 'POST' ? 202 : 200 });
+    });
+    const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+    await client.login({ username: 'admin', password: 'test-password' });
+    expect(await client.createDataPlanePublication('retry-key')).toEqual(operation);
+    expect(await client.getDataPlanePublication(operation.operationId)).toEqual(operation);
+    const postsSent = requests.filter((r) => r.path.endsWith('/publications'));
+    expect(postsSent).toHaveLength(2);
+    for (const { init } of postsSent) {
+      expect(new Headers(init?.headers).get('Idempotency-Key')).toBe('retry-key');
+      expect(new Headers(init?.headers).get('X-AEP-Protocol-Version')).toBe('1.0');
+      expect(JSON.parse(String(init?.body))).toEqual({});
+    }
+    expect(new Headers(postsSent[1]?.init?.headers).get('Authorization')).toBe('Bearer refreshed-access');
+    expect(client.publicationScope).toBe(JSON.stringify(['http://aep.test', 'demo']));
+    expect(requests.some((r) => r.path.endsWith('/data-plane/publish'))).toBe(false);
+  });
+  test('validates path/key before sending, and rejects cross-deployment/mismatched operation responses', async () => {
+    const { client } = await signedInClient({
+      'POST /aep/v1/admin/data-plane/publications': { status: 202, body: { ...operation, deploymentId: 'other' } },
+      [`GET /aep/v1/admin/data-plane/publications/${operation.operationId}`]: {
+        body: { ...operation, operationId: '22222222-2222-4222-8222-222222222222' },
+      },
+    });
+    await expect(client.createDataPlanePublication('bad key')).rejects.toThrow('Invalid publication key');
+    await expect(client.getDataPlanePublication('../other')).rejects.toThrow('Invalid publication ID');
+    await expect(client.createDataPlanePublication('valid')).rejects.toThrow('deployment mismatch');
+    await expect(client.getDataPlanePublication(operation.operationId)).rejects.toThrow('identity mismatch');
+  });
+});
+
 describe('admin data-plane publish', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

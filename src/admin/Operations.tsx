@@ -62,6 +62,7 @@ import {
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
 import { formatTimestamp } from './format.js';
+import { GatewayPublication } from './GatewayPublication.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import { operationsCopy as copy } from './operations-copy.js';
@@ -1786,7 +1787,7 @@ function CatalogComparisonAlert({ comparison }: { readonly comparison: AdminData
     <Alert
       type={hasDrift ? 'warning' : 'success'}
       showIcon
-      title={hasDrift ? copy.catalogDrift : copy.catalogInSync}
+      title={hasDrift ? translate(language, 'publicationLegacyDrift') : copy.catalogInSync}
       description={
         <Space orientation="vertical" size={2}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -1910,6 +1911,10 @@ function ConfigurationStatusPanel({
         </Button>
       </ModuleHeading>
 
+      <GatewayPublication client={client} identity={identity} />
+      <Typography.Title level={5}>{translate(language, 'publicationLegacy')}</Typography.Title>
+      <Alert type="info" showIcon title={translate(language, 'publicationLegacyNote')} />
+
       {failed ? (
         <Alert
           type="error"
@@ -1922,8 +1927,6 @@ function ConfigurationStatusPanel({
           }
         />
       ) : null}
-
-      <Alert type="info" showIcon title={copy.modelCheckGap} />
 
       {loading && state === null ? (
         <Skeleton active paragraph={{ rows: 4 }} />

@@ -565,7 +565,7 @@ describe('admin operations: configuration status', () => {
     expect(await screen.findByText('目标版本')).toBeInTheDocument();
     expect(screen.getByText('待应用')).toBeInTheDocument();
     expect(screen.getAllByText('未知').length).toBeGreaterThan(0);
-    expect(screen.getByText(/暂无模型调用检测接口/)).toBeInTheDocument();
+    expect(screen.getByText(/以下为旧发布链路的期望配置与同步结果/)).toBeInTheDocument();
   });
 
   test('blocks the page without dataplane permission', async () => {
