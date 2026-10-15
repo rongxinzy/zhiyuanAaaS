@@ -293,6 +293,93 @@ async function signedInClient(routes: Record<string, { readonly status?: number;
   return { client, requests };
 }
 
+describe('Skill installation responses', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('requests the encoded Skill id and keeps valid reports and counts', async () => {
+    const items = [
+      {
+        userId: 'user-a',
+        state: 'missing',
+        revision: 'revision-3',
+        reportedAt: '2026-10-13T05:00:00Z',
+        itemStatus: 'removed',
+      },
+      { userId: 'user-b', state: 'unreported' },
+    ];
+    const summary = {
+      granted: 3,
+      reported: 2,
+      installed: 1,
+      missing: 1,
+      unreported: 1,
+      latestReportedAt: '2026-10-13T05:00:00Z',
+    };
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/skills/skill%2Fone/installations': {
+        body: {
+          skillId: 'skill/one',
+          summary,
+          truncated: true,
+          items: [
+            ...items,
+            null,
+            [],
+            'invalid',
+            { userId: '', state: 'missing' },
+            { userId: 'other', state: 'installed' },
+          ],
+        },
+      },
+    });
+    expect(await client.skillInstallations('skill/one')).toEqual({
+      skillId: 'skill/one',
+      summary,
+      items,
+      truncated: true,
+    });
+    expect(requests.at(-1)).toMatchObject({ method: 'GET', path: '/aep/v1/admin/skills/skill%2Fone/installations' });
+  });
+
+  test('does not turn malformed optional fields into reported facts', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': {
+        body: {
+          skillId: 's1',
+          summary: { granted: 4, reported: '2', installed: null, missing: 1 },
+          items: [{ userId: 'user-a', state: 'missing', revision: '', reportedAt: 42, itemStatus: null }],
+          truncated: 'true',
+        },
+      },
+    });
+    expect(await client.skillInstallations('s1')).toEqual({
+      skillId: 's1',
+      summary: { granted: 4, reported: 0, installed: 0, missing: 1, unreported: 0, latestReportedAt: null },
+      items: [{ userId: 'user-a', state: 'missing' }],
+      truncated: false,
+    });
+  });
+
+  test('handles a missing installation response without inventing users', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': { body: null },
+    });
+    expect(await client.skillInstallations('s1')).toEqual({
+      skillId: '',
+      summary: { granted: 0, reported: 0, installed: 0, missing: 0, unreported: 0, latestReportedAt: null },
+      items: [],
+      truncated: false,
+    });
+  });
+
+  test('propagates an unavailable endpoint instead of returning an empty report', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': { status: 503, body: { code: 'UNAVAILABLE' } },
+    });
+    await expect(client.skillInstallations('s1')).rejects.toMatchObject({ status: 503 });
+  });
+});
+
 describe('admin console access', () => {
   test('accepts the bootstrap administrator role', () => {
     expect(hasAdminConsoleAccess(identity({ roles: ['admin'] }))).toBe(true);
@@ -484,6 +571,93 @@ describe('admin session client identity', () => {
     expect(page.items[1]?.userId).toBeUndefined();
     expect(page.nextCursor).toBe('6');
     expect(requests.some((item) => item.path === '/aep/v1/admin/audit/authentication')).toBe(true);
+  });
+
+  test('loads the operations audit and drops malformed records', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': {
+        body: {
+          items: [
+            {
+              cursor: '9',
+              actorUserId: 'u1',
+              action: 'model.update',
+              resourceType: 'model',
+              resourceId: 'm1',
+              result: 'failure',
+              reason: 'conflict',
+              changes: { before: { price: 1 }, after: { price: 2 } },
+              createdAt: '2026-10-14T00:00:00Z',
+            },
+            {
+              cursor: '8',
+              actorUserId: null,
+              action: 'model.update',
+              resourceType: 'model',
+              resourceId: null,
+              result: 'success',
+              reason: null,
+              changes: null,
+              createdAt: '2026-10-13T00:00:00Z',
+            },
+            { cursor: 7, action: 'model.update' },
+            'not-a-record',
+          ],
+          nextCursor: '8',
+          timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+        },
+      },
+    });
+    const page = await client.searchAdminAudit({ actorUserId: 'u1', limit: 50 });
+    expect(page.items).toHaveLength(2);
+    expect(page.items[0]).toMatchObject({
+      cursor: '9',
+      action: 'model.update',
+      resourceType: 'model',
+      result: 'failure',
+      reason: 'conflict',
+    });
+    expect(page.items[0]?.changes).toEqual({ before: { price: 1 }, after: { price: 2 } });
+    expect(page.items[1]).toMatchObject({ cursor: '8', result: 'success' });
+    expect(page.items[1]?.actorUserId).toBeUndefined();
+    expect(page.items[1]?.changes).toBeUndefined();
+    expect(page.nextCursor).toBe('8');
+    expect(page.timeRange).toEqual({ after: '2026-10-08T00:00:00Z', before: null });
+    expect(requests.some((item) => item.path === '/aep/v1/admin/audit/operations')).toBe(true);
+  });
+
+  test('reports the operations window only when the response carries a well-formed one', async () => {
+    // 旧控制面返回 200 但没有 timeRange：这是能力未知的信号，不能回落成「不限」。
+    const legacy = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null } },
+    });
+    expect((await legacy.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+    const partial = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null, timeRange: { after: 5 } } },
+    });
+    expect((await partial.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+  });
+
+  test('accepts minimal operation records without inventing optional audit fields', async () => {
+    const record = {
+      cursor: '9',
+      action: 'model.update',
+      resourceType: 'model',
+      result: 'success',
+      createdAt: '2026-10-14T00:00:00Z',
+    };
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': {
+        body: { items: [null, [], 'invalid', record], nextCursor: null },
+      },
+    });
+    // 响应里没有结构正确的 timeRange 说明对端是旧控制面、能力未知，解析结果必须是 null；
+    // 回落成 {after:null,before:null} 会被页面当成「已确认的无限窗口」。
+    expect(await client.searchAdminAudit()).toEqual({
+      items: [record],
+      nextCursor: null,
+      timeRange: null,
+    });
   });
 
   test('tracks the console session id from login and clears it on logout', async () => {

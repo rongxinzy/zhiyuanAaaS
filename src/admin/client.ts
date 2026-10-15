@@ -156,6 +156,31 @@ export interface AdminSkillVersion {
   readonly createdAt?: string;
 }
 
+export interface AdminSkillInstallation {
+  readonly userId: string;
+  readonly state: 'missing' | 'unreported';
+  readonly revision?: string;
+  readonly reportedAt?: string;
+  readonly itemStatus?: string;
+}
+
+export interface AdminSkillInstallationSummary {
+  readonly granted: number;
+  readonly reported: number;
+  readonly installed: number;
+  readonly missing: number;
+  readonly unreported: number;
+  readonly latestReportedAt: string | null;
+}
+
+/** What Agents last reported about one Skill: counts plus granted users that need attention. */
+export interface AdminSkillInstallations {
+  readonly skillId: string;
+  readonly summary: AdminSkillInstallationSummary;
+  readonly items: readonly AdminSkillInstallation[];
+  readonly truncated: boolean;
+}
+
 export interface AdminSkillAssignment {
   readonly id: string;
   readonly skillId: string;
@@ -435,6 +460,47 @@ export interface AuthenticationAuditFilters {
   readonly createdBefore?: string;
   readonly cursor?: string;
   readonly limit?: number;
+}
+
+export interface AdminAuditRecord {
+  readonly cursor: string;
+  readonly actorUserId?: string;
+  readonly action: string;
+  readonly resourceType: string;
+  readonly resourceId?: string;
+  readonly result: string;
+  readonly reason?: string;
+  readonly changes?: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
+export interface AdminAuditTimeRange {
+  readonly after: string | null;
+  readonly before: string | null;
+}
+
+export interface AdminAuditPage {
+  readonly items: readonly AdminAuditRecord[];
+  readonly nextCursor: string | null;
+  /**
+   * The window the server actually applied. `null` means the response carried
+   * no well-formed `timeRange`, i.e. a control service that predates the
+   * default window and the `result` filter — callers MUST treat `null` as an
+   * unknown capability, never as an unbounded window.
+   */
+  readonly timeRange: AdminAuditTimeRange | null;
+}
+
+export interface AdminAuditFilters {
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly action?: string;
+  readonly resourceType?: string;
+  readonly resourceId?: string;
+  readonly actorUserId?: string;
+  readonly result?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
 }
 
 export interface AdminDeliveryRecord {
@@ -738,6 +804,17 @@ export class AdminConsoleClient {
       path: `/aep/v1/admin/skills/${segment(skillId)}${force ? '?force=true' : ''}`,
       responseType: 'empty',
     });
+  }
+
+  // The endpoint is newer than the pinned SDK package, so it goes through the
+  // console's own request path (same as deleteSkill).
+  async skillInstallations(skillId: string): Promise<AdminSkillInstallations> {
+    return parseSkillInstallations(
+      await this.#request<JsonObject>(this.#requireClient(), {
+        method: HttpMethod.Get,
+        path: `/aep/v1/admin/skills/${segment(skillId)}/installations`,
+      }),
+    );
   }
 
   async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {
@@ -1232,6 +1309,45 @@ export class AdminConsoleClient {
       ];
     });
     return { items, nextCursor: valueString(result, 'nextCursor') };
+  }
+
+  async searchAdminAudit(filters?: AdminAuditFilters): Promise<AdminAuditPage> {
+    const result = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/audit/operations?${identityQuery({ ...filters })}`,
+    });
+    const items = arrayFrom(result, 'items').flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.cursor !== 'string' ||
+        typeof record.action !== 'string' ||
+        typeof record.resourceType !== 'string' ||
+        typeof record.result !== 'string' ||
+        typeof record.createdAt !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          cursor: record.cursor,
+          action: record.action,
+          resourceType: record.resourceType,
+          result: record.result,
+          createdAt: record.createdAt,
+          ...(typeof record.actorUserId === 'string' ? { actorUserId: record.actorUserId } : {}),
+          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(isRecord(record.changes) ? { changes: record.changes } : {}),
+        },
+      ];
+    });
+    const range = isRecord(result) ? result.timeRange : null;
+    return {
+      items,
+      nextCursor: valueString(result, 'nextCursor'),
+      timeRange: parseAuditTimeRange(range),
+    };
   }
 
   #getClient(): AepClient {
@@ -1780,6 +1896,46 @@ function listCount(value: unknown): number {
   return 0;
 }
 
+function parseSkillInstallations(value: unknown): AdminSkillInstallations {
+  const record = isRecord(value) ? value : {};
+  const summary = isRecord(record.summary) ? record.summary : {};
+  const count = (key: string): number => (typeof summary[key] === 'number' ? (summary[key] as number) : 0);
+  const items = Array.isArray(record.items)
+    ? record.items.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const userId = nonEmptyString(item.userId);
+        const state =
+          item.state === 'missing' || item.state === 'unreported' ? (item.state as 'missing' | 'unreported') : null;
+        if (!userId || !state) return [];
+        const revision = nonEmptyString(item.revision);
+        const reportedAt = nonEmptyString(item.reportedAt);
+        const itemStatus = nonEmptyString(item.itemStatus);
+        return [
+          {
+            userId,
+            state,
+            ...(revision ? { revision } : {}),
+            ...(reportedAt ? { reportedAt } : {}),
+            ...(itemStatus ? { itemStatus } : {}),
+          },
+        ];
+      })
+    : [];
+  return {
+    skillId: nonEmptyString(record.skillId) ?? '',
+    summary: {
+      granted: count('granted'),
+      reported: count('reported'),
+      installed: count('installed'),
+      missing: count('missing'),
+      unreported: count('unreported'),
+      latestReportedAt: nonEmptyString(summary.latestReportedAt) ?? null,
+    },
+    items,
+    truncated: record.truncated === true,
+  };
+}
+
 function parseSkills(value: unknown): AdminSkill[] {
   const items = arrayFrom(value, 'skills');
   return items.flatMap((item) => {
@@ -1870,6 +2026,19 @@ function valueString(value: unknown, key: string): string | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = (value as Record<string, unknown>)[key];
   return typeof candidate === 'string' && candidate ? candidate : null;
+}
+
+/**
+ * A page only proves the newer operations protocol when it carries a
+ * well-formed `timeRange`. Missing, partial or wrong-typed data means the
+ * control service predates the echoed window and the `result` filter, so the
+ * console must not report either of them as supported.
+ */
+function parseAuditTimeRange(value: unknown): AdminAuditTimeRange | null {
+  if (!isRecord(value) || !('after' in value) || !('before' in value)) return null;
+  const bounds = [value.after, value.before];
+  if (!bounds.every((bound) => bound === null || (typeof bound === 'string' && bound.length > 0))) return null;
+  return { after: valueString(value, 'after'), before: valueString(value, 'before') };
 }
 
 function parseSessions(items: unknown[]): AdminUserSession[] {

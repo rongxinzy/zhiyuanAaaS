@@ -66,6 +66,8 @@ import {
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
+  type AdminSkillInstallation,
+  type AdminSkillInstallations,
   type AdminSkillVersion,
   AdminSubjectType,
   type AdminUserSession,
@@ -3928,9 +3930,116 @@ function SkillDetailDrawer({
             label: rc.skillDetailEmployees,
             children: <SkillEmployees state={employees} skillId={skill.id} variant="table" />,
           },
+          {
+            key: 'installations',
+            label: rc.skillDetailInstallations,
+            children: <SkillInstallations client={client} skillId={skill.id} />,
+          },
         ]}
       />
     </Drawer>
+  );
+}
+
+// What Agents last reported about this Skill. The counts are scoped to the
+// users the Skill is granted to, so the list only holds people it actually
+// reaches - not every user that ever synced another Skill.
+function SkillInstallations({ client, skillId }: { readonly client: AdminConsoleClient; readonly skillId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [page, setPage] = useState<AdminSkillInstallations | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    void client
+      .skillInstallations(skillId)
+      .then((result) => {
+        if (!cancelled) setPage(result);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, skillId]);
+
+  if (loading) return <Typography.Text type="secondary">{rc.installLoading}</Typography.Text>;
+  if (failed || !page) return <Typography.Text type="secondary">{rc.installUnavailable}</Typography.Text>;
+
+  const summary = page.summary;
+  const counts: readonly (readonly [string, number])[] = [
+    [rc.installGranted, summary.granted],
+    [rc.installReported, summary.reported],
+    [rc.installInstalled, summary.installed],
+    [rc.installMissing, summary.missing],
+    [rc.installUnreported, summary.unreported],
+  ];
+  return (
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+      <Space size={16} wrap>
+        {counts.map(([label, value]) => (
+          <Typography.Text key={label} type="secondary">
+            {label} <Typography.Text strong>{value}</Typography.Text>
+          </Typography.Text>
+        ))}
+        <Typography.Text type="secondary">
+          {rc.installLatest}{' '}
+          {summary.latestReportedAt
+            ? formatTimestamp(summary.latestReportedAt) || summary.latestReportedAt
+            : rc.installNever}
+        </Typography.Text>
+      </Space>
+      {page.items.length === 0 ? (
+        <Empty
+          description={<UnknownText>{summary.granted === 0 ? rc.installEmpty : rc.installAllInstalled}</UnknownText>}
+        />
+      ) : (
+        <Table<AdminSkillInstallation>
+          rowKey="userId"
+          size="small"
+          pagination={PAGINATION}
+          dataSource={[...page.items]}
+          columns={[
+            { title: rc.installColumnUser, dataIndex: 'userId', key: 'userId' },
+            {
+              title: rc.installColumnState,
+              dataIndex: 'state',
+              key: 'state',
+              render: (value: AdminSkillInstallation['state']) => (
+                <Tag color={value === 'missing' ? 'warning' : 'default'}>
+                  {value === 'missing' ? rc.installStateMissing : rc.installStateUnreported}
+                </Tag>
+              ),
+            },
+            {
+              title: rc.installColumnRevision,
+              dataIndex: 'revision',
+              key: 'revision',
+              render: (value?: string) => value || rc.notCollected,
+            },
+            {
+              title: rc.installColumnReportedAt,
+              dataIndex: 'reportedAt',
+              key: 'reportedAt',
+              render: (value?: string) => (value ? formatTimestamp(value) || value : rc.notCollected),
+            },
+            {
+              title: rc.installColumnItemStatus,
+              dataIndex: 'itemStatus',
+              key: 'itemStatus',
+              render: (value?: string) => value || rc.notCollected,
+            },
+          ]}
+        />
+      )}
+      {page.truncated ? <Typography.Text type="secondary">{rc.installTruncated}</Typography.Text> : null}
+    </Space>
   );
 }
 

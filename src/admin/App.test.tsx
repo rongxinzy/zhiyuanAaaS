@@ -184,6 +184,33 @@ describe('Ant Design admin shell', () => {
     expect(await screen.findByText('没有管理权限')).toBeInTheDocument();
     expect(screen.queryByTestId('resource')).not.toBeInTheDocument();
   });
+  test('admits an audit-only identity to the audit page with audit tabs only', async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: ['audit.read'] },
+    });
+    vi.spyOn(PortalClient.prototype, 'knowledgeAudit').mockResolvedValue({ items: [], nextCursor: null });
+    render(<AdminApp />);
+    expect(await screen.findByRole('menuitem', { name: '日志审计' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: '日志审计' }));
+    expect(await screen.findByRole('tab', { name: '知识审计' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '操作日志' })).toBeInTheDocument();
+    for (const name of ['业务事件', '配置执行记录'])
+      expect(screen.queryByRole('tab', { name })).not.toBeInTheDocument();
+    expect(screen.queryByText('没有管理权限')).not.toBeInTheDocument();
+  });
+  test('keeps the telemetry tabs and drops the audit tabs for an events-only identity', async () => {
+    vi.mocked(AdminConsoleClient.prototype.restore).mockResolvedValue({
+      status: 'authenticated',
+      identity: { ...administratorIdentity, roles: [], permissions: ['events.read'] },
+    });
+    render(<AdminApp />);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '日志审计' }));
+    expect(await screen.findByRole('tab', { name: '业务事件' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '配置执行记录' })).toBeInTheDocument();
+    for (const name of ['知识审计', '登录日志', '操作日志'])
+      expect(screen.queryByRole('tab', { name })).not.toBeInTheDocument();
+  });
   test('preserves legacy links and supports browser route changes', async () => {
     authenticated();
     window.location.hash = 'identity';
