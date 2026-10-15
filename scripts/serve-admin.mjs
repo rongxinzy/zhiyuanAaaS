@@ -26,11 +26,13 @@ const securityHeaders = Object.freeze({
     "connect-src 'self'",
     "font-src 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
-    // Embedded conversation pane: the chat UI is a different origin (same
-    // host, NodePort 30195). default-src 'self' would block the frame.
-    "frame-src 'self' http://*:30195 https://*:30195",
-    "img-src 'self' data:",
+    // 同源框架放行：文档预览要把 blob: 放进同源 iframe 显示 PDF；
+    // frame-ancestors 只要 'self'，其它站点仍嵌不进来。
+    "frame-ancestors 'self'",
+    // 预览用的 blob: URL 显式放行（图片 <img>、PDF iframe 都由页面自己创建）。
+    // 曾经放行的 http://*:30195 / https://*:30195 在仓库里已无任何引用，收紧掉。
+    "frame-src 'self' blob:",
+    "img-src 'self' data: blob:",
     "object-src 'none'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
@@ -40,6 +42,8 @@ const securityHeaders = Object.freeze({
   'permissions-policy': 'camera=(), geolocation=(), microphone=()',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
+  // X-Frame-Options 是控制台自身的响应头，不会被 blob: 子文档继承，对预览没有作用；
+  // 预览能不能同源取框架由 frame-ancestors/frame-src 决定，所以这里保持最严的 DENY。
   'x-frame-options': 'DENY',
 });
 

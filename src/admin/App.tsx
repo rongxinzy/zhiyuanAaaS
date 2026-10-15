@@ -49,6 +49,7 @@ import {
 } from './client.js';
 import { translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
+import { PageCrumbContext } from './page-crumb.js';
 import { botUIBaseURL, PortalClient, type PortalEmployee } from './portal.js';
 import { shellCopy as c } from './shell-copy.js';
 import {
@@ -233,6 +234,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<'signInFailed' | 'signInMetadataFailed' | null>(null);
   const [route, setRoute] = useState(readRoute);
+  const [crumbTail, setCrumbTail] = useState<string | null>(null);
   const [navigationOpen, setNavigationOpen] = useState(false);
   useEffect(() => {
     let live = true;
@@ -405,7 +407,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       );
       break;
     case 'knowledge':
-      content = <Knowledge client={client} />;
+      content = <Knowledge client={client} baseId={subpage ?? null} onNavigate={navigate} />;
       break;
     case 'skills':
       content = <Resources {...props} tab="skills" />;
@@ -572,11 +574,27 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           </Space>
         </Layout.Header>
         <Layout.Content className="admin-content">
-          <Breadcrumb items={[{ title: c.admin }, { title: selected?.label ?? c.notFound }]} />
+          <Breadcrumb
+            items={[
+              { title: c.admin },
+              {
+                // 单一面包屑：有子页时把分区项做成回分区根（列表）的链接。
+                title: subpage ? (
+                  <a href={`#/${page}`}>{selected?.label ?? c.notFound}</a>
+                ) : (
+                  (selected?.label ?? c.notFound)
+                ),
+              },
+              // 页面把自己的对象名报上来（如知识库名），补在分区之后。
+              ...(crumbTail ? [{ title: crumbTail }] : []),
+            ]}
+          />
           <div className="admin-page">
             <Suspense fallback={<Skeleton active />}>
               <div key={page}>
-                {accessible ? content : selected ? <Result status="403" title={c.forbidden} /> : content}
+                <PageCrumbContext value={setCrumbTail}>
+                  {accessible ? content : selected ? <Result status="403" title={c.forbidden} /> : content}
+                </PageCrumbContext>
               </div>
             </Suspense>
           </div>

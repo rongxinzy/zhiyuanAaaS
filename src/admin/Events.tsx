@@ -28,6 +28,8 @@ import {
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { KnowledgeAudit } from './KnowledgeAudit.js';
 import { shellCopy } from './shell-copy.js';
 
 type Filters = { type?: string; userId?: string; result?: string };
@@ -60,6 +62,15 @@ export function Events({
               key: 'execution',
               label: c.execution,
               children: <ExecutionRecords client={client} />,
+            },
+            {
+              key: 'knowledge',
+              label: translate(ADMIN_LANGUAGE, 'knowledgeAuditTitle'),
+              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
+                <KnowledgeAudit client={client} />
+              ) : (
+                <Result status="403" title={shellCopy.forbidden} />
+              ),
             },
             {
               key: 'login',

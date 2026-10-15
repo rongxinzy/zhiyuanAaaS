@@ -1,0 +1,354 @@
+import { Alert, App, Button, Modal, Select, Space, Table, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { knowledgeErrorText } from './knowledge-error.js';
+import type { ManagedKnowledgeGrant, PortalClient } from './portal.js';
+import { PortalError } from './portal.js';
+
+const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
+
+type GrantSubject = { readonly id: string; readonly name: string };
+
+// The picker's candidate lists plus how much they can be trusted. `complete`
+// is false when either source failed: the list is then known to be partial,
+// so per-row "not in the list" flags would be false alarms and are withheld.
+type GrantSubjects = {
+  readonly users: readonly GrantSubject[];
+  readonly teams: readonly GrantSubject[];
+  readonly complete: boolean;
+  readonly error: string | null;
+};
+
+export function KnowledgeGrants({
+  portal,
+  baseId,
+  disabled = false,
+}: {
+  readonly portal: PortalClient;
+  readonly baseId: string;
+  readonly disabled?: boolean;
+}) {
+  const { message } = App.useApp();
+  const [modal, modalContext] = Modal.useModal();
+  const [grants, setGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
+  const [subjects, setSubjects] = useState<GrantSubjects | null>(null);
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [userDraft, setUserDraft] = useState<string | null>(null);
+  const [teamDraft, setTeamDraft] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const [loadedBaseId, setLoadedBaseId] = useState<string | null>(null);
+  const baseGeneration = useRef(0);
+  const requestGeneration = useRef(0);
+  const subjectsGeneration = useRef(0);
+
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      const base = baseId;
+      const baseVersion = baseGeneration.current;
+      const requestVersion = ++requestGeneration.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await portal.listManagedKnowledgeGrants(base, signal);
+        if (
+          !signal?.aborted &&
+          baseVersion === baseGeneration.current &&
+          requestVersion === requestGeneration.current
+        ) {
+          setGrants(result.grants);
+          setBlocked(false);
+          setLoadedBaseId(base);
+        }
+      } catch (cause) {
+        if (signal?.aborted || baseVersion !== baseGeneration.current || requestVersion !== requestGeneration.current)
+          return;
+        setError(knowledgeErrorText(cause));
+        setLoadedBaseId(null);
+        if (!(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500)
+          setBlocked(true);
+      } finally {
+        if (!signal?.aborted && baseVersion === baseGeneration.current && requestVersion === requestGeneration.current)
+          setLoading(false);
+      }
+    },
+    [baseId, portal],
+  );
+
+  // 候选主体的两个来源各漏一处：通讯录（AEP 用户目录的唯一枚举出口）的团队
+  // 由成员带出，没有成员的团队不会出现；部门列表只取 AEP teams 首页
+  // （limit=100，不翻页）。这里取并集（通讯录里的名字优先），任一来源失败就
+  // 把清单标记为不完整——不完整的清单不参与「不在候选中」的标注，免得把合法
+  // 主体误报成历史脏数据。
+  const loadSubjects = useCallback(async () => {
+    const version = ++subjectsGeneration.current;
+    setSubjectsLoading(true);
+    const [contacts, departments] = await Promise.allSettled([portal.listContacts(), portal.listDepartments()]);
+    if (version !== subjectsGeneration.current) return;
+    const teams = new Map<string, GrantSubject>();
+    if (contacts.status === 'fulfilled')
+      for (const contact of contacts.value)
+        for (const team of contact.teams) if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
+    if (departments.status === 'fulfilled')
+      for (const team of departments.value)
+        if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
+    const failures = [contacts, departments].filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    setSubjects({
+      users:
+        contacts.status === 'fulfilled'
+          ? contacts.value.map((contact) => ({ id: contact.userId, name: contact.displayName || contact.username }))
+          : [],
+      teams: [...teams.values()],
+      complete: failures.length === 0,
+      error: failures.length
+        ? failures
+            .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)))
+            .join('；')
+        : null,
+    });
+    setSubjectsLoading(false);
+  }, [portal]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    baseGeneration.current += 1;
+    requestGeneration.current += 1;
+    setLoadedBaseId(null);
+    setLoading(true);
+    setSaving(false);
+    setGrants([]);
+    setUserDraft(null);
+    setTeamDraft(null);
+    setError(null);
+    setBlocked(false);
+    void load(controller.signal);
+    void loadSubjects();
+    return () => {
+      controller.abort();
+      baseGeneration.current += 1;
+      requestGeneration.current += 1;
+      subjectsGeneration.current += 1;
+    };
+  }, [load, loadSubjects]);
+
+  // 编辑门禁：读取/保存还没就绪、或上次写结果未知时，只允许看。
+  const editLocked = disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId;
+
+  const addGrant = (type: 'user' | 'team') => {
+    if (editLocked) return;
+    const id = (type === 'user' ? userDraft : teamDraft)?.trim();
+    if (!id || grants.some((grant) => grant.type === type && grant.id === id)) return;
+    setGrants((current) => [...current, { type, id }]);
+    if (type === 'user') setUserDraft(null);
+    else setTeamDraft(null);
+  };
+
+  const grantOptions = useMemo(() => {
+    const granted = new Set(grants.map((grant) => `${grant.type}:${grant.id}`));
+    // 标签写「显示名 · ID」：Select 的搜索按 label 过滤，名称和 ID 两种输入
+    // 都能命中，同时把服务端唯一认得的 ID 摊开给管理员看。已在授权里的主体直接
+    // 置灰，从选项层面就杜绝重复添加。
+    return {
+      users: (subjects?.users ?? []).map((subject) => ({
+        value: subject.id,
+        label: subject.name ? `${subject.name} · ${subject.id}` : subject.id,
+        disabled: granted.has(`user:${subject.id}`),
+      })),
+      teams: (subjects?.teams ?? []).map((subject) => ({
+        value: subject.id,
+        label: subject.name ? `${subject.name} · ${subject.id}` : subject.id,
+        disabled: granted.has(`team:${subject.id}`),
+      })),
+    };
+  }, [grants, subjects]);
+
+  // 候选清单不完整（某一来源失败，或列表本身分页/过滤）时整表不标注：标出来的
+  // 未必是真脏数据，服务端逐个 id 直查 AEP 才是权威判定，这里只做可读的提示。
+  const unknownGrants = useMemo(() => {
+    if (!subjects?.complete) return [];
+    const known = new Set([
+      ...subjects.users.map((user) => `user:${user.id}`),
+      ...subjects.teams.map((team) => `team:${team.id}`),
+    ]);
+    return grants.filter((grant) => !known.has(`${grant.type}:${grant.id}`));
+  }, [grants, subjects]);
+
+  const save = async (next = grants) => {
+    if (editLocked) return;
+    const base = baseId;
+    const baseVersion = baseGeneration.current;
+    const requestVersion = ++requestGeneration.current;
+    setSaving(true);
+    try {
+      const result = await portal.replaceManagedKnowledgeGrants(
+        base,
+        next.map(({ type, id }) => ({ type, id })),
+      );
+      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
+        setGrants(result.grants);
+        setError(null);
+        message.success(tr('knowledgeGrantsSaved'));
+      }
+    } catch (cause) {
+      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
+        setError(knowledgeErrorText(cause));
+        if (!(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500)
+          setBlocked(true);
+        message.error(tr('knowledgeGrantsSaveFailed'));
+      }
+    } finally {
+      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) setSaving(false);
+    }
+  };
+
+  const columns: ColumnsType<ManagedKnowledgeGrant> = [
+    {
+      title: tr('knowledgeGrantType'),
+      dataIndex: 'type',
+      render: (type: ManagedKnowledgeGrant['type']) =>
+        type === 'user' ? tr('knowledgeGrantUser') : tr('knowledgeGrantTeam'),
+    },
+    {
+      title: tr('knowledgeGrantId'),
+      dataIndex: 'id',
+      render: (id: string, grant: ManagedKnowledgeGrant) => (
+        <>
+          {id}
+          {unknownGrants.includes(grant) && (
+            <Tag color="warning" style={{ marginInlineStart: 8 }}>
+              {tr('knowledgeGrantUnknownSubject')}
+            </Tag>
+          )}
+        </>
+      ),
+    },
+    { title: tr('knowledgeGrantBy'), dataIndex: 'granted_by', render: (value?: string) => value || '—' },
+    {
+      title: tr('knowledgeActions'),
+      render: (_, grant) => (
+        <Button
+          size="small"
+          danger
+          disabled={editLocked}
+          onClick={() => setGrants((current) => current.filter((item) => item !== grant))}
+        >
+          {tr('knowledgeGrantRemove')}
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <section aria-label={tr('knowledgeGrants')}>
+      <Typography.Title level={5}>{tr('knowledgeGrants')}</Typography.Title>
+      {error ? (
+        <Alert
+          showIcon
+          type="error"
+          title={tr('knowledgeGrantsReadFailed')}
+          description={error}
+          action={
+            <Button size="small" onClick={() => void load()}>
+              {tr('knowledgeRetryRead')}
+            </Button>
+          }
+        />
+      ) : (
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
+          <Alert
+            showIcon
+            type="warning"
+            title={tr('knowledgeGrantsReplaceHint')}
+            action={
+              <Button
+                size="small"
+                danger
+                disabled={editLocked || !grants.length}
+                onClick={() =>
+                  modal.confirm({
+                    title: tr('knowledgeGrantsRevokeConfirm'),
+                    okText: tr('knowledgeGrantsRevokeAll'),
+                    cancelText: tr('knowledgeCancel'),
+                    okButtonProps: { danger: true },
+                    onOk: () => save([]),
+                  })
+                }
+              >
+                {tr('knowledgeGrantsRevokeAll')}
+              </Button>
+            }
+          />
+          {subjects && !subjects.complete && (
+            <Alert
+              showIcon
+              type="warning"
+              title={tr('knowledgeGrantSubjectsIncomplete')}
+              description={subjects.error}
+              action={
+                <Button size="small" onClick={() => void loadSubjects()}>
+                  {tr('knowledgeRetryRead')}
+                </Button>
+              }
+            />
+          )}
+          <Space wrap>
+            <Select
+              aria-label={tr('knowledgeGrantUser')}
+              showSearch={{ optionFilterProp: 'label' }}
+              allowClear
+              loading={subjectsLoading}
+              value={userDraft ?? undefined}
+              onChange={(value: string | undefined) => setUserDraft(value ?? null)}
+              options={grantOptions.users}
+              placeholder={tr('knowledgeGrantUserSelect')}
+              notFoundContent={tr('knowledgeGrantNoUserMatch')}
+              disabled={editLocked || subjectsLoading}
+              style={{ minWidth: 240 }}
+            />
+            <Button disabled={editLocked || !userDraft} onClick={() => addGrant('user')}>
+              {tr('knowledgeGrantAddUser')}
+            </Button>
+            <Select
+              aria-label={tr('knowledgeGrantTeam')}
+              showSearch={{ optionFilterProp: 'label' }}
+              allowClear
+              loading={subjectsLoading}
+              value={teamDraft ?? undefined}
+              onChange={(value: string | undefined) => setTeamDraft(value ?? null)}
+              options={grantOptions.teams}
+              placeholder={tr('knowledgeGrantTeamSelect')}
+              notFoundContent={tr('knowledgeGrantNoTeamMatch')}
+              disabled={editLocked || subjectsLoading}
+              style={{ minWidth: 240 }}
+            />
+            <Button disabled={editLocked || !teamDraft} onClick={() => addGrant('team')}>
+              {tr('knowledgeGrantAddTeam')}
+            </Button>
+          </Space>
+          {unknownGrants.length > 0 && <Alert showIcon type="warning" title={tr('knowledgeGrantUnknownHint')} />}
+          <Table<ManagedKnowledgeGrant>
+            rowKey={(grant) => `${grant.type}:${grant.id}`}
+            size="small"
+            loading={loading}
+            columns={columns}
+            dataSource={grants}
+            pagination={false}
+            locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
+            scroll={{ x: 480 }}
+          />
+          <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
+            {tr('knowledgeGrantsSave')}
+          </Button>
+        </Space>
+      )}
+      {modalContext}
+    </section>
+  );
+}

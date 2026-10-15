@@ -18,7 +18,11 @@ try {
   const contentSecurityPolicy = response.headers.get('content-security-policy') ?? '';
   assert.match(contentSecurityPolicy, /script-src 'self'/);
   assert.doesNotMatch(contentSecurityPolicy, /script-src[^;]*'unsafe-inline'/);
-  assert.match(contentSecurityPolicy, /frame-ancestors 'none'/);
+  // 同源框架放行是为了文档预览（blob: iframe 显示 PDF）；外部站点仍嵌不进来。
+  assert.match(contentSecurityPolicy, /frame-ancestors 'self'/);
+  // 预览只放行同源与 blob:，历史上的 :30195 通配已收紧。
+  assert.match(contentSecurityPolicy, /frame-src 'self' blob:/);
+  assert.doesNotMatch(contentSecurityPolicy, /30195/);
   assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
