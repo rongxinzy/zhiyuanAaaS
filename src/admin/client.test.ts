@@ -864,6 +864,51 @@ describe('admin data-plane publish', () => {
     expect(dataPlane.status.state).toBe('pending');
     expect(dataPlane.status.catalogComparison).toBeUndefined();
   });
+
+  test.each(['settles', 'keeps-changing', 'wrong-ready-hash'] as const)(
+    'dataPlane brackets observation reads and handles %s',
+    async (stage) => {
+      let reads = 0;
+      const requests: string[] = [];
+      vi.stubGlobal('fetch', async (input: string | URL) => {
+        const path = new URL(String(input)).pathname;
+        if (path === '/aep/v1/metadata') return Response.json(serverMetadata);
+        if (path === '/aep/v1/auth/password/login') return Response.json(loginTokens);
+        if (path === '/aep/v1/user/me') return Response.json(adminMe);
+        requests.push(path);
+        if (path.endsWith('/desired-state')) {
+          reads += 1;
+          const revision =
+            stage === 'keeps-changing' ? `r${reads}` : stage === 'settles' && reads === 1 ? 'old' : 'new';
+          return Response.json({ ...desiredState, revision, contentHash: revision });
+        }
+        return Response.json({
+          state: 'ready',
+          observedRevision: 'new',
+          contentHash: stage === 'wrong-ready-hash' ? 'wrong' : 'new',
+        });
+      });
+      const client = new AdminConsoleClient('http://aep.test', new MemoryTokenStore());
+      await client.login({ username: 'admin', password: 'test-password' });
+      if (stage === 'settles') {
+        await expect(client.dataPlane()).resolves.toMatchObject({
+          desired: { revision: 'new' },
+          status: { state: 'ready' },
+        });
+        expect(reads).toBe(4);
+      } else {
+        await expect(client.dataPlane()).rejects.toMatchObject({ code: 'GATEWAY_OBSERVATION_CHANGED' });
+        expect(reads).toBe(6);
+      }
+      expect(requests).toEqual(
+        Array.from({ length: reads / 2 }, () => [
+          '/aep/v1/admin/data-plane/desired-state',
+          '/aep/v1/admin/data-plane/status',
+          '/aep/v1/admin/data-plane/desired-state',
+        ]).flat(),
+      );
+    },
+  );
 });
 
 describe('admin console passthrough endpoints', () => {
