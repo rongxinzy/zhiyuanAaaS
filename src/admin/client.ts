@@ -457,7 +457,13 @@ export interface AdminAuditTimeRange {
 export interface AdminAuditPage {
   readonly items: readonly AdminAuditRecord[];
   readonly nextCursor: string | null;
-  readonly timeRange: AdminAuditTimeRange;
+  /**
+   * The window the server actually applied. `null` means the response carried
+   * no well-formed `timeRange`, i.e. a control service that predates the
+   * default window and the `result` filter — callers MUST treat `null` as an
+   * unknown capability, never as an unbounded window.
+   */
+  readonly timeRange: AdminAuditTimeRange | null;
 }
 
 export interface AdminAuditFilters {
@@ -1304,9 +1310,7 @@ export class AdminConsoleClient {
     return {
       items,
       nextCursor: valueString(result, 'nextCursor'),
-      timeRange: isRecord(range)
-        ? { after: valueString(range, 'after'), before: valueString(range, 'before') }
-        : { after: null, before: null },
+      timeRange: parseAuditTimeRange(range),
     };
   }
 
@@ -1946,6 +1950,19 @@ function valueString(value: unknown, key: string): string | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = (value as Record<string, unknown>)[key];
   return typeof candidate === 'string' && candidate ? candidate : null;
+}
+
+/**
+ * A page only proves the newer operations protocol when it carries a
+ * well-formed `timeRange`. Missing, partial or wrong-typed data means the
+ * control service predates the echoed window and the `result` filter, so the
+ * console must not report either of them as supported.
+ */
+function parseAuditTimeRange(value: unknown): AdminAuditTimeRange | null {
+  if (!isRecord(value) || !('after' in value) || !('before' in value)) return null;
+  const bounds = [value.after, value.before];
+  if (!bounds.every((bound) => bound === null || (typeof bound === 'string' && bound.length > 0))) return null;
+  return { after: valueString(value, 'after'), before: valueString(value, 'before') };
 }
 
 function parseSessions(items: unknown[]): AdminUserSession[] {

@@ -1,4 +1,4 @@
-import type { AdminControlEvent } from '@aep/sdk-node';
+import type { AdminControlEvent, PlatformUser } from '@aep/sdk-node';
 import {
   Alert,
   Button,
@@ -16,7 +16,7 @@ import {
   Typography,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import {
   type AdminAuditFilters,
@@ -33,6 +33,7 @@ import {
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import { formatTimestampSeconds } from './format.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeAudit } from './KnowledgeAudit.js';
 import { shellCopy } from './shell-copy.js';
@@ -611,19 +612,82 @@ type OperationFilters = {
   range?: [Dayjs, Dayjs];
 };
 
-type OperationFormValues = OperationFilters;
+type OperationFormValues = {
+  action?: string;
+  resourceId?: string;
+  /** 操作人输入：姓名或用户 ID，提交前解析成用户 ID。 */
+  actor?: string;
+  result?: string;
+  range?: [Dayjs, Dayjs];
+};
 
-/** 把页面筛选转换为服务端查询：时间范围映射为 RFC3339 的 createdAfter/createdBefore。 */
-function operationQuery(filters: OperationFilters): AdminAuditFilters {
+/** 这次查询固定的生效时间边界：首屏由服务端决定，后续分页显式携带。 */
+type OperationWindow = { readonly createdAfter?: string; readonly createdBefore?: string };
+
+/**
+ * 把页面筛选转换为服务端查询：显式时间范围映射为 RFC3339 的 createdAfter/createdBefore。
+ * 未选范围时是否携带时间参数由调用方决定：首屏不传（交给服务端套用默认窗口），
+ * 后续分页传首屏返回的生效边界 —— 服务端每次缺省都会重算 now()-7d，会让临界记录漏掉。
+ */
+function operationQuery(filters: OperationFilters, window: OperationWindow | null): AdminAuditFilters {
   const [from, to] = filters.range ?? [];
+  const bounds = from && to ? { createdAfter: from.toISOString(), createdBefore: to.toISOString() } : window;
   return {
     ...(filters.action ? { action: filters.action } : {}),
     ...(filters.resourceId ? { resourceId: filters.resourceId } : {}),
     ...(filters.actorUserId ? { actorUserId: filters.actorUserId } : {}),
     ...(filters.result ? { result: filters.result } : {}),
-    ...(from ? { createdAfter: from.toISOString() } : {}),
-    ...(to ? { createdBefore: to.toISOString() } : {}),
+    ...(bounds ?? {}),
   };
+}
+
+/**
+ * 旧控制面缺少 timeRange：无法确认生效窗口，也不支持 result。
+ * 确认能力后就不再发送这两类参数，页面也不把结果与时间范围写成已生效的条件。
+ */
+function supportedFilters(filters: OperationFilters): OperationFilters {
+  return {
+    ...(filters.action ? { action: filters.action } : {}),
+    ...(filters.resourceId ? { resourceId: filters.resourceId } : {}),
+    ...(filters.actorUserId ? { actorUserId: filters.actorUserId } : {}),
+  };
+}
+
+/** 平台用户 ID 是 UUID；该形态可直接查询，其余输入必须先解析成用户，不能当 ID 发出去。 */
+const userIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type OperationActor =
+  | { readonly userId: string }
+  | { readonly problem: 'notFound' | 'ambiguous' | 'unverified'; readonly name: string };
+
+/**
+ * 操作人按姓名解析：用户 ID、账号或显示名唯一精确命中时换成用户 ID。
+ * 后端按 actor_user_id 精确匹配，姓名原样发出去永远不会命中，所以解析不出来时
+ * 返回问题而不是透传。
+ */
+function resolveOperationActor(input: string, users: readonly PlatformUser[]): OperationActor {
+  const name = input.trim();
+  if (userIdPattern.test(name)) return { userId: name };
+  const byId = users.filter((user) => user.id === name);
+  const byAccount = byId.length > 0 ? byId : users.filter((user) => user.username === name);
+  const matches = byAccount.length > 0 ? byAccount : users.filter((user) => user.displayName === name);
+  const [match] = matches;
+  if (!match) return { problem: 'notFound', name };
+  if (matches.length > 1) return { problem: 'ambiguous', name };
+  return { userId: match.id };
+}
+
+const actorProblemCopy = {
+  notFound: c.actorNotFound,
+  ambiguous: c.actorAmbiguous,
+  unverified: c.actorLookupFailed,
+} as const;
+
+/** 操作人显示：目录里查得到就显示姓名，查不到（已删除或改名）如实回落到稳定 ID。 */
+function actorLabel(users: readonly PlatformUser[], userId?: string): string | null {
+  if (!userId) return null;
+  const user = users.find((item) => item.id === userId);
+  return user ? user.displayName || user.username : userId;
 }
 
 /** 脱敏变更值的只读呈现；缺失值在调用处显式标注，不伪造内容。 */
@@ -649,8 +713,8 @@ function objectLabel(record: { readonly resourceType?: string; readonly resource
   return record.resourceType ? `${record.resourceType} / ${record.resourceId ?? c.unknown}` : record.resourceId;
 }
 
-/** 操作详情：正文展示脱敏变更与失败原因，事件代码归入技术详情。 */
-function OperationDetail({ record }: { record: AdminAuditRecord }) {
+/** 操作详情：正文展示脱敏变更与失败原因，事件代码与稳定标识归入技术详情。 */
+function OperationDetail({ record, actor }: { record: AdminAuditRecord; actor: string | null }) {
   const changes = record.changes ?? null;
   const requestId = changes && typeof changes.requestId === 'string' ? changes.requestId : null;
   const hasBefore = changes !== null && 'before' in changes;
@@ -662,8 +726,8 @@ function OperationDetail({ record }: { record: AdminAuditRecord }) {
         column={1}
         bordered
         items={[
-          { key: 'time', label: c.opsTime, children: shown(record.createdAt) },
-          { key: 'actor', label: c.actor, children: shown(record.actorUserId) },
+          { key: 'time', label: c.opsTime, children: formatTimestampSeconds(record.createdAt) || c.unknown },
+          { key: 'actor', label: c.actor, children: shown(actor) },
           { key: 'object', label: c.object, children: shown(objectLabel(record)) },
           { key: 'result', label: c.result, children: resultTag(record.result) },
           { key: 'reason', label: c.reason, children: shown(record.reason) },
@@ -686,8 +750,10 @@ function OperationDetail({ record }: { record: AdminAuditRecord }) {
         bordered
         items={[
           { key: 'action', label: c.type, children: shown(record.action) },
+          { key: 'actorId', label: c.actorId, children: shown(record.actorUserId) },
           { key: 'resourceType', label: c.resourceType, children: shown(record.resourceType) },
           { key: 'resourceId', label: c.resourceId, children: shown(record.resourceId) },
+          { key: 'createdAt', label: c.opsTime, children: shown(record.createdAt) },
           { key: 'cursor', label: c.operationId, children: shown(record.cursor) },
           ...(requestId ? [{ key: 'requestId', label: c.requestId, children: requestId }] : []),
         ]}
@@ -698,20 +764,56 @@ function OperationDetail({ record }: { record: AdminAuditRecord }) {
 
 /**
  * 操作日志：服务端采集的管理员写操作审计，只读。
- * 不传时间参数时服务端只返回最近七天，页面如实展示返回的 timeRange。
+ *
+ * 首屏不传时间参数，由服务端套用默认窗口；拿到生效边界后固定这次查询的后续分页，
+ * 避免每次翻页重算窗口而漏掉临界记录。响应里没有结构正确的 timeRange 说明控制面
+ * 过旧（不返回生效窗口、不支持 result），此时进入旧后端态：提示升级、禁用这些筛选，
+ * 并不再发送它们。
  */
 function OperationLog({ client }: { client: AdminConsoleClient }) {
   const [form] = Form.useForm<OperationFormValues>();
   const [filters, setFilters] = useState<OperationFilters>({});
+  const [window, setWindow] = useState<OperationWindow | null>(null);
   const [rows, setRows] = useState<readonly AdminAuditRecord[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<AdminAuditTimeRange | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
+  const [legacy, setLegacy] = useState(false);
+  const [actorProblem, setActorProblem] = useState<string | null>(null);
+  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [selected, setSelected] = useState<AdminAuditRecord | null>(null);
   const [revision, refresh] = useState(0);
   const requestVersion = useRef(0);
+  // 能力判断是后端属性，确认后一直保留：重新查询不能把被忽略的筛选重新放开。
+  const legacyRef = useRef(false);
+  const directory = useRef<Promise<readonly PlatformUser[]> | null>(null);
+
+  /** 用户目录只取一次，姓名解析与操作人显示共用；失败后下次查询再试。 */
+  const loadUsers = useCallback(async () => {
+    if (directory.current) return directory.current;
+    const pending = client.users();
+    directory.current = pending;
+    try {
+      return await pending;
+    } catch (cause) {
+      directory.current = null;
+      throw cause;
+    }
+  }, [client]);
+  useEffect(() => {
+    let live = true;
+    void loadUsers()
+      .then((items) => {
+        if (live) setUsers(items);
+      })
+      // 目录取不到（无权限或离线）不影响审计查询，操作人如实按 ID 显示。
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [loadUsers]);
   useEffect(() => {
     requestVersion.current += 1;
     const version = requestVersion.current;
@@ -721,15 +823,32 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
     setUnavailable(false);
     setRows([]);
     setCursor(null);
+    setWindow(null);
     setTimeRange(null);
+    // 旧控制面缺少 timeRange：确认能力后不再发送结果与时间参数。
+    const requested = legacyRef.current ? supportedFilters(filters) : filters;
     void client
-      .searchAdminAudit({ ...operationQuery(filters), limit: 50 })
+      .searchAdminAudit({ ...operationQuery(requested, null), limit: 50 })
       .then((page) => {
-        if (live && version === requestVersion.current) {
-          setRows(page.items);
-          setCursor(page.nextCursor);
-          setTimeRange(page.timeRange);
+        if (!live || version !== requestVersion.current) return;
+        const applied = page.timeRange;
+        legacyRef.current = applied === null;
+        setLegacy(applied === null);
+        setRows(page.items);
+        setCursor(page.nextCursor);
+        if (applied === null) {
+          // 已应用条件里若含被忽略的筛选，连同表单一起摘掉，不假装它生效。
+          if (filters.result !== undefined || filters.range !== undefined) {
+            form.resetFields(['result', 'range']);
+            setFilters(supportedFilters(filters));
+          }
+          return;
         }
+        setTimeRange(applied);
+        setWindow({
+          ...(applied.after ? { createdAfter: applied.after } : {}),
+          ...(applied.before ? { createdBefore: applied.before } : {}),
+        });
       })
       .catch((cause) => {
         if (!live) return;
@@ -744,14 +863,15 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
     return () => {
       live = false;
     };
-  }, [client, filters, revision]);
+  }, [client, filters, form, revision]);
   const more = async () => {
     if (!cursor || loading) return;
     const version = requestVersion.current;
     setLoading(true);
     setError(false);
     try {
-      const page = await client.searchAdminAudit({ ...operationQuery(filters), cursor, limit: 50 });
+      // 后续页携带首屏固定的生效边界（显式范围则用用户的范围），服务端不再重算默认窗口。
+      const page = await client.searchAdminAudit({ ...operationQuery(filters, window), cursor, limit: 50 });
       if (version !== requestVersion.current) return;
       setRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
@@ -769,7 +889,7 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
         }`
       : null;
   const appliedFilters = [
-    filters.actorUserId ? `${c.actor}: ${filters.actorUserId}` : '',
+    filters.actorUserId ? `${c.actor}: ${actorLabel(users, filters.actorUserId) ?? filters.actorUserId}` : '',
     filters.resourceId ? `${c.resourceId}: ${filters.resourceId}` : '',
     filters.action ? `${c.type}: ${filters.action}` : '',
     filters.result ? `${c.result}: ${filters.result === 'success' ? c.success : c.failure}` : '',
@@ -780,11 +900,21 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
   }
   return (
     <>
+      {legacy && (
+        <Alert
+          type="warning"
+          showIcon
+          title={c.opsLegacyTitle}
+          description={c.opsLegacyDetail}
+          style={{ marginBottom: 20 }}
+        />
+      )}
+      {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
-        <Form.Item name="actorUserId" label={c.actor}>
+        <Form.Item name="actor" label={c.actorField}>
           <Input allowClear />
         </Form.Item>
-        <Form.Item name="resourceId" label={c.resourceId}>
+        <Form.Item name="resourceId" label={c.resourceId} extra={c.objectIdHint}>
           <Input allowClear />
         </Form.Item>
         <Form.Item name="action" label={c.type}>
@@ -793,6 +923,7 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
         <Form.Item name="result" label={c.result}>
           <Select
             allowClear
+            disabled={legacy}
             style={{ width: 130 }}
             placeholder={c.all}
             options={[
@@ -802,24 +933,40 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
           />
         </Form.Item>
         <Form.Item name="range" label={c.range}>
-          <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm" allowClear maxDate={dayjs()} />
+          <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm" allowClear disabled={legacy} maxDate={dayjs()} />
         </Form.Item>
         <ListQueryActions
           form={form}
           searching={loading}
           search={{
-            run: (values) => {
+            run: async (values) => {
               const next: OperationFilters = {};
               if (values.action?.trim()) next.action = values.action.trim();
               if (values.resourceId?.trim()) next.resourceId = values.resourceId.trim();
-              if (values.actorUserId?.trim()) next.actorUserId = values.actorUserId.trim();
               if (values.result) next.result = values.result;
               const range = values.range;
               if (range?.[0] && range[1]) next.range = [range[0], range[1]];
+              const actor = values.actor?.trim();
+              if (actor) {
+                let resolution: OperationActor;
+                try {
+                  resolution = resolveOperationActor(actor, await loadUsers());
+                } catch {
+                  resolution = { problem: 'unverified', name: actor };
+                }
+                if ('problem' in resolution) {
+                  // 解析不出来就不发请求：后端按 actor_user_id 精确匹配，姓名发出去永不命中。
+                  setActorProblem(actorProblemCopy[resolution.problem].replace('{name}', resolution.name));
+                  return;
+                }
+                next.actorUserId = resolution.userId;
+              }
+              setActorProblem(null);
               setFilters(next);
             },
           }}
           onReset={() => {
+            setActorProblem(null);
             setFilters({});
           }}
         />
@@ -861,6 +1008,7 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
                   type="link"
                   onClick={() => {
                     form.resetFields();
+                    setActorProblem(null);
                     setFilters({});
                   }}
                 >
@@ -871,8 +1019,12 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
           ),
         }}
         columns={[
-          { title: c.opsTime, dataIndex: 'createdAt', render: shown },
-          { title: c.actor, dataIndex: 'actorUserId', render: shown },
+          {
+            title: c.opsTime,
+            dataIndex: 'createdAt',
+            render: (value: string) => formatTimestampSeconds(value) || c.unknown,
+          },
+          { title: c.actor, dataIndex: 'actorUserId', render: (value?: string) => shown(actorLabel(users, value)) },
           { title: c.type, dataIndex: 'action', render: shown },
           {
             title: c.object,
@@ -896,7 +1048,7 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
       )}
       <Drawer title={c.detailTitle} open={Boolean(selected)} onClose={() => setSelected(null)} size={560}>
         <Alert type="info" title={c.scopeNote} style={{ marginBottom: 20 }} />
-        {selected && <OperationDetail record={selected} />}
+        {selected && <OperationDetail record={selected} actor={actorLabel(users, selected.actorUserId)} />}
       </Drawer>
     </>
   );

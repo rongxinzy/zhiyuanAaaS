@@ -538,6 +538,18 @@ describe('admin session client identity', () => {
     expect(requests.some((item) => item.path === '/aep/v1/admin/audit/operations')).toBe(true);
   });
 
+  test('reports the operations window only when the response carries a well-formed one', async () => {
+    // 旧控制面返回 200 但没有 timeRange：这是能力未知的信号，不能回落成「不限」。
+    const legacy = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null } },
+    });
+    expect((await legacy.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+    const partial = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null, timeRange: { after: 5 } } },
+    });
+    expect((await partial.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+  });
+
   test('tracks the console session id from login and clears it on logout', async () => {
     const { client } = await signedInClient({
       'POST /aep/v1/auth/logout': { status: 204, body: null },
