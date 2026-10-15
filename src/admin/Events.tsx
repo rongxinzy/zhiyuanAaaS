@@ -646,9 +646,7 @@ function resultTag(value: string) {
 }
 
 function objectLabel(record: { readonly resourceType?: string; readonly resourceId?: string }) {
-  return record.resourceType
-    ? `${record.resourceType} / ${record.resourceId ?? c.unknown}`
-    : record.resourceId;
+  return record.resourceType ? `${record.resourceType} / ${record.resourceId ?? c.unknown}` : record.resourceId;
 }
 
 /** 操作详情：正文展示脱敏变更与失败原因，事件代码归入技术详情。 */
@@ -672,9 +670,7 @@ function OperationDetail({ record }: { record: AdminAuditRecord }) {
           ...(changes === null
             ? [{ key: 'changes', label: c.changes, children: c.noChanges }]
             : [
-                ...(hasBefore
-                  ? [{ key: 'before', label: c.changedBefore, children: jsonBlock(changes.before) }]
-                  : []),
+                ...(hasBefore ? [{ key: 'before', label: c.changedBefore, children: jsonBlock(changes.before) }] : []),
                 ...(hasAfter ? [{ key: 'after', label: c.changedAfter, children: jsonBlock(changes.after) }] : []),
                 ...(!hasBefore || !hasAfter || extraKeys.length > 0
                   ? [{ key: 'payload', label: c.changes, children: jsonBlock(changes) }]
