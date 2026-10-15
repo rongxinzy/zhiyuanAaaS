@@ -1182,6 +1182,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
       catalogComparison: computeCatalogComparison(),
     });
   if (method === 'POST' && pathname === '/aep/v1/admin/data-plane/publications') {
+    const input = jsonBody(rawBody);
     const key = headers['idempotency-key'];
     if (typeof key !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(key))
       return writeJson(response, 400, { code: 'INVALID_IDEMPOTENCY_KEY' });
@@ -1190,6 +1191,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
       const now = new Date().toISOString();
       operation = {
         key,
+        includeGatewayLimits: input.includeGatewayLimits === true,
         operationId: randomUUID(),
         deploymentId: 'demo',
         revision: `catalog-async-${state.nextId++}`,
@@ -1209,7 +1211,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
       };
       state.publications.push(operation);
     }
-    const { key: _key, ...payload } = operation;
+    const { key: _key, includeGatewayLimits: _selection, ...payload } = operation;
     return writeJson(response, 202, payload);
   }
   if (method === 'GET' && pathname.startsWith('/aep/v1/admin/data-plane/publications/')) {
@@ -1222,7 +1224,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
       observedRevision: c.type === 'Ready' ? null : operation.revision,
       reason: c.type === 'Ready' ? 'DataPlaneNotObserved' : 'OperatorConfirmed',
     }));
-    const { key: _key, ...payload } = operation;
+    const { key: _key, includeGatewayLimits: _selection, ...payload } = operation;
     return writeJson(response, 200, payload);
   }
   if (method === 'POST' && pathname === '/aep/v1/admin/data-plane/publish') {

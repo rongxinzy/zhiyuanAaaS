@@ -512,13 +512,16 @@ export class AdminConsoleClient {
     return this.#deploymentId ? JSON.stringify([this.#baseUrl, this.#deploymentId]) : null;
   }
 
-  async createDataPlanePublication(idempotencyKey: string): Promise<DataPlanePublication> {
+  async createDataPlanePublication(
+    idempotencyKey: string,
+    input: { readonly includeGatewayLimits?: boolean } = {},
+  ): Promise<DataPlanePublication> {
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) throw new TypeError('Invalid publication key.');
     const result = parsePublication(
       await this.#request<unknown>(this.#requireClient(), {
         method: HttpMethod.Post,
         path: '/aep/v1/admin/data-plane/publications',
-        body: {},
+        body: input.includeGatewayLimits === true ? { includeGatewayLimits: true } : {},
         idempotencyKey,
       }),
     );

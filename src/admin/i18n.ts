@@ -1,5 +1,13 @@
 const translations = {
   zh: {
+    publicationLimitsTitle: '限流配额发布进度',
+    publicationLimitsEmpty: '当前会话尚未提交限流规则发布。请保存草稿后提交，并检查对应版本的应用状态。',
+    publicationLimitsAction: '发布路由与规则',
+    publicationLimitsConfirm: '发布模型路由与限流配额草稿',
+    publicationLimitsConfirmNote:
+      '本次发布同时捕获当前模型目录和限流规则。请求受理、配置投递与数据面生效分别显示；发布不会修改角色授权。',
+    publicationLimitsDraftHint:
+      '规则编辑仅保存草稿；请通过上方发布入口提交。以对应版本的发布进度为准，旧规则状态不作为本次发布结果。',
     publicationTitle: '路由发布进度',
     publicationAction: '发布路由',
     publicationConfirm: '从模型目录发布网关路由',
@@ -1252,6 +1260,15 @@ const translations = {
     computeSourceTagDefault: '默认',
   },
   en: {
+    publicationLimitsTitle: 'Rate limit and quota publication',
+    publicationLimitsEmpty:
+      'No limit publication recorded for this session. Save drafts, submit them, and check the matching revision.',
+    publicationLimitsAction: 'Publish routes and rules',
+    publicationLimitsConfirm: 'Publish model routes and draft limit rules',
+    publicationLimitsConfirmNote:
+      'Capture the current catalog and limit rules together. Acceptance, application and data-plane readiness are separate. Publication does not change role access.',
+    publicationLimitsDraftHint:
+      'Editing only saves drafts. Publish above to submit them and check the matching revision; legacy rule status is not evidence for this operation.',
     publicationTitle: 'Route publication progress',
     publicationAction: 'Publish routes',
     publicationConfirm: 'Publish gateway routes from the model catalog',

@@ -658,9 +658,15 @@ try {
   await page.getByRole('button', { name: '保存规则', exact: true }).click();
   await waitForValue(() => state.gateway.rules.length, 1);
   assert.equal(state.gateway.revision, null);
-  await page.getByRole('button', { name: '发布配置', exact: true }).click();
-  await page.locator('.ant-popconfirm').getByRole('button', { name: '发布配置', exact: true }).click();
-  await page.getByText('配置已应用', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '发布路由与规则', exact: true }).click();
+  await page.locator('.ant-popconfirm').getByRole('button', { name: '发布路由与规则', exact: true }).click();
+  await page.getByText('配置已投递', { exact: true }).waitFor();
+  assert.equal(state.publications.at(-1).includeGatewayLimits, true);
+  assert.equal(
+    state.requests.some((item) => item.method === 'POST' && item.path.endsWith('/limits/publish')),
+    false,
+  );
+  checks.push('limit drafts use combined asynchronous publication without legacy status or publish fallback');
   await page.getByText('Token 余额配额', { exact: true }).click();
   await page.getByRole('combobox', { name: '用户', exact: true }).click();
   await page

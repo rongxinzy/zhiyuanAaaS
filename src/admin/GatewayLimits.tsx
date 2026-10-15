@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -15,11 +15,11 @@ import {
   Space,
   Switch,
   Table,
-  Tag,
   Typography,
   theme,
 } from 'antd';
 import { useCallback, useState } from 'react';
+import { GatewayPublication } from './GatewayPublication.js';
 import { GatewayUserSelect } from './GatewayUserSelect.js';
 import type { GatewayDimension, GatewayLimit, GatewayLimitWrite } from './gateway-api.js';
 import {
@@ -40,7 +40,6 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
   const capabilities = useGatewayRemote(useCallback(() => client.getGatewayCapabilities(), [client]));
   const subjects = useGatewayRemote(useCallback(() => client.gatewaySubjects(identity), [client, identity]));
   const rules = useGatewayRemote(useCallback(() => client.listGatewayLimits(), [client]));
-  const status = useGatewayRemote(useCallback(() => client.getGatewayLimitsStatus(), [client]));
   const [mode, setMode] = useState('limits');
   const [form] = Form.useForm<RuleForm>();
   const [editing, setEditing] = useState<GatewayLimit>();
@@ -75,12 +74,6 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
     minute: 'gatewayMinute',
     hour: 'gatewayHour',
     day: 'gatewayDay',
-  } as const;
-  const stateLabels = {
-    unpublished: 'gatewayUnpublished',
-    pending: 'gatewayPending',
-    applied: 'gatewayApplied',
-    error: 'gatewayApplyFailed',
   } as const;
   async function mutate(action: () => Promise<unknown>, message: Parameters<typeof t>[0], after?: () => void) {
     if (busy) return;
@@ -131,23 +124,16 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
   }
   function refresh() {
     rules.retry();
-    status.retry();
     capabilities.retry();
     subjects.retry();
     quota.retry();
   }
   const canWrite =
-    !busy &&
-    !rules.loading &&
-    !status.loading &&
-    !capabilities.error &&
-    !rules.error &&
-    !status.error &&
-    Boolean(rules.value && status.value && capabilities.value);
+    !busy && !rules.loading && !capabilities.error && !rules.error && Boolean(rules.value && capabilities.value);
   return (
     <GatewayPage>
       <GatewayHeading title="gatewayLimits" description="gatewayLimitsDescription">
-        <Button icon={<ReloadOutlined aria-hidden />} onClick={refresh} loading={rules.loading || status.loading}>
+        <Button icon={<ReloadOutlined aria-hidden />} onClick={refresh} loading={rules.loading}>
           {t('refresh')}
         </Button>
       </GatewayHeading>
@@ -169,52 +155,18 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
       {mode === 'limits' ? (
         <>
           {rules.error ? <GatewayLoadError retry={rules.retry} /> : null}
-          {status.error ? <GatewayLoadError retry={status.retry} /> : null}
-          <Row justify="space-between" gutter={[token.margin, token.margin]}>
-            <Col>
-              <Space wrap>
-                <Tag
-                  color={
-                    status.value?.state === 'applied'
-                      ? 'success'
-                      : status.value?.state === 'error'
-                        ? 'error'
-                        : 'default'
-                  }
-                >
-                  {status.value ? t(stateLabels[status.value.state]) : t('loading')}
-                </Tag>
-                {status.value?.revision ? <Typography.Text copyable>{status.value.revision}</Typography.Text> : null}
-              </Space>
-            </Col>
-            <Col>
-              <Popconfirm
-                title={t('gatewayPublishConfirm')}
-                description={t('gatewayPublishHint')}
-                okText={t('gatewayPublish')}
-                cancelText={t('cancel')}
-                onConfirm={() =>
-                  mutate(
-                    () => client.publishGatewayLimits(),
-                    'gatewayPublished',
-                    () => {
-                      status.retry();
-                      setUnpublished(false);
-                    },
-                  )
-                }
-              >
-                <Button type="primary" icon={<UploadOutlined aria-hidden />} disabled={!canWrite} loading={busy}>
-                  {t('gatewayPublish')}
-                </Button>
-              </Popconfirm>
-            </Col>
-          </Row>
+          <GatewayPublication
+            client={client}
+            identity={identity}
+            allowPublish
+            includeGatewayLimits
+            disabled={!canWrite}
+          />
           <Alert
             type="info"
             showIcon
             title={unpublished ? t('gatewayDraftChanged') : t('gatewayRuntimeHint')}
-            description={status.value?.runtimeVerified ? t('gatewayRuntimeVerified') : t('gatewayRuntimeNotVerified')}
+            description={t('publicationLimitsDraftHint')}
           />
           <Table
             aria-label={t('gatewayRateRules')}

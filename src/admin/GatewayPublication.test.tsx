@@ -57,6 +57,22 @@ afterEach(() => {
 });
 
 describe('asynchronous route publication', () => {
+  test('limit publication retries keep the combined body and use a separate session pointer', async () => {
+    const c = client();
+    c.createDataPlanePublication.mockRejectedValueOnce(new Error('network'));
+    const ui = view(c, { includeGatewayLimits: true });
+    fireEvent.click(await screen.findByRole('button', { name: '发布路由与规则' }));
+    fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: '发布路由与规则' }));
+    await screen.findByText(/未能确认发布结果/);
+    const key = c.createDataPlanePublication.mock.calls[0]?.[0];
+    ui.unmount();
+    view(c, { includeGatewayLimits: true });
+    fireEvent.click(await screen.findByRole('button', { name: '重试同一次发布' }));
+    await waitFor(() => expect(c.createDataPlanePublication).toHaveBeenCalledTimes(2));
+    expect(c.createDataPlanePublication).toHaveBeenNthCalledWith(1, key, { includeGatewayLimits: true });
+    expect(c.createDataPlanePublication).toHaveBeenNthCalledWith(2, key, { includeGatewayLimits: true });
+    expect(Object.keys(sessionStorage).some((key) => key.endsWith(':limits'))).toBe(true);
+  });
   test('acceptance is not readiness; restores observation after remount without another POST', async () => {
     const c = client();
     const ui = view(c);

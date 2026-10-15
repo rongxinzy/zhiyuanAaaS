@@ -100,12 +100,14 @@ type PublicationProps = {
   readonly excluded?: readonly string[];
   readonly disabled?: boolean;
   readonly compact?: boolean;
+  readonly includeGatewayLimits?: boolean;
 };
 
 /** A new account/server scope remounts all state before any observation starts. */
 export function GatewayPublication(props: PublicationProps) {
   const { client, identity } = props;
-  const scope = `zhiyuan.admin.publication:${JSON.stringify([client.publicationScope, identity?.deploymentId ?? identity?.deployment?.id, identity?.user?.id])}`;
+  const baseScope = `zhiyuan.admin.publication:${JSON.stringify([client.publicationScope, identity?.deploymentId ?? identity?.deployment?.id, identity?.user?.id])}`;
+  const scope = props.includeGatewayLimits ? `${baseScope}:limits` : baseScope;
   return <PublicationView key={scope} {...props} scope={scope} />;
 }
 
@@ -117,6 +119,7 @@ function PublicationView({
   excluded = [],
   disabled = false,
   compact = false,
+  includeGatewayLimits = false,
   scope,
 }: PublicationProps & { readonly scope: string }) {
   const allowed = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
@@ -193,7 +196,9 @@ function PublicationView({
     setError(null);
     setPending(true);
     try {
-      const result = await client.createDataPlanePublication(next.key);
+      const result = includeGatewayLimits
+        ? await client.createDataPlanePublication(next.key, { includeGatewayLimits: true })
+        : await client.createDataPlanePublication(next.key);
       const saved = { ...next, operationId: result.operationId, expiresAt: Date.parse(result.idempotencyExpiresAt) };
       saveAttempt(ownScope, saved);
       if (!mounted.current) return;
@@ -211,47 +216,51 @@ function PublicationView({
   const expired = !!attempt && Date.now() >= attempt.expiresAt;
   return (
     <Card
-      title={t('publicationTitle')}
       className="gateway-publication"
-      extra={
-        <Space wrap>
-          {attempt?.operationId ? (
-            <Button
-              icon={<ReloadOutlined aria-hidden="true" />}
-              loading={checking}
-              onClick={() => setRefresh((n) => n + 1)}
-            >
-              {t('publicationCheck')}
-            </Button>
-          ) : null}
-          {allowPublish && unresolved && !expired ? (
-            <Button loading={pending} disabled={disabled} onClick={() => void submit(true)}>
-              {t('publicationRetry')}
-            </Button>
-          ) : null}
-          {allowPublish && (!unresolved || expired) ? (
-            <Popconfirm
-              title={t('publicationConfirm')}
-              description={
-                <Space orientation="vertical">
-                  <Typography.Text>{t('publicationConfirmNote')}</Typography.Text>
-                  {excluded.length ? (
-                    <Typography.Text type="secondary">
-                      {t('publicationExcluded')}: {excluded.join('、')}
-                    </Typography.Text>
-                  ) : null}
-                </Space>
-              }
-              okText={t('publicationAction')}
-              cancelText={translate('zh', 'cancel')}
-              onConfirm={() => void submit(false)}
-            >
-              <Button icon={<RocketOutlined aria-hidden="true" />} loading={pending} disabled={disabled || checking}>
-                {t('publicationAction')}
+      title={
+        <Flex wrap gap={token.marginSM} justify="space-between" align="center">
+          <span>{t(includeGatewayLimits ? 'publicationLimitsTitle' : 'publicationTitle')}</span>
+          <Space wrap>
+            {attempt?.operationId ? (
+              <Button
+                icon={<ReloadOutlined aria-hidden="true" />}
+                loading={checking}
+                onClick={() => setRefresh((n) => n + 1)}
+              >
+                {t('publicationCheck')}
               </Button>
-            </Popconfirm>
-          ) : null}
-        </Space>
+            ) : null}
+            {allowPublish && unresolved && !expired ? (
+              <Button loading={pending} disabled={disabled} onClick={() => void submit(true)}>
+                {t('publicationRetry')}
+              </Button>
+            ) : null}
+            {allowPublish && (!unresolved || expired) ? (
+              <Popconfirm
+                title={t(includeGatewayLimits ? 'publicationLimitsConfirm' : 'publicationConfirm')}
+                description={
+                  <Space orientation="vertical">
+                    <Typography.Text>
+                      {t(includeGatewayLimits ? 'publicationLimitsConfirmNote' : 'publicationConfirmNote')}
+                    </Typography.Text>
+                    {excluded.length ? (
+                      <Typography.Text type="secondary">
+                        {t('publicationExcluded')}: {excluded.join('、')}
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
+                }
+                okText={t(includeGatewayLimits ? 'publicationLimitsAction' : 'publicationAction')}
+                cancelText={translate('zh', 'cancel')}
+                onConfirm={() => void submit(false)}
+              >
+                <Button icon={<RocketOutlined aria-hidden="true" />} loading={pending} disabled={disabled || checking}>
+                  {t(includeGatewayLimits ? 'publicationLimitsAction' : 'publicationAction')}
+                </Button>
+              </Popconfirm>
+            ) : null}
+          </Space>
+        </Flex>
       }
     >
       <Flex vertical gap={token.margin}>
@@ -259,7 +268,12 @@ function PublicationView({
         {unresolved && !error ? (
           <Alert type="info" showIcon title={t(expired ? 'publicationExpired' : 'publicationPending')} />
         ) : null}
-        {!attempt ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('publicationEmpty')} /> : null}
+        {!attempt ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={t(includeGatewayLimits ? 'publicationLimitsEmpty' : 'publicationEmpty')}
+          />
+        ) : null}
         {attempt?.operationId && !operation && !error ? <Skeleton active paragraph={{ rows: 3 }} /> : null}
         {operation ? (
           <>
