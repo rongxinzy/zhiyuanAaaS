@@ -564,10 +564,12 @@ describe('admin session client identity', () => {
         body: { items: [null, [], 'invalid', record], nextCursor: null },
       },
     });
+    // 响应里没有结构正确的 timeRange 说明对端是旧控制面、能力未知，解析结果必须是 null；
+    // 回落成 {after:null,before:null} 会被页面当成「已确认的无限窗口」。
     expect(await client.searchAdminAudit()).toEqual({
       items: [record],
       nextCursor: null,
-      timeRange: { after: null, before: null },
+      timeRange: null,
     });
   });
 
