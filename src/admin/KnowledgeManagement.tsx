@@ -120,6 +120,9 @@ const copyKeys = {
   columnDocs: 'knowledgeColumnDocs',
   baseType: 'knowledgeBaseType',
   notStatistic: 'knowledgeNotStatistic',
+  parseProcessing: 'knowledgeParseProcessing',
+  parseCompleted: 'knowledgeParseCompleted',
+  scopeSummary: 'knowledgeScopeSummary',
   sectionSummary: 'knowledgeSummary',
   fieldTenant: 'knowledgeTenant',
   fieldEmbeddingModel: 'knowledgeEmbeddingModel',
@@ -1376,11 +1379,41 @@ export function KnowledgeManagement({
       key: 'description',
       render: (value: string | undefined) => value || t('notStatistic'),
     },
-    // 文档数 / 解析状态 / 使用范围 / 更新时间：列表接口当前不返回，按后台设计约定显示「暂未统计」。
-    { title: t('columnDocs'), key: 'documents', render: () => t('notStatistic') },
-    { title: t('parse'), key: 'parse', render: () => t('notStatistic') },
-    { title: t('columnScope'), key: 'scope', render: () => t('notStatistic') },
-    { title: t('columnUpdated'), key: 'updated', render: () => t('notStatistic') },
+    // 文档数 / 解析状态 / 使用范围 / 更新时间：取 portal 下发的真实统计；
+    // 任一项缺失（老服务、上游没报、刚创建）都按后台设计约定显示「暂未统计」。
+    {
+      title: t('columnDocs'),
+      key: 'documents',
+      render: (_: unknown, row: ManagedKnowledgeBase) => {
+        // FAQ 库的知识条目落在 chunk 上，上游对 document 型才填 knowledge_count。
+        const count = row.type === 'faq' ? row.chunk_count : row.knowledge_count;
+        return typeof count === 'number' ? String(count) : t('notStatistic');
+      },
+    },
+    {
+      title: t('parse'),
+      key: 'parse',
+      render: (_: unknown, row: ManagedKnowledgeBase) =>
+        typeof row.processing_count !== 'number'
+          ? t('notStatistic')
+          : row.processing_count > 0
+            ? t('parseProcessing').replace('{count}', String(row.processing_count))
+            : t('parseCompleted'),
+    },
+    {
+      title: t('columnScope'),
+      key: 'scope',
+      render: (_: unknown, row: ManagedKnowledgeBase) =>
+        row.scope
+          ? t('scopeSummary').replace('{users}', String(row.scope.users)).replace('{teams}', String(row.scope.teams))
+          : t('notStatistic'),
+    },
+    {
+      title: t('columnUpdated'),
+      key: 'updated',
+      render: (_: unknown, row: ManagedKnowledgeBase) =>
+        row.updated_at ? new Date(row.updated_at).toLocaleString() : t('notStatistic'),
+    },
     {
       title: t('knowledgeActions'),
       key: 'actions',

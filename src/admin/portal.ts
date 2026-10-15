@@ -181,6 +181,11 @@ export type ManagedKnowledgeReadiness = {
   readonly parser: 'unverified';
 };
 
+export type ManagedKnowledgeBaseScope = {
+  readonly users: number;
+  readonly teams: number;
+};
+
 export type ManagedKnowledgeBase = {
   readonly id: string;
   readonly name: string;
@@ -188,6 +193,13 @@ export type ManagedKnowledgeBase = {
   readonly tenant_id: string;
   readonly embedding_model_id: string;
   readonly type: string;
+  // 列表页要用的上游计数与授权范围摘要。portal 只在拿到可信值时下发，
+  // 缺字段时界面按「暂未统计」渲染，不拿 0 冒充真实统计。
+  readonly knowledge_count?: number;
+  readonly chunk_count?: number;
+  readonly processing_count?: number;
+  readonly updated_at?: string;
+  readonly scope?: ManagedKnowledgeBaseScope;
 };
 
 export type KnowledgeAuditRecord = {
@@ -1638,7 +1650,37 @@ function parseManagedKnowledgeBase(value: unknown): ManagedKnowledgeBase {
   ) {
     throw invalidManagedResponse();
   }
-  return { ...record, tenant_id: String(record.tenant_id) } as ManagedKnowledgeBase;
+  // 列表统计是可选字段：只接受能安全渲染的值，其余（缺失、类型不对、
+  // 时间不可解析）一律当没有，由界面显示「暂未统计」。
+  const { knowledge_count, chunk_count, processing_count, updated_at, scope, ...base } = record;
+  const knowledgeCount = optionalCount(knowledge_count);
+  const chunkCount = optionalCount(chunk_count);
+  const processingCount = optionalCount(processing_count);
+  const updatedAt = nonEmptyString(updated_at) && !Number.isNaN(Date.parse(updated_at)) ? updated_at : undefined;
+  const parsedScope = optionalSubjectScope(scope);
+  return {
+    ...base,
+    tenant_id: String(base.tenant_id),
+    ...(knowledgeCount === undefined ? {} : { knowledge_count: knowledgeCount }),
+    ...(chunkCount === undefined ? {} : { chunk_count: chunkCount }),
+    ...(processingCount === undefined ? {} : { processing_count: processingCount }),
+    ...(updatedAt === undefined ? {} : { updated_at: updatedAt }),
+    ...(parsedScope === undefined ? {} : { scope: parsedScope }),
+  } as ManagedKnowledgeBase;
+}
+
+function optionalCount(value: unknown): number | undefined {
+  // 计数只接受非负整数：portal 只会下发整数，小数一定是脏数据，宁可显示
+  // 「暂未统计」也不要渲染出「8.5 份处理中」。
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function optionalSubjectScope(value: unknown): ManagedKnowledgeBaseScope | undefined {
+  const record = objectOf(value);
+  if (!record) return undefined;
+  const users = optionalCount(record.users);
+  const teams = optionalCount(record.teams);
+  return users === undefined || teams === undefined ? undefined : { users, teams };
 }
 
 function parseManagedKnowledgeDocument(value: unknown, expectedBaseId: string): ManagedKnowledgeDocument {
