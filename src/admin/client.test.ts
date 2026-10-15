@@ -549,6 +549,24 @@ describe('admin session client identity', () => {
       'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null, timeRange: { after: 5 } } },
     });
     expect((await partial.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+  test('accepts minimal operation records without inventing optional audit fields', async () => {
+    const record = {
+      cursor: '9',
+      action: 'model.update',
+      resourceType: 'model',
+      result: 'success',
+      createdAt: '2026-10-14T00:00:00Z',
+    };
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': {
+        body: { items: [null, [], 'invalid', record], nextCursor: null },
+      },
+    });
+    expect(await client.searchAdminAudit()).toEqual({
+      items: [record],
+      nextCursor: null,
+      timeRange: { after: null, before: null },
+    });
   });
 
   test('tracks the console session id from login and clears it on logout', async () => {
