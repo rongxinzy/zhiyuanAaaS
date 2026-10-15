@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import dayjs from 'dayjs';
 import type { ReactNode } from 'react';
@@ -198,6 +198,79 @@ describe('read-only audit', () => {
 });
 
 describe('read-only operations audit', () => {
+  test('keeps loaded operations after a page failure and retries the same cursor', async () => {
+    const client = fixture();
+    const timeRange = { after: '2026-10-08T00:00:00Z', before: null };
+    client.searchAdminAudit
+      .mockResolvedValueOnce({
+        items: [{ cursor: '9', action: 'model.update', resourceType: 'model', result: 'success' }],
+        nextCursor: '9',
+        timeRange,
+      })
+      .mockRejectedValueOnce(new Error('page unavailable'))
+      .mockResolvedValueOnce({
+        items: [{ cursor: '8', action: 'model.delete', resourceType: 'model', result: 'success' }],
+        nextCursor: null,
+        timeRange,
+      });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    await screen.findByText('model.update');
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('记录加载失败');
+    expect(screen.getByText('model.update')).toBeInTheDocument();
+    expect(screen.queryByText('当前条件下暂无记录')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(screen.getByRole('button', { name: /加载更多/ }));
+    expect(await screen.findByText('model.delete')).toBeInTheDocument();
+    expect(screen.getByText('model.update')).toBeInTheDocument();
+    expect(client.searchAdminAudit.mock.calls.slice(1)).toEqual([
+      [expect.objectContaining({ cursor: '9', limit: 50 })],
+      [expect.objectContaining({ cursor: '9', limit: 50 })],
+    ]);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument();
+  });
+
+  test('ignores an older page response after refreshing the operation list', async () => {
+    const client = fixture();
+    const firstPage = {
+      items: [{ cursor: '9', action: 'model.update', resourceType: 'model', result: 'success' }],
+      nextCursor: '9' as string | null,
+      timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+    };
+    let resolvePage: ((page: typeof firstPage) => void) | undefined;
+    const oldPage = new Promise<typeof firstPage>((resolve) => {
+      resolvePage = resolve;
+    });
+    client.searchAdminAudit
+      .mockResolvedValueOnce(firstPage)
+      .mockReturnValueOnce(oldPage)
+      .mockResolvedValueOnce({
+        ...firstPage,
+        items: [{ cursor: '19', action: 'credential.rotate', resourceType: 'credential', result: 'success' }],
+        nextCursor: null,
+      });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    await screen.findByText('model.update');
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    await waitFor(() => expect(client.searchAdminAudit).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    expect(await screen.findByText('credential.rotate')).toBeInTheDocument();
+    await act(async () => {
+      resolvePage?.({
+        ...firstPage,
+        items: [{ cursor: '8', action: 'stale.operation', resourceType: 'model', result: 'success' }],
+        nextCursor: null,
+      });
+    });
+    expect(screen.getByText('credential.rotate')).toBeInTheDocument();
+    expect(screen.queryByText('model.update')).not.toBeInTheDocument();
+    expect(screen.queryByText('stale.operation')).not.toBeInTheDocument();
+    expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ limit: 50 });
+  });
+
   test('loads the default seven-day window and states the applied range', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={administratorIdentity} />);
