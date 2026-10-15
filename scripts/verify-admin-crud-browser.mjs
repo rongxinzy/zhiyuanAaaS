@@ -18,6 +18,18 @@ let browser;
 let page;
 const errors = [];
 const checks = [];
+state.users.push({
+  id: 'user-e2e',
+  username: 'e2e-grantee',
+  displayName: 'E2E 授权用户',
+  status: 'active',
+  roleIds: ['member'],
+  teamIds: [],
+});
+state.roles.push(
+  { id: 'default-reader', name: '模型只读', enabled: true, builtIn: false, permissions: ['models.read'] },
+  { id: 'default-observer', name: '审计观察', enabled: true, builtIn: false, permissions: ['events.read'] },
+);
 const expectedFailurePaths = new Set();
 try {
   await fs.mkdir(screenshots, { recursive: true });
@@ -29,6 +41,8 @@ try {
     env: {
       ...process.env,
       ZHIYUAN_ADMIN_PORT: String(port),
+      // The browser contract test does not exercise the legacy upstream UI
+      // proxy; bind it to an ephemeral port instead of assuming 5174 is free.
       ZHIYUAN_ADMIN_WEKNORA_PORT: '0',
       ZHIYUAN_AEP_BASE_URL: `http://127.0.0.1:${apiPort}`,
       ZHIYUAN_PORTAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
@@ -98,7 +112,11 @@ try {
   checks.push('shell sidebar and header stay pinned during content scroll');
 
   async function visit(route, expected) {
-    await page.goto(`${origin}/#${route}`);
+    const target = `${origin}/#${route}`;
+    // Creating a base can open local detail state without changing the hash.
+    // Revisiting that same URL must reload the route's initial list view.
+    if (page.url() === target) await page.reload();
+    else await page.goto(target);
     await page.locator('.admin-page').getByText(expected, { exact: true }).first().waitFor();
     await page.waitForLoadState('networkidle');
     assert.equal(await page.locator('vite-error-overlay').count(), 0);
@@ -131,6 +149,191 @@ try {
     fullPage: true,
     animations: 'disabled',
   });
+  assert.ok(
+    state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Knowledge page must load its native managed registry, not the legacy status proxy',
+  );
+  await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
+  const knowledgeDialog = page.getByRole('dialog');
+  await knowledgeDialog.getByLabel('名称', { exact: true }).fill('E2E 新建知识库');
+  await knowledgeDialog.getByLabel('描述', { exact: true }).fill('浏览器契约验证');
+  await knowledgeDialog.getByRole('button', { name: '保存', exact: true }).click();
+  await knowledgeDialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'E2E 新建知识库', exact: true }).waitFor();
+  assert.ok(state.knowledgeBases.some((item) => item.name === 'E2E 新建知识库'));
+  const createdKnowledgeBase = state.knowledgeBases.find((item) => item.name === 'E2E 新建知识库');
+  assert.ok(createdKnowledgeBase?.id);
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path === '/api/v1/knowledge/managed/bases'),
+    'Create knowledge base must call the fixed managed API',
+  );
+  checks.push('native managed knowledge registry and create operation');
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  const knowledgeOperations = page.getByRole('region', { name: '知识运营', exact: true });
+  await knowledgeOperations.getByRole('tab', { name: '标签', exact: true }).click();
+  await knowledgeOperations.getByPlaceholder('标签名称').fill('E2E 标签');
+  await knowledgeOperations.getByRole('button', { name: '新建标签', exact: true }).click();
+  await knowledgeOperations.getByText('E2E 标签', { exact: true }).waitFor();
+  assert.ok(state.knowledgeTags.some((item) => item.name === 'E2E 标签'));
+  assert.ok(
+    state.requests.some((item) => item.method === 'POST' && item.path.endsWith('/tags')),
+    'Tag creation must call the fixed managed knowledge tag endpoint',
+  );
+  checks.push('native managed knowledge tag operation');
+  await page.getByRole('tab', { name: '知识库访问授权', exact: true }).click();
+  const grants = page.getByRole('region', { name: '知识库访问授权', exact: true });
+  await grants.getByText('user-1', { exact: true }).waitFor();
+  const grantUser = grants.getByRole('combobox', { name: '用户', exact: true });
+  await grantUser.and(page.locator(':enabled')).waitFor();
+  await grantUser.fill('E2E 授权用户');
+  await page
+    .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+    .filter({ hasText: 'E2E 授权用户 · user-e2e' })
+    .click();
+  assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/contacts'));
+  assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/departments'));
+  await grants.getByRole('button', { name: '添加用户', exact: true }).click();
+  await grants.getByRole('button', { name: '保存授权', exact: true }).click();
+  await grants.getByText('user-e2e', { exact: true }).waitFor();
+  const revokePath = `/api/v1/knowledge/managed/bases/${createdKnowledgeBase.id}/grants`;
+  await waitForValue(
+    () => state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'),
+    true,
+  );
+  assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
+  assert.ok(state.requests.some((item) => item.method === 'PUT' && item.path === revokePath));
+  expectedFailurePaths.add(revokePath);
+  state.failNext = `PUT ${revokePath}`;
+  await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
+  const revokeDialog = page.getByRole('dialog');
+  await revokeDialog.getByRole('button', { name: '撤销全部', exact: true }).click();
+  await grants.getByText('HTTP 503', { exact: true }).waitFor();
+  assert.equal(await grants.getByText('当前没有用户或团队授权。', { exact: true }).count(), 0);
+  assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
+  await grants.getByRole('button', { name: '重试读取', exact: true }).click();
+  await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '撤销全部', exact: true }).click();
+  await grants.getByText('当前没有用户或团队授权。', { exact: true }).waitFor();
+  assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
+  checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
+
+  await page.getByRole('tab', { name: '检索与来源', exact: true }).click();
+  const retrieval = page.getByRole('region', { name: '检索与来源', exact: true });
+  await retrieval.locator('.ant-select').first().click();
+  await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
+  await retrieval.getByLabel('输入知识检索问题').fill('退款期限');
+  await retrieval.getByRole('button', { name: '检索', exact: true }).click();
+  await retrieval.getByRole('button', { name: '退款政策', exact: true }).waitFor();
+  await retrieval.getByRole('button', { name: '退款政策', exact: true }).click();
+  await retrieval.getByText('refund-policy.pdf · pdf', { exact: true }).waitFor();
+  assert.ok(
+    state.requests.some(
+      (item) => item.method === 'POST' && item.path === '/api/v1/knowledge/employees/sales-helper/search',
+    ),
+  );
+  assert.ok(
+    state.requests.some(
+      (item) =>
+        item.method === 'GET' && item.path === '/api/v1/knowledge/employees/sales-helper/documents/doc-e2e-policy',
+    ),
+  );
+  checks.push('employee knowledge search and verified source document/chunk');
+  await visit('knowledge', 'E2E 产品资料');
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'E2E 产品资料' })
+    .getByRole('button', { name: '管理文档', exact: true })
+    .click();
+  const chunkRow = page.getByRole('row').filter({ hasText: 'chunk-e2e.txt' });
+  await chunkRow.getByRole('button', { name: '更多', exact: true }).click();
+  await page.getByRole('menuitem', { name: '分块与来源', exact: true }).click();
+  const chunkText = 'original chunk line one\noriginal chunk line two';
+  const chunkInspector = page.getByRole('dialog').first();
+  await chunkInspector.getByRole('button', { name: '编辑分块', exact: true }).click();
+  const chunkEditor = page.getByRole('dialog').nth(1);
+  const chunkTextarea = chunkEditor.getByRole('textbox');
+  await chunkTextarea.waitFor();
+  assert.equal(await chunkTextarea.inputValue(), chunkText, 'Chunk editor must load the exact original content');
+  await chunkEditor.locator('.ant-modal-footer .ant-btn-primary').click();
+  await chunkEditor.waitFor({ state: 'hidden' });
+  const chunkPath = '/api/v1/knowledge/managed/documents/doc-chunk-e2e/chunks/chunk-e2e-editable';
+  const noOpChunkWrite = state.requests.findLast((item) => item.method === 'PUT' && item.path === chunkPath);
+  assert.deepEqual(noOpChunkWrite?.body, { content: chunkText, expected_revision: 3 });
+  await page.getByRole('dialog').first().getByRole('switch').click();
+  await waitForValue(() => state.knowledgeChunks[0].is_enabled, false);
+  const switchWrite = state.requests.findLast((item) => item.method === 'PUT' && item.path === chunkPath);
+  assert.deepEqual(switchWrite?.body, { is_enabled: false });
+  await chunkInspector.locator('.ant-modal-close').click();
+  await chunkInspector.waitFor({ state: 'hidden' });
+  checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
+
+  await visit('knowledge', 'E2E 产品资料');
+  await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
+  const faqBaseDialog = page.getByRole('dialog');
+  await faqBaseDialog.getByLabel('名称', { exact: true }).fill('E2E 新建 FAQ 库');
+  await faqBaseDialog.getByLabel('知识库类型', { exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'FAQ 库' }).click();
+  await faqBaseDialog.getByRole('button', { name: '保存', exact: true }).click();
+  await faqBaseDialog.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'E2E 新建 FAQ 库', exact: true }).waitFor();
+  assert.equal(state.knowledgeBases.find((item) => item.name === 'E2E 新建 FAQ 库')?.type, 'faq');
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
+  await page.getByRole('button', { name: '新建 FAQ', exact: true }).click();
+  await page.getByRole('dialog').getByRole('textbox').first().waitFor();
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  checks.push('create FAQ library and enter native FAQ editor without upstream login');
+  await visit('knowledge', 'E2E 常见问题');
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'E2E 常见问题' })
+    .getByRole('button', { name: '管理文档', exact: true })
+    .click();
+  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
+  await page.getByRole('button', { name: '\u65b0\u5efa FAQ', exact: true }).click();
+  let faqDialog = page.getByRole('dialog');
+  await faqDialog.getByLabel('标准问题', { exact: true }).fill('new question');
+  await faqDialog.getByLabel('答案 1', { exact: true }).fill('new answer line one\nnew answer line two');
+  await faqDialog.getByRole('button', { name: '添加答案', exact: true }).click();
+  await faqDialog.getByLabel('答案 2', { exact: true }).fill('second new answer');
+  await faqDialog.locator('.ant-select').click();
+  await page.locator('.ant-select-item-option').filter({ hasText: 'Refund' }).click();
+  await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
+  await faqDialog.waitFor({ state: 'hidden' });
+  const faqCollectionPath = '/api/v1/knowledge/managed/bases/kb-faq-e2e/faq/entries';
+  const createFAQWrite = state.requests.findLast((item) => item.method === 'POST' && item.path === faqCollectionPath);
+  assert.deepEqual(createFAQWrite?.body?.answers, ['new answer line one\nnew answer line two', 'second new answer']);
+  assert.equal(createFAQWrite?.body?.tag_id, 44);
+  const existingFAQRow = page.getByRole('row').filter({ hasText: 'seed-question' });
+  await existingFAQRow.getByRole('button').first().click();
+  faqDialog = page.getByRole('dialog');
+  assert.equal(await faqDialog.getByLabel('答案 1', { exact: true }).inputValue(), 'answer line one\nanswer line two');
+  assert.equal(await faqDialog.getByLabel('答案 2', { exact: true }).inputValue(), 'second answer intact');
+  await faqDialog.getByLabel('标准问题', { exact: true }).fill('updated standard question');
+  await faqDialog.locator('.ant-select-clear').click();
+  await faqDialog.locator('.ant-modal-footer .ant-btn-primary').click();
+  await faqDialog.waitFor({ state: 'hidden' });
+  const editFAQWrite = state.requests.findLast(
+    (item) => item.method === 'PUT' && item.path.endsWith('/faq/entries/81'),
+  );
+  assert.deepEqual(editFAQWrite?.body, {
+    standard_question: 'updated standard question',
+    similar_questions: ['similar one', 'similar two'],
+    negative_questions: ['negative one'],
+    answers: ['answer line one\nanswer line two', 'second answer intact'],
+    answer_strategy: 'best_match',
+    is_enabled: true,
+    is_recommended: true,
+  });
+  assert.equal(
+    state.knowledgeFAQ.find((entry) => entry.id === 81).tag_id,
+    0,
+    'Clearing the FAQ tag must clear the persisted tag',
+  );
+  checks.push(
+    'FAQ create/edit: multiline answers, tag set and clear, similar/negative questions and strategy preserved',
+  );
   await visit('users', '管理员');
   await page.screenshot({
     path: path.join(screenshots, 'users.png'),
@@ -141,9 +344,48 @@ try {
   await page.getByRole('button', { name: /新增团队$/ }).click();
   let dialog = page.getByRole('dialog');
   await dialog.getByLabel('名称', { exact: true }).fill('E2E 业务团队');
+  await dialog.getByRole('combobox', { name: '默认角色', exact: true }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '模型只读' }).click();
+  await page.locator('.ant-select-item-option').filter({ hasText: '审计观察' }).click();
+  await dialog.getByRole('combobox', { name: '默认角色', exact: true }).press('Escape');
+  await page.waitForTimeout(300);
+  await page.screenshot({
+    path: path.join(screenshots, 'team-default-roles-light.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.getByText('E2E 业务团队', { exact: true }).first().waitFor();
+  assert.deepEqual(state.teams.find((team) => team.name === 'E2E 业务团队').defaultRoleIds, [
+    'default-reader',
+    'default-observer',
+  ]);
+  for (const themeMode of ['light', 'dark']) {
+    for (const width of [1440, 390]) {
+      await page.evaluate((mode) => localStorage.setItem('zhiyuan.admin.theme', mode), themeMode);
+      await page.setViewportSize({ width, height: 1000 });
+      await page.reload({ waitUntil: 'networkidle' });
+      await page
+        .getByRole('row')
+        .filter({ hasText: 'E2E 业务团队' })
+        .getByRole('button', { name: '编辑', exact: true })
+        .click();
+      dialog = page.getByRole('dialog');
+      await dialog.getByRole('combobox', { name: '默认角色', exact: true }).waitFor();
+      await page.waitForTimeout(300);
+      await page.screenshot({
+        path: path.join(screenshots, `team-default-roles-${themeMode}-${width}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      });
+      await dialog.getByRole('button', { name: '取消', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+    }
+  }
+  await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload({ waitUntil: 'networkidle' });
   await visit('users', '用户列表');
   await page.getByRole('button', { name: /新增用户$/ }).click();
   dialog = page.getByRole('dialog');
@@ -152,6 +394,7 @@ try {
   await dialog.getByLabel('临时密码', { exact: true }).fill('e2e-temporary-password');
   await dialog.getByRole('combobox', { name: '选择角色' }).click();
   await page.locator('.ant-select-item-option').filter({ hasText: '企业成员' }).click();
+  await dialog.getByRole('combobox', { name: '选择角色' }).press('Escape');
   await dialog.getByRole('combobox', { name: '选择团队' }).click();
   await page.locator('.ant-select-item-option').filter({ hasText: 'E2E 业务团队' }).click();
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
@@ -161,6 +404,8 @@ try {
   assert.equal(member.teamIds.length, 1);
   assert.deepEqual(member.roleIds, ['member']);
   const memberRow = page.getByRole('row').filter({ hasText: 'E2E 业务成员' });
+  assert.equal(await memberRow.getByText('模型只读 · 团队继承', { exact: true }).count(), 1);
+  assert.equal(await memberRow.getByText('审计观察 · 团队继承', { exact: true }).count(), 1);
   await memberRow.getByRole('button', { name: '查看', exact: true }).click();
   for (const label of ['基本信息', '团队与角色', '访问权限', '关联账号', '登录会话']) {
     await page
@@ -230,7 +475,7 @@ try {
   assert.match(page.url(), /#system\/resources$/);
   await page.getByRole('heading', { name: '数字员工资源分配', exact: true }).waitFor();
   await page.waitForLoadState('networkidle');
-  const tiersCard = page.locator('.ant-card').filter({ hasText: '运行档位' });
+  const tiersCard = page.getByRole('region', { name: '运行档位', exact: true }).locator('.ant-card');
   await tiersCard.getByRole('row').filter({ hasText: 'standard' }).waitFor();
   await tiersCard.getByRole('row').filter({ hasText: 'performance' }).waitFor();
   assert.ok((await tiersCard.getByText('部署配置').count()) >= 2, 'tier rows must carry the deployment source tag');
@@ -240,7 +485,7 @@ try {
     animations: 'disabled',
   });
 
-  const policyCard = page.locator('.ant-card').filter({ hasText: '默认策略' });
+  const policyCard = page.getByRole('region', { name: '默认策略', exact: true });
   await policyCard.getByText('5 分钟（300 秒）', { exact: true }).waitFor();
   await policyCard.getByRole('button', { name: '编辑', exact: true }).click();
   dialog = page.getByRole('dialog');
@@ -251,7 +496,7 @@ try {
   await policyCard.getByText('运行时覆盖', { exact: true }).first().waitFor();
   assert.equal(state.compute.hibernateOverride, 600);
 
-  const assignmentsCard = page.locator('.ant-card').filter({ hasText: '员工档位指派' });
+  const assignmentsCard = page.getByRole('region', { name: '员工档位指派', exact: true }).locator('.ant-card');
   const agentTwoRow = assignmentsCard.getByRole('row').filter({ hasText: 'E2E 数据助理' });
   await agentTwoRow.getByText('standard', { exact: true }).waitFor();
   await agentTwoRow.getByRole('button', { name: '调整', exact: true }).click();
@@ -439,6 +684,9 @@ try {
           await page.getByText('gateway-e2e-r1', { exact: true }).waitFor();
         }
         if (tab === 'limits') {
+          // Hash navigation can finish before the new page's API queries do.
+          // Wait for loaded write readiness, preserving the enabled assertion.
+          await page.getByRole('button', { name: '保存规则', exact: true }).and(page.locator(':enabled')).waitFor();
           assert.equal(await page.getByRole('button', { name: '保存规则', exact: true }).isDisabled(), false);
         }
         assert.equal(await page.getByRole('tablist').count(), 1);
@@ -469,6 +717,20 @@ try {
   await visit('system/settings', '基本设置');
   await visit('system/licenses', '产品授权');
   await visit('audit', '日志审计');
+  await page.getByRole('tab', { name: '知识审计', exact: true }).click();
+  await page.getByText('kbop-e2e-delete', { exact: true }).waitFor();
+  await page.getByText('admin-e2e', { exact: true }).waitFor();
+  await page.getByText('uncertain', { exact: true }).waitFor();
+  await page.getByLabel('操作人 ID', { exact: true }).fill('admin-e2e');
+  await page.getByRole('button', { name: '查询', exact: true }).click();
+  await waitForValue(
+    () =>
+      state.requests.some(
+        (item) => item.path === '/api/v1/knowledge/managed/audit' && item.query.includes('actorUserId=admin-e2e'),
+      ),
+    true,
+  );
+  checks.push('knowledge audit remains in native log page with actor filter and uncertain outcome');
   await page.getByRole('tab', { name: '登录日志', exact: true }).click();
   await page.getByText('invalid_credentials', { exact: true }).waitFor();
   assert.equal(await page.getByText('登录历史查询尚未接入', { exact: true }).count(), 0);
@@ -523,7 +785,7 @@ try {
   await page
     ?.screenshot({ path: path.join(screenshots, 'failure.png'), fullPage: true, animations: 'disabled' })
     .catch(() => undefined);
-  console.error(JSON.stringify({ checks, errors, route: page?.url() }));
+  console.error(JSON.stringify({ checks, errors, route: page?.url(), requests: state.requests.slice(-12) }));
   throw error;
 } finally {
   await browser?.close().catch(() => undefined);

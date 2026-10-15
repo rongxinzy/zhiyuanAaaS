@@ -18,10 +18,19 @@ vi.mock('./GatewayWorkbench.js', () => ({
   GatewayObservation: () => <div>gateway-observe-content</div>,
   GatewayLimits: () => <div>gateway-limits-content</div>,
 }));
-vi.mock('./ServiceStatus.js', () => ({
-  KnowledgeView: () => <div>knowledge-content</div>,
-  ServicesView: () => <div>services-content</div>,
-}));
+vi.mock('./ServiceStatus.js', async () => {
+  // vitest 会把 vi.mock 提升到 import 之前，工厂里拿不到顶层 import 的绑定，
+  // 所以这里只能动态取一次（测试装配边界，不是运行时选模块）。
+  const { usePageCrumb } = await import('./page-crumb.js');
+  return {
+    // 模拟详情页把自己显示的对象名报给外壳面包屑。
+    KnowledgeView: () => {
+      usePageCrumb(window.location.hash.startsWith('#knowledge/') ? 'whz-1' : null);
+      return <div>knowledge-content</div>;
+    },
+    ServicesView: () => <div>services-content</div>,
+  };
+});
 vi.mock('./DigitalEmployees.js', () => ({
   DigitalEmployees: () => <div>employee-content</div>,
 }));
@@ -240,6 +249,21 @@ describe('Ant Design admin shell', () => {
     expect(screen.getByRole('menuitem', { name: '模型网关' })).toHaveClass('ant-menu-item-selected');
     expect(screen.getAllByRole('tablist')).toHaveLength(1);
   });
+  test('keeps one breadcrumb that links back to the section root on a subpage', async () => {
+    authenticated();
+    window.location.hash = 'knowledge/kb-test-1';
+    render(<AdminApp />);
+    expect(await screen.findByText('knowledge-content')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '知识库' })).toHaveAttribute('href', '#/knowledge');
+    expect(await screen.findByText('whz-1')).toBeInTheDocument();
+    cleanup();
+    window.location.hash = 'knowledge';
+    render(<AdminApp />);
+    expect(await screen.findByText('knowledge-content')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '知识库' })).not.toBeInTheDocument();
+    expect(screen.queryByText('whz-1')).not.toBeInTheDocument();
+  });
+
   test.each([
     ['models.read', '模型列表', 'model-content', 3],
     ['credentials.read', '接入配置', 'credentials-content', 1],

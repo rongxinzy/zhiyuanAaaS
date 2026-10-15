@@ -30,8 +30,8 @@ import {
   type PlatformUser,
   type Query,
   type Role,
+  type Team as SdkTeam,
   type ServiceMetadata,
-  type Team,
 } from '@aep/sdk-node';
 import type {
   GatewayCapabilities,
@@ -49,6 +49,11 @@ import type {
   GatewayTestAccess,
 } from './gateway-api.js';
 import type { ModelPricing, ModelPricingWrite } from './model-pricing-api.js';
+
+// Additive AEP team-default-role contract; keep the published SDK dependency.
+export type AdminTeam = SdkTeam & { readonly defaultRoleIds?: readonly string[] };
+type Team = AdminTeam;
+type TeamDefaultsWrite = { readonly defaultRoleIds?: readonly string[] };
 
 export const AdminConsoleStatus = {
   SignedOut: 'signed-out',
@@ -712,11 +717,11 @@ export class AdminConsoleClient {
     await this.#requireClient().deleteRole(roleId);
   }
 
-  async createTeam(input: Parameters<AepClient['createTeam']>[0]): Promise<Team> {
+  async createTeam(input: Parameters<AepClient['createTeam']>[0] & TeamDefaultsWrite): Promise<Team> {
     return this.#requireClient().createTeam(input);
   }
 
-  async updateTeam(teamId: string, input: Parameters<AepClient['updateTeam']>[1]): Promise<Team> {
+  async updateTeam(teamId: string, input: Parameters<AepClient['updateTeam']>[1] & TeamDefaultsWrite): Promise<Team> {
     return this.#requireClient().updateTeam(teamId, input);
   }
 

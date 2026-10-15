@@ -22,6 +22,9 @@
     "typecheck": "tsc --noEmit && tsc --project tsconfig.admin.json --noEmit",
     "lint": "biome check",
     "format": "biome check --write",
+    "verify:knowledge:api": "node scripts/verify-knowledge-api.mjs",
+    "verify:knowledge:managed": "node scripts/verify-managed-knowledge.mjs",
+    "verify:knowledge:native-engine": "node scripts/verify-managed-knowledge-native-engine.mjs",
     "test:coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {

@@ -64,7 +64,8 @@ function setup(overrides: Record<string, unknown> = {}, identity: AdminIdentity 
 }
 
 function card(title: string): HTMLElement {
-  const node = screen.getByText(title).closest('.ant-card');
+  const heading = screen.getByText(title);
+  const node = heading.closest('section') ?? heading.closest('.ant-card');
   expect(node).toBeTruthy();
   return node as HTMLElement;
 }
