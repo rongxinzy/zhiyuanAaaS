@@ -549,6 +549,8 @@ describe('admin session client identity', () => {
       'GET /aep/v1/admin/audit/operations': { body: { items: [], nextCursor: null, timeRange: { after: 5 } } },
     });
     expect((await partial.client.searchAdminAudit({ limit: 50 })).timeRange).toBeNull();
+  });
+
   test('accepts minimal operation records without inventing optional audit fields', async () => {
     const record = {
       cursor: '9',
