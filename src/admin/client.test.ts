@@ -293,6 +293,93 @@ async function signedInClient(routes: Record<string, { readonly status?: number;
   return { client, requests };
 }
 
+describe('Skill installation responses', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('requests the encoded Skill id and keeps valid reports and counts', async () => {
+    const items = [
+      {
+        userId: 'user-a',
+        state: 'missing',
+        revision: 'revision-3',
+        reportedAt: '2026-10-13T05:00:00Z',
+        itemStatus: 'removed',
+      },
+      { userId: 'user-b', state: 'unreported' },
+    ];
+    const summary = {
+      granted: 3,
+      reported: 2,
+      installed: 1,
+      missing: 1,
+      unreported: 1,
+      latestReportedAt: '2026-10-13T05:00:00Z',
+    };
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/skills/skill%2Fone/installations': {
+        body: {
+          skillId: 'skill/one',
+          summary,
+          truncated: true,
+          items: [
+            ...items,
+            null,
+            [],
+            'invalid',
+            { userId: '', state: 'missing' },
+            { userId: 'other', state: 'installed' },
+          ],
+        },
+      },
+    });
+    expect(await client.skillInstallations('skill/one')).toEqual({
+      skillId: 'skill/one',
+      summary,
+      items,
+      truncated: true,
+    });
+    expect(requests.at(-1)).toMatchObject({ method: 'GET', path: '/aep/v1/admin/skills/skill%2Fone/installations' });
+  });
+
+  test('does not turn malformed optional fields into reported facts', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': {
+        body: {
+          skillId: 's1',
+          summary: { granted: 4, reported: '2', installed: null, missing: 1 },
+          items: [{ userId: 'user-a', state: 'missing', revision: '', reportedAt: 42, itemStatus: null }],
+          truncated: 'true',
+        },
+      },
+    });
+    expect(await client.skillInstallations('s1')).toEqual({
+      skillId: 's1',
+      summary: { granted: 4, reported: 0, installed: 0, missing: 1, unreported: 0, latestReportedAt: null },
+      items: [{ userId: 'user-a', state: 'missing' }],
+      truncated: false,
+    });
+  });
+
+  test('handles a missing installation response without inventing users', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': { body: null },
+    });
+    expect(await client.skillInstallations('s1')).toEqual({
+      skillId: '',
+      summary: { granted: 0, reported: 0, installed: 0, missing: 0, unreported: 0, latestReportedAt: null },
+      items: [],
+      truncated: false,
+    });
+  });
+
+  test('propagates an unavailable endpoint instead of returning an empty report', async () => {
+    const { client } = await signedInClient({
+      'GET /aep/v1/admin/skills/s1/installations': { status: 503, body: { code: 'UNAVAILABLE' } },
+    });
+    await expect(client.skillInstallations('s1')).rejects.toMatchObject({ status: 503 });
+  });
+});
+
 describe('admin console access', () => {
   test('accepts the bootstrap administrator role', () => {
     expect(hasAdminConsoleAccess(identity({ roles: ['admin'] }))).toBe(true);
