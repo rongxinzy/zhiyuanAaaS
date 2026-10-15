@@ -142,7 +142,11 @@ describe('asynchronous route publication', () => {
     await screen.findByText('配置已投递');
     c.getDataPlanePublication.mockClear();
     ui.rerender(
-      <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }} theme={{ token: { motion: false } }}>
+      <ConfigProvider
+        button={{ autoInsertSpace: false }}
+        wave={{ disabled: true }}
+        theme={{ token: { motion: false } }}
+      >
         <GatewayPublication
           client={c as unknown as AdminConsoleClient}
           identity={{ ...administratorIdentity, user: { id: 'switched', displayName: 'Other' } }}
