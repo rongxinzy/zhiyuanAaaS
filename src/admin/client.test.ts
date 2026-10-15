@@ -514,6 +514,7 @@ describe('admin session client identity', () => {
               createdAt: '2026-10-13T00:00:00Z',
             },
             { cursor: 7, action: 'model.update' },
+            'not-a-record',
           ],
           nextCursor: '8',
           timeRange: { after: '2026-10-08T00:00:00Z', before: null },
