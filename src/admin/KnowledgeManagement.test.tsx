@@ -1048,6 +1048,55 @@ describe('KnowledgeManagement component state', () => {
     TIMEOUT,
   );
 
+  test('renders the document, parse, scope and updated columns the portal reports', async () => {
+    const counted: ManagedKnowledgeBase = {
+      ...base,
+      knowledge_count: 8,
+      processing_count: 2,
+      updated_at: '2026-10-15T06:18:30Z',
+      scope: { users: 2, teams: 1 },
+    };
+    const portal = makePortal({ listManagedKnowledgeBases: vi.fn().mockResolvedValue([counted]) });
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
+
+    expect(await screen.findByText('Research')).toBeInTheDocument();
+    const row = screen.getAllByRole('row').find((node) => node.textContent?.includes('Research'))!;
+    expect(within(row).getByText('8')).toBeInTheDocument();
+    expect(within(row).getByText('处理中 2 份')).toBeInTheDocument();
+    expect(within(row).getByText('2 个用户 · 1 个团队')).toBeInTheDocument();
+    expect(within(row).getByText(new Date('2026-10-15T06:18:30Z').toLocaleString())).toBeInTheDocument();
+    // 有真实统计时不能再显示占位。
+    expect(within(row).queryByText('暂未统计')).not.toBeInTheDocument();
+  });
+
+  // FAQ 库的条目落在 chunk 上，上游对 document 型才填 knowledge_count，
+  // 所以 FAQ 行必须按 chunk_count 统计而不是显示 0。
+  test('counts a FAQ base by its chunk count', async () => {
+    const faq: ManagedKnowledgeBase = {
+      ...base,
+      id: 'kb-faq',
+      name: 'FAQ base',
+      type: 'faq',
+      knowledge_count: 0,
+      chunk_count: 5,
+    };
+    const portal = makePortal({ listManagedKnowledgeBases: vi.fn().mockResolvedValue([faq]) });
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
+
+    expect(await screen.findByText('FAQ base')).toBeInTheDocument();
+    const row = screen.getAllByRole('row').find((node) => node.textContent?.includes('FAQ base'))!;
+    expect(within(row).getByText('5')).toBeInTheDocument();
+  });
+
+  test('keeps 暂未统计 for a base without statistics instead of showing zero', async () => {
+    const portal = makePortal();
+    render(<KnowledgeManagement portal={portal} baseId={null} />);
+
+    expect(await screen.findByText('Research')).toBeInTheDocument();
+    const row = screen.getAllByRole('row').find((node) => node.textContent?.includes('Research'))!;
+    expect(within(row).getAllByText('暂未统计')).toHaveLength(4);
+  });
+
   test('keeps the knowledge base list usable when the readiness probe fails', async () => {
     // portal 把 readiness 字段改名/探针报错时，不能让列表和详情一起不可用。
     const portal = makePortal({
