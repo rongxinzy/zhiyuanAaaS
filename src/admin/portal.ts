@@ -1670,7 +1670,9 @@ function parseManagedKnowledgeBase(value: unknown): ManagedKnowledgeBase {
 }
 
 function optionalCount(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+  // 计数只接受非负整数：portal 只会下发整数，小数一定是脏数据，宁可显示
+  // 「暂未统计」也不要渲染出「8.5 份处理中」。
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function optionalSubjectScope(value: unknown): ManagedKnowledgeBaseScope | undefined {

@@ -411,6 +411,37 @@ describe('portal client departments and lifecycle', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
     vi.unstubAllGlobals();
 
+    // 统计字段只保留能安全渲染的：非负整数计数与可解析时间保留，字符串、负数、
+    // 小数一律丢弃，缺字段就是缺字段（界面按「暂未统计」渲染）。
+    const countedFetch = stubFetch(200, {
+      data: [
+        {
+          ...base,
+          knowledge_count: 8,
+          chunk_count: '9',
+          processing_count: 8.5,
+          updated_at: '2026-10-15T06:18:30Z',
+          scope: { users: 2, teams: 1 },
+        },
+      ],
+    });
+    await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([
+      {
+        ...base,
+        tenant_id: '10000',
+        knowledge_count: 8,
+        updated_at: '2026-10-15T06:18:30Z',
+        scope: { users: 2, teams: 1 },
+      },
+    ]);
+    expect(countedFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
+    vi.unstubAllGlobals();
+
+    // scope 缺一半（只有 users）时整块丢弃，不渲染半个使用范围。
+    stubFetch(200, { data: [{ ...base, scope: { users: 2 } }] });
+    await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([{ ...base, tenant_id: '10000' }]);
+    vi.unstubAllGlobals();
+
     const document = {
       id: 'doc-1',
       knowledge_base_id: 'kb/a',
