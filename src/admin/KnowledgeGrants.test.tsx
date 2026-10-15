@@ -363,4 +363,20 @@ describe('KnowledgeGrants', () => {
     // 加完就清空草稿：按钮回落到不可点，重复点不会塞进同一个主体。
     await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') })).toBeDisabled());
   });
+
+  // 重名的人在选择之前必须能分清：重名的选项补 ID 前 8 位，不重名的保持只写名字。
+  test('disambiguates same-named subjects with a short id, and only those', async () => {
+    const portal = makePortal({
+      listContacts: vi
+        .fn()
+        .mockResolvedValue([...CONTACTS, { userId: 'user-3', username: 'zhangsan2', displayName: '张三', teams: [] }]),
+    });
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }));
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('张三 \u00b7 user-1'));
+    expect(dropdownOptionLabels()).toContain('张三 \u00b7 user-3');
+    // 单名的那个不补后缀，标签仍然是干净的名字。
+    expect(dropdownOptionLabels()).toContain('李四');
+  });
 });

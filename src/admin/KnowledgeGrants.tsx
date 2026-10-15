@@ -164,20 +164,28 @@ export function KnowledgeGrants({
   const grantOptions = useMemo(() => {
     const granted = new Set(grants.map((grant) => `${grant.type}:${grant.id}`));
     // 标签只写显示名：ID 是服务端唯一认得的键，但管理员挑人时看的是名字，
-    // 所以 ID 不占标签位（授权表里仍有 ID 列）；搜索另外把 value 也纳入匹配，
-    // 想按 ID 找人时照样能直接粘贴 ID。已在授权里的主体直接置灰，从选项层面
-    // 就杜绝重复添加。
+    // 所以 ID 不占标签位（授权表里仍有 ID 列）。名字重名时，选之前分不出是谁，
+    // 就只给重名的那些补 ID 前 8 位；搜索把 value（完整 ID）也纳入匹配，想按
+    // ID 找人照样能直接粘贴 ID。已在授权里的主体直接置灰，从选项层面杜绝重复添加。
+    const withLabels = (list: readonly GrantSubject[], type: ManagedKnowledgeGrant['type']) => {
+      const nameCounts = new Map<string, number>();
+      for (const subject of list) {
+        const label = subject.name ? subject.name : subject.id;
+        nameCounts.set(label, (nameCounts.get(label) ?? 0) + 1);
+      }
+      return list.map((subject) => {
+        const label = subject.name ? subject.name : subject.id;
+        const ambiguous = (nameCounts.get(label) ?? 0) > 1;
+        return {
+          value: subject.id,
+          label: ambiguous ? `${label} · ${subject.id.slice(0, 8)}` : label,
+          disabled: granted.has(`${type}:${subject.id}`),
+        };
+      });
+    };
     return {
-      users: (subjects?.users ?? []).map((subject) => ({
-        value: subject.id,
-        label: subject.name ? subject.name : subject.id,
-        disabled: granted.has(`user:${subject.id}`),
-      })),
-      teams: (subjects?.teams ?? []).map((subject) => ({
-        value: subject.id,
-        label: subject.name ? subject.name : subject.id,
-        disabled: granted.has(`team:${subject.id}`),
-      })),
+      users: withLabels(subjects?.users ?? [], 'user'),
+      teams: withLabels(subjects?.teams ?? [], 'team'),
     };
   }, [grants, subjects]);
 
