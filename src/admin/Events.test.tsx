@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
+import dayjs from 'dayjs';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { AdminRequestError } from './client.js';
@@ -62,6 +63,23 @@ function fixture() {
     }),
     publishControlEvent: vi.fn(),
     cancelControlEvent: vi.fn(),
+    searchAdminAudit: vi.fn().mockResolvedValue({
+      items: [
+        {
+          cursor: '9',
+          actorUserId: 'user-a',
+          action: 'model.update',
+          resourceType: 'model',
+          resourceId: 'm1',
+          result: 'success',
+          reason: null,
+          changes: null,
+          createdAt: '2026-10-14T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+      timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+    }),
   };
 }
 describe('read-only audit', () => {
@@ -176,5 +194,115 @@ describe('read-only audit', () => {
     await waitFor(() =>
       expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ userId: 'user-a', limit: 50 }),
     );
+  });
+});
+
+describe('read-only operations audit', () => {
+  test('loads the default seven-day window and states the applied range', async () => {
+    const client = fixture();
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    expect(await screen.findByText('model.update')).toBeInTheDocument();
+    // 默认窗口不携带时间参数，页面展示服务端实际生效的 timeRange。
+    expect(client.searchAdminAudit).toHaveBeenCalledWith({ limit: 50 });
+    expect(
+      screen.getByText(`时间范围: ${dayjs('2026-10-08T00:00:00Z').format('YYYY-MM-DD HH:mm')} ~ 现在`),
+    ).toBeInTheDocument();
+  });
+
+  test('shows the masked changes, reason and identifiers in operation detail', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockResolvedValueOnce({
+      items: [
+        {
+          cursor: '9',
+          actorUserId: 'user-a',
+          action: 'model.update',
+          resourceType: 'model',
+          resourceId: 'm1',
+          result: 'failure',
+          reason: 'conflict',
+          changes: { before: { price: 1 }, after: { price: 2 }, requestId: 'req-1' },
+          createdAt: '2026-10-14T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+      timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+    });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看详情' }));
+    expect(await screen.findByText('技术详情')).toBeInTheDocument();
+    expect(screen.getByText('conflict')).toBeInTheDocument();
+    expect(screen.getByText('req-1')).toBeInTheDocument();
+    expect(screen.getByText('变更前')).toBeInTheDocument();
+    expect(screen.getByText('变更后')).toBeInTheDocument();
+    expect(screen.getAllByText(/"price": 2/).length).toBeGreaterThan(0);
+  });
+
+  test('states honestly when a record carries no change payload', async () => {
+    const client = fixture();
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看详情' }));
+    expect(await screen.findByText('无变更记录')).toBeInTheDocument();
+  });
+
+  test('sends the selected result filter', async () => {
+    const client = fixture();
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    await screen.findByText('model.update');
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '结果' }));
+    const option = await waitFor(() => {
+      const node = [
+        ...document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'),
+      ]
+        .reverse()
+        .find((item) => item.textContent === '失败');
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(option);
+    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ result: 'failure', limit: 50 }));
+  });
+
+  test('reports a retryable failure instead of an empty result', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockRejectedValueOnce(new Error('offline'));
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('记录加载失败');
+    expect(screen.queryByText('当前条件下暂无记录')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('model.update')).toBeInTheDocument();
+  });
+
+  test('shows the current conditions and a clear entry when empty', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+    });
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    expect(await screen.findByText('当前条件下暂无记录')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('操作人'), { target: { value: 'user-a' } });
+    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    expect(await screen.findByText('当前条件: 操作人: user-a')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ limit: 50 }));
+    expect(screen.queryByText('当前条件: 操作人: user-a')).not.toBeInTheDocument();
+  });
+
+  test('degrades to a not-connected state when the endpoint is missing', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockRejectedValueOnce(new AdminRequestError(404, null, null));
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    expect(await screen.findByText('操作日志查询尚未接入')).toBeInTheDocument();
   });
 });

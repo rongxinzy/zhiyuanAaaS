@@ -2,6 +2,7 @@ import type { AdminControlEvent } from '@aep/sdk-node';
 import {
   Alert,
   Button,
+  DatePicker,
   Descriptions,
   Drawer,
   Form,
@@ -14,9 +15,13 @@ import {
   Tag,
   Typography,
 } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import {
+  type AdminAuditFilters,
+  type AdminAuditRecord,
+  type AdminAuditTimeRange,
   type AdminAuthenticationAuditRecord,
   type AdminConsoleClient,
   type AdminDeliveryRecord,
@@ -77,6 +82,15 @@ export function Events({
               label: c.login,
               children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
                 <LoginRecords client={client} />
+              ) : (
+                <Result status="403" title={shellCopy.forbidden} />
+              ),
+            },
+            {
+              key: 'operations-log',
+              label: c.opsLog,
+              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
+                <OperationLog client={client} />
               ) : (
                 <Result status="403" title={shellCopy.forbidden} />
               ),
@@ -585,6 +599,309 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
           {c.more}
         </Button>
       )}
+    </>
+  );
+}
+
+type OperationFilters = {
+  action?: string;
+  resourceId?: string;
+  actorUserId?: string;
+  result?: string;
+  range?: [Dayjs, Dayjs];
+};
+
+type OperationFormValues = OperationFilters;
+
+/** 把页面筛选转换为服务端查询：时间范围映射为 RFC3339 的 createdAfter/createdBefore。 */
+function operationQuery(filters: OperationFilters): AdminAuditFilters {
+  const [from, to] = filters.range ?? [];
+  return {
+    ...(filters.action ? { action: filters.action } : {}),
+    ...(filters.resourceId ? { resourceId: filters.resourceId } : {}),
+    ...(filters.actorUserId ? { actorUserId: filters.actorUserId } : {}),
+    ...(filters.result ? { result: filters.result } : {}),
+    ...(from ? { createdAfter: from.toISOString() } : {}),
+    ...(to ? { createdBefore: to.toISOString() } : {}),
+  };
+}
+
+/** 脱敏变更值的只读呈现；缺失值在调用处显式标注，不伪造内容。 */
+function jsonBlock(value: unknown) {
+  return (
+    <pre style={{ margin: 0, font: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+function resultTag(value: string) {
+  return value === 'success' ? (
+    <Tag color="success">{c.success}</Tag>
+  ) : value === 'failure' ? (
+    <Tag color="error">{c.failure}</Tag>
+  ) : (
+    <Tag>{shown(value)}</Tag>
+  );
+}
+
+function objectLabel(record: { readonly resourceType?: string; readonly resourceId?: string }) {
+  return record.resourceType
+    ? `${record.resourceType} / ${record.resourceId ?? c.unknown}`
+    : record.resourceId;
+}
+
+/** 操作详情：正文展示脱敏变更与失败原因，事件代码归入技术详情。 */
+function OperationDetail({ record }: { record: AdminAuditRecord }) {
+  const changes = record.changes ?? null;
+  const requestId = changes && typeof changes.requestId === 'string' ? changes.requestId : null;
+  const hasBefore = changes !== null && 'before' in changes;
+  const hasAfter = changes !== null && 'after' in changes;
+  const extraKeys = changes ? Object.keys(changes).filter((key) => key !== 'before' && key !== 'after') : [];
+  return (
+    <>
+      <Descriptions
+        column={1}
+        bordered
+        items={[
+          { key: 'time', label: c.opsTime, children: shown(record.createdAt) },
+          { key: 'actor', label: c.actor, children: shown(record.actorUserId) },
+          { key: 'object', label: c.object, children: shown(objectLabel(record)) },
+          { key: 'result', label: c.result, children: resultTag(record.result) },
+          { key: 'reason', label: c.reason, children: shown(record.reason) },
+          ...(changes === null
+            ? [{ key: 'changes', label: c.changes, children: c.noChanges }]
+            : [
+                ...(hasBefore
+                  ? [{ key: 'before', label: c.changedBefore, children: jsonBlock(changes.before) }]
+                  : []),
+                ...(hasAfter ? [{ key: 'after', label: c.changedAfter, children: jsonBlock(changes.after) }] : []),
+                ...(!hasBefore || !hasAfter || extraKeys.length > 0
+                  ? [{ key: 'payload', label: c.changes, children: jsonBlock(changes) }]
+                  : []),
+              ]),
+        ]}
+      />
+      <Typography.Title level={5} style={{ marginTop: 20 }}>
+        {c.technical}
+      </Typography.Title>
+      <Descriptions
+        column={1}
+        bordered
+        items={[
+          { key: 'action', label: c.type, children: shown(record.action) },
+          { key: 'resourceType', label: c.resourceType, children: shown(record.resourceType) },
+          { key: 'resourceId', label: c.resourceId, children: shown(record.resourceId) },
+          { key: 'cursor', label: c.operationId, children: shown(record.cursor) },
+          ...(requestId ? [{ key: 'requestId', label: c.requestId, children: requestId }] : []),
+        ]}
+      />
+    </>
+  );
+}
+
+/**
+ * 操作日志：服务端采集的管理员写操作审计，只读。
+ * 不传时间参数时服务端只返回最近七天，页面如实展示返回的 timeRange。
+ */
+function OperationLog({ client }: { client: AdminConsoleClient }) {
+  const [form] = Form.useForm<OperationFormValues>();
+  const [filters, setFilters] = useState<OperationFilters>({});
+  const [rows, setRows] = useState<readonly AdminAuditRecord[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<AdminAuditTimeRange | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [selected, setSelected] = useState<AdminAuditRecord | null>(null);
+  const [revision, refresh] = useState(0);
+  const requestVersion = useRef(0);
+  useEffect(() => {
+    requestVersion.current += 1;
+    const version = requestVersion.current;
+    let live = true;
+    setLoading(true);
+    setError(false);
+    setUnavailable(false);
+    setRows([]);
+    setCursor(null);
+    setTimeRange(null);
+    void client
+      .searchAdminAudit({ ...operationQuery(filters), limit: 50 })
+      .then((page) => {
+        if (live && version === requestVersion.current) {
+          setRows(page.items);
+          setCursor(page.nextCursor);
+          setTimeRange(page.timeRange);
+        }
+      })
+      .catch((cause) => {
+        if (!live) return;
+        // An older control service has no operations endpoint yet; degrade to
+        // the honest "not connected" state instead of an error.
+        if (cause instanceof AdminRequestError && cause.status === 404) setUnavailable(true);
+        else setError(true);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, filters, revision]);
+  const more = async () => {
+    if (!cursor || loading) return;
+    const version = requestVersion.current;
+    setLoading(true);
+    setError(false);
+    try {
+      const page = await client.searchAdminAudit({ ...operationQuery(filters), cursor, limit: 50 });
+      if (version !== requestVersion.current) return;
+      setRows((current) => [...current, ...page.items]);
+      setCursor(page.nextCursor);
+    } catch {
+      if (version === requestVersion.current) setError(true);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
+  };
+  const rangeLabel = filters.range
+    ? `${filters.range[0].format('YYYY-MM-DD HH:mm')} ~ ${filters.range[1].format('YYYY-MM-DD HH:mm')}`
+    : timeRange
+      ? `${timeRange.after ? dayjs(timeRange.after).format('YYYY-MM-DD HH:mm') : c.rangeUnbounded} ~ ${
+          timeRange.before ? dayjs(timeRange.before).format('YYYY-MM-DD HH:mm') : c.rangeNow
+        }`
+      : null;
+  const appliedFilters = [
+    filters.actorUserId ? `${c.actor}: ${filters.actorUserId}` : '',
+    filters.resourceId ? `${c.resourceId}: ${filters.resourceId}` : '',
+    filters.action ? `${c.type}: ${filters.action}` : '',
+    filters.result ? `${c.result}: ${filters.result === 'success' ? c.success : c.failure}` : '',
+    filters.range ? `${c.range}: ${rangeLabel ?? ''}` : '',
+  ].filter((item) => item);
+  if (unavailable) {
+    return <Result status="info" title={c.opsUnavailable} />;
+  }
+  return (
+    <>
+      <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
+        <Form.Item name="actorUserId" label={c.actor}>
+          <Input allowClear />
+        </Form.Item>
+        <Form.Item name="resourceId" label={c.resourceId}>
+          <Input allowClear />
+        </Form.Item>
+        <Form.Item name="action" label={c.type}>
+          <Input allowClear />
+        </Form.Item>
+        <Form.Item name="result" label={c.result}>
+          <Select
+            allowClear
+            style={{ width: 130 }}
+            placeholder={c.all}
+            options={[
+              { value: 'success', label: c.success },
+              { value: 'failure', label: c.failure },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="range" label={c.range}>
+          <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm" allowClear maxDate={dayjs()} />
+        </Form.Item>
+        <ListQueryActions
+          form={form}
+          searching={loading}
+          search={{
+            run: (values) => {
+              const next: OperationFilters = {};
+              if (values.action?.trim()) next.action = values.action.trim();
+              if (values.resourceId?.trim()) next.resourceId = values.resourceId.trim();
+              if (values.actorUserId?.trim()) next.actorUserId = values.actorUserId.trim();
+              if (values.result) next.result = values.result;
+              const range = values.range;
+              if (range?.[0] && range[1]) next.range = [range[0], range[1]];
+              setFilters(next);
+            },
+          }}
+          onReset={() => {
+            setFilters({});
+          }}
+        />
+        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+      </Form>
+      {rangeLabel && (
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          {`${c.range}: ${rangeLabel}`}
+        </Typography.Text>
+      )}
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          title={c.failed}
+          style={{ marginBottom: 16 }}
+          action={<Button onClick={() => refresh((n) => n + 1)}>{c.retry}</Button>}
+        />
+      )}
+      <Table
+        loading={loading}
+        rowKey={(row) => row.cursor}
+        dataSource={[...rows]}
+        pagination={false}
+        scroll={{ x: 880 }}
+        locale={{
+          emptyText: error ? (
+            c.failed
+          ) : (
+            <Space orientation="vertical" size={4}>
+              <Typography.Text type="secondary">{c.empty}</Typography.Text>
+              {appliedFilters.length > 0 && (
+                <Typography.Text type="secondary">
+                  {`${c.currentFilters}: ${appliedFilters.join(' · ')}`}
+                </Typography.Text>
+              )}
+              {appliedFilters.length > 0 && (
+                <Button
+                  type="link"
+                  onClick={() => {
+                    form.resetFields();
+                    setFilters({});
+                  }}
+                >
+                  {c.clearFilters}
+                </Button>
+              )}
+            </Space>
+          ),
+        }}
+        columns={[
+          { title: c.opsTime, dataIndex: 'createdAt', render: shown },
+          { title: c.actor, dataIndex: 'actorUserId', render: shown },
+          { title: c.type, dataIndex: 'action', render: shown },
+          {
+            title: c.object,
+            render: (_, row) => shown(objectLabel(row)),
+          },
+          { title: c.result, dataIndex: 'result', render: resultTag },
+          {
+            title: c.details,
+            render: (_, row) => (
+              <Button type="link" onClick={() => setSelected(row)}>
+                {c.details}
+              </Button>
+            ),
+          },
+        ]}
+      />
+      {cursor && (
+        <Button loading={loading} onClick={() => void more()} style={{ marginTop: 16 }}>
+          {c.more}
+        </Button>
+      )}
+      <Drawer title={c.detailTitle} open={Boolean(selected)} onClose={() => setSelected(null)} size={560}>
+        <Alert type="info" title={c.scopeNote} style={{ marginBottom: 20 }} />
+        {selected && <OperationDetail record={selected} />}
+      </Drawer>
     </>
   );
 }
