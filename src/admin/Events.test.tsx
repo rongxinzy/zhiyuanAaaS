@@ -530,11 +530,24 @@ describe('read-only operations audit', () => {
     expect(await screen.findByText('当前条件下暂无记录')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('操作人（姓名或 ID）'), { target: { value: '张三' } });
-    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
-    expect(await screen.findByText('当前条件: 操作人: 张三')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
-    await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ limit: 50 }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    });
+    expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ actorUserId: 'user-a', limit: 50 });
+    expect(screen.getByText('当前条件: 操作人: 张三')).toBeInTheDocument();
+    // The role/name query inside the empty table spends seconds computing
+    // jsdom styles under V8 coverage. Click the same action by its visible text.
+    await act(async () => {
+      fireEvent.click(screen.getByText('清除筛选'));
+    });
+    expect(client.searchAdminAudit.mock.calls).toEqual([
+      [{ limit: 50 }],
+      [{ actorUserId: 'user-a', limit: 50 }],
+      [{ limit: 50 }],
+    ]);
+    expect(screen.getByLabelText('操作人（姓名或 ID）')).toHaveValue('');
     expect(screen.queryByText('当前条件: 操作人: 张三')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
   });
 
   test('degrades to a not-connected state when the endpoint is missing', async () => {
