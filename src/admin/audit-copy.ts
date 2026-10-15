@@ -2,7 +2,9 @@ const copy = {
   zh: {
     title: '日志审计',
     hint: '查询已上报的业务操作和配置执行结果。记录范围以服务端采集为准。',
-    operations: '操作记录',
+    operations: '业务事件',
+    operationsHint:
+      '此页来自业务侧自报的遥测事件（业务进程上报），不是后台管理审计；管理侧的写操作记录见「操作日志」。',
     login: '登录日志',
     loginUnavailable: '登录历史查询尚未接入',
     opsLog: '操作日志',
@@ -73,7 +75,9 @@ const copy = {
   en: {
     title: 'Audit logs',
     hint: 'Query reported activity and configuration execution. Coverage depends on server collection.',
-    operations: 'Activity',
+    operations: 'Business events',
+    operationsHint:
+      'These rows come from business-side self-reported telemetry (reported by business processes), not the admin audit trail. Admin write operations are listed under "Activity log".',
     login: 'Login history',
     loginUnavailable: 'Login history is not connected',
     opsLog: 'Activity log',

@@ -552,12 +552,12 @@ async function exerciseCredential() {
 }
 
 // Control-event publishing and cancellation were removed from the product.
-// The audit page is accepted read-only: the operations tab issues a real
-// search, the execution tab lists control events, and the login-history tab
-// states honestly that the capability is not connected.
+// The audit page is accepted read-only: the business-telemetry tab issues a
+// real search, the execution tab lists control events, and the login-history
+// tab states honestly that the capability is not connected.
 async function exerciseAuditReadonly() {
   await menuItem('日志审计').click();
-  await tabItem('操作记录').click();
+  await tabItem('业务事件').click();
   await page.getByRole('button', { name: /查询$/ }).click();
   await tabItem('配置执行记录').click();
   await tabItem('登录日志').click();

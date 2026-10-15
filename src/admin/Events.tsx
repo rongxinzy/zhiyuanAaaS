@@ -16,7 +16,7 @@ import {
   Typography,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import {
   type AdminAuditFilters,
@@ -40,6 +40,7 @@ import { shellCopy } from './shell-copy.js';
 
 type Filters = { type?: string; userId?: string; result?: string };
 const shown = (value?: string | null) => value || c.unknown;
+type AuditTabItem = { readonly key: string; readonly label: ReactNode; readonly children: ReactNode };
 export function Events({
   client,
   identity,
@@ -47,57 +48,58 @@ export function Events({
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
 }) {
-  const allowed = hasAdminPermission(identity, AdminPermission.EventsRead);
+  // 遥测（events.read）和管理审计（audit.read）是两套模型、两套权限，逐 tab 门控：
+  // 无权限的 tab 不出现，而不是摆一个 403 占位；默认落第一个可用 tab。
+  const canReadTelemetry = hasAdminPermission(identity, AdminPermission.EventsRead);
+  const canReadAudit = hasAdminPermission(identity, AdminPermission.AuditRead);
   const [tab, setTab] = useState('operations');
+  const items: AuditTabItem[] = [
+    ...(canReadTelemetry
+      ? [
+          {
+            key: 'operations',
+            label: c.operations,
+            children: (
+              <>
+                <Typography.Paragraph type="secondary">{c.operationsHint}</Typography.Paragraph>
+                <TelemetryRecords client={client} />
+              </>
+            ),
+          },
+          {
+            key: 'execution',
+            label: c.execution,
+            children: <ExecutionRecords client={client} />,
+          },
+        ]
+      : []),
+    ...(canReadAudit
+      ? [
+          {
+            key: 'knowledge',
+            label: translate(ADMIN_LANGUAGE, 'knowledgeAuditTitle'),
+            children: <KnowledgeAudit client={client} />,
+          },
+          {
+            key: 'login',
+            label: c.login,
+            children: <LoginRecords client={client} />,
+          },
+          {
+            key: 'operations-log',
+            label: c.opsLog,
+            children: <OperationLog client={client} />,
+          },
+        ]
+      : []),
+  ];
+  const active = items.some((item) => item.key === tab) ? tab : items[0]?.key;
   return (
     <section>
       <Typography.Title level={2}>{c.title}</Typography.Title>
       <Typography.Paragraph type="secondary">{c.hint}</Typography.Paragraph>
-      {allowed ? (
-        <Tabs
-          activeKey={tab}
-          onChange={setTab}
-          destroyOnHidden
-          items={[
-            {
-              key: 'operations',
-              label: c.operations,
-              children: <AuditRecords client={client} />,
-            },
-            {
-              key: 'execution',
-              label: c.execution,
-              children: <ExecutionRecords client={client} />,
-            },
-            {
-              key: 'knowledge',
-              label: translate(ADMIN_LANGUAGE, 'knowledgeAuditTitle'),
-              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
-                <KnowledgeAudit client={client} />
-              ) : (
-                <Result status="403" title={shellCopy.forbidden} />
-              ),
-            },
-            {
-              key: 'login',
-              label: c.login,
-              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
-                <LoginRecords client={client} />
-              ) : (
-                <Result status="403" title={shellCopy.forbidden} />
-              ),
-            },
-            {
-              key: 'operations-log',
-              label: c.opsLog,
-              children: hasAdminPermission(identity, AdminPermission.AuditRead) ? (
-                <OperationLog client={client} />
-              ) : (
-                <Result status="403" title={shellCopy.forbidden} />
-              ),
-            },
-          ]}
-        />
+      {active ? (
+        <Tabs activeKey={active} onChange={setTab} destroyOnHidden items={items} />
       ) : (
         <Result status="403" title={shellCopy.forbidden} />
       )}
@@ -105,7 +107,8 @@ export function Events({
   );
 }
 
-function AuditRecords({ client }: { client: AdminConsoleClient }) {
+/** 业务遥测事件表：数据来自 `/admin/events`，不是管理审计。 */
+function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
   const [form] = Form.useForm<Filters>();
   const [filters, setFilters] = useState<Filters>({});
   const [rows, setRows] = useState<readonly AdminEventRecord[]>([]);
