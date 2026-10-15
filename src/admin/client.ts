@@ -437,6 +437,41 @@ export interface AuthenticationAuditFilters {
   readonly limit?: number;
 }
 
+export interface AdminAuditRecord {
+  readonly cursor: string;
+  readonly actorUserId?: string;
+  readonly action: string;
+  readonly resourceType: string;
+  readonly resourceId?: string;
+  readonly result: string;
+  readonly reason?: string;
+  readonly changes?: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
+export interface AdminAuditTimeRange {
+  readonly after: string | null;
+  readonly before: string | null;
+}
+
+export interface AdminAuditPage {
+  readonly items: readonly AdminAuditRecord[];
+  readonly nextCursor: string | null;
+  readonly timeRange: AdminAuditTimeRange;
+}
+
+export interface AdminAuditFilters {
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly action?: string;
+  readonly resourceType?: string;
+  readonly resourceId?: string;
+  readonly actorUserId?: string;
+  readonly result?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
+}
+
 export interface AdminDeliveryRecord {
   readonly deliveryId: string;
   readonly eventId: string;
@@ -1232,6 +1267,47 @@ export class AdminConsoleClient {
       ];
     });
     return { items, nextCursor: valueString(result, 'nextCursor') };
+  }
+
+  async searchAdminAudit(filters?: AdminAuditFilters): Promise<AdminAuditPage> {
+    const result = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/audit/operations?${identityQuery({ ...filters })}`,
+    });
+    const items = arrayFrom(result, 'items').flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.cursor !== 'string' ||
+        typeof record.action !== 'string' ||
+        typeof record.resourceType !== 'string' ||
+        typeof record.result !== 'string' ||
+        typeof record.createdAt !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          cursor: record.cursor,
+          action: record.action,
+          resourceType: record.resourceType,
+          result: record.result,
+          createdAt: record.createdAt,
+          ...(typeof record.actorUserId === 'string' ? { actorUserId: record.actorUserId } : {}),
+          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(isRecord(record.changes) ? { changes: record.changes } : {}),
+        },
+      ];
+    });
+    const range = isRecord(result) ? result.timeRange : null;
+    return {
+      items,
+      nextCursor: valueString(result, 'nextCursor'),
+      timeRange: isRecord(range)
+        ? { after: valueString(range, 'after'), before: valueString(range, 'before') }
+        : { after: null, before: null },
+    };
   }
 
   #getClient(): AepClient {

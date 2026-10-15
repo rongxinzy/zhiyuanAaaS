@@ -486,6 +486,58 @@ describe('admin session client identity', () => {
     expect(requests.some((item) => item.path === '/aep/v1/admin/audit/authentication')).toBe(true);
   });
 
+  test('loads the operations audit and drops malformed records', async () => {
+    const { client, requests } = await signedInClient({
+      'GET /aep/v1/admin/audit/operations': {
+        body: {
+          items: [
+            {
+              cursor: '9',
+              actorUserId: 'u1',
+              action: 'model.update',
+              resourceType: 'model',
+              resourceId: 'm1',
+              result: 'failure',
+              reason: 'conflict',
+              changes: { before: { price: 1 }, after: { price: 2 } },
+              createdAt: '2026-10-14T00:00:00Z',
+            },
+            {
+              cursor: '8',
+              actorUserId: null,
+              action: 'model.update',
+              resourceType: 'model',
+              resourceId: null,
+              result: 'success',
+              reason: null,
+              changes: null,
+              createdAt: '2026-10-13T00:00:00Z',
+            },
+            { cursor: 7, action: 'model.update' },
+          ],
+          nextCursor: '8',
+          timeRange: { after: '2026-10-08T00:00:00Z', before: null },
+        },
+      },
+    });
+    const page = await client.searchAdminAudit({ actorUserId: 'u1', limit: 50 });
+    expect(page.items).toHaveLength(2);
+    expect(page.items[0]).toMatchObject({
+      cursor: '9',
+      action: 'model.update',
+      resourceType: 'model',
+      result: 'failure',
+      reason: 'conflict',
+    });
+    expect(page.items[0]?.changes).toEqual({ before: { price: 1 }, after: { price: 2 } });
+    expect(page.items[1]).toMatchObject({ cursor: '8', result: 'success' });
+    expect(page.items[1]?.actorUserId).toBeUndefined();
+    expect(page.items[1]?.changes).toBeUndefined();
+    expect(page.nextCursor).toBe('8');
+    expect(page.timeRange).toEqual({ after: '2026-10-08T00:00:00Z', before: null });
+    expect(requests.some((item) => item.path === '/aep/v1/admin/audit/operations')).toBe(true);
+  });
+
   test('tracks the console session id from login and clears it on logout', async () => {
     const { client } = await signedInClient({
       'POST /aep/v1/auth/logout': { status: 204, body: null },
