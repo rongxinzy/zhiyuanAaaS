@@ -462,6 +462,47 @@ export interface AuthenticationAuditFilters {
   readonly limit?: number;
 }
 
+export interface AdminAuditRecord {
+  readonly cursor: string;
+  readonly actorUserId?: string;
+  readonly action: string;
+  readonly resourceType: string;
+  readonly resourceId?: string;
+  readonly result: string;
+  readonly reason?: string;
+  readonly changes?: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
+export interface AdminAuditTimeRange {
+  readonly after: string | null;
+  readonly before: string | null;
+}
+
+export interface AdminAuditPage {
+  readonly items: readonly AdminAuditRecord[];
+  readonly nextCursor: string | null;
+  /**
+   * The window the server actually applied. `null` means the response carried
+   * no well-formed `timeRange`, i.e. a control service that predates the
+   * default window and the `result` filter — callers MUST treat `null` as an
+   * unknown capability, never as an unbounded window.
+   */
+  readonly timeRange: AdminAuditTimeRange | null;
+}
+
+export interface AdminAuditFilters {
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly action?: string;
+  readonly resourceType?: string;
+  readonly resourceId?: string;
+  readonly actorUserId?: string;
+  readonly result?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
+}
+
 export interface AdminDeliveryRecord {
   readonly deliveryId: string;
   readonly eventId: string;
@@ -1270,6 +1311,45 @@ export class AdminConsoleClient {
     return { items, nextCursor: valueString(result, 'nextCursor') };
   }
 
+  async searchAdminAudit(filters?: AdminAuditFilters): Promise<AdminAuditPage> {
+    const result = await this.#request<JsonObject>(this.#requireClient(), {
+      method: HttpMethod.Get,
+      path: `/aep/v1/admin/audit/operations?${identityQuery({ ...filters })}`,
+    });
+    const items = arrayFrom(result, 'items').flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.cursor !== 'string' ||
+        typeof record.action !== 'string' ||
+        typeof record.resourceType !== 'string' ||
+        typeof record.result !== 'string' ||
+        typeof record.createdAt !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          cursor: record.cursor,
+          action: record.action,
+          resourceType: record.resourceType,
+          result: record.result,
+          createdAt: record.createdAt,
+          ...(typeof record.actorUserId === 'string' ? { actorUserId: record.actorUserId } : {}),
+          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(isRecord(record.changes) ? { changes: record.changes } : {}),
+        },
+      ];
+    });
+    const range = isRecord(result) ? result.timeRange : null;
+    return {
+      items,
+      nextCursor: valueString(result, 'nextCursor'),
+      timeRange: parseAuditTimeRange(range),
+    };
+  }
+
   #getClient(): AepClient {
     if (!this.#client) {
       this.#client = new AepClient({
@@ -1946,6 +2026,19 @@ function valueString(value: unknown, key: string): string | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = (value as Record<string, unknown>)[key];
   return typeof candidate === 'string' && candidate ? candidate : null;
+}
+
+/**
+ * A page only proves the newer operations protocol when it carries a
+ * well-formed `timeRange`. Missing, partial or wrong-typed data means the
+ * control service predates the echoed window and the `result` filter, so the
+ * console must not report either of them as supported.
+ */
+function parseAuditTimeRange(value: unknown): AdminAuditTimeRange | null {
+  if (!isRecord(value) || !('after' in value) || !('before' in value)) return null;
+  const bounds = [value.after, value.before];
+  if (!bounds.every((bound) => bound === null || (typeof bound === 'string' && bound.length > 0))) return null;
+  return { after: valueString(value, 'after'), before: valueString(value, 'before') };
 }
 
 function parseSessions(items: unknown[]): AdminUserSession[] {

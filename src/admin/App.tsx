@@ -140,7 +140,9 @@ const modules = [
     key: 'audit',
     label: c.audit,
     icon: <AuditOutlined />,
-    permissions: [P.EventsRead],
+    // 该页同时承载业务遥测（events.read）与管理审计（audit.read），任一权限即可进入，
+    // 具体 tab 由 Events 按各自权限门控。
+    permissions: [P.EventsRead, P.AuditRead],
   },
   {
     key: 'system',
@@ -766,7 +768,7 @@ function Overview({
   const [failed, setFailed] = useState(false);
   const [auditFailed, setAuditFailed] = useState(false);
   const [revision, refresh] = useState(0);
-  const canAudit = hasAdminPermission(identity, P.EventsRead);
+  const canReadTelemetry = hasAdminPermission(identity, P.EventsRead);
   const [employeeCounts, setEmployeeCounts] = useState<{
     total: number;
     ready: number;
@@ -815,7 +817,7 @@ function Overview({
       .finally(() => {
         if (live) setLoading(false);
       });
-    if (canAudit)
+    if (canReadTelemetry)
       void client
         .searchAudit({ limit: 5 })
         .then((value) => {
@@ -830,7 +832,7 @@ function Overview({
     return () => {
       live = false;
     };
-  }, [client, identity, canAudit, revision]);
+  }, [client, identity, canReadTelemetry, revision]);
   const metrics = [
     {
       key: 'users',
@@ -924,7 +926,7 @@ function Overview({
         </Col>
         <Col xs={24} xl={14}>
           <Card title={c.recentActivity}>
-            {canAudit ? (
+            {canReadTelemetry ? (
               auditFailed ? (
                 <Alert type="warning" title={c.auditFailed} />
               ) : (
