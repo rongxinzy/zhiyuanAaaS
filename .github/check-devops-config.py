@@ -48,8 +48,9 @@ gate = yaml.safe_load((root / "workflows/devops-gate.yml").read_text(encoding="u
 events = gate.get("on", gate.get(True, {}))
 assert "pull_request" not in events, "Privileged aggregation must not execute PR code"
 assert set(events) == {"pull_request_target", "workflow_run", "workflow_dispatch"}, "Unexpected gate events"
-watched = {item["name"] for item in config.get("legacyWorkflows", config["workflows"])}
-watched.add(config["orchestrator"]["name"])
+watched = set(config.get("completionWatchers", []))
+assert watched, "completionWatchers must list orchestrator completion events"
+assert watched == {config["orchestrator"]["name"]}, "Gate refresh must watch only the unified entry"
 assert set(events["workflow_run"]["workflows"]) == watched, "Gate event watcher drift"
 assert len(events["workflow_run"]["workflows"]) == len(watched), "Duplicate event watchers"
 assert events["workflow_run"]["types"] == ["completed"], "Refresh only completed workflows; early lifecycle events cause runner storms"
@@ -99,9 +100,5 @@ for name in config["orchestrator"]["localNeeds"]:
 tests = yaml.safe_load((root / "workflows/devops-gate-tests.yml").read_text(encoding="utf-8"))
 assert tests["permissions"] == {"contents": "read"}, "PR regression tests must have read-only permissions"
 assert "permissions" not in tests["jobs"]["gate-tests"], "PR tests must not elevate permissions"
-bootstrap = tests["jobs"]["bootstrap-gate"]
-assert bootstrap["permissions"] == {"contents": "read", "pull-requests": "read", "actions": "read"}, "Legacy bootstrap must remain read-only"
-assert bootstrap["if"] == "github.event_name == 'pull_request' && needs.gate-tests.outputs.bootstrap == 'true'", "Legacy gate must stop after installation"
-assert bootstrap["name"] == "${{ needs.gate-tests.outputs.bootstrap == 'true' && 'ci-gate' || 'gate-bootstrap-inactive' }}", "Inactive bootstrap must not create a required-name skipped check"
-assert bootstrap["steps"][0]["with"]["ref"] == "${{ github.event.repository.default_branch }}", "Legacy bootstrap must use deployed trusted code"
+assert set(tests.get("on", tests.get(True, {}))) == {"workflow_call"}, "Gate regression tests must not duplicate the unified entry"
 print(f"PASS: {len(actual)} required PR workflows, {len(optional)} explicit optional workflows")

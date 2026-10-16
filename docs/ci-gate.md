@@ -71,10 +71,11 @@ user-supplied shell commands. The helper's own success does not satisfy the
 required check: its name is `refresh-ci-gate`, not `ci-gate`.
 
 PR code for the gate is tested in `DevOps gate tests`, with read-only permissions.
-That reusable workflow is required through the unified entry; its former
-independent name remains watched for old PR heads. The
-inventory test checks triggers, default-branch checkout, permissions, pinned
-actions, watcher completeness and the bootstrap boundary.
+That reusable workflow is required through the unified entry; legacy workflow
+names remain in aggregation for old PR heads, but completion refresh watches
+only `CI validation` so main-branch CodeQL and gate-test runs do not spawn
+extra gate workflows. The inventory test checks triggers, default-branch
+checkout, permissions, pinned actions, and completion watcher boundaries.
 
 Aggregation fetches current PR metadata, requires a complete paginated changed
 file list, includes old rename paths, and applies the recorded workflow filters.
@@ -90,19 +91,11 @@ source checks, coverage, security, review and branch protection remain intact.
 
 ## Installation and recovery
 
-The event publisher becomes active only after this change reaches the default
-branch. To allow that installation PR to pass the existing required check, the
-read-only test workflow reads the deployed `eventDrivenGate` flag and runs the
-old trusted default-branch gate only while the flag is absent. That one-time
-bootstrap still uses the old polling/timeout behavior; if it times out, finish
-the upstream CI and rerun its failed job. It does not waive any checks.
-
-After installation, the bootstrap is skipped under the different name
-`gate-bootstrap-inactive`, so its skipped result cannot impersonate `ci-gate`.
-New changes use event-driven aggregation. Existing PRs do not need new source
-commits merely to trigger a refresh: reopen them to start the newly introduced
-read-only test workflow, or use its existing rerun once present. A missing
-required test workflow must actually run before the gate can succeed.
+The event-driven publisher is active on the default branch (`eventDrivenGate`).
+Existing PRs do not need new source commits merely to trigger a refresh: reopen
+them to start the read-only test workflow, or use its existing rerun once
+present. A missing required test workflow must actually run before the gate can
+succeed.
 
 To recover from a missed/delayed event, dispatch `DevOps gate` on the default
 branch with an open PR number. This only recomputes the check from current APIs;
