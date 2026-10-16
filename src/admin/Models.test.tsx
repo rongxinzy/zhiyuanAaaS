@@ -24,7 +24,10 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
 }
 
 describe('admin models', () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
 
   const emptyResources = { users: [], roles: [], teams: [], permissions: [], skills: [], assignments: [] };
   const credentials = {
@@ -734,20 +737,22 @@ describe('admin models', () => {
   );
 
   test(
-    'publishes catalog-derived routes after confirmation and refreshes the gateway state',
+    'queues catalog-derived routes after confirmation without publishing to the legacy state',
     async () => {
       const client = {
         ...makeBaseClient(),
         models: vi.fn().mockResolvedValue({ models: [publishableModel], assignments: [] }),
+        createDataPlanePublication: vi.fn().mockRejectedValue(new Error('Network unavailable')),
       };
       render(<Models client={client as never} identity={administratorIdentity} />);
 
-      fireEvent.click(await screen.findByRole('button', { name: /发布生效/ }));
+      fireEvent.click(await screen.findByRole('button', { name: /发布路由/ }));
       const confirm = await screen.findByText('从模型目录发布网关路由');
       expect(confirm).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: '发布生效' }));
-      await waitFor(() => expect(client.publishDataPlaneRoutes).toHaveBeenCalledWith());
-      await waitFor(() => expect(client.dataPlane).toHaveBeenCalledTimes(2));
+      fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: '发布路由' }));
+      await waitFor(() => expect(client.createDataPlanePublication).toHaveBeenCalledWith(expect.any(String)));
+      expect(client.publishDataPlaneRoutes).not.toHaveBeenCalled();
+      expect(client.dataPlane).toHaveBeenCalledTimes(1);
     },
     TIMEOUT,
   );
@@ -765,18 +770,19 @@ describe('admin models', () => {
           ],
           assignments: [],
         }),
-        publishDataPlaneRoutes: vi.fn().mockRejectedValue(new Error('AEP 503 UNAVAILABLE')),
+        createDataPlanePublication: vi.fn().mockRejectedValue(new Error('AEP 503 UNAVAILABLE')),
       };
       render(<Models client={client as never} identity={administratorIdentity} />);
 
-      fireEvent.click(await screen.findByRole('button', { name: /发布生效/ }));
+      fireEvent.click(await screen.findByRole('button', { name: /发布路由/ }));
       const popover = await screen.findByText('从模型目录发布网关路由');
       expect(popover).toBeInTheDocument();
       expect(screen.getByText(/草稿模型（未启用）/)).toBeInTheDocument();
       expect(screen.getByText(/残缺模型（映射不完整）/)).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('button', { name: '发布生效' }));
-      expect(await screen.findByText(/发布失败：AEP 503 UNAVAILABLE/)).toBeInTheDocument();
+      fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: '发布路由' }));
+      expect(await screen.findByText(/未能确认发布结果/)).toBeInTheDocument();
+      expect(client.publishDataPlaneRoutes).not.toHaveBeenCalled();
       expect(client.dataPlane).toHaveBeenCalledTimes(1);
     },
     TIMEOUT,
@@ -788,7 +794,7 @@ describe('admin models', () => {
       const client = makeBaseClient();
       render(<Models client={client as never} identity={operatorIdentity} />);
       await screen.findByRole('heading', { name: '模型列表' });
-      expect(screen.queryByRole('button', { name: /发布生效/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /发布路由/ })).not.toBeInTheDocument();
     },
     TIMEOUT,
   );

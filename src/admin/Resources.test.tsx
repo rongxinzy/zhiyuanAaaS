@@ -1019,6 +1019,38 @@ describe('admin resources', () => {
   );
 
   test(
+    'shows the Skill id under its name and keeps the description in the purpose column alone',
+    async () => {
+      const client = {
+        resources: vi.fn().mockResolvedValue({
+          ...emptyResources,
+          skills: [
+            {
+              id: 'writing-assistant',
+              name: '写作助手',
+              description: '生成文案',
+              enabled: true,
+              state: 'active',
+              versions: [],
+            },
+            { id: 'plain-skill', name: '无描述技能', description: '', enabled: true, state: 'active', versions: [] },
+          ],
+        }),
+      };
+      render(<Resources client={client as never} tab={AdminResourceTab.Skills} />);
+      // The second line is the stable identifier, as on the team and role pages; the
+      // description is never repeated inside the name cell.
+      expect((await screen.findByText('写作助手')).closest('td')?.textContent).toBe('写作助手writing-assistant');
+      expect(screen.getByText('无描述技能').closest('td')?.textContent).toBe('无描述技能plain-skill');
+      // The description appears exactly once, and it is the purpose column that shows it.
+      expect(screen.getAllByText('生成文案')).toHaveLength(1);
+      // A Skill without a description reports "未知" there instead of surfacing its id twice.
+      expect(screen.getAllByText('未知')).toHaveLength(1);
+    },
+    TIMEOUT,
+  );
+
+  test(
     'offers a forced delete when the Skill is still referenced',
     async () => {
       const client = {

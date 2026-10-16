@@ -565,7 +565,7 @@ describe('admin operations: configuration status', () => {
     expect(await screen.findByText('目标版本')).toBeInTheDocument();
     expect(screen.getByText('待应用')).toBeInTheDocument();
     expect(screen.getAllByText('未知').length).toBeGreaterThan(0);
-    expect(screen.getByText(/暂无模型调用检测接口/)).toBeInTheDocument();
+    expect(screen.getByText(/以下显示服务端当前选中的期望配置与观测结果/)).toBeInTheDocument();
   });
 
   test('blocks the page without dataplane permission', async () => {
@@ -602,7 +602,7 @@ describe('admin operations: configuration status', () => {
       />,
     );
 
-    expect(await screen.findByText(/期望路由与模型目录存在差异/)).toBeInTheDocument();
+    expect(await screen.findByText(/已选期望路由与当前模型目录存在差异/)).toBeInTheDocument();
     expect(screen.getByText(/目录有、路由缺失/)).toHaveTextContent('vision');
     expect(screen.getByText(/路由有、目录不收录/)).toHaveTextContent('retired');
     expect(screen.getByText(/字段不一致/)).toHaveTextContent('chat（网关地址）');

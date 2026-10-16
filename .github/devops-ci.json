@@ -10,7 +10,14 @@
     "localNeeds": ["verify", "coverage-ratchet"],
     "needs": ["verify", "coverage-ratchet", "codeql", "gate-tests"]
   },
-  "workflows": [{ "name": "CI validation", "path": ".github/workflows/ci.yml" }],
+  "workflows": [
+    {
+      "name": "CI validation",
+      "path": ".github/workflows/ci.yml",
+      "branches": ["main"]
+    }
+  ],
+  "completionWatchers": ["CI validation"],
   "legacyWorkflows": [
     {
       "name": "CI",
