@@ -47,6 +47,7 @@ import {
   AdminModelSubjectType,
   type AdminModels,
   AdminPermission,
+  AdminRequestError,
   hasAdminPermission,
 } from './client.js';
 import { GatewayPublication } from './GatewayPublication.js';
@@ -213,7 +214,13 @@ export function Models({
       setDataPlane(await client.dataPlane());
     } catch (err) {
       setDataPlane(null);
-      setDataPlaneError(err instanceof Error ? err.message : String(err));
+      setDataPlaneError(
+        err instanceof AdminRequestError && err.code === 'GATEWAY_OBSERVATION_CHANGED'
+          ? translate(language, 'gatewayObservationChanged')
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
     } finally {
       setDataPlaneLoading(false);
     }

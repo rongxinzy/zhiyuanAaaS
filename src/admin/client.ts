@@ -1110,17 +1110,24 @@ export class AdminConsoleClient {
 
   async dataPlane(): Promise<AdminDataPlane> {
     const client = this.#requireClient();
-    const [desired, status] = await Promise.all([
-      client.getDataPlaneDesiredState(),
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const desired = await client.getDataPlaneDesiredState();
       // The pinned SDK release predates the catalogComparison field on the
       // data-plane status, so the status read goes through the same
       // handwritten transport path as the publish endpoint (see #request).
-      this.#request<JsonObject>(client, {
+      const status = await this.#request<JsonObject>(client, {
         method: HttpMethod.Get,
         path: '/aep/v1/admin/data-plane/status',
-      }).then(parseDataPlaneStatus),
-    ]);
-    return { desired, status };
+      }).then(parseDataPlaneStatus);
+      const confirmed = await client.getDataPlaneDesiredState();
+      const stable = desired.revision === confirmed.revision && desired.contentHash === confirmed.contentHash;
+      const wrongReadyHash =
+        status.state === 'ready' &&
+        status.observedRevision === desired.revision &&
+        Boolean(status.contentHash && desired.contentHash && status.contentHash !== desired.contentHash);
+      if (stable && !wrongReadyHash) return { desired, status };
+    }
+    throw new AdminRequestError(503, 'GATEWAY_OBSERVATION_CHANGED', null);
   }
 
   // The pinned SDK release predates the catalog-derived publish endpoint:
