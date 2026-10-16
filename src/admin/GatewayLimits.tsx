@@ -32,6 +32,7 @@ import {
   gatewayT as t,
   useGatewayRemote,
 } from './gateway-ui.js';
+import { ADMIN_LANGUAGE } from './i18n.js';
 import { notify } from './notifications.js';
 
 type RuleForm = GatewayLimitWrite & { id: string };
@@ -156,6 +157,7 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
         <>
           {rules.error ? <GatewayLoadError retry={rules.retry} /> : null}
           <GatewayPublication
+            language={ADMIN_LANGUAGE}
             client={client}
             identity={identity}
             allowPublish
