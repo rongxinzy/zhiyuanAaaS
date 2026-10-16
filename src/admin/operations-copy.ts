@@ -325,7 +325,3 @@ const copy = {
   },
 } as const;
 export const operationsCopy = copy.zh;
-export type OperationsCopyKey = keyof (typeof copy)['zh'];
-export function getOperationsCopy(language: keyof typeof copy) {
-  return copy[language];
-}

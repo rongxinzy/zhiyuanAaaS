@@ -148,6 +148,3 @@ const copy = {
   },
 };
 export const auditCopy = copy.zh;
-export function getAuditCopy(language: keyof typeof copy) {
-  return copy[language];
-}

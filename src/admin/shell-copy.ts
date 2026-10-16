@@ -142,6 +142,3 @@ const copy = {
   },
 };
 export const shellCopy = copy.zh;
-export function getShellCopy(language: keyof typeof copy) {
-  return copy[language];
-}
