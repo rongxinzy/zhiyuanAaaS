@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 
 // Deterministic test-only API fixtures; never loaded by the admin application.
@@ -29,6 +30,7 @@ export const state = {
   models: [],
   gateway: { rules: [], revision: null, quota: 1000, inference: [], queries: [], details: [] },
   modelAssignments: [],
+  publications: [],
   credentials: [],
   credentialAssignments: [],
   licenses: [],
@@ -231,14 +233,14 @@ export function createAdminFixture() {
     }
     state.requests.push({ method: request.method ?? '', path: url.pathname, query: url.search, body: parsedBody });
     try {
-      await route(request.method ?? 'GET', url.pathname, body, response, url.searchParams);
+      await route(request.method ?? 'GET', url.pathname, body, response, url.searchParams, request.headers);
     } catch (error) {
       writeJson(response, 500, { code: 'MOCK_FAILURE', detail: String(error) });
     }
   });
 }
 
-async function route(method, pathname, rawBody, response, query) {
+async function route(method, pathname, rawBody, response, query, headers) {
   if (state.failNext === `${method} ${pathname}`) {
     state.failNext = null;
     return writeJson(response, 503, { code: 'TEST_FAILURE', detail: 'Temporary test failure' });
@@ -1179,6 +1181,52 @@ async function route(method, pathname, rawBody, response, query) {
       ...state.dataPlane.status,
       catalogComparison: computeCatalogComparison(),
     });
+  if (method === 'POST' && pathname === '/aep/v1/admin/data-plane/publications') {
+    const input = jsonBody(rawBody);
+    const key = headers['idempotency-key'];
+    if (typeof key !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(key))
+      return writeJson(response, 400, { code: 'INVALID_IDEMPOTENCY_KEY' });
+    let operation = state.publications.find((item) => item.key === key);
+    if (!operation) {
+      const now = new Date().toISOString();
+      operation = {
+        key,
+        includeGatewayLimits: input.includeGatewayLimits === true,
+        operationId: randomUUID(),
+        deploymentId: 'demo',
+        revision: `catalog-async-${state.nextId++}`,
+        contentHash: 'a'.repeat(64),
+        phase: 'queued',
+        createdAt: now,
+        updatedAt: now,
+        idempotencyExpiresAt: new Date(Date.now() + 86400000).toISOString(),
+        errorCode: null,
+        conditions: ['Accepted', 'Applied', 'Ready'].map((type) => ({
+          type,
+          status: 'Unknown',
+          observedRevision: null,
+          reason: 'NotObserved',
+          lastTransitionTime: now,
+        })),
+      };
+      state.publications.push(operation);
+    }
+    const { key: _key, includeGatewayLimits: _selection, ...payload } = operation;
+    return writeJson(response, 202, payload);
+  }
+  if (method === 'GET' && pathname.startsWith('/aep/v1/admin/data-plane/publications/')) {
+    const operation = state.publications.find((item) => item.operationId === pathname.split('/').at(-1));
+    if (!operation) return writeJson(response, 404, { code: 'RESOURCE_NOT_FOUND' });
+    operation.phase = 'projected';
+    operation.conditions = operation.conditions.map((c) => ({
+      ...c,
+      status: c.type === 'Ready' ? 'Unknown' : 'True',
+      observedRevision: c.type === 'Ready' ? null : operation.revision,
+      reason: c.type === 'Ready' ? 'DataPlaneNotObserved' : 'OperatorConfirmed',
+    }));
+    const { key: _key, includeGatewayLimits: _selection, ...payload } = operation;
+    return writeJson(response, 200, payload);
+  }
   if (method === 'POST' && pathname === '/aep/v1/admin/data-plane/publish') {
     // Mirror the server contract: derive routes from the model catalog
     // (enabled models with a complete gateway mapping) and atomically

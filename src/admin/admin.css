@@ -27,6 +27,14 @@ body {
 .gateway-trend-card {
   height: 100%;
 }
+.gateway-publication .ant-card-head-wrapper {
+  flex-wrap: wrap;
+  gap: var(--ant-margin-xs);
+  padding-block: var(--ant-padding-sm);
+}
+.gateway-publication .ant-card-extra {
+  margin-inline-start: 0;
+}
 .gateway-time-range {
   /* Keep the picker's animated active bar inside its field during resize. */
   overflow: clip;
