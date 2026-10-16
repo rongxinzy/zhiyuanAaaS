@@ -22,6 +22,7 @@ const config: KnipConfig = {
     '.github/devops-gate.cjs',
     'scripts/**/*.mjs',
     'scripts/check-large-files.mjs',
+    'scripts/check-source-line-limits.mjs',
     // Manual screenshot harness (docs/screenshots/gateway-user-filters).
     'scripts/verify-gateway-user-filters-browser.mjs',
   ],
@@ -37,11 +38,7 @@ const config: KnipConfig = {
     'scripts/admin-gateway-proxy.d.mts',
   ],
   vitest: {
-    entry: [
-      'src/**/*.{test,spec}.{ts,tsx}',
-      'scripts/**/*.{test,spec}.mjs',
-      '.github/**/*.test.cjs',
-    ],
+    entry: ['src/**/*.{test,spec}.{ts,tsx}', 'scripts/**/*.{test,spec}.mjs', '.github/**/*.test.cjs'],
   },
 };
 

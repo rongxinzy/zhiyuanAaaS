@@ -22,7 +22,7 @@ jobs:
       browserScripts: ${{ steps.outputs.outputs.browserScripts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b9324390b8baf285c5e # v3.0.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         if: github.event_name == 'pull_request'
         id: filter
         with:
@@ -48,11 +48,12 @@ jobs:
             echo "browserScripts=true" >> "$GITHUB_OUTPUT"
           fi
 
-  large-files:
+  source-lines:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: node scripts/check-source-line-limits.mjs
       - run: node scripts/check-large-files.mjs
 
   dead-code:
@@ -112,7 +113,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: actions/cache@0c5e0c852fd446ae04064014b089b25bac1558dc # v4.3.0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: node_modules/.vite
           key: vite-admin-${{ hashFiles('package-lock.json') }}
@@ -144,14 +145,14 @@ jobs:
 
   verify:
     name: verify
-    needs: [large-files, dead-code, lint-typecheck, test, build, browser-e2e]
+    needs: [source-lines, dead-code, lint-typecheck, test, build, browser-e2e]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Aggregate required PR checks
         env:
-          LARGE: ${{ needs.large-files.result }}
+          LINES: ${{ needs.source-lines.result }}
           DEAD: ${{ needs.dead-code.result }}
           LINT: ${{ needs.lint-typecheck.result }}
           TEST: ${{ needs.test.result }}
@@ -160,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           fail=0
-          for name in LARGE DEAD LINT TEST BUILD; do
+          for name in LINES DEAD LINT TEST BUILD; do
             result="${!name}"
             if [ "$result" != "success" ]; then
               echo "::error::Job $name finished with $result"
@@ -172,7 +173,7 @@ jobs:
             fail=1
           fi
           if [ "$fail" -ne 0 ]; then exit 1; fi
-          echo "Lint, typecheck, unit tests, build, dead-code, large-files, and scoped browser E2E passed."
+          echo "Lint, typecheck, unit tests, build, dead-code, source line limits, and scoped browser E2E passed."
 
   ci-gate:
     name: ci-gate

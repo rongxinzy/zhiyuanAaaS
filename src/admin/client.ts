@@ -282,8 +282,7 @@ const AdminDeploymentSettingSource = {
   Env: 'env',
   Unset: 'unset',
 } as const;
-type AdminDeploymentSettingSource =
-  (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
+type AdminDeploymentSettingSource = (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
 
 export interface AdminDeploymentSettingValue {
   readonly override: string | null;
