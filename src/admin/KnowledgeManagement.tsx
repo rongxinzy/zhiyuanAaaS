@@ -25,6 +25,7 @@ import {
   Button,
   Card,
   Descriptions,
+  Drawer,
   Dropdown,
   Empty,
   Form,
@@ -515,7 +516,12 @@ export function KnowledgeManagement({
         readonly page: number;
         readonly pageSize: number;
       }
-    | { readonly title: string; readonly kind: 'spans'; readonly content: ManagedKnowledgeSpans }
+    | {
+        readonly title: string;
+        readonly kind: 'spans';
+        readonly documentId: string;
+        readonly content: ManagedKnowledgeSpans;
+      }
     | null
   >(null);
   const [chunksLoading, setChunksLoading] = useState(false);
@@ -1279,7 +1285,12 @@ export function KnowledgeManagement({
       } else {
         const result: ManagedKnowledgeSpans = await portal.getManagedKnowledgeSpans(document.id);
         if (generation !== chunkRequestGeneration.current) return;
-        setInspector({ title: `${t('knowledgeSpans')} · ${document.name}`, kind: 'spans', content: result });
+        setInspector({
+          title: `${t('knowledgeSpans')} · ${document.name}`,
+          kind: 'spans',
+          documentId: document.id,
+          content: result,
+        });
       }
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
@@ -2344,11 +2355,12 @@ export function KnowledgeManagement({
           )}
         </Form>
       </Modal>
-      <Modal
+      <Drawer
         title={inspector?.title}
+        placement="right"
+        size={720}
         open={inspector !== null}
-        footer={null}
-        onCancel={() => {
+        onClose={() => {
           chunkRequestGeneration.current += 1;
           chunkSaveGeneration.current += 1;
           chunkImageRequests.current.forEach((controller) => {
@@ -2358,9 +2370,20 @@ export function KnowledgeManagement({
           setChunksLoading(false);
           setInspector(null);
         }}
-        width={900}
         destroyOnHidden
       >
+        <Tabs
+          activeKey={inspector?.kind === 'chunks' ? 'chunks' : 'spans'}
+          onChange={(key) => {
+            const row = visibleDocs?.data.find((item) => item.id === inspector?.documentId);
+            if (!row || !inspector || key === inspector.kind) return;
+            void inspectDocument(row, key === 'chunks' ? 'chunks' : 'spans');
+          }}
+          items={[
+            { key: 'spans', label: t('knowledgeSpans') },
+            { key: 'chunks', label: t('knowledgeChunks') },
+          ]}
+        />
         {inspector?.kind === 'chunks' && (
           <Spin spinning={chunksLoading}>
             <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -2460,7 +2483,7 @@ export function KnowledgeManagement({
             <Tree style={{ width: '100%' }} treeData={[spanTree(inspector.content.trace)]} defaultExpandAll />
           </Space>
         )}
-      </Modal>
+      </Drawer>
       <Modal
         title={t('chunkEdit')}
         open={chunkEditor !== null}
