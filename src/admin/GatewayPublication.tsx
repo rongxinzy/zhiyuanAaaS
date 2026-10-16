@@ -23,10 +23,9 @@ import {
   hasAdminPermission,
 } from './client.js';
 import { formatTimestamp } from './format.js';
-import { type AdminTranslationKey, translate } from './i18n.js';
+import { type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import { type DataPlanePublication, type PublicationCondition, publicationId } from './publication-contract.js';
 
-const t = (key: AdminTranslationKey) => translate('zh', key);
 type Attempt = { key: string; operationId?: string; expiresAt: number };
 const memory = new Map<string, Attempt>();
 function readAttempt(scope: string): Attempt | null {
@@ -79,21 +78,23 @@ const reasonKeys: Record<string, AdminTranslationKey> = {
   PublicationSuperseded: 'publicationReplaced',
   DataPlaneNotObserved: 'publicationDataPlaneNotObserved',
 };
-function reason(c: PublicationCondition): string {
+function reason(c: PublicationCondition, language: AdminLanguage): string {
+  const t = (key: AdminTranslationKey) => translate(language, key);
   const key = reasonKeys[c.reason];
   return key ? t(key) : `${t('publicationOtherReason')}: ${c.reason}`;
 }
-function errorMessage(error: unknown, writing: boolean): string {
+function errorMessage(error: unknown, writing: boolean): AdminTranslationKey {
   if (error instanceof AdminRequestError) {
     if (error.code === 'DATA_PLANE_PUBLICATIONS_DISABLED' || error.status === 501 || (writing && error.status === 404))
-      return t('publicationUnavailable');
-    if (error.status === 403) return t('publicationForbidden');
-    if (error.status === 404) return t('publicationNotFound');
+      return 'publicationUnavailable';
+    if (error.status === 403) return 'publicationForbidden';
+    if (error.status === 404) return 'publicationNotFound';
   }
-  return t(writing ? 'publicationRequestUncertain' : 'publicationReadFailed');
+  return writing ? 'publicationRequestUncertain' : 'publicationReadFailed';
 }
 
 type PublicationProps = {
+  readonly language: AdminLanguage;
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
   readonly allowPublish?: boolean;
@@ -113,6 +114,7 @@ export function GatewayPublication(props: PublicationProps) {
 
 /** A scoped pointer restores GET observation; it never automatically repeats POST. */
 function PublicationView({
+  language,
   client,
   identity,
   allowPublish = false,
@@ -122,11 +124,12 @@ function PublicationView({
   includeGatewayLimits = false,
   scope,
 }: PublicationProps & { readonly scope: string }) {
+  const t = (key: AdminTranslationKey) => translate(language, key);
   const allowed = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
   const { token } = theme.useToken();
   const [attempt, setAttempt] = useState<Attempt | null>(() => readAttempt(scope));
   const [operation, setOperation] = useState<DataPlanePublication | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AdminTranslationKey | null>(null);
   const [pending, setPending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -183,7 +186,7 @@ function PublicationView({
   const submit = async (retry: boolean) => {
     if (!allowed || !allowPublish || writing.current) return;
     if (retry && (!attempt || Date.now() >= attempt.expiresAt)) {
-      setError(t('publicationExpired'));
+      setError('publicationExpired');
       return;
     }
     writing.current = true;
@@ -251,7 +254,7 @@ function PublicationView({
                   </Space>
                 }
                 okText={t(includeGatewayLimits ? 'publicationLimitsAction' : 'publicationAction')}
-                cancelText={translate('zh', 'cancel')}
+                cancelText={t('cancel')}
                 onConfirm={() => void submit(false)}
               >
                 <Button icon={<RocketOutlined aria-hidden="true" />} loading={pending} disabled={disabled || checking}>
@@ -264,7 +267,7 @@ function PublicationView({
       }
     >
       <Flex vertical gap={token.margin}>
-        {error ? <Alert type="error" showIcon title={error} /> : null}
+        {error ? <Alert type="error" showIcon title={t(error)} /> : null}
         {unresolved && !error ? (
           <Alert type="info" showIcon title={t(expired ? 'publicationExpired' : 'publicationPending')} />
         ) : null}
@@ -329,7 +332,7 @@ function PublicationView({
                     render: (type: PublicationCondition['type']) => t(conditionKeys[type]),
                   },
                   {
-                    title: translate('zh', 'status'),
+                    title: t('status'),
                     key: 'status',
                     render: (_, c: PublicationCondition) => (
                       <Tag color={c.status === 'True' ? 'success' : c.status === 'False' ? 'error' : 'default'}>
@@ -343,7 +346,11 @@ function PublicationView({
                     render: (v: string | null) =>
                       v ? <Typography.Text code>{v}</Typography.Text> : t('publicationUnknown'),
                   },
-                  { title: t('publicationReason'), key: 'reason', render: (_, c: PublicationCondition) => reason(c) },
+                  {
+                    title: t('publicationReason'),
+                    key: 'reason',
+                    render: (_, c: PublicationCondition) => reason(c, language),
+                  },
                   {
                     title: t('publicationConditionUpdated'),
                     dataIndex: 'lastTransitionTime',

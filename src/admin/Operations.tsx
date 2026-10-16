@@ -1911,7 +1911,7 @@ function ConfigurationStatusPanel({
         </Button>
       </ModuleHeading>
 
-      <GatewayPublication client={client} identity={identity} />
+      <GatewayPublication language={language} client={client} identity={identity} />
       <Typography.Title level={5}>{translate(language, 'publicationLegacy')}</Typography.Title>
       <Alert type="info" showIcon title={translate(language, 'publicationLegacyNote')} />
 
