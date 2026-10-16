@@ -120,11 +120,12 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   return rtlRender(<ConfigProvider wave={{ disabled: true }}>{ui}</ConfigProvider>);
 }
 
-// The detail page (Tabs + Descriptions + a row menu) makes antd's cssinjs
-// style computation noticeably heavier in jsdom, so the tests that open a
-// document Modal get an explicit budget instead of the default 5 s. 90 s
-// covers the full-suite parallel run (34 files at once).
-const TIMEOUT = 90000;
+// The detail page (Tabs + Descriptions + a folder tree + a summary strip + a row
+// menu) makes antd's cssinjs style computation noticeably heavier in jsdom, so the
+// tests that open a document Modal get an explicit budget instead of the default
+// 5 s. The detail page grew with the prototype alignment, and the CI runner is
+// slower than a workstation, so the budget covers the full-suite parallel run.
+const TIMEOUT = 150000;
 
 const base: ManagedKnowledgeBase = {
   id: 'kb-test-1',
