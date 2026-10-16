@@ -1796,7 +1796,7 @@ export function KnowledgeManagement({
                   ]}
                 />
 
-                <div role="group" aria-label={t('summaryLabel')}>
+                <section aria-label={t('summaryLabel')}>
                   <Space size={16} wrap>
                     {summaryItems.map((item) => (
                       <Tooltip key={item.key} title={item.hint}>
@@ -1812,7 +1812,7 @@ export function KnowledgeManagement({
                       </Tooltip>
                     ))}
                   </Space>
-                </div>
+                </section>
                 <Tabs
                   activeKey={detailTab}
                   onChange={setDetailTab}

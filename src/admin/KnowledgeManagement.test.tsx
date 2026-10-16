@@ -643,7 +643,7 @@ describe('KnowledgeManagement component state', () => {
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     // 统计条自身有可访问名称，断言限定在条内（页面其他位置也有「暂未统计」占位）。
-    const strip = within(await screen.findByRole('group', { name: translate(ADMIN_LANGUAGE, 'knowledgeSummary') }));
+    const strip = within(await screen.findByRole('region', { name: translate(ADMIN_LANGUAGE, 'knowledgeSummary') }));
     expect(strip.getByText('7 篇资料')).toBeInTheDocument();
     expect(strip.getByText('1 篇处理中')).toBeInTheDocument();
     expect(strip.getByText('2 篇需处理')).toBeInTheDocument();
