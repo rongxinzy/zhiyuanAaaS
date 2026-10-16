@@ -255,9 +255,7 @@ describe('KnowledgeGrants', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantEdit') })).toBeEnabled());
     openGrantEditor();
     const editor = await screen.findByRole('dialog');
-    await waitFor(() =>
-      expect(within(editor).getByRole('button', { name: /保存授权/ })).toBeEnabled(),
-    );
+    await waitFor(() => expect(within(editor).getByRole('button', { name: /保存授权/ })).toBeEnabled());
   });
 
   test('offers the portal directory as subjects, labelled by display name only', async () => {
