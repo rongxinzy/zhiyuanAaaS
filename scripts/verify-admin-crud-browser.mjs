@@ -168,19 +168,9 @@ try {
     'Create knowledge base must call the fixed managed API',
   );
   checks.push('native managed knowledge registry and create operation');
-  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
+  // 标签管理界面已按设计移除；运营（文件夹 + FAQ）现在位于文档管理页签内，不再是独立页签。
   const knowledgeOperations = page.getByRole('region', { name: '知识运营', exact: true });
-  await knowledgeOperations.getByRole('tab', { name: '标签', exact: true }).click();
-  await knowledgeOperations.getByPlaceholder('标签名称').fill('E2E 标签');
-  await knowledgeOperations.getByRole('button', { name: '新建标签', exact: true }).click();
-  await knowledgeOperations.getByText('E2E 标签', { exact: true }).waitFor();
-  assert.ok(state.knowledgeTags.some((item) => item.name === 'E2E 标签'));
-  assert.ok(
-    state.requests.some((item) => item.method === 'POST' && item.path.endsWith('/tags')),
-    'Tag creation must call the fixed managed knowledge tag endpoint',
-  );
-  checks.push('native managed knowledge tag operation');
-  await page.getByRole('tab', { name: '知识库访问授权', exact: true }).click();
+  await page.getByRole('tab', { name: '访问与关联', exact: true }).click();
   const grants = page.getByRole('region', { name: '知识库访问授权', exact: true });
   await grants.getByText('user-1', { exact: true }).waitFor();
   const grantUser = grants.getByRole('combobox', { name: '用户', exact: true });
@@ -222,7 +212,7 @@ try {
   assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
   checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
 
-  await page.getByRole('tab', { name: '检索与来源', exact: true }).click();
+  await page.getByRole('tab', { name: '检索测试', exact: true }).click();
   const retrieval = page.getByRole('region', { name: '检索与来源', exact: true });
   await retrieval.locator('.ant-select').first().click();
   await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
@@ -282,7 +272,6 @@ try {
   await faqBaseDialog.waitFor({ state: 'hidden' });
   await page.getByRole('heading', { name: 'E2E 新建 FAQ 库', exact: true }).waitFor();
   assert.equal(state.knowledgeBases.find((item) => item.name === 'E2E 新建 FAQ 库')?.type, 'faq');
-  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
   await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
   await page.getByRole('button', { name: '新建 FAQ', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').first().waitFor();
@@ -294,7 +283,6 @@ try {
     .filter({ hasText: 'E2E 常见问题' })
     .getByRole('button', { name: '管理文档', exact: true })
     .click();
-  await page.getByRole('tab', { name: '知识运营', exact: true }).click();
   await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
   await page.getByRole('button', { name: '\u65b0\u5efa FAQ', exact: true }).click();
   let faqDialog = page.getByRole('dialog');

@@ -1,6 +1,9 @@
 import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExclamationCircleOutlined,
   EyeOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
@@ -8,10 +11,12 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SearchOutlined,
+  TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import type { MenuProps, UploadFile } from 'antd';
+import type { MenuProps, TreeDataNode, UploadFile } from 'antd';
 import {
   Alert,
   Button,
@@ -32,6 +37,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Tree,
   Typography,
   Upload,
@@ -48,6 +54,8 @@ import {
   type ManagedKnowledgeBase,
   type ManagedKnowledgeChunk,
   type ManagedKnowledgeDocument,
+  type ManagedKnowledgeFolder,
+  type ManagedKnowledgeFolderTree,
   type ManagedKnowledgePage,
   type ManagedKnowledgeReadiness,
   type ManagedKnowledgeSpans,
@@ -101,6 +109,23 @@ const copyKeys = {
   chooseFile: 'knowledgeChooseFile',
   chooseFolder: 'knowledgeChooseFolder',
   uploadFolder: 'knowledgeUploadFolder',
+  addMaterial: 'knowledgeAddMaterial',
+  parsingHint: 'knowledgeParsingHint',
+  summaryTotal: 'knowledgeSummaryTotal',
+  summaryReady: 'knowledgeSummaryReady',
+  summaryProcessing: 'knowledgeSummaryProcessing',
+  summaryFailed: 'knowledgeSummaryFailed',
+  summaryAgents: 'knowledgeSummaryAgents',
+  summaryGrants: 'knowledgeSummaryGrants',
+  summaryReadyUnknown: 'knowledgeSummaryReadyUnknown',
+  summaryLabel: 'knowledgeSummary',
+  foldersLabel: 'knowledgeFolders',
+  uploadFile: 'knowledgeUploadFile',
+  importFolder: 'knowledgeImportFolder',
+  allMaterials: 'knowledgeAllMaterials',
+  documentCount: 'knowledgeDocumentCount',
+  statusAll: 'knowledgeStatusAll',
+  documentsTab: 'knowledgeTabDocuments',
   folderQueued: 'knowledgeFolderQueued',
   folderUploading: 'knowledgeFolderUploading',
   folderAccepted: 'knowledgeFolderAccepted',
@@ -111,9 +136,8 @@ const copyKeys = {
   folderLimit: 'knowledgeFolderLimit',
   folderHint: 'knowledgeFolderHint',
   tabDocuments: 'knowledgeTabDocuments',
-  tabRetrieval: 'knowledgeRetrieval',
-  tabGrants: 'knowledgeGrants',
-  tabOperations: 'knowledgeOperations',
+  tabRetrieval: 'knowledgeTabRetrieval',
+  tabAccess: 'knowledgeTabAccess',
   manageDocuments: 'knowledgeManageDocuments',
   columnScope: 'knowledgeColumnScope',
   columnUpdated: 'knowledgeColumnUpdated',
@@ -204,6 +228,22 @@ const copyKeys = {
 type CopyKey = keyof typeof copyKeys;
 const t = (key: CopyKey) => translate(language, copyKeys[key]);
 const pollable = new Set(['pending', 'processing', 'finalizing', 'deleting']);
+// 目录树里「全部资料」节点的 key：选中它表示不带 folder_path 过滤。
+const ALL_FOLDERS_KEY = '__all__';
+
+/** 文件大小换算成可读单位；缺失、非正数或非有限值返回空串，不显示「0 B」。 */
+function formatFileSize(bytes: number | undefined): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? value : Number(value.toFixed(1))} ${units[unit]}`;
+}
+
 const parseStatusCopy: Readonly<Record<string, CopyKey>> = {
   pending: 'pending',
   processing: 'processing',
@@ -422,6 +462,15 @@ export function KnowledgeManagement({
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
+  const [folderTree, setFolderTree] = useState<ManagedKnowledgeFolderTree | null>(null);
+  // null = 全部资料（不带 folder_path 过滤）；上游把「folder_path 存在但为空」当作根目录，
+  // 所以「全部」必须是不传该参数，而不是传空串。
+  const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [materialModal, setMaterialModal] = useState<'file' | 'folder' | null>(null); // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
+  // 「可检索数」上游没有按启用状态统计的接口，保持 null → 界面显示暂未统计，不推断。
+  const [summaryFailed, setSummaryFailed] = useState<number | null>(null);
+  const [summaryAgents, setSummaryAgents] = useState<number | null>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [folderQueue, setFolderQueue] = useState<readonly FolderUploadItem[]>([]);
   const [folderUploading, setFolderUploading] = useState(false);
@@ -530,7 +579,9 @@ export function KnowledgeManagement({
   );
   // 详情页把当前知识库名报给外壳，面包屑渲染成 企业管理后台 / 知识库 / <名称>。
   usePageCrumb(selectedId ? (selected?.name ?? null) : null);
-  const queryContext = `${selectedId ?? ''}:${page}:${search}`;
+  // 查询上下文必须与加载时写入 docsContext 的格式一致（含状态与目录筛选），
+  // 否则旧响应会被当成「不是当前查询」而永远显示空表。
+  const queryContext = `${selectedId ?? ''}:${page}:${search}:${statusFilter}:${folderPath ?? ''}`;
   const queryContextRef = useRef(queryContext);
   queryContextRef.current = queryContext;
   const visibleDocs = docsContext === queryContext ? docs : null;
@@ -665,12 +716,18 @@ export function KnowledgeManagement({
       try {
         const result = await portal.listManagedKnowledgeDocuments(
           selectedId,
-          { page, pageSize: 10, ...(search ? { keyword: search } : {}) },
+          {
+            page,
+            pageSize: 10,
+            ...(search ? { keyword: search } : {}),
+            ...(statusFilter === 'all' ? {} : { parseStatus: statusFilter }),
+            ...(folderPath === null ? {} : { folderPath, folderRecursive: true }),
+          },
           signal,
         );
         if (generation !== docGeneration.current || signal?.aborted) return;
         setDocs(result);
-        setDocsContext(`${selectedId}:${page}:${search}`);
+        setDocsContext(`${selectedId}:${page}:${search}:${statusFilter}:${folderPath ?? ''}`);
         clearUncertainWrite();
         if (result.data.some((item) => pollable.has(item.parse_status))) {
           pollRounds.current += 1;
@@ -684,10 +741,164 @@ export function KnowledgeManagement({
         if (generation === docGeneration.current && !signal?.aborted) setDocsLoading(false);
       }
     },
-    [clearUncertainWrite, docsRefresh, page, portal, search, selectedId],
+    [clearUncertainWrite, docsRefresh, folderPath, page, portal, search, selectedId, statusFilter],
   );
 
   const [pollTick, setPollTick] = useState(0);
+
+  // 目录树按选中库读取；读取失败只是没有树，不挡住资料列表（列表自己会报错）。
+  useEffect(() => {
+    if (!selectedId) {
+      setFolderTree(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    // 目录树是展示用读取：拿到就渲染，读不到（或客户端没有这个方法）只当没有树，
+    // 不能因此让整个详情页渲染失败。
+    const loadFolders = async () => {
+      try {
+        const tree = await portal.getManagedKnowledgeFolders(selectedId, controller.signal);
+        if (!controller.signal.aborted) setFolderTree(tree);
+      } catch {
+        if (!controller.signal.aborted) setFolderTree(null);
+      }
+    };
+    void loadFolders();
+    return () => controller.abort();
+  }, [docsRefresh, portal, selectedId]);
+
+  // 摘要里两个派生数字：失败数（过滤后的真实 total）与关联员工数（员工绑定）。
+  // 任一项读不到就留 null，界面显示「暂未统计」，不用分页长度或本地推断凑数。
+  useEffect(() => {
+    if (!selectedId) {
+      setSummaryFailed(null);
+      setSummaryAgents(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const loadSummary = async () => {
+      try {
+        const failedPage = await portal.listManagedKnowledgeDocuments(
+          selectedId,
+          { page: 1, pageSize: 1, parseStatus: 'failed' },
+          controller.signal,
+        );
+        if (!controller.signal.aborted) setSummaryFailed(failedPage.total);
+      } catch {
+        if (!controller.signal.aborted) setSummaryFailed(null);
+      }
+      try {
+        const employees = await portal.listEmployees(controller.signal);
+        if (!controller.signal.aborted)
+          setSummaryAgents(
+            employees.filter((employee) => (employee.knowledgeBases ?? []).some((bound) => bound.id === selectedId))
+              .length,
+          );
+      } catch {
+        if (!controller.signal.aborted) setSummaryAgents(null);
+      }
+    };
+    void loadSummary();
+    return () => controller.abort();
+  }, [docsRefresh, portal, selectedId]);
+
+  // 「添加资料」下拉与状态筛选：与原型一致的四个入口 / 上游 parse_status 真正支持的状态。
+  const addMaterialItems: MenuProps['items'] = [
+    { key: 'file', label: t('uploadFile'), icon: <UploadOutlined />, disabled: writeBlocked || uploading },
+    {
+      key: 'folder',
+      label: t('importFolder'),
+      icon: <FolderOpenOutlined />,
+      disabled: writeBlocked || folderUploading,
+    },
+    { type: 'divider' },
+    { key: 'url', label: t('knowledgeImportUrl'), icon: <LinkOutlined />, disabled: writeBlocked || importing },
+    {
+      key: 'manual',
+      label: t('knowledgeImportManual'),
+      icon: <FileTextOutlined />,
+      disabled: writeBlocked || importing,
+    },
+  ];
+
+  const onAddMaterial = ({ key }: { readonly key: string }) => {
+    if (key === 'file') {
+      setFiles([]);
+      setMaterialModal('file');
+      return;
+    }
+    if (key === 'folder') {
+      setFolderQueue([]);
+      setMaterialModal('folder');
+      return;
+    }
+    importForm.resetFields();
+    setImportKind(key === 'url' ? 'url' : 'manual');
+  };
+
+  // 只列出上游 parse_status 真正支持过滤的值；「已停用」属于 enable_status，
+  // 上游没有对应的过滤参数，所以不放进筛选，避免给出一个永远筛不到的选项。
+  const statusOptions = [
+    { value: 'all', label: t('statusAll') },
+    { value: 'completed', label: t('completed') },
+    { value: 'processing', label: t('processing') },
+    { value: 'failed', label: t('failed') },
+    { value: 'cancelled', label: t('cancelled') },
+  ];
+
+  const summaryText = (template: string, value: number | null | undefined) =>
+    value === null || value === undefined ? t('notStatistic') : template.replace('{count}', String(value));
+
+  // 详情摘要：能算的用真实统计，算不出的显示「暂未统计」（可检索数需要上游按启用状态统计的接口）。
+  const summaryItems: { key: string; icon: ReactNode; text: string; onClick?: () => void; hint?: string }[] = [
+    { key: 'total', icon: <FileTextOutlined />, text: summaryText(t('summaryTotal'), detail?.knowledge_count) },
+    {
+      key: 'ready',
+      icon: <CheckCircleOutlined />,
+      text: summaryText(t('summaryReady'), null),
+      hint: t('summaryReadyUnknown'),
+    },
+    {
+      key: 'processing',
+      icon: <ClockCircleOutlined />,
+      text: summaryText(t('summaryProcessing'), detail?.processing_count),
+      onClick: () => {
+        setStatusFilter('processing');
+        setPage(1);
+        setDetailTab('documents');
+      },
+    },
+    {
+      key: 'failed',
+      icon: <ExclamationCircleOutlined />,
+      text: summaryText(t('summaryFailed'), summaryFailed),
+      onClick: () => {
+        setStatusFilter('failed');
+        setPage(1);
+        setDetailTab('documents');
+      },
+    },
+    { key: 'agents', icon: <RobotOutlined />, text: summaryText(t('summaryAgents'), summaryAgents) },
+    {
+      key: 'grants',
+      icon: <TeamOutlined />,
+      text: summaryText(t('summaryGrants'), detail?.scope ? detail.scope.users + detail.scope.teams : null),
+      onClick: () => setDetailTab('access'),
+    },
+  ];
+
+  const folderNodes = useMemo<TreeDataNode[]>(() => {
+    const build = (nodes: readonly ManagedKnowledgeFolder[]): TreeDataNode[] =>
+      nodes.map((node) => ({
+        key: node.path,
+        title: `${node.name}（${node.total_count}）`,
+        children: build(node.children ?? []),
+      }));
+    return [
+      { key: ALL_FOLDERS_KEY, title: `${t('allMaterials')}（${folderTree?.total_document_count ?? 0}）` },
+      ...build(folderTree?.folders ?? []),
+    ];
+  }, [folderTree, t]);
 
   useEffect(() => {
     pollRounds.current = 0;
@@ -1219,62 +1430,74 @@ export function KnowledgeManagement({
 
   const columns = [
     {
+      // 资料主列：名称 + 次级信息（文件名、大小、来源）；上游 DTO 暂无 folder_path，
+      // 所以路径不进副标题（补契约后再加）。
       title: t('docName'),
-      dataIndex: 'name',
       key: 'name',
-      render: (value: string, row: ManagedKnowledgeDocument) => value || row.file_name,
-    },
-    { title: t('fileName'), dataIndex: 'file_name', key: 'file_name' },
-    {
-      title: t('parse'),
-      dataIndex: 'parse_status',
-      key: 'parse_status',
-      render: (value: string) => (
-        <Space size={4} wrap>
-          <Tag color={value === 'completed' ? 'success' : value === 'failed' ? 'error' : 'default'} title={value}>
-            {parseStatusCopy[value] ? t(parseStatusCopy[value]!) : t('unknown')}
-          </Tag>
-        </Space>
-      ),
-    },
-    {
-      title: t('knowledgeSource'),
-      dataIndex: 'source',
-      key: 'source',
-      ellipsis: true,
-      render: (value: string, row: ManagedKnowledgeDocument) => {
-        const raw = value || row.type || '';
-        if (!raw) return '—';
-        return sourceCopy[raw] ? t(sourceCopy[raw]!) : raw;
+      render: (_: unknown, row: ManagedKnowledgeDocument) => {
+        const secondary = [
+          row.file_name,
+          formatFileSize(row.file_size),
+          row.source ? (sourceCopy[row.source] ? t(sourceCopy[row.source]!) : row.source) : (row.type ?? ''),
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(' · ');
+        return (
+          <Space orientation="vertical" size={0}>
+            <Typography.Text strong>{row.name || row.file_name}</Typography.Text>
+            {secondary ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {secondary}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        );
       },
     },
     {
-      title: t('knowledgeEnableState'),
-      dataIndex: 'enable_status',
-      key: 'enable_status',
-      render: (value: string | undefined, row: ManagedKnowledgeDocument) => {
+      // 处理状态 + 启停开关合成一列：状态与「能不能被检索」是同一件事的两个面。
+      title: t('parse'),
+      key: 'parse_status',
+      render: (_: unknown, row: ManagedKnowledgeDocument) => {
         const completed = row.parse_status === 'completed';
-        const enabled = completed ? value === 'enabled' : row.manual_disabled === true;
+        const enabled = completed ? row.enable_status === 'enabled' : row.manual_disabled === true;
         const actionBusy = documentActionBusy(row.id);
         const label = completed ? (enabled ? t('disableDocument') : t('enableDocument')) : t('keepDisabledAfterParse');
         return (
-          <Space>
-            <Tag title={value}>
-              {value === 'enabled' ? t('enableEnabled') : value === 'disabled' ? t('enableDisabled') : (value ?? '—')}
+          <Space orientation="vertical" size={2}>
+            <Tag
+              color={row.parse_status === 'completed' ? 'success' : row.parse_status === 'failed' ? 'error' : 'default'}
+              title={row.parse_status}
+            >
+              {parseStatusCopy[row.parse_status] ? t(parseStatusCopy[row.parse_status]!) : t('unknown')}
             </Tag>
-            <Switch
-              checked={enabled}
-              aria-label={label}
-              loading={actionBusy}
-              disabled={
-                writeBlocked ||
-                uploading ||
-                importing ||
-                actionBusy ||
-                (!completed && (row.manual_disabled === undefined || enabled))
-              }
-              onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
-            />
+            {pollable.has(row.parse_status) ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t('parsingHint')}
+              </Typography.Text>
+            ) : null}
+            <Space size={4}>
+              <Tag title={row.enable_status}>
+                {row.enable_status === 'enabled'
+                  ? t('enableEnabled')
+                  : row.enable_status === 'disabled'
+                    ? t('enableDisabled')
+                    : (row.enable_status ?? '—')}
+              </Tag>
+              <Switch
+                checked={enabled}
+                aria-label={label}
+                loading={actionBusy}
+                disabled={
+                  writeBlocked ||
+                  uploading ||
+                  importing ||
+                  actionBusy ||
+                  (!completed && (row.manual_disabled === undefined || enabled))
+                }
+                onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
+              />
+            </Space>
           </Space>
         );
       },
@@ -1573,6 +1796,23 @@ export function KnowledgeManagement({
                   ]}
                 />
 
+                <div role="group" aria-label={t('summaryLabel')}>
+                  <Space size={16} wrap>
+                    {summaryItems.map((item) => (
+                      <Tooltip key={item.key} title={item.hint}>
+                        {item.onClick ? (
+                          <Button type="link" size="small" style={{ padding: 0 }} onClick={item.onClick}>
+                            {item.icon} {item.text}
+                          </Button>
+                        ) : (
+                          <Typography.Text type="secondary">
+                            {item.icon} {item.text}
+                          </Typography.Text>
+                        )}
+                      </Tooltip>
+                    ))}
+                  </Space>
+                </div>
                 <Tabs
                   activeKey={detailTab}
                   onChange={setDetailTab}
@@ -1582,193 +1822,190 @@ export function KnowledgeManagement({
                       label: t('tabDocuments'),
                       children: (
                         <>
-                          <div className="flex flex-wrap items-end justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Upload
-                                accept=".txt,.pdf"
-                                maxCount={1}
-                                fileList={files}
-                                disabled={uploading || writeBlocked}
-                                beforeUpload={() => false}
-                                onChange={(info) => setFiles(info.fileList.slice(-1))}
-                                onRemove={() => {
-                                  setFiles([]);
-                                  return true;
-                                }}
-                              >
-                                <Button icon={<UploadOutlined />} disabled={uploading}>
-                                  {t('chooseFile')}
-                                </Button>
-                              </Upload>
-                              <Upload
-                                directory
-                                multiple
-                                showUploadList={false}
-                                fileList={[]}
-                                disabled={uploading || folderUploading || writeBlocked}
-                                beforeUpload={() => false}
-                                onChange={(info) => queueFolderFiles(info.fileList)}
-                              >
-                                <Button icon={<FolderOpenOutlined />} disabled={uploading || folderUploading}>
-                                  {t('chooseFolder')}
-                                </Button>
-                              </Upload>
-                              <Button
-                                icon={<LinkOutlined />}
-                                disabled={writeBlocked || importing || uploading}
-                                onClick={() => {
-                                  importForm.resetFields();
-                                  setImportKind('url');
-                                }}
-                              >
-                                {t('knowledgeImportUrl')}
-                              </Button>
-                              <Button
-                                icon={<FileTextOutlined />}
-                                disabled={writeBlocked || importing || uploading}
-                                onClick={() => {
-                                  importForm.resetFields();
-                                  setImportKind('manual');
-                                }}
-                              >
-                                {t('knowledgeImportManual')}
-                              </Button>
-                              <Button
-                                type="primary"
-                                disabled={!files.length || uploading || writeBlocked}
-                                loading={uploading}
-                                onClick={() => void uploadFile()}
-                              >
-                                {t('upload')}
-                              </Button>
-                              <Button
-                                disabled={folderUploading || writeBlocked || queuedFolderItems.length === 0}
-                                loading={folderUploading}
-                                onClick={() => void runFolderUpload(queuedFolderItems)}
-                              >
-                                {queuedFolderItems.length > 0
-                                  ? `${t('uploadFolder')} (${queuedFolderItems.length})`
-                                  : t('uploadFolder')}
-                              </Button>
+                          <div className="flex flex-col gap-4 lg:flex-row">
+                            <div className="w-full shrink-0 lg:w-56">
+                              <Space orientation="vertical" size={4} style={{ width: '100%' }}>
+                                <Typography.Text strong>{t('foldersLabel')}</Typography.Text>
+                                <Tree
+                                  blockNode
+                                  defaultExpandAll
+                                  aria-label={t('foldersLabel')}
+                                  selectedKeys={[folderPath ?? ALL_FOLDERS_KEY]}
+                                  treeData={folderNodes}
+                                  onSelect={(keys) => {
+                                    const next = keys[0];
+                                    if (typeof next !== 'string') return;
+                                    setFolderPath(next === ALL_FOLDERS_KEY ? null : next);
+                                    setPage(1);
+                                  }}
+                                />
+                              </Space>
                             </div>
-                            <Space.Compact>
-                              <Input
-                                allowClear
-                                value={keyword}
-                                placeholder={t('search')}
-                                onChange={(event) => setKeyword(event.target.value)}
-                                onPressEnter={() => {
-                                  setPage(1);
-                                  setSearch(keyword.trim());
-                                }}
-                                onClear={() => {
-                                  setKeyword('');
-                                  setSearch('');
-                                  setPage(1);
-                                }}
-                              />
-                              <Button
-                                icon={<SearchOutlined />}
-                                onClick={() => {
-                                  setPage(1);
-                                  setSearch(keyword.trim());
-                                }}
-                              />
-                              <Button
-                                icon={<ReloadOutlined />}
-                                aria-label={t('refresh')}
-                                loading={docsLoading}
-                                onClick={() => void loadDocuments()}
-                              />
-                            </Space.Compact>
-                          </div>
-                          {folderQueue.length > 0 && (
-                            <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <Typography.Text type="secondary">
-                                  {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
-                                </Typography.Text>
-                                <Space size="small">
+                            <div className="flex min-w-0 flex-1 flex-col gap-3">
+                              <div className="flex flex-wrap items-end justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Typography.Text strong>
+                                    {folderPath === null
+                                      ? t('allMaterials')
+                                      : (folderPath.split('/').pop() ?? folderPath)}
+                                  </Typography.Text>
+                                  <Typography.Text type="secondary">
+                                    {t('documentCount').replace('{count}', String(visibleDocs?.total ?? 0))}
+                                  </Typography.Text>
+                                </div>
+                                <Space wrap>
+                                  <Input
+                                    allowClear
+                                    value={keyword}
+                                    placeholder={t('search')}
+                                    aria-label={t('search')}
+                                    onChange={(event) => setKeyword(event.target.value)}
+                                    onPressEnter={() => {
+                                      setPage(1);
+                                      setSearch(keyword.trim());
+                                    }}
+                                    onClear={() => {
+                                      setKeyword('');
+                                      setSearch('');
+                                      setPage(1);
+                                    }}
+                                    style={{ width: 200 }}
+                                  />
                                   <Button
-                                    size="small"
-                                    disabled={folderUploading || failedFolderItems.length === 0}
-                                    onClick={() => void runFolderUpload(failedFolderItems)}
+                                    icon={<SearchOutlined />}
+                                    aria-label={t('search')}
+                                    onClick={() => {
+                                      setPage(1);
+                                      setSearch(keyword.trim());
+                                    }}
+                                  />
+                                  <Select
+                                    aria-label={t('parse')}
+                                    value={statusFilter}
+                                    options={statusOptions}
+                                    style={{ width: 130 }}
+                                    onChange={(next: string) => {
+                                      setStatusFilter(next);
+                                      setPage(1);
+                                    }}
+                                  />
+                                  <Dropdown
+                                    trigger={['click']}
+                                    menu={{ items: addMaterialItems, onClick: onAddMaterial }}
                                   >
-                                    {t('folderRetryFailed')}
-                                  </Button>
-                                  <Button size="small" disabled={folderUploading} onClick={() => setFolderQueue([])}>
-                                    {t('folderClear')}
-                                  </Button>
+                                    <Button type="primary" icon={<PlusOutlined />} disabled={writeBlocked}>
+                                      {t('addMaterial')}
+                                    </Button>
+                                  </Dropdown>
+                                  <Button
+                                    icon={<ReloadOutlined />}
+                                    aria-label={t('refresh')}
+                                    loading={docsLoading}
+                                    onClick={() => void loadDocuments()}
+                                  />
                                 </Space>
                               </div>
-                              <div className="max-h-48 overflow-auto">
-                                {folderQueue.map((item) => (
-                                  <div
-                                    key={item.key}
-                                    className="flex items-center justify-between gap-2 py-0.5 text-xs"
-                                  >
-                                    <span className="truncate" title={item.relativePath || item.file.name}>
-                                      {item.label}
-                                    </span>
-                                    <span className="flex shrink-0 items-center gap-2">
-                                      {item.detail ? (
-                                        <Typography.Text type="secondary">{item.detail}</Typography.Text>
-                                      ) : null}
-                                      <Tag
-                                        color={
-                                          item.status === 'accepted'
-                                            ? 'green'
-                                            : item.status === 'failed'
-                                              ? 'red'
-                                              : item.status === 'uploading'
-                                                ? 'blue'
-                                                : 'default'
-                                        }
+                              {folderQueue.length > 0 && (
+                                <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <Typography.Text type="secondary">
+                                      {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
+                                    </Typography.Text>
+                                    <Space size="small">
+                                      <Button
+                                        size="small"
+                                        disabled={folderUploading || failedFolderItems.length === 0}
+                                        onClick={() => void runFolderUpload(failedFolderItems)}
                                       >
-                                        {item.status === 'accepted'
-                                          ? t('folderAccepted')
-                                          : item.status === 'failed'
-                                            ? t('folderFailed')
-                                            : item.status === 'uploading'
-                                              ? t('folderUploading')
-                                              : t('folderQueued')}
-                                      </Tag>
-                                    </span>
+                                        {t('folderRetryFailed')}
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        disabled={folderUploading}
+                                        onClick={() => setFolderQueue([])}
+                                      >
+                                        {t('folderClear')}
+                                      </Button>
+                                    </Space>
                                   </div>
-                                ))}
-                              </div>
+                                  <div className="max-h-48 overflow-auto">
+                                    {folderQueue.map((item) => (
+                                      <div
+                                        key={item.key}
+                                        className="flex items-center justify-between gap-2 py-0.5 text-xs"
+                                      >
+                                        <span className="truncate" title={item.relativePath || item.file.name}>
+                                          {item.label}
+                                        </span>
+                                        <span className="flex shrink-0 items-center gap-2">
+                                          {item.detail ? (
+                                            <Typography.Text type="secondary">{item.detail}</Typography.Text>
+                                          ) : null}
+                                          <Tag
+                                            color={
+                                              item.status === 'accepted'
+                                                ? 'green'
+                                                : item.status === 'failed'
+                                                  ? 'red'
+                                                  : item.status === 'uploading'
+                                                    ? 'blue'
+                                                    : 'default'
+                                            }
+                                          >
+                                            {item.status === 'accepted'
+                                              ? t('folderAccepted')
+                                              : item.status === 'failed'
+                                                ? t('folderFailed')
+                                                : item.status === 'uploading'
+                                                  ? t('folderUploading')
+                                                  : t('folderQueued')}
+                                          </Tag>
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {docHintVisible && (
+                                <Alert
+                                  showIcon
+                                  closable
+                                  type="info"
+                                  title={t('knowledgeDocumentEnableHint')}
+                                  description={t('knowledgeFileOnlyPreview')}
+                                  onClose={() => {
+                                    localStorage.setItem(DOC_HINT_DISMISSED_KEY, '1');
+                                    setDocHintVisible(false);
+                                  }}
+                                />
+                              )}
+                              <Table<ManagedKnowledgeDocument>
+                                rowKey="id"
+                                size="small"
+                                loading={docsLoading}
+                                columns={columns}
+                                dataSource={visibleDocs?.data ?? []}
+                                locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
+                                pagination={{
+                                  current: visibleDocs?.page ?? page,
+                                  pageSize: visibleDocs?.pageSize ?? 10,
+                                  total: visibleDocs?.total ?? 0,
+                                  showSizeChanger: false,
+                                  onChange: (next) => setPage(next),
+                                  showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
+                                }}
+                                scroll={{ x: 560 }}
+                              />
+                              <KnowledgeOperations
+                                key={`operations:${selected.id}`}
+                                portal={portal}
+                                baseId={selected.id}
+                                baseType={selected.type}
+                                documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+                                disabled={writeBlocked || uploading}
+                              />
                             </div>
-                          )}
-                          {docHintVisible && (
-                            <Alert
-                              showIcon
-                              closable
-                              type="info"
-                              title={t('knowledgeDocumentEnableHint')}
-                              description={t('knowledgeFileOnlyPreview')}
-                              onClose={() => {
-                                localStorage.setItem(DOC_HINT_DISMISSED_KEY, '1');
-                                setDocHintVisible(false);
-                              }}
-                            />
-                          )}
-                          <Table<ManagedKnowledgeDocument>
-                            rowKey="id"
-                            size="small"
-                            loading={docsLoading}
-                            columns={columns}
-                            dataSource={visibleDocs?.data ?? []}
-                            locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
-                            pagination={{
-                              current: visibleDocs?.page ?? page,
-                              pageSize: visibleDocs?.pageSize ?? 10,
-                              total: visibleDocs?.total ?? 0,
-                              showSizeChanger: false,
-                              onChange: (next) => setPage(next),
-                              showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
-                            }}
-                            scroll={{ x: 560 }}
-                          />
+                          </div>
                         </>
                       ),
                     },
@@ -1780,27 +2017,13 @@ export function KnowledgeManagement({
                       ),
                     },
                     {
-                      key: 'grants',
-                      label: t('tabGrants'),
+                      key: 'access',
+                      label: t('tabAccess'),
                       children: (
                         <KnowledgeGrants
                           key={`grants:${selected.id}`}
                           portal={portal}
                           baseId={selected.id}
-                          disabled={writeBlocked || uploading}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'operations',
-                      label: t('tabOperations'),
-                      children: (
-                        <KnowledgeOperations
-                          key={`operations:${selected.id}`}
-                          portal={portal}
-                          baseId={selected.id}
-                          baseType={selected.type}
-                          documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
                           disabled={writeBlocked || uploading}
                         />
                       ),
@@ -1853,6 +2076,63 @@ export function KnowledgeManagement({
             <Input.TextArea rows={3} maxLength={DESCRIPTION_MAX_BYTES} />
           </Form.Item>
         </Form>
+      </Modal>
+      {/* 「添加资料」的文件/文件夹入口：选择后才提交，进度与失败重试仍走下面的队列面板 */}
+      <Modal
+        title={materialModal === 'folder' ? t('importFolder') : t('uploadFile')}
+        open={materialModal !== null}
+        onCancel={() => setMaterialModal(null)}
+        okText={materialModal === 'folder' ? t('uploadFolder') : t('upload')}
+        cancelText={t('cancel')}
+        confirmLoading={materialModal === 'folder' ? folderUploading : uploading}
+        okButtonProps={{
+          disabled: writeBlocked || (materialModal === 'folder' ? queuedFolderItems.length === 0 : files.length === 0),
+        }}
+        onOk={() => {
+          const closeOnSuccess = () => setMaterialModal(null);
+          const keepOnFailure = () => undefined;
+          if (materialModal === 'folder') void runFolderUpload(queuedFolderItems).then(closeOnSuccess, keepOnFailure);
+          else void uploadFile().then(closeOnSuccess, keepOnFailure);
+        }}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          {materialModal === 'folder' ? (
+            <>
+              <Upload
+                directory
+                multiple
+                showUploadList={false}
+                fileList={[]}
+                disabled={folderUploading || writeBlocked}
+                beforeUpload={() => false}
+                onChange={(info) => queueFolderFiles(info.fileList)}
+              >
+                <Button icon={<FolderOpenOutlined />} disabled={folderUploading}>
+                  {t('chooseFolder')}
+                </Button>
+              </Upload>
+              <Typography.Text type="secondary">{t('folderHint')}</Typography.Text>
+            </>
+          ) : (
+            <Upload
+              accept=".txt,.pdf"
+              maxCount={1}
+              fileList={files}
+              disabled={uploading || writeBlocked}
+              beforeUpload={() => false}
+              onChange={(info) => setFiles(info.fileList.slice(-1))}
+              onRemove={() => {
+                setFiles([]);
+                return true;
+              }}
+            >
+              <Button icon={<UploadOutlined />} disabled={uploading}>
+                {t('chooseFile')}
+              </Button>
+            </Upload>
+          )}
+        </Space>
       </Modal>
       <Modal
         title={importKind === 'url' ? t('knowledgeImportUrl') : t('knowledgeImportManual')}

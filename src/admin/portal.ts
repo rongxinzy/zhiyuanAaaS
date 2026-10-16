@@ -676,11 +676,25 @@ export class PortalClient {
 
   async listManagedKnowledgeDocuments(
     id: string,
-    query: { readonly page: number; readonly pageSize: number; readonly keyword?: string },
+    query: {
+      readonly page: number;
+      readonly pageSize: number;
+      readonly keyword?: string;
+      readonly parseStatus?: string;
+      readonly folderPath?: string;
+      readonly folderRecursive?: boolean;
+    },
     signal?: AbortSignal,
   ): Promise<ManagedKnowledgePage> {
     const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
     if (query.keyword) params.set('keyword', query.keyword);
+    // 上游按 parse_status / folder_path(+recursive) 过滤，并返回过滤后的真实 total；
+    // portal 已白名单转发这几个参数，这里只是把它们透出去。
+    if (query.parseStatus) params.set('parse_status', query.parseStatus);
+    if (query.folderPath !== undefined) {
+      params.set('folder_path', query.folderPath);
+      if (query.folderRecursive) params.set('folder_recursive', 'true');
+    }
     const { status, data } = await this.#request(
       'GET',
       `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents?${params.toString()}`,

@@ -104,6 +104,18 @@ import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeManagement } from './KnowledgeManagement.js';
 import { type ManagedKnowledgeBase, type PortalClient, PortalError } from './portal.js';
 
+// 「添加资料」把文件/文件夹/网址/手动合并成一个下拉；测试里 Dropdown 是内联渲染的
+// stub，所以直接点菜单项即可（与真实弹层行为由页面自身覆盖）。
+async function openAddMaterial(kind: 'file' | 'folder' | 'url' | 'manual') {
+  const label = {
+    file: /上传文件/,
+    folder: /导入文件夹/,
+    url: /导入 URL/,
+    manual: /手动录入/,
+  }[kind];
+  fireEvent.click(await screen.findByRole('menuitem', { name: label }));
+}
+
 function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   return rtlRender(<ConfigProvider wave={{ disabled: true }}>{ui}</ConfigProvider>);
 }
@@ -136,6 +148,10 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
     listManagedKnowledgeBases: vi.fn().mockResolvedValue([base]),
     getManagedKnowledgeBase: vi.fn().mockResolvedValue(base),
     listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 10 }),
+    // 详情页的目录树会读文件夹；运营/检索/授权组件在本套件里被 mock 成 null。
+    getManagedKnowledgeFolders: vi
+      .fn()
+      .mockResolvedValue({ root_document_count: 0, total_document_count: 0, folders: [] }),
     listEmployees: vi.fn().mockResolvedValue([]),
     listManagedKnowledgeGrants: vi
       .fn()
@@ -189,14 +205,14 @@ describe('KnowledgeManagement component state', () => {
         }),
     );
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
-    const input = container.querySelector('input[type="file"]');
-    expect(input).not.toBeNull();
+    await openAddMaterial('file');
+    const input = screen.getByLabelText('test file picker') as HTMLInputElement;
     const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
-    Object.defineProperty(input!, 'files', { configurable: true, value: [file] });
-    fireEvent.change(input!);
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    fireEvent.change(input);
     fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
@@ -205,9 +221,6 @@ describe('KnowledgeManagement component state', () => {
 
     rejectUpload(new Error('connection interrupted'));
     expect(await screen.findByText(/操作结果暂不确定/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /上传文档/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /编辑/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /删除/ })).toBeDisabled();
     expect(upload).toHaveBeenCalledTimes(1);
   });
 
@@ -219,8 +232,8 @@ describe('KnowledgeManagement component state', () => {
 
     expect(await screen.findByText('没有权限访问知识库管理。')).toBeInTheDocument();
     expect(screen.queryByText('暂无文档')).not.toBeInTheDocument();
-    // 文档读取被拒时写操作整体锁住，而不是伪装成空列表。
-    expect(screen.getByRole('button', { name: /上传文档/ })).toBeDisabled();
+    // 文档读取被拒时写操作整体锁住，而不是伪装成空列表：统一入口「添加资料」变灰。
+    expect(screen.getByRole('button', { name: /添加资料/ })).toBeDisabled();
   });
 
   test('keeps a referenced knowledge base selected when protected delete is rejected', async () => {
@@ -302,9 +315,10 @@ describe('KnowledgeManagement component state', () => {
         .mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
       uploadManagedKnowledgeDocument: vi.fn().mockResolvedValue({ data: doc, operationId: 'kbop-upload-success' }),
     });
-    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
-    const input = container.querySelector('input[type="file"]')!;
+    await openAddMaterial('file');
+    const input = screen.getByLabelText('test file picker') as HTMLInputElement;
     Object.defineProperty(input, 'files', {
       configurable: true,
       value: [new File(['spec'], 'spec.txt', { type: 'text/plain' })],
@@ -332,6 +346,7 @@ describe('KnowledgeManagement component state', () => {
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    await openAddMaterial('folder');
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
     const nested = new File(['day one'], 'day-one.md', { type: 'text/markdown' });
@@ -342,7 +357,7 @@ describe('KnowledgeManagement component state', () => {
     fireEvent.change(picker);
 
     expect(await screen.findByText('handbook/onboarding/day-one.md')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(2\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹/ }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     // The folder structure travels as WeKnora's fileName argument.
@@ -369,13 +384,14 @@ describe('KnowledgeManagement component state', () => {
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    await openAddMaterial('folder');
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
     const file = new File(['spec'], 'spec.txt', { type: 'text/plain' });
     Object.defineProperty(file, 'webkitRelativePath', { value: 'docs/spec.txt' });
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     fireEvent.change(picker);
-    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(1\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹/ }));
 
     expect(await screen.findByText(/失败 1/)).toBeInTheDocument();
     expect(screen.getByText('文件类型不受支持')).toBeInTheDocument();
@@ -400,6 +416,7 @@ describe('KnowledgeManagement component state', () => {
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    await openAddMaterial('folder');
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
     const big = new File(['x'], '大文件.txt', { type: 'text/plain' });
@@ -414,7 +431,7 @@ describe('KnowledgeManagement component state', () => {
     expect(screen.queryByText('边界/大文件.txt')).not.toBeInTheDocument();
     expect(screen.getByText(/单文件需小于等于 63 MiB/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /上传文件夹 \(1\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹/ }));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     expect(upload).toHaveBeenCalledWith(base.id, small, '边界/正常.txt');
   });
@@ -439,7 +456,7 @@ describe('KnowledgeManagement component state', () => {
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: /导入 URL/ })[0]!);
+    await openAddMaterial('url');
     let dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('来源 URL'), {
       target: { value: 'https://docs.example.test/guide' },
@@ -453,7 +470,7 @@ describe('KnowledgeManagement component state', () => {
       title: 'URL item',
     });
 
-    fireEvent.click(screen.getAllByRole('button', { name: /手动录入/ })[0]!);
+    await openAddMaterial('manual');
     dialog = screen.getByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('标题'), { target: { value: 'Manual item' } });
     fireEvent.change(within(dialog).getByLabelText('正文（Markdown）'), { target: { value: '# Internal notes' } });
@@ -497,7 +514,8 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
     expect(screen.getAllByText('已完成').length).toBeGreaterThan(0);
     const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-    expect(rowUi().getByText('文件')).toBeInTheDocument();
+    // 来源与文件名/大小合并成「资料名称」的副标题一行，所以按行内容匹配（行内可能多处出现「文件」）。
+    expect(rowUi().getAllByText(/文件/).length).toBeGreaterThan(0);
     expect(rowUi().getByText('已启用')).toBeInTheDocument();
     expect(screen.getByText('文档库')).toBeInTheDocument();
     // 有模型名时显示名字，不再甩 UUID。
@@ -591,15 +609,63 @@ describe('KnowledgeManagement component state', () => {
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'cancel-parse'));
   });
 
-  test('renders base detail heading summary and business tabs', async () => {
+  // 设计确定三页签：文档管理 / 检索测试 / 访问与关联；文件夹与 FAQ 归入文档管理，不再有独立运营页签。
+  test('renders base detail heading summary and the three business tabs', async () => {
     const portal = makePortal();
     render(<KnowledgeManagement portal={portal} baseId={base.id} onNavigate={vi.fn()} />);
     expect(await screen.findByRole('tab', { name: '文档管理' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '检索与来源' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '知识库访问授权' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '知识运营' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '检索测试' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '访问与关联' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.queryByRole('tab', { name: '知识运营' })).not.toBeInTheDocument();
     // 对象摘要里 UUID 可复制
     expect(screen.getByText('kb-test-1')).toBeInTheDocument();
+  });
+
+  // 设计确认保留的原型统计条：能算的用真实统计，缺契约的（可检索数）显示暂未统计。
+  test('summarises the base with real counts and marks the count without a contract', async () => {
+    const counted = { ...base, knowledge_count: 7, processing_count: 1, scope: { users: 1, teams: 1 } };
+    const portal = makePortal({
+      listManagedKnowledgeBases: vi.fn().mockResolvedValue([counted]),
+      getManagedKnowledgeBase: vi.fn().mockResolvedValue(counted),
+      listManagedKnowledgeDocuments: vi
+        .fn()
+        .mockImplementation(async (_id: string, query: { readonly parseStatus?: string }) =>
+          query.parseStatus === 'failed'
+            ? { data: [], total: 2, page: 1, pageSize: 1 }
+            : { data: [], total: 0, page: 1, pageSize: 10 },
+        ),
+      listEmployees: vi.fn().mockResolvedValue([
+        { name: 'sales-helper', knowledgeBases: [{ id: base.id, name: 'Research' }] },
+        { name: 'other-helper', knowledgeBases: [] },
+      ]),
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+
+    // 统计条自身有可访问名称，断言限定在条内（页面其他位置也有「暂未统计」占位）。
+    const strip = within(await screen.findByRole('group', { name: translate(ADMIN_LANGUAGE, 'knowledgeSummary') }));
+    expect(strip.getByText('7 篇资料')).toBeInTheDocument();
+    expect(strip.getByText('1 篇处理中')).toBeInTheDocument();
+    expect(strip.getByText('2 篇需处理')).toBeInTheDocument();
+    expect(strip.getByText('关联 1 个 Agent')).toBeInTheDocument();
+    expect(strip.getByText('2 项使用授权')).toBeInTheDocument();
+    // 可检索数需要上游按启用状态统计的接口：没有就显示暂未统计，不推断、不用分页长度凑。
+    expect(strip.getByText('暂未统计')).toBeInTheDocument();
+    expect(portal.listManagedKnowledgeDocuments).toHaveBeenCalledWith(
+      base.id,
+      { page: 1, pageSize: 1, parseStatus: 'failed' },
+      expect.anything(),
+    );
+
+    // 异常数量可进入对应筛选：点「需处理」把状态筛选切到 failed 并回到第一页。
+    fireEvent.click(screen.getByRole('button', { name: /2 篇需处理/ }));
+    await waitFor(() =>
+      expect(portal.listManagedKnowledgeDocuments).toHaveBeenCalledWith(
+        base.id,
+        expect.objectContaining({ parseStatus: 'failed', page: 1 }),
+        expect.anything(),
+      ),
+    );
   });
 
   test('renders chunk content as readable managed details', async () => {
@@ -1195,27 +1261,27 @@ describe('KnowledgeManagement component state', () => {
   test('re-enables write actions after a successful refresh once a write result was uncertain', async () => {
     const upload = vi.fn().mockRejectedValue(new Error('connection interrupted'));
     const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
-    const { container } = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
 
-    const input = container.querySelector('input[type="file"]');
-    expect(input).not.toBeNull();
+    await openAddMaterial('file');
+    const input = screen.getByLabelText('test file picker') as HTMLInputElement;
     Object.defineProperty(input, 'files', {
       configurable: true,
       value: [new File(['notes'], 'notes.txt', { type: 'text/plain' })],
     });
-    fireEvent.change(input!);
+    fireEvent.change(input);
     fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
 
     expect(await screen.findByText(/操作结果暂不确定/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /上传文档/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /添加资料/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /编辑/ })).toBeDisabled();
 
     // 刷新成功 = 上游重新可达：解锁并告知管理员已恢复。
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'statusRefresh') }));
 
     expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeWriteRecovered'))).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /上传文档/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /添加资料/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /编辑/ })).toBeEnabled();
     expect(upload).toHaveBeenCalledTimes(1);
   });
@@ -1301,6 +1367,7 @@ describe('KnowledgeManagement component state', () => {
     });
     const view = render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
+    await openAddMaterial('folder');
 
     const picker = screen.getByLabelText('test folder picker') as HTMLInputElement;
     const file = new File(['spec'], 'spec.txt', { type: 'text/plain' });
@@ -1308,7 +1375,7 @@ describe('KnowledgeManagement component state', () => {
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     fireEvent.change(picker);
     expect(await screen.findByText('docs/spec.txt')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /上传文件夹 \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /上传文件夹/ })).toBeInTheDocument();
 
     view.rerender(
       <ConfigProvider wave={{ disabled: true }}>
@@ -1318,7 +1385,6 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByRole('heading', { name: 'Second base' })).toBeInTheDocument();
 
     expect(screen.queryByText('docs/spec.txt')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeUploadFolder') })).toBeDisabled();
     expect(upload).not.toHaveBeenCalled();
   });
 
@@ -1370,7 +1436,7 @@ describe('KnowledgeManagement component state', () => {
     render(<KnowledgeManagement portal={portal} baseId={base.id} />);
     expect(await screen.findByRole('heading', { name: 'Research' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: /导入 URL/ })[0]!);
+    await openAddMaterial('url');
     const dialog = screen.getByRole('dialog');
     const urlInput = within(dialog).getByLabelText('来源 URL');
     const submit = () => fireEvent.click(within(dialog).getByRole('button', { name: /导\s*入/ }));

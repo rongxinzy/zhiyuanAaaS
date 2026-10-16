@@ -459,6 +459,30 @@ describe('portal client departments and lifecycle', () => {
     );
     vi.unstubAllGlobals();
 
+    // 状态与文件夹过滤要如实透给 portal（上游按这些参数返回过滤后的真实 total）；
+    // folder_path 传空串表示知识库根目录，是有意义的过滤值，不能被忽略。
+    const filteredFetch = stubFetch(200, { data: [], total: 0, page: 1, pageSize: 10 });
+    await portal.listManagedKnowledgeDocuments('kb/a', {
+      page: 2,
+      pageSize: 10,
+      parseStatus: 'failed',
+      folderPath: '',
+    });
+    expect(filteredFetch.mock.calls[0]![0]).toBe(
+      '/api/v1/knowledge/managed/bases/kb%2Fa/documents?page=2&page_size=10&parse_status=failed&folder_path=',
+    );
+    const folderFetch = stubFetch(200, { data: [], total: 0, page: 1, pageSize: 10 });
+    await portal.listManagedKnowledgeDocuments('kb/a', {
+      page: 1,
+      pageSize: 10,
+      folderPath: 'manuals/2026',
+      folderRecursive: true,
+    });
+    expect(folderFetch.mock.calls[0]![0]).toBe(
+      '/api/v1/knowledge/managed/bases/kb%2Fa/documents?page=1&page_size=10&folder_path=manuals%2F2026&folder_recursive=true',
+    );
+    vi.unstubAllGlobals();
+
     const uploadFetch = stubFetch(202, { data: document, operationId: 'op-upload-1' });
     const file = new File(['policy'], 'policy.pdf', { type: 'application/pdf' });
     await expect(portal.uploadManagedKnowledgeDocument('kb/a', file)).resolves.toMatchObject({
