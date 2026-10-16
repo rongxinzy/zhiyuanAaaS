@@ -361,7 +361,7 @@ describe('read-only audit', () => {
     await waitFor(() =>
       expect(client.deliverySummary).toHaveBeenLastCalledWith('control-1', { cursor: 'd3', limit: 50 }),
     );
-    expect(screen.getAllByText('applied')).toHaveLength(2);
+    await waitFor(() => expect(screen.getAllByText('applied')).toHaveLength(2));
   });
 });
 
