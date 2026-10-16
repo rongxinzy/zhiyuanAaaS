@@ -584,7 +584,12 @@ export class PortalClient {
   }
 
   async knowledgeAudit(
-    filters: { readonly operationId?: string; readonly actorUserId?: string; readonly cursor?: string } = {},
+    filters: {
+      readonly operationId?: string;
+      readonly actorUserId?: string;
+      readonly cursor?: string;
+      readonly knowledgeBaseId?: string;
+    } = {},
     signal?: AbortSignal,
   ): Promise<{ readonly items: readonly KnowledgeAuditRecord[]; readonly nextCursor: string | null }> {
     const query = new URLSearchParams({ limit: '50' });

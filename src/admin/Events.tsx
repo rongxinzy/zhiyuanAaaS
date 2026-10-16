@@ -44,15 +44,20 @@ type AuditTabItem = { readonly key: string; readonly label: ReactNode; readonly 
 export function Events({
   client,
   identity,
+  initialTab = 'operations',
+  knowledgeBaseId,
 }: {
   readonly client: AdminConsoleClient;
   readonly identity?: AdminIdentity | undefined;
+  readonly initialTab?: string | undefined;
+  readonly knowledgeBaseId?: string | undefined;
 }) {
   // 遥测（events.read）和管理审计（audit.read）是两套模型、两套权限，逐 tab 门控：
   // 无权限的 tab 不出现，而不是摆一个 403 占位；默认落第一个可用 tab。
   const canReadTelemetry = hasAdminPermission(identity, AdminPermission.EventsRead);
   const canReadAudit = hasAdminPermission(identity, AdminPermission.AuditRead);
-  const [tab, setTab] = useState('operations');
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => setTab(initialTab), [initialTab, knowledgeBaseId]);
   const items: AuditTabItem[] = [
     ...(canReadTelemetry
       ? [
@@ -78,7 +83,7 @@ export function Events({
           {
             key: 'knowledge',
             label: translate(ADMIN_LANGUAGE, 'knowledgeAuditTitle'),
-            children: <KnowledgeAudit client={client} />,
+            children: <KnowledgeAudit client={client} knowledgeBaseId={knowledgeBaseId} />,
           },
           {
             key: 'login',

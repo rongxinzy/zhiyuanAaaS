@@ -35,6 +35,7 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
     })),
     listContacts: vi.fn().mockResolvedValue(CONTACTS),
     listDepartments: vi.fn().mockResolvedValue(DEPARTMENTS),
+    listEmployees: vi.fn().mockResolvedValue([]),
     ...overrides,
   } as unknown as PortalClient;
 }
@@ -78,6 +79,28 @@ function openGrantEditor() {
 
 describe('KnowledgeGrants', () => {
   afterEach(() => cleanup());
+
+  test('shows only employees bound to the selected knowledge base and links to management', async () => {
+    const navigate = vi.fn();
+    const portal = makePortal({
+      listEmployees: vi.fn().mockResolvedValue([
+        { name: 'bound', displayName: 'Bound employee', knowledgeBases: [{ id: 'kb-1' }] },
+        { name: 'other', displayName: 'Other employee', knowledgeBases: [{ id: 'kb-2' }] },
+      ]),
+    });
+    render(
+      <ConfigProvider>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onManageAgents={navigate} />
+        </App>
+      </ConfigProvider>,
+    );
+    expect(await screen.findByText('Bound employee')).toBeInTheDocument();
+    expect(screen.queryByText('Other employee')).not.toBeInTheDocument();
+    expect(screen.queryByText(tr('knowledgeAgentEmpty'))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeAgentManage') }));
+    expect(navigate).toHaveBeenCalledOnce();
+  });
 
   test('blocks grant writes until the current base has loaded', async () => {
     let resolveGrants!: (value: { knowledge_base_id: string; tenant_id: string; grants: [] }) => void;

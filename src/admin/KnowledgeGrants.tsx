@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { knowledgeErrorText } from './knowledge-error.js';
-import type { ManagedKnowledgeGrant, PortalClient } from './portal.js';
+import type { ManagedKnowledgeGrant, PortalClient, PortalEmployee } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -33,11 +33,13 @@ export function KnowledgeGrants({
   baseId,
   disabled = false,
   onOpenRetrieval,
+  onManageAgents,
 }: {
   readonly portal: PortalClient;
   readonly baseId: string;
   readonly disabled?: boolean;
   readonly onOpenRetrieval?: () => void;
+  readonly onManageAgents?: (() => void) | undefined;
 }) {
   const { message } = App.useApp();
   const [modal, modalContext] = Modal.useModal();
@@ -52,9 +54,27 @@ export function KnowledgeGrants({
   const [blocked, setBlocked] = useState(false);
   const [loadedBaseId, setLoadedBaseId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
+  const [employeeError, setEmployeeError] = useState<string | null>(null);
+  const [employeeRevision, refreshEmployees] = useState(0);
   const baseGeneration = useRef(0);
   const requestGeneration = useRef(0);
   const subjectsGeneration = useRef(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setEmployees(null);
+    setEmployeeError(null);
+    void portal
+      .listEmployees(controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted)
+          setEmployees(items.filter((item) => item.knowledgeBases?.some((base) => base.id === baseId)));
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setEmployeeError(knowledgeErrorText(cause));
+      });
+    return () => controller.abort();
+  }, [portal, baseId, employeeRevision]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -340,10 +360,32 @@ export function KnowledgeGrants({
               </Typography.Title>
               <Typography.Text type="secondary">{tr('knowledgeAgentColumnHint')}</Typography.Text>
             </div>
-            <Button disabled>{tr('knowledgeAgentManage')}</Button>
+            <Button disabled={!onManageAgents} onClick={onManageAgents}>
+              {tr('knowledgeAgentManage')}
+            </Button>
           </div>
           <Typography.Paragraph type="secondary">{tr('knowledgeAgentManageHint')}</Typography.Paragraph>
-          <Typography.Text type="secondary">{tr('knowledgeAgentEmpty')}</Typography.Text>
+          {employeeError ? (
+            <Alert
+              type="error"
+              showIcon
+              title={employeeError}
+              action={
+                <Button onClick={() => refreshEmployees((value) => value + 1)}>{tr('knowledgeRetryRead')}</Button>
+              }
+            />
+          ) : (
+            <List
+              loading={employees === null}
+              dataSource={[...(employees ?? [])]}
+              locale={{ emptyText: employees === null ? tr('statusLoading') : tr('knowledgeAgentEmpty') }}
+              renderItem={(employee) => (
+                <List.Item>
+                  <List.Item.Meta title={employee.displayName || employee.name} description={employee.name} />
+                </List.Item>
+              )}
+            />
+          )}
         </div>
       </div>
       {onOpenRetrieval ? (

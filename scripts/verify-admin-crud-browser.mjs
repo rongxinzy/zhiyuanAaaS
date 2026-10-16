@@ -171,8 +171,10 @@ try {
   // 标签管理界面已按设计移除；运营（文件夹 + FAQ）现在位于文档管理页签内，不再是独立页签。
   const knowledgeOperations = page.getByRole('region', { name: '知识运营', exact: true });
   await page.getByRole('tab', { name: '访问与关联', exact: true }).click();
-  const grants = page.getByRole('region', { name: '知识库访问授权', exact: true });
-  await grants.getByText('user-1', { exact: true }).waitFor();
+  const grantRegion = page.getByRole('region', { name: '知识库访问授权', exact: true });
+  await grantRegion.getByText('user-1', { exact: true }).waitFor();
+  await grantRegion.getByRole('button', { name: '编辑授权', exact: true }).click();
+  const grants = page.getByRole('dialog', { name: '编辑授权', exact: true });
   const grantUser = grants.getByRole('combobox', { name: '用户', exact: true });
   await grantUser.and(page.locator(':enabled')).waitFor();
   await grantUser.fill('E2E 授权用户');
@@ -200,17 +202,19 @@ try {
   expectedFailurePaths.add(revokePath);
   state.failNext = `PUT ${revokePath}`;
   await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
-  const revokeDialog = page.getByRole('dialog');
+  const revokeDialog = page.getByRole('dialog').last();
   await revokeDialog.getByRole('button', { name: '撤销全部', exact: true }).click();
   await grants.getByText('HTTP 503', { exact: true }).waitFor();
   assert.equal(await grants.getByText('当前没有用户或团队授权。', { exact: true }).count(), 0);
   assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
   await grants.getByRole('button', { name: '重试读取', exact: true }).click();
   await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: '撤销全部', exact: true }).click();
+  await page.getByRole('dialog').last().getByRole('button', { name: '撤销全部', exact: true }).click();
   await grants.getByText('当前没有用户或团队授权。', { exact: true }).waitFor();
   assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
   checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
+  await grants.locator('.ant-modal-close').click();
+  await grants.waitFor({ state: 'hidden' });
 
   await page.getByRole('tab', { name: '检索测试', exact: true }).click();
   const retrieval = page.getByRole('region', { name: '检索与来源', exact: true });
@@ -258,7 +262,7 @@ try {
   await waitForValue(() => state.knowledgeChunks[0].is_enabled, false);
   const switchWrite = state.requests.findLast((item) => item.method === 'PUT' && item.path === chunkPath);
   assert.deepEqual(switchWrite?.body, { is_enabled: false });
-  await chunkInspector.locator('.ant-modal-close').click();
+  await chunkInspector.locator('.ant-drawer-close').click();
   await chunkInspector.waitFor({ state: 'hidden' });
   checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
 

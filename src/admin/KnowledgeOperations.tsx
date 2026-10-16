@@ -24,12 +24,14 @@ export function KnowledgeOperations({
   documentIds,
   baseType,
   disabled = false,
+  onFoldersChanged,
 }: {
   readonly portal: PortalClient;
   readonly baseId: string;
   readonly documentIds: readonly string[];
   readonly baseType: string;
   readonly disabled?: boolean;
+  readonly onFoldersChanged?: () => void;
 }) {
   const { message } = App.useApp();
   const [tags, setTags] = useState<readonly ManagedKnowledgeTag[]>([]);
@@ -38,7 +40,6 @@ export function KnowledgeOperations({
   const [faqPage, setFaqPage] = useState(1);
   const [faqTotal, setFaqTotal] = useState(0);
   const [selectedDocs, setSelectedDocs] = useState<readonly string[]>([]);
-  const [selectedDocTags, setSelectedDocTags] = useState<readonly string[]>([]);
   const [selectedFAQ, setSelectedFAQ] = useState<readonly number[]>([]);
   const [selectedFAQTag, setSelectedFAQTag] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -61,7 +62,7 @@ export function KnowledgeOperations({
       setError(null);
       try {
         const [tagRows, folderTree, faqResult] = await Promise.all([
-          portal.listManagedKnowledgeTags(baseId, '', signal),
+          baseType === 'faq' ? portal.listManagedKnowledgeTags(baseId, '', signal) : Promise.resolve([]),
           portal.getManagedKnowledgeFolders(baseId, signal),
           baseType === 'faq'
             ? portal.listManagedKnowledgeFAQ(baseId, { page: faqPage, pageSize: 20 }, signal)
@@ -92,7 +93,6 @@ export function KnowledgeOperations({
     setFolders([]);
     setFaq([]);
     setSelectedDocs([]);
-    setSelectedDocTags([]);
     setSelectedFAQ([]);
     void load(controller.signal);
     return () => {
@@ -270,15 +270,6 @@ export function KnowledgeOperations({
                       placeholder={tr('knowledgeSelectDocuments')}
                       style={{ minWidth: 260 }}
                     />
-                    <Select
-                      mode="multiple"
-                      maxTagCount="responsive"
-                      value={selectedDocTags}
-                      options={tags.map((tag) => ({ value: tag.id, label: tag.name }))}
-                      onChange={setSelectedDocTags}
-                      placeholder={tr('knowledgeSelectTags')}
-                      style={{ minWidth: 220 }}
-                    />
                     <Input
                       value={folderTo}
                       onChange={(event) => setFolderTo(event.target.value)}
@@ -289,24 +280,14 @@ export function KnowledgeOperations({
                       disabled={writesDisabled || !selectedDocs.length}
                       loading={busy}
                       onClick={() =>
-                        void mutate(() => portal.moveManagedKnowledgeDocuments(baseId, selectedDocs, folderTo))
-                      }
-                    >
-                      {tr('knowledgeMove')}
-                    </Button>
-                    <Button
-                      disabled={writesDisabled || !selectedDocs.length}
-                      loading={busy}
-                      onClick={() =>
-                        void mutate(() =>
-                          portal.setManagedKnowledgeDocumentTags(
-                            baseId,
-                            Object.fromEntries(selectedDocs.map((id) => [id, selectedDocTags])),
-                          ),
+                        void mutate(() => portal.moveManagedKnowledgeDocuments(baseId, selectedDocs, folderTo)).then(
+                          (succeeded) => {
+                            if (succeeded) onFoldersChanged?.();
+                          },
                         )
                       }
                     >
-                      {tr('knowledgeSetDocumentTags')}
+                      {tr('knowledgeMove')}
                     </Button>
                   </Space>
                 </Space>
@@ -418,6 +399,7 @@ export function KnowledgeOperations({
         cancelText={tr('knowledgeCancel')}
         onOk={() => {
           void mutate(() => portal.renameManagedKnowledgeFolder(baseId, folderFrom, folderTo)).then((succeeded) => {
+            if (succeeded) onFoldersChanged?.();
             if (succeeded) setFolderEditor(false);
           });
         }}

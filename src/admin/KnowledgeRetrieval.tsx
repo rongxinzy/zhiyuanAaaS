@@ -1,5 +1,5 @@
 import { SearchOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Input, Pagination, Segmented, Select, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Empty, Input, Pagination, Segmented, Select, Space, Tag, Typography, theme } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
@@ -9,6 +9,7 @@ import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient,
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
 export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: PortalClient; readonly baseId: string }) {
+  const { token } = theme.useToken();
   const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
   const [employee, setEmployee] = useState<string>();
   const [employeeLoading, setEmployeeLoading] = useState(false);
@@ -130,7 +131,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
     }
   };
 
-  const examples = ['差旅报销需要哪些材料？', '如何申请休假？', '入职要完成哪些事项？'];
+  const examples = [tr('knowledgeExampleTravel'), tr('knowledgeExampleLeave'), tr('knowledgeExampleOnboarding')];
 
   return (
     <section aria-label={tr('knowledgeRetrieval')} className="flex flex-col gap-4">
@@ -223,11 +224,11 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
             {results.map((hit, index) => (
               <div
                 key={`${hit.source.document_id}:${hit.source.chunk_id}`}
-                className="rounded-md border border-neutral-200 p-3"
+                className="rounded-md border p-3"
+                style={{ borderColor: token.colorBorder }}
               >
                 <Space>
-                  <Tag>{`片段 ${index + 1}`}</Tag>
-                  <Typography.Text type="secondary">{hit.score.toFixed(3)}</Typography.Text>
+                  <Tag>{tr('knowledgeHitFragment').replace('{index}', String(index + 1))}</Tag>
                 </Space>
                 <div>
                   <Button type="link" style={{ padding: 0 }} onClick={() => void loadSource(hit, 1)}>
@@ -235,7 +236,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
                   </Button>
                 </div>
                 <Typography.Paragraph
-                  ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}
+                  ellipsis={{ rows: 3, expandable: true, symbol: tr('knowledgeExpand') }}
                   style={{ marginBottom: 0 }}
                 >
                   {hit.content}
@@ -251,6 +252,10 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
             {sourceHit && source && (
               <Space orientation="vertical" style={{ width: '100%' }}>
                 <Typography.Text strong>{sourceHit.source.title}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {tr('knowledgeMatchedChunk')}: {sourceHit.source.chunk_id}
+                </Typography.Text>
+                <Typography.Paragraph>{sourceHit.content}</Typography.Paragraph>
                 <Typography.Text type="secondary">
                   {source.document.file_name || source.document.id} · {source.document.file_type || '—'}
                 </Typography.Text>

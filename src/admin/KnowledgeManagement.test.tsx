@@ -117,7 +117,11 @@ async function openAddMaterial(kind: 'file' | 'folder' | 'url' | 'manual') {
 }
 
 function render(ui: ReactElement): ReturnType<typeof rtlRender> {
-  return rtlRender(<ConfigProvider wave={{ disabled: true }}>{ui}</ConfigProvider>);
+  return rtlRender(
+    <ConfigProvider wave={{ disabled: true }} theme={{ token: { motion: false } }}>
+      {ui}
+    </ConfigProvider>,
+  );
 }
 
 // The detail page (Tabs + Descriptions + a folder tree + a summary strip + a row
@@ -125,7 +129,7 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
 // tests that open a document Modal get an explicit budget instead of the default
 // 5 s. The detail page grew with the prototype alignment, and the CI runner is
 // slower than a workstation, so the budget covers the full-suite parallel run.
-const TIMEOUT = 150000;
+const TIMEOUT = 10000;
 
 const base: ManagedKnowledgeBase = {
   id: 'kb-test-1',
@@ -365,6 +369,7 @@ describe('KnowledgeManagement component state', () => {
     expect(upload).toHaveBeenNthCalledWith(1, base.id, nested, 'handbook/onboarding/day-one.md');
     expect(upload).toHaveBeenNthCalledWith(2, base.id, top, 'handbook/README.md');
     expect(await screen.findByText(/已受理 2 · 失败 0/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   test('keeps failed folder files queued for a retry', async () => {
@@ -395,11 +400,56 @@ describe('KnowledgeManagement component state', () => {
     fireEvent.click(screen.getByRole('button', { name: /上传文件夹/ }));
 
     expect(await screen.findByText(/失败 1/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('文件类型不受支持')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /重试失败项/ }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/已受理 1 · 失败 0/)).toBeInTheDocument();
+  });
+
+  test('retains a failed file selection in the upload dialog and closes only after acceptance', async () => {
+    const upload = vi
+      .fn()
+      .mockRejectedValueOnce(new PortalError(400, '文件类型不受支持'))
+      .mockResolvedValue({ operationId: 'kbop-retry' });
+    const portal = makePortal({ uploadManagedKnowledgeDocument: upload });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    await screen.findByRole('heading', { name: 'Research' });
+    await openAddMaterial('file');
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('test file picker'), { target: { files: [file] } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /上传文档/ }));
+    await screen.findByText('文件类型不受支持');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /上传文档/ })).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(screen.getByRole('button', { name: /上传文档/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(upload).toHaveBeenNthCalledWith(2, base.id, file, 'notes.txt');
+  });
+
+  test('navigates to audit scoped to the current knowledge base', async () => {
+    const navigate = vi.fn();
+    render(<KnowledgeManagement portal={makePortal()} baseId={base.id} onNavigate={navigate} />);
+    fireEvent.click(await screen.findByRole('button', { name: '查看本库操作记录' }));
+    expect(navigate).toHaveBeenCalledWith(`audit/knowledge/${base.id}`);
+  });
+
+  test('does not retry an uncertain folder upload after a successful list refresh', async () => {
+    const upload = vi
+      .fn()
+      .mockRejectedValue(new PortalError(504, '结果待核实', 'UPSTREAM', 'kbop-pending', 'doc-pending'));
+    render(<KnowledgeManagement portal={makePortal({ uploadManagedKnowledgeDocument: upload })} baseId={base.id} />);
+    await screen.findByRole('heading', { name: 'Research' });
+    await openAddMaterial('folder');
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'docs/notes.txt' });
+    fireEvent.change(screen.getByLabelText('test folder picker'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /上传文件夹/ }));
+    await screen.findByText(/kbop-pending/);
+    expect(screen.getByText(/doc-pending/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /重试失败项/ })).toBeDisabled();
+    expect(upload).toHaveBeenCalledTimes(1);
   });
 
   test('skips oversized files in a folder pick and keeps the rest queued', async () => {

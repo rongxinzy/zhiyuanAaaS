@@ -43,10 +43,15 @@ describe('portal client', () => {
     const portal = new PortalClient(async () => 'aep-token');
     const controller = new AbortController();
     await expect(
-      portal.knowledgeAudit({ operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20' }, controller.signal),
+      portal.knowledgeAudit(
+        { operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20', knowledgeBaseId: 'kb-1' },
+        controller.signal,
+      ),
     ).resolves.toEqual({ items: [item], nextCursor: '12' });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20');
+    expect(url).toBe(
+      '/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20&knowledgeBaseId=kb-1',
+    );
     expect((init as RequestInit).signal).toBeDefined();
     vi.unstubAllGlobals();
   });

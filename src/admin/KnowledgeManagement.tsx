@@ -1,5 +1,4 @@
 import {
-  BookOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
@@ -44,6 +43,7 @@ import {
   Tooltip,
   Tree,
   Typography,
+  theme,
   Upload,
 } from 'antd';
 import type { ReactNode } from 'react';
@@ -433,7 +433,7 @@ interface FolderUploadItem {
   readonly label: string;
   readonly relativePath: string;
   readonly file: File;
-  readonly status: 'queued' | 'uploading' | 'accepted' | 'failed';
+  readonly status: 'queued' | 'uploading' | 'accepted' | 'failed' | 'uncertain';
   readonly detail?: string;
 }
 
@@ -459,6 +459,7 @@ export function KnowledgeManagement({
   /** Route navigation for the list ⇄ detail hop, so the URL stays authoritative. */
   readonly onNavigate?: ((route: string) => void) | undefined;
 }) {
+  const { token } = theme.useToken();
   const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
   const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(baseId);
@@ -471,6 +472,7 @@ export function KnowledgeManagement({
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
   const [folderTree, setFolderTree] = useState<ManagedKnowledgeFolderTree | null>(null);
+  const [folderManagerOpen, setFolderManagerOpen] = useState(false);
   // null = 全部资料（不带 folder_path 过滤）；上游把「folder_path 存在但为空」当作根目录，
   // 所以「全部」必须是不传该参数，而不是传空串。
   const [folderPath, setFolderPath] = useState<string | null>(null);
@@ -480,7 +482,8 @@ export function KnowledgeManagement({
   const [moveDialog, setMoveDialog] = useState(false);
   const [moveTarget, setMoveTarget] = useState('');
   const [batchBusy, setBatchBusy] = useState(false);
-  const [batchFailures, setBatchFailures] = useState<readonly string[]>([]); // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
+  const [batchFailures, setBatchFailures] = useState<readonly string[]>([]);
+  // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
   // 「可检索数」上游没有按启用状态统计的接口，保持 null → 界面显示暂未统计，不推断。
   const [summaryFailed, setSummaryFailed] = useState<number | null>(null);
   const [summaryAgents, setSummaryAgents] = useState<number | null>(null);
@@ -582,6 +585,10 @@ export function KnowledgeManagement({
     setPage(1);
     setFiles([]);
     setFolderQueue([]);
+    setFolderManagerOpen(false);
+    setMaterialModal(null);
+    setFolderPath(null);
+    setFolderTree(null);
     setDocumentActions([]);
     setInspector(null);
     setChunksLoading(false);
@@ -1031,10 +1038,10 @@ export function KnowledgeManagement({
   const uploadFile = async () => {
     const entry = files[0];
     const file = entry?.originFileObj ?? (entry instanceof File ? entry : undefined);
-    if (!file || !selectedId || uncertainWrite) return;
+    if (!file || !selectedId || writeBlocked || uploading) return false;
     if (file.size > 63 * 1024 * 1024) {
       setWriteNotice(t('fileLimit'));
-      return;
+      return false;
     }
     setUploading(true);
     setWriteNotice(null);
@@ -1048,12 +1055,14 @@ export function KnowledgeManagement({
       setPollTick(0);
       setPage(1);
       setDocsRefresh((current) => current + 1);
+      return true;
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
+      return false;
     } finally {
       setUploading(false);
     }
@@ -1099,7 +1108,7 @@ export function KnowledgeManagement({
     const baseId = selectedId;
     // 只上传属于当前知识库的条目：队列里可能还留着别的库挑的文件（切库时也会被清空，这里是兜底）。
     const targets = baseId ? items.filter((item) => item.baseId === baseId) : [];
-    if (!baseId || targets.length === 0 || folderUploading) return;
+    if (!baseId || targets.length === 0 || folderUploading || writeBlocked) return false;
     setFolderUploading(true);
     setWriteNotice(null);
     let cursor = 0;
@@ -1129,7 +1138,13 @@ export function KnowledgeManagement({
           if (isUncertain(cause)) markUncertainWrite();
           setFolderQueue((current) =>
             current.map((entry) =>
-              entry.key === item.key ? { ...entry, status: 'failed', detail: knowledgeErrorText(cause) } : entry,
+              entry.key === item.key
+                ? {
+                    ...entry,
+                    status: isUncertain(cause) ? 'uncertain' : 'failed',
+                    detail: `${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` · ${t('id')}: ${cause.resourceId}` : ''}`,
+                  }
+                : entry,
             ),
           );
         }
@@ -1144,6 +1159,7 @@ export function KnowledgeManagement({
     setPollTick(0);
     setPage(1);
     setDocsRefresh((current) => current + 1);
+    return failed === 0;
   };
 
   const submitImport = async () => {
@@ -1480,9 +1496,9 @@ export function KnowledgeManagement({
           <Space orientation="vertical" size={0}>
             <Space size={6}>
               {isPdf ? (
-                <FilePdfOutlined style={{ color: '#cf1322' }} />
+                <FilePdfOutlined style={{ color: token.colorError }} />
               ) : (
-                <FileTextOutlined style={{ color: '#1677ff' }} />
+                <FileTextOutlined style={{ color: token.colorPrimary }} />
               )}
               <Typography.Link onClick={() => void inspectDocument(row, 'spans')}>
                 {row.name || row.file_name}
@@ -1622,8 +1638,10 @@ export function KnowledgeManagement({
       } catch (cause) {
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
         if (isUncertain(cause)) markUncertainWrite();
-        failedIds.push(document.id);
-        failedNames.push(document.name || document.file_name);
+        if (!isUncertain(cause)) failedIds.push(document.id);
+        failedNames.push(
+          `${document.name || document.file_name}: ${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
+        );
       }
     }
     setBatchFailures(failedNames);
@@ -1824,13 +1842,6 @@ export function KnowledgeManagement({
                 )}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg text-white"
-                      style={{ background: '#1677ff' }}
-                    >
-                      <BookOutlined />
-                    </span>
                     <div className="min-w-0">
                       <Typography.Title level={3} style={{ margin: 0 }}>
                         {selected.name}
@@ -1846,6 +1857,11 @@ export function KnowledgeManagement({
                     </div>
                   </div>
                   <Space wrap>
+                    {onNavigate && (
+                      <Button onClick={() => onNavigate(`audit/knowledge/${encodeURIComponent(selected.id)}`)}>
+                        {translate(ADMIN_LANGUAGE, 'knowledgeViewAudit')}
+                      </Button>
+                    )}
                     <Button
                       icon={<SettingOutlined />}
                       disabled={writeBlocked || uploading}
@@ -1909,6 +1925,11 @@ export function KnowledgeManagement({
                             <div className="w-full shrink-0 lg:w-56">
                               <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                                 <Typography.Text strong>{t('foldersLabel')}</Typography.Text>
+                                {selected.type !== 'faq' && (
+                                  <Button size="small" onClick={() => setFolderManagerOpen(true)}>
+                                    {translate(ADMIN_LANGUAGE, 'knowledgeManageFolders')}
+                                  </Button>
+                                )}
                                 <Tree
                                   blockNode
                                   defaultExpandAll
@@ -1981,7 +2002,10 @@ export function KnowledgeManagement({
                                 </Space>
                               </div>
                               {folderQueue.length > 0 && (
-                                <div className="flex flex-col gap-2 rounded-md border border-dashed border-neutral-400 p-3">
+                                <div
+                                  className="flex flex-col gap-2 rounded-md border border-dashed p-3"
+                                  style={{ borderColor: token.colorBorder }}
+                                >
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <Typography.Text type="secondary">
                                       {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
@@ -2020,20 +2044,24 @@ export function KnowledgeManagement({
                                             color={
                                               item.status === 'accepted'
                                                 ? 'green'
-                                                : item.status === 'failed'
-                                                  ? 'red'
-                                                  : item.status === 'uploading'
-                                                    ? 'blue'
-                                                    : 'default'
+                                                : item.status === 'uncertain'
+                                                  ? 'warning'
+                                                  : item.status === 'failed'
+                                                    ? 'red'
+                                                    : item.status === 'uploading'
+                                                      ? 'blue'
+                                                      : 'default'
                                             }
                                           >
                                             {item.status === 'accepted'
                                               ? t('folderAccepted')
-                                              : item.status === 'failed'
-                                                ? t('folderFailed')
-                                                : item.status === 'uploading'
-                                                  ? t('folderUploading')
-                                                  : t('folderQueued')}
+                                              : item.status === 'uncertain'
+                                                ? translate(ADMIN_LANGUAGE, 'knowledgeOutcomeUncertain')
+                                                : item.status === 'failed'
+                                                  ? t('folderFailed')
+                                                  : item.status === 'uploading'
+                                                    ? t('folderUploading')
+                                                    : t('folderQueued')}
                                           </Tag>
                                         </span>
                                       </div>
@@ -2126,7 +2154,11 @@ export function KnowledgeManagement({
                                   total: visibleDocs?.total ?? 0,
                                   showSizeChanger: false,
                                   onChange: (next) => setPage(next),
-                                  showTotal: (total) => `共 ${total} 篇资料`,
+                                  showTotal: (total) =>
+                                    translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace(
+                                      '{count}',
+                                      String(total),
+                                    ),
                                   hideOnSinglePage: true,
                                 }}
                                 scroll={{ x: 800 }}
@@ -2135,7 +2167,10 @@ export function KnowledgeManagement({
                                 <Typography.Text type="secondary">
                                   {pickedDocs.length > 0
                                     ? t('batchPicked').replace('{count}', String(pickedDocs.length))
-                                    : `共 ${visibleDocs?.total ?? 0} 篇资料`}
+                                    : translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace(
+                                        '{count}',
+                                        String(visibleDocs?.total ?? 0),
+                                      )}
                                 </Typography.Text>
                                 <Typography.Text type="secondary">{t('indexHint')}</Typography.Text>
                               </div>
@@ -2147,6 +2182,11 @@ export function KnowledgeManagement({
                                   baseType={selected.type}
                                   documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
                                   disabled={writeBlocked || uploading}
+                                  onFoldersChanged={() => {
+                                    setFolderPath(null);
+                                    setPage(1);
+                                    setDocsRefresh((current) => current + 1);
+                                  }}
                                 />
                               ) : null}
                             </div>
@@ -2171,6 +2211,7 @@ export function KnowledgeManagement({
                           baseId={selected.id}
                           disabled={writeBlocked || uploading}
                           onOpenRetrieval={() => setDetailTab('retrieval')}
+                          onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
                         />
                       ),
                     },
@@ -2254,7 +2295,13 @@ export function KnowledgeManagement({
       <Modal
         title={materialModal === 'folder' ? t('importFolder') : t('uploadFile')}
         open={materialModal !== null}
-        onCancel={() => setMaterialModal(null)}
+        onCancel={() => {
+          if (!uploading && !folderUploading) setMaterialModal(null);
+        }}
+        cancelButtonProps={{ disabled: uploading || folderUploading }}
+        closable={!uploading && !folderUploading}
+        keyboard={!uploading && !folderUploading}
+        mask={{ closable: !uploading && !folderUploading }}
         okText={materialModal === 'folder' ? t('uploadFolder') : t('upload')}
         cancelText={t('cancel')}
         confirmLoading={materialModal === 'folder' ? folderUploading : uploading}
@@ -2262,10 +2309,11 @@ export function KnowledgeManagement({
           disabled: writeBlocked || (materialModal === 'folder' ? queuedFolderItems.length === 0 : files.length === 0),
         }}
         onOk={() => {
-          const closeOnSuccess = () => setMaterialModal(null);
-          const keepOnFailure = () => undefined;
-          if (materialModal === 'folder') void runFolderUpload(queuedFolderItems).then(closeOnSuccess, keepOnFailure);
-          else void uploadFile().then(closeOnSuccess, keepOnFailure);
+          const closeOnSuccess = (succeeded: boolean) => {
+            if (succeeded) setMaterialModal(null);
+          };
+          if (materialModal === 'folder') void runFolderUpload(queuedFolderItems).then(closeOnSuccess);
+          else void uploadFile().then(closeOnSuccess);
         }}
         destroyOnHidden
       >
@@ -2309,6 +2357,30 @@ export function KnowledgeManagement({
             </Upload>
           )}
         </Space>
+      </Modal>
+      <Modal
+        title={translate(ADMIN_LANGUAGE, 'knowledgeManageFolders')}
+        open={folderManagerOpen}
+        onCancel={() => setFolderManagerOpen(false)}
+        footer={null}
+        width={800}
+        destroyOnHidden
+      >
+        {selected && folderManagerOpen && (
+          <KnowledgeOperations
+            key={selected.id}
+            portal={portal}
+            baseId={selected.id}
+            baseType={selected.type}
+            documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+            disabled={writeBlocked || uploading}
+            onFoldersChanged={() => {
+              setFolderPath(null);
+              setPage(1);
+              setDocsRefresh((current) => current + 1);
+            }}
+          />
+        )}
       </Modal>
       <Modal
         title={importKind === 'url' ? t('knowledgeImportUrl') : t('knowledgeImportManual')}
