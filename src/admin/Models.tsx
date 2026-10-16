@@ -11,7 +11,6 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
-  RocketOutlined,
   SearchOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -50,6 +49,7 @@ import {
   AdminPermission,
   hasAdminPermission,
 } from './client.js';
+import { GatewayPublication } from './GatewayPublication.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { ModelConnectionSelect } from './ModelConnectionSelect.js';
 import { ModelPricingDrawer } from './ModelPricing.js';
@@ -123,7 +123,7 @@ function catalogPublishable(model: AdminModel): boolean {
   return Boolean(
     model.enabled &&
       model.sourceType === ModelSourceType.Gateway &&
-      model.protocol === ModelProtocol.OpenAiCompatible &&
+      (model.protocol === ModelProtocol.OpenAiCompatible || model.protocol === ModelProtocol.Anthropic) &&
       model.endpoint?.trim() &&
       model.upstreamModel?.trim(),
   );
@@ -184,8 +184,6 @@ export function Models({
   const [dataPlane, setDataPlane] = useState<AdminDataPlane | null>(null);
   const [dataPlaneError, setDataPlaneError] = useState<string | null>(null);
   const [dataPlaneLoading, setDataPlaneLoading] = useState(canDataPlane);
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
 
   const reportMutationError = useCallback(() => {
     notify(AdminNotificationKind.Error, translate(language, 'modelFormFailed'));
@@ -225,23 +223,6 @@ export function Models({
     void load();
     if (canDataPlane) void loadDataPlane();
   }, [load, loadDataPlane, canDataPlane]);
-
-  // Catalog-derived publish: the server replaces the desired routes with the
-  // routes derived from the current catalog, then the gateway applies them.
-  const publishRoutes = async () => {
-    setPublishing(true);
-    setPublishError(null);
-    try {
-      await client.publishDataPlaneRoutes();
-      notify(AdminNotificationKind.Success, t('publishSucceeded'));
-      await loadDataPlane();
-    } catch (err) {
-      setPublishError(err instanceof Error ? err.message : String(err));
-      notify(AdminNotificationKind.Error, t('publishFailed'));
-    } finally {
-      setPublishing(false);
-    }
-  };
 
   // Catalog mutations change what publish would derive, so the drift badges
   // reload alongside the catalog itself.
@@ -305,7 +286,7 @@ export function Models({
         enabled ? <Tag color="success">{t('stateEnabled')}</Tag> : <Tag>{t('stateDisabled')}</Tag>,
     },
     {
-      title: t('colConfigState'),
+      title: translate(language, 'publicationLegacyShort'),
       key: 'config',
       width: 190,
       render: (_: unknown, model: AdminModel) => (
@@ -381,34 +362,6 @@ export function Models({
           <Typography.Text type="secondary">{t('modelsListDescription')}</Typography.Text>
         </div>
         <Space>
-          {canDataPlane ? (
-            <Popconfirm
-              title={t('publishConfirmTitle')}
-              description={
-                <div style={{ maxWidth: 360 }}>
-                  <div>{t('publishConfirmDescription')}</div>
-                  {publishExcluded.length > 0 ? (
-                    <div style={{ marginTop: 8 }}>
-                      {t('publishExcluded')}：
-                      {publishExcluded
-                        .map(
-                          (model) =>
-                            `${model.displayName}（${model.enabled ? t('publishExcludedIncomplete') : t('publishExcludedDisabled')}）`,
-                        )
-                        .join('、')}
-                    </div>
-                  ) : null}
-                </div>
-              }
-              okText={t('publishAction')}
-              cancelText={translate(language, 'cancel')}
-              onConfirm={() => void publishRoutes()}
-            >
-              <Button icon={<RocketOutlined />} loading={publishing} disabled={Boolean(error)}>
-                {t('publishAction')}
-              </Button>
-            </Popconfirm>
-          ) : null}
           {canWrite ? (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
               {translate(language, 'addModel')}
@@ -428,14 +381,18 @@ export function Models({
       </div>
 
       {error ? <Alert type="error" showIcon title={`${translate(language, 'modelsLoadFailed')}：${error}`} /> : null}
-      {publishError ? (
-        <Alert
-          type="error"
-          showIcon
-          closable={{ onClose: () => setPublishError(null) }}
-          title={`${t('publishFailed')}：${publishError}`}
-        />
-      ) : null}
+      <GatewayPublication
+        language={language}
+        client={client}
+        identity={identity}
+        allowPublish
+        compact
+        disabled={Boolean(error) || loading}
+        excluded={publishExcluded.map(
+          (model) =>
+            `${model.displayName}（${model.enabled ? t('publishExcludedIncomplete') : t('publishExcludedDisabled')}）`,
+        )}
+      />
       {state && canDataPlane && dataPlaneError && !error ? (
         <Alert type="warning" showIcon title={`${t('configLoadFailed')}：${dataPlaneError}`} />
       ) : null}
@@ -604,7 +561,7 @@ function ConfigStateCell({
     `${t('configAppliedRevision')}：${dataPlane.status.observedRevision ?? '—'}`,
     included ? t('configRouteIncluded') : t('configRouteMissingHint'),
     ...(mismatch ? [`${t('driftMismatched')}：${mismatch.fields.map(driftFieldLabel).join('、')}`] : []),
-    ...(missing ? [t('driftMissingHint')] : []),
+    ...(missing ? [translate(language, 'publicationLegacyModelHint')] : []),
   ].join('\n');
   return (
     <Tooltip title={<div style={{ whiteSpace: 'pre-line' }}>{tooltip}</div>}>
@@ -1278,7 +1235,12 @@ function ConfigStatusPanel({
   );
   return (
     <div className="flex flex-col gap-4">
-      <Alert type="info" showIcon title={t('statusAlertTitle')} description={t('statusAlertDescription')} />
+      <Alert
+        type="info"
+        showIcon
+        title={translate(language, 'publicationLegacy')}
+        description={translate(language, 'publicationLegacyNote')}
+      />
       <Descriptions
         bordered
         size="small"
