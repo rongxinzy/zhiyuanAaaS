@@ -382,6 +382,7 @@ export function Models({
 
       {error ? <Alert type="error" showIcon title={`${translate(language, 'modelsLoadFailed')}：${error}`} /> : null}
       <GatewayPublication
+        language={language}
         client={client}
         identity={identity}
         allowPublish

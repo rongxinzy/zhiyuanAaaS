@@ -5,6 +5,7 @@ import { ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { type AdminConsoleClient, AdminRequestError } from './client.js';
 import { GatewayPublication } from './GatewayPublication.js';
+import { translate } from './i18n.js';
 import type { DataPlanePublication } from './publication-contract.js';
 import { administratorIdentity } from './test-fixtures.js';
 
@@ -37,6 +38,7 @@ function view(c: ReturnType<typeof client>, props: Partial<React.ComponentProps<
   return render(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }} theme={{ token: { motion: false } }}>
       <GatewayPublication
+        language="zh"
         client={c as unknown as AdminConsoleClient}
         identity={administratorIdentity}
         allowPublish
@@ -57,6 +59,39 @@ afterEach(() => {
 });
 
 describe('asynchronous route publication', () => {
+  test('localizes confirmation, conditions and an existing error when language changes', async () => {
+    const c = client();
+    c.createDataPlanePublication.mockRejectedValueOnce(new AdminRequestError(403, 'FORBIDDEN', null));
+    const ui = view(c, { language: 'en' });
+    expect(screen.getByText(translate('en', 'publicationTitle'))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: translate('en', 'publicationAction') }));
+    const confirm = within(await screen.findByRole('tooltip'));
+    expect(confirm.getByRole('button', { name: translate('en', 'cancel') })).toBeInTheDocument();
+    fireEvent.click(confirm.getByRole('button', { name: translate('en', 'publicationAction') }));
+    await screen.findByText(translate('en', 'publicationForbidden'));
+    ui.rerender(
+      <ConfigProvider wave={{ disabled: true }} theme={{ token: { motion: false } }}>
+        <GatewayPublication
+          language="zh"
+          client={c as unknown as AdminConsoleClient}
+          identity={administratorIdentity}
+          allowPublish
+        />
+      </ConfigProvider>,
+    );
+    expect(screen.getByText(translate('zh', 'publicationForbidden'))).toBeInTheDocument();
+    expect(c.createDataPlanePublication).toHaveBeenCalledTimes(1);
+    ui.unmount();
+    c.publicationScope = 'english-observation';
+    view(c, { language: 'en' });
+    fireEvent.click(screen.getByRole('button', { name: translate('en', 'publicationAction') }));
+    fireEvent.click(
+      within(await screen.findByRole('tooltip')).getByRole('button', { name: translate('en', 'publicationAction') }),
+    );
+    await screen.findByText(translate('en', 'publicationDataPlaneNotObserved'));
+    expect(screen.getByRole('columnheader', { name: translate('en', 'status') })).toBeInTheDocument();
+    expect(screen.queryByText(translate('zh', 'publicationTitle'))).not.toBeInTheDocument();
+  });
   test('acceptance is not readiness; restores observation after remount without another POST', async () => {
     const c = client();
     const ui = view(c);
@@ -148,6 +183,7 @@ describe('asynchronous route publication', () => {
         theme={{ token: { motion: false } }}
       >
         <GatewayPublication
+          language="zh"
           client={c as unknown as AdminConsoleClient}
           identity={{ ...administratorIdentity, user: { id: 'switched', displayName: 'Other' } }}
           allowPublish
