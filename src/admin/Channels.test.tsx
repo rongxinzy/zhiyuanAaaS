@@ -11,6 +11,7 @@ const initial: EmployeeChannels = {
   employee: 'hr-bot',
   phase: 'Ready',
   runtimeAvailable: true,
+  hibernationEnabled: false,
   providers: ['feishu', 'wecom', 'wechat'].map((provider) => ({
     provider,
     enabled: true,
@@ -53,6 +54,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('English channel page passes its language into the employee panel and credential form', async () => {
+  const portal = mockPortal();
+  render(
+    <ConfigProvider>
+      <App>
+        <Channels client={{} as AdminConsoleClient} portal={portal as unknown as PortalClient} language="en" />
+      </App>
+    </ConfigProvider>,
+  );
+  const row = (await screen.findByText('Feishu')).closest('tr')!;
+  expect(screen.queryByText('飞书')).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByRole('button', { name: 'Configure' }));
+  expect(await screen.findByRole('button', { name: 'Save and connect' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '保存并连接' })).not.toBeInTheDocument();
+});
+
 test('shows Feishu, WeCom and WeChat with actual configuration actions', async () => {
   const portal = mockPortal();
   render(
@@ -81,6 +98,29 @@ test('enables an unconfigured employee before asking for credentials', async () 
   await waitFor(() => expect(portal.activateChannel).toHaveBeenCalledWith('hr-bot', 'feishu', true));
   expect(await screen.findByText(/已提交启用配置/)).toBeInTheDocument();
   expect(screen.queryByLabelText('App Secret')).not.toBeInTheDocument();
+});
+
+test('blocks activation while hibernation is enabled without silently changing residency', async () => {
+  const portal = mockPortal({
+    ...initial,
+    hibernationEnabled: true,
+    providers: initial.providers.map((item) => ({ ...item, enabled: false, runtimeReady: false })),
+  });
+  panel(portal);
+  expect(await screen.findByText(/此数字员工已开启休眠/)).toBeInTheDocument();
+  for (const button of screen.getAllByRole('button', { name: /启用接入/ })) expect(button).toBeDisabled();
+  expect(portal.activateChannel).not.toHaveBeenCalled();
+});
+
+test('allows channel disable to recover an Error employee while configuration remains blocked', async () => {
+  const portal = mockPortal({ ...initial, phase: 'Error', runtimeAvailable: false, hibernationEnabled: true });
+  panel(portal);
+  await screen.findByText('企业微信');
+  for (const button of screen.getAllByRole('button', { name: '停用接入' })) expect(button).toBeEnabled();
+  for (const button of screen.getAllByRole('button', { name: '配置接入' })) expect(button).toBeDisabled();
+  fireEvent.click(within(screen.getByText('企业微信').closest('tr')!).getByRole('button', { name: '停用接入' }));
+  fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: '停用接入' }));
+  await waitFor(() => expect(portal.activateChannel).toHaveBeenCalledWith('hr-bot', 'wecom', false));
 });
 
 test('submits Feishu credentials through the employee API and clears the form', async () => {

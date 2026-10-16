@@ -534,6 +534,7 @@ export type EmployeeChannels = {
   readonly employee: string;
   readonly phase: string;
   readonly runtimeAvailable: boolean;
+  readonly hibernationEnabled: boolean;
   readonly checkedAt?: string;
   readonly providers: readonly EmployeeChannel[];
 };
@@ -595,6 +596,7 @@ export class PortalClient {
       result.employee !== name ||
       typeof result.phase !== 'string' ||
       typeof result.runtimeAvailable !== 'boolean' ||
+      typeof result.hibernationEnabled !== 'boolean' ||
       !Array.isArray(result.providers) ||
       result.providers.length !== 3
     )

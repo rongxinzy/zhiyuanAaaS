@@ -47,7 +47,7 @@ import {
   hasAdminPermission,
   AdminPermission as P,
 } from './client.js';
-import { translate } from './i18n.js';
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
 import { PageCrumbContext } from './page-crumb.js';
 import { botUIBaseURL, PortalClient } from './portal.js';
@@ -508,7 +508,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         {
           key: 'channels',
           label: c.channels,
-          children: <Channels client={client} />,
+          children: <Channels client={client} language={ADMIN_LANGUAGE} />,
         },
         {
           key: 'services',

@@ -2,7 +2,7 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, App, Button, Empty, Form, Input, Modal, QRCode, Select, Space, Table, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import type { AdminConsoleClient } from './client.js';
-import { type AdminTranslationKey, translate } from './i18n.js';
+import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
 import {
   type ChannelProvider,
   type ChannelQR,
@@ -13,7 +13,6 @@ import {
   PortalError,
 } from './portal.js';
 
-const t = (key: AdminTranslationKey) => translate('zh', key);
 const names: Record<ChannelProvider, AdminTranslationKey> = {
   feishu: 'channelFeishu',
   wecom: 'channelWecom',
@@ -33,17 +32,20 @@ const qrLabels = {
   failed: 'channelQRFailed',
 } as const;
 
-function errorText(error: unknown): string {
-  return error instanceof PortalError && error.code ? error.message : t('channelLoadFailed');
+function errorText(error: unknown, language: AdminLanguage): string {
+  return error instanceof PortalError && error.code ? error.message : translate(language, 'channelLoadFailed');
 }
 
 export function Channels({
   client,
   portal: supplied,
+  language = ADMIN_LANGUAGE,
 }: {
   readonly client: AdminConsoleClient;
   readonly portal?: PortalClient;
+  readonly language?: AdminLanguage;
 }) {
+  const t = (key: AdminTranslationKey) => translate(language, key);
   const [portal] = useState(() => supplied ?? new PortalClient(() => client.getAccessToken()));
   const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
   const [selected, setSelected] = useState<string>();
@@ -62,13 +64,13 @@ export function Channels({
         setSelected((current) => (items.some((item) => item.name === current) ? current : items[0]?.name));
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(errorText(cause));
+        if (!controller.signal.aborted) setError(errorText(cause, language));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [portal, revision]);
+  }, [portal, revision, language]);
   return (
     <section className="admin-table-section">
       <div className="admin-page-heading">
@@ -102,7 +104,7 @@ export function Channels({
       ) : !loading && !employees.length ? (
         <Empty description={t('channelNoEmployees')} />
       ) : (
-        selected && <EmployeeChannelsPanel key={selected} portal={portal} employeeName={selected} />
+        selected && <EmployeeChannelsPanel key={selected} portal={portal} employeeName={selected} language={language} />
       )}
     </section>
   );
@@ -111,10 +113,13 @@ export function Channels({
 export function EmployeeChannelsPanel({
   portal,
   employeeName,
+  language = ADMIN_LANGUAGE,
 }: {
   readonly portal: PortalClient;
   readonly employeeName: string;
+  readonly language?: AdminLanguage;
 }) {
+  const t = (key: AdminTranslationKey) => translate(language, key);
   const { modal } = App.useApp();
   const [data, setData] = useState<EmployeeChannels>();
   const [loading, setLoading] = useState(true);
@@ -151,14 +156,14 @@ export function EmployeeChannelsPanel({
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) {
           setData(undefined);
-          setError(errorText(cause));
+          setError(errorText(cause, language));
         }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [portal, employeeName, revision]);
+  }, [portal, employeeName, revision, language]);
 
   async function run(action: () => Promise<void>, success: AdminTranslationKey): Promise<boolean> {
     setBusy(true);
@@ -172,7 +177,7 @@ export function EmployeeChannelsPanel({
       }
       return true;
     } catch (cause) {
-      if (live.current) setError(errorText(cause));
+      if (live.current) setError(errorText(cause, language));
       return false;
     } finally {
       if (live.current) setBusy(false);
@@ -194,7 +199,7 @@ export function EmployeeChannelsPanel({
         setQR(result);
       }
     } catch (cause) {
-      if (live.current && !controller.signal.aborted) setError(errorText(cause));
+      if (live.current && !controller.signal.aborted) setError(errorText(cause, language));
     } finally {
       if (live.current) setQRBusy(false);
     }
@@ -217,7 +222,7 @@ export function EmployeeChannelsPanel({
         }
       }
     } catch (cause) {
-      if (live.current && !controller.signal.aborted) setError(errorText(cause));
+      if (live.current && !controller.signal.aborted) setError(errorText(cause, language));
     } finally {
       if (live.current) setQRBusy(false);
     }
@@ -234,7 +239,7 @@ export function EmployeeChannelsPanel({
       try {
         await portal.channelQR(employeeName, 'qr-cancel', id);
       } catch (cause) {
-        if (live.current) setError(errorText(cause));
+        if (live.current) setError(errorText(cause, language));
       }
     }
   }
@@ -252,6 +257,7 @@ export function EmployeeChannelsPanel({
       </Space>
       {error && <Alert type="error" showIcon title={error} />}
       {notice && <Alert type="success" showIcon title={notice} closable={{ afterClose: () => setNotice('') }} />}
+      {data?.hibernationEnabled && <Alert type="warning" showIcon title={t('channelHibernationConflict')} />}
       {data && unavailable && (
         <Alert
           type="warning"
@@ -326,7 +332,7 @@ export function EmployeeChannelsPanel({
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
-                    disabled={busy || loading}
+                    disabled={busy || loading || data?.hibernationEnabled === true}
                     onClick={() =>
                       void run(
                         () => portal.activateChannel(employeeName, item.provider, true),
@@ -369,7 +375,7 @@ export function EmployeeChannelsPanel({
                     )}
                     <Button
                       danger
-                      disabled={busy || unavailable || !item.runtimeReady}
+                      disabled={busy || loading || !data || !['Ready', 'Error'].includes(data.phase)}
                       onClick={() =>
                         modal.confirm({
                           title: t('channelDisableTitle'),

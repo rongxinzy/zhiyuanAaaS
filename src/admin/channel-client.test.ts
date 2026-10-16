@@ -19,7 +19,13 @@ test('channel client calls authenticated same-origin APIs and strips unknown cre
     hasSecret: true,
     values: { app_id: 'cli-demo', app_secret: 'must-not-expose', bot_secret: 'must-not-expose' },
   }));
-  const { client, fetcher } = setup({ employee: 'hr-bot', phase: 'Ready', runtimeAvailable: true, providers });
+  const { client, fetcher } = setup({
+    employee: 'hr-bot',
+    phase: 'Ready',
+    runtimeAvailable: true,
+    hibernationEnabled: false,
+    providers,
+  });
   const result = await client.employeeChannels('hr-bot');
   expect(result.providers[0]?.values).toEqual({ app_id: 'cli-demo' });
   expect(fetcher).toHaveBeenCalledWith(
@@ -33,6 +39,7 @@ test('malformed or duplicate providers do not become successful status', async (
     employee: 'hr-bot',
     phase: 'Ready',
     runtimeAvailable: true,
+    hibernationEnabled: false,
     providers: [null, null, null],
   });
   await expect(client.employeeChannels('hr-bot')).rejects.toThrow('Invalid channel response');

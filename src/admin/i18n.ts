@@ -2,6 +2,8 @@ const translations = {
   zh: {
     channelTitle: '渠道接入',
     channelWake: '唤醒数字员工',
+    channelHibernationConflict:
+      '此数字员工已开启休眠。飞书、企业微信和微信的内置接入需要员工常驻；请先关闭员工休眠配置再启用渠道。',
     channelWakeDone: '已请求唤醒，请刷新状态确认。',
     channelDescription: '选择数字员工，配置飞书、企业微信或微信接入。',
     channelEmployee: '数字员工',
@@ -65,7 +67,6 @@ const translations = {
     channelVerifyCode: '短信验证码',
     channelVerifySubmit: '提交验证码',
     channelManage: '管理渠道接入',
-    channelManageNote: '渠道由企业管理员配置；账号关联在“用户管理”中维护。',
     publicationLimitsTitle: '限流配额发布进度',
     publicationLimitsEmpty: '当前会话尚未提交限流规则发布。请保存草稿后提交，并检查对应版本的应用状态。',
     publicationLimitsAction: '发布路由与规则',
@@ -1331,6 +1332,8 @@ const translations = {
   en: {
     channelTitle: 'Channels',
     channelWake: 'Wake employee',
+    channelHibernationConflict:
+      'Hibernation is enabled for this employee. Built-in Feishu, WeCom and WeChat channels require a resident employee. Disable employee hibernation before enabling a channel.',
     channelWakeDone: 'Wake requested. Refresh status to confirm.',
     channelDescription: 'Select an employee to configure Feishu, WeCom or WeChat.',
     channelEmployee: 'Digital employee',
@@ -1396,7 +1399,6 @@ const translations = {
     channelVerifyCode: 'SMS verification code',
     channelVerifySubmit: 'Submit code',
     channelManage: 'Manage channels',
-    channelManageNote: 'Enterprise administrators configure channels. Account mapping is managed under Users.',
     publicationLimitsTitle: 'Rate limit and quota publication',
     publicationLimitsEmpty:
       'No limit publication recorded for this session. Save drafts, submit them, and check the matching revision.',

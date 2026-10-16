@@ -1539,7 +1539,7 @@ function EmployeeDetail({
         width={960}
         destroyOnHidden
       >
-        <EmployeeChannelsPanel portal={portal} employeeName={employee.name} />
+        <EmployeeChannelsPanel portal={portal} employeeName={employee.name} language={language} />
       </Drawer>
       <EditEmployeeModal
         employee={employee}
