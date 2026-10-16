@@ -18,6 +18,7 @@
     "verify:admin:pricing:e2e": "npm run build:admin && node scripts/verify-model-pricing-browser.mjs",
     "verify:admin:trends:e2e": "npm run build:admin && node scripts/verify-gateway-trend-browser.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:admin",
+    "check:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run verify:admin",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.admin.json --noEmit",
     "lint": "biome check",
