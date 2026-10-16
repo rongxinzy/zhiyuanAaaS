@@ -1,9 +1,8 @@
-import type { AdminControlEvent, PlatformUser } from '@aep/sdk-node';
+import type { AdminControlEvent } from '@aep/sdk-node';
 import {
   Alert,
   Button,
   DatePicker,
-  Descriptions,
   Drawer,
   Form,
   Input,
@@ -16,8 +15,18 @@ import {
   Typography,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
+import { auditCodeLabel, deliveryStateLabel, objectText, resultLabel } from './audit-labels.js';
+import {
+  type AuditDirectory,
+  actorProblemText,
+  resolveActorFilter,
+  UserCell,
+  userLabel,
+  useUserDirectory,
+} from './audit-user.js';
+import { AuditDetail, type AuditDetailRow, codeCell, resultCell, shown, timeCell } from './audit-view.js';
 import {
   type AdminAuditFilters,
   type AdminAuditRecord,
@@ -33,14 +42,37 @@ import {
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
-import { formatTimestampSeconds } from './format.js';
-import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeAudit } from './KnowledgeAudit.js';
 import { shellCopy } from './shell-copy.js';
 
-type Filters = { type?: string; userId?: string; result?: string };
-const shown = (value?: string | null) => value || c.unknown;
 type AuditTabItem = { readonly key: string; readonly label: ReactNode; readonly children: ReactNode };
+type TabProps = { readonly client: AdminConsoleClient; readonly directory: AuditDirectory };
+
+/** 各筛选下拉只接受服务端真正支持的取值，文案一律走共用映射。 */
+const telemetryResults = ['success', 'failure', 'info'] as const;
+const loginResults = ['success', 'failure', 'denied'] as const;
+const operationResults = ['success', 'failure'] as const;
+/** 登录事件码的下拉选项：值保持原始码，文案走共用映射。 */
+const loginEventOptions = ['login.succeeded', 'login.failed', 'login.throttled', 'password.changed'].map((value) => ({
+  value,
+  label: auditCodeLabel(value) ?? value,
+}));
+
+/** 结果下拉选项：发给后端的值保持原样，界面文案走共用映射。 */
+function resultOptions(values: readonly string[]) {
+  return values.map((value) => ({ value, label: resultLabel(value) ?? value }));
+}
+
+/** 投递状态汇总：控管事件只带各状态条数，一条都没有时如实写「未记录」。 */
+function deliveryRollup(summary?: AdminControlEvent['deliverySummary']) {
+  const parts = summary
+    ? Object.entries(summary)
+        .filter(([, count]) => count > 0)
+        .map(([state, count]) => `${deliveryStateLabel(state) ?? state} ${count}`)
+    : [];
+  return parts.length > 0 ? parts.join(' · ') : c.unknown;
+}
+
 export function Events({
   client,
   identity,
@@ -52,6 +84,8 @@ export function Events({
   // 无权限的 tab 不出现，而不是摆一个 403 占位；默认落第一个可用 tab。
   const canReadTelemetry = hasAdminPermission(identity, AdminPermission.EventsRead);
   const canReadAudit = hasAdminPermission(identity, AdminPermission.AuditRead);
+  // 用户目录在页面级只拉一次，三个审计页签共用；没有审计权限就不碰这个接口。
+  const directory = useUserDirectory(client, canReadAudit);
   const [tab, setTab] = useState('operations');
   const items: AuditTabItem[] = [
     ...(canReadTelemetry
@@ -62,14 +96,14 @@ export function Events({
             children: (
               <>
                 <Typography.Paragraph type="secondary">{c.operationsHint}</Typography.Paragraph>
-                <TelemetryRecords client={client} />
+                <TelemetryRecords client={client} directory={directory} />
               </>
             ),
           },
           {
             key: 'execution',
             label: c.execution,
-            children: <ExecutionRecords client={client} />,
+            children: <ExecutionRecords client={client} directory={directory} />,
           },
         ]
       : []),
@@ -77,18 +111,18 @@ export function Events({
       ? [
           {
             key: 'knowledge',
-            label: translate(ADMIN_LANGUAGE, 'knowledgeAuditTitle'),
-            children: <KnowledgeAudit client={client} />,
+            label: c.knowledge,
+            children: <KnowledgeAudit client={client} directory={directory} />,
           },
           {
             key: 'login',
             label: c.login,
-            children: <LoginRecords client={client} />,
+            children: <LoginRecords client={client} directory={directory} />,
           },
           {
             key: 'operations-log',
             label: c.opsLog,
-            children: <OperationLog client={client} />,
+            children: <OperationLog client={client} directory={directory} />,
           },
         ]
       : []),
@@ -108,9 +142,10 @@ export function Events({
 }
 
 /** 业务遥测事件表：数据来自 `/admin/events`，不是管理审计。 */
-function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
-  const [form] = Form.useForm<Filters>();
-  const [filters, setFilters] = useState<Filters>({});
+function TelemetryRecords({ client, directory }: TabProps) {
+  const [form] = Form.useForm<{ type?: string; actor?: string; result?: string }>();
+  const [filters, setFilters] = useState<TelemetryFilters>({});
+  const [actorProblem, setActorProblem] = useState<string | null>(null);
   const [rows, setRows] = useState<readonly AdminEventRecord[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,40 +200,46 @@ function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
         <Form.Item name="type" label={c.type}>
           <Input allowClear />
         </Form.Item>
-        <Form.Item name="userId" label={c.actor}>
-          <Input allowClear />
+        <Form.Item name="actor" label={c.user}>
+          <Input allowClear placeholder={c.userPlaceholder} />
         </Form.Item>
         <Form.Item name="result" label={c.result}>
           <Select
             allowClear
             style={{ width: 130 }}
-            placeholder={c.all}
-            options={[
-              { value: 'success', label: c.success },
-              { value: 'failure', label: c.failure },
-              { value: 'info', label: c.info },
-            ]}
+            placeholder={c.allResults}
+            options={resultOptions(telemetryResults)}
           />
         </Form.Item>
         {/* 2026-09-30 LiXiang2019 审计筛选区接入查询/重置按钮组 */}
         <ListQueryActions
           form={form}
           searching={loading}
+          showReset
           search={{
-            run: (values) => {
-              const next: Filters = {};
+            run: async (values) => {
+              const actor = await resolveActorFilter(values.actor, directory);
+              if (actor && 'problem' in actor) {
+                // 解析不出来就不发请求：后端按 userId 精确匹配，姓名发出去永不命中。
+                setActorProblem(actorProblemText(actor.problem, actor.name));
+                return;
+              }
+              setActorProblem(null);
+              const next: TelemetryFilters = {};
               if (values.type?.trim()) next.type = values.type.trim();
-              if (values.userId?.trim()) next.userId = values.userId.trim();
+              if (actor) next.userId = actor.userId;
               if (values.result) next.result = values.result;
               setFilters(next);
             },
           }}
           onReset={() => {
+            setActorProblem(null);
             setFilters({});
           }}
         />
         <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
       </Form>
+      {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
       <Table
         loading={loading}
@@ -211,23 +252,11 @@ function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
         scroll={{ x: 800 }}
         locale={{ emptyText: error ? c.failed : c.empty }}
         columns={[
-          { title: c.type, dataIndex: 'type', render: shown },
-          { title: c.actor, dataIndex: 'userId', render: shown },
-          {
-            title: c.object,
-            render: (_, row) =>
-              shown(row.resourceType ? `${row.resourceType} / ${row.resourceId ?? c.unknown}` : row.resourceId),
-          },
-          {
-            title: c.result,
-            dataIndex: 'result',
-            render: (value: string) => (
-              <Tag color={value === 'success' ? 'success' : value === 'failure' ? 'error' : 'default'}>
-                {value === 'success' ? c.success : value === 'failure' ? c.failure : shown(value)}
-              </Tag>
-            ),
-          },
-          { title: c.time, dataIndex: 'receivedAt', render: shown },
+          { title: c.eventTime, render: (_, row) => timeCell(row.receivedAt ?? row.createdAt) },
+          { title: c.user, render: (_, row) => <UserCell userId={row.userId} users={directory.users} /> },
+          { title: c.type, dataIndex: 'type', render: (value: string) => codeCell(value) },
+          { title: c.object, render: (_, row) => shown(objectText(row.resourceType, row.resourceId)) },
+          { title: c.result, dataIndex: 'result', render: (value: string) => resultCell(value) },
           {
             title: c.details,
             render: (_, row) => (
@@ -246,32 +275,26 @@ function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
       <Drawer title={c.detailTitle} open={Boolean(selected)} onClose={() => setSelected(null)} size={560}>
         <Alert type="info" title={c.scopeNote} style={{ marginBottom: 20 }} />
         {selected && (
-          <Descriptions
-            column={1}
-            bordered
-            items={[
+          <AuditDetail
+            overview={[
+              { key: 'time', label: c.eventTime, children: timeCell(selected.receivedAt ?? selected.createdAt) },
+              { key: 'user', label: c.user, children: <UserCell userId={selected.userId} users={directory.users} /> },
+              { key: 'type', label: c.type, children: codeCell(selected.type) },
               {
-                key: 'id',
-                label: c.eventId,
-                children: shown(selected.eventId),
+                key: 'object',
+                label: c.object,
+                children: shown(objectText(selected.resourceType, selected.resourceId)),
               },
+              { key: 'result', label: c.result, children: resultCell(selected.result) },
+            ]}
+            changes={null}
+            technical={[
+              { key: 'eventId', label: c.eventId, children: shown(selected.eventId) },
               { key: 'type', label: c.type, children: shown(selected.type) },
-              { key: 'user', label: c.actor, children: shown(selected.userId) },
-              {
-                key: 'resource',
-                label: c.resourceId,
-                children: shown(selected.resourceId),
-              },
-              {
-                key: 'result',
-                label: c.result,
-                children: shown(selected.result),
-              },
-              {
-                key: 'time',
-                label: c.time,
-                children: shown(selected.receivedAt),
-              },
+              { key: 'userId', label: c.userId, children: shown(selected.userId) },
+              { key: 'resourceType', label: c.resourceType, children: shown(selected.resourceType) },
+              { key: 'resourceId', label: c.resourceId, children: shown(selected.resourceId) },
+              { key: 'receivedAt', label: c.eventTime, children: shown(selected.receivedAt ?? selected.createdAt) },
             ]}
           />
         )}
@@ -280,7 +303,9 @@ function TelemetryRecords({ client }: { client: AdminConsoleClient }) {
   );
 }
 
-function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
+type TelemetryFilters = { type?: string; userId?: string; result?: string };
+
+function ExecutionRecords({ client, directory }: TabProps) {
   const [rows, setRows] = useState<readonly AdminControlEvent[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -351,11 +376,19 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
         rowKey="eventId"
         dataSource={[...rows]}
         pagination={false}
-        scroll={{ x: 640 }}
+        scroll={{ x: 960 }}
         columns={[
-          { title: c.type, dataIndex: 'type' },
-          { title: c.state, dataIndex: 'state' },
-          { title: c.time, dataIndex: 'createdAt' },
+          { title: c.eventTime, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
+          {
+            title: c.user,
+            dataIndex: 'createdBy',
+            render: (value?: string) => <UserCell userId={value} users={directory.users} />,
+          },
+          { title: c.eventType, dataIndex: 'type', render: (value: string) => codeCell(value) },
+          { title: c.object, render: (_, row) => shown(objectText(row.resource?.type, row.resource?.id)) },
+          { title: c.deliveryState, render: (_, row) => deliveryRollup(row.deliverySummary) },
+          // 控制面只在投递记录上给尝试次数，控制事件本身没有这个字段；如实写未记录。
+          { title: c.attempts, render: () => c.unknown },
           {
             title: c.details,
             render: (_, row) => (
@@ -401,9 +434,9 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
           pagination={false}
           columns={[
             { title: c.eventId, dataIndex: 'deliveryId' },
-            { title: c.state, dataIndex: 'state' },
-            { title: c.attempts, dataIndex: 'attemptCount' },
-            { title: c.completed, dataIndex: 'completedAt', render: shown },
+            { title: c.state, dataIndex: 'state', render: (value: string) => <Tag>{deliveryStateLabel(value)}</Tag> },
+            { title: c.attempts, dataIndex: 'attemptCount', render: (value?: number) => value ?? c.unknown },
+            { title: c.completed, dataIndex: 'completedAt', render: (value?: string | null) => timeCell(value) },
           ]}
         />
         {deliveryCursor && (
@@ -438,9 +471,10 @@ function ExecutionRecords({ client }: { client: AdminConsoleClient }) {
 type LoginFilters = { eventType?: string; outcome?: string; userId?: string };
 
 /** 登录审计：服务端持久化的登录成功/失败/受限与改密记录，只读。 */
-function LoginRecords({ client }: { client: AdminConsoleClient }) {
-  const [form] = Form.useForm<LoginFilters>();
+function LoginRecords({ client, directory }: TabProps) {
+  const [form] = Form.useForm<{ eventType?: string; outcome?: string; actor?: string }>();
   const [filters, setFilters] = useState<LoginFilters>({});
+  const [actorProblem, setActorProblem] = useState<string | null>(null);
   const [rows, setRows] = useState<readonly AdminAuthenticationAuditRecord[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -501,52 +535,42 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
   return (
     <>
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
-        <Form.Item name="eventType" label={c.eventType}>
-          <Select
-            allowClear
-            style={{ width: 150 }}
-            placeholder={c.all}
-            options={[
-              { value: 'login.succeeded', label: c.loginSucceeded },
-              { value: 'login.failed', label: c.loginFailed },
-              { value: 'login.throttled', label: c.loginThrottled },
-              { value: 'password.changed', label: c.passwordChanged },
-            ]}
-          />
+        <Form.Item name="eventType" label={c.loginEvent}>
+          <Select allowClear style={{ width: 150 }} placeholder={c.allEvents} options={loginEventOptions} />
         </Form.Item>
         <Form.Item name="outcome" label={c.result}>
-          <Select
-            allowClear
-            style={{ width: 130 }}
-            placeholder={c.all}
-            options={[
-              { value: 'success', label: c.success },
-              { value: 'failure', label: c.failure },
-              { value: 'denied', label: c.denied },
-            ]}
-          />
+          <Select allowClear style={{ width: 130 }} placeholder={c.allResults} options={resultOptions(loginResults)} />
         </Form.Item>
-        <Form.Item name="userId" label={c.loginActor}>
-          <Input allowClear />
+        <Form.Item name="actor" label={c.user}>
+          <Input allowClear placeholder={c.userPlaceholder} />
         </Form.Item>
         <ListQueryActions
           form={form}
           searching={loading}
+          showReset
           search={{
-            run: (values) => {
+            run: async (values) => {
+              const actor = await resolveActorFilter(values.actor, directory);
+              if (actor && 'problem' in actor) {
+                setActorProblem(actorProblemText(actor.problem, actor.name));
+                return;
+              }
+              setActorProblem(null);
               const next: LoginFilters = {};
               if (values.eventType) next.eventType = values.eventType;
               if (values.outcome) next.outcome = values.outcome;
-              if (values.userId?.trim()) next.userId = values.userId.trim();
+              if (actor) next.userId = actor.userId;
               setFilters(next);
             },
           }}
           onReset={() => {
+            setActorProblem(null);
             setFilters({});
           }}
         />
         <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
       </Form>
+      {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
       <Table
         loading={loading}
@@ -556,40 +580,15 @@ function LoginRecords({ client }: { client: AdminConsoleClient }) {
         scroll={{ x: 720 }}
         locale={{ emptyText: error ? c.failed : c.empty }}
         columns={[
-          { title: c.time, dataIndex: 'createdAt', render: shown },
-          { title: c.loginActor, dataIndex: 'userId', render: shown },
+          { title: c.time, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
           {
-            title: c.eventType,
-            dataIndex: 'eventType',
-            render: (value: string) => {
-              switch (value) {
-                case 'login.succeeded':
-                  return c.loginSucceeded;
-                case 'login.failed':
-                  return c.loginFailed;
-                case 'login.throttled':
-                  return c.loginThrottled;
-                case 'password.changed':
-                  return c.passwordChanged;
-                default:
-                  return value;
-              }
-            },
+            title: c.user,
+            dataIndex: 'userId',
+            render: (value?: string) => <UserCell userId={value} users={directory.users} />,
           },
-          {
-            title: c.result,
-            dataIndex: 'outcome',
-            render: (value: string) =>
-              value === 'success' ? (
-                <Tag color="success">{c.success}</Tag>
-              ) : value === 'failure' ? (
-                <Tag color="error">{c.failure}</Tag>
-              ) : value === 'denied' ? (
-                <Tag color="warning">{c.denied}</Tag>
-              ) : (
-                <Tag>{shown(value)}</Tag>
-              ),
-          },
+          // 事件码走共用映射：登记过的给中文，未登记的码原样显示。
+          { title: c.loginEvent, dataIndex: 'eventType', render: (value: string) => codeCell(value) },
+          { title: c.result, dataIndex: 'outcome', render: (value: string) => resultCell(value) },
           { title: c.reason, dataIndex: 'reason', render: shown },
           {
             title: c.source,
@@ -618,7 +617,7 @@ type OperationFilters = {
 type OperationFormValues = {
   action?: string;
   resourceId?: string;
-  /** 操作人输入：姓名或用户 ID，提交前解析成用户 ID。 */
+  /** 用户输入：用户名或用户 ID，提交前解析成用户 ID。 */
   actor?: string;
   result?: string;
   range?: [Dayjs, Dayjs];
@@ -656,112 +655,39 @@ function supportedFilters(filters: OperationFilters): OperationFilters {
   };
 }
 
-/** 平台用户 ID 是 UUID；该形态可直接查询，其余输入必须先解析成用户，不能当 ID 发出去。 */
-const userIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-type OperationActor =
-  | { readonly userId: string }
-  | { readonly problem: 'notFound' | 'ambiguous' | 'unverified'; readonly name: string };
-
-/**
- * 操作人按姓名解析：用户 ID、账号或显示名唯一精确命中时换成用户 ID。
- * 后端按 actor_user_id 精确匹配，姓名原样发出去永远不会命中，所以解析不出来时
- * 返回问题而不是透传。
- */
-function resolveOperationActor(input: string, users: readonly PlatformUser[]): OperationActor {
-  const name = input.trim();
-  if (userIdPattern.test(name)) return { userId: name };
-  const byId = users.filter((user) => user.id === name);
-  const byAccount = byId.length > 0 ? byId : users.filter((user) => user.username === name);
-  const matches = byAccount.length > 0 ? byAccount : users.filter((user) => user.displayName === name);
-  const [match] = matches;
-  if (!match) return { problem: 'notFound', name };
-  if (matches.length > 1) return { problem: 'ambiguous', name };
-  return { userId: match.id };
-}
-
-const actorProblemCopy = {
-  notFound: c.actorNotFound,
-  ambiguous: c.actorAmbiguous,
-  unverified: c.actorLookupFailed,
-} as const;
-
-/** 操作人显示：目录里查得到就显示姓名，查不到（已删除或改名）如实回落到稳定 ID。 */
-function actorLabel(users: readonly PlatformUser[], userId?: string): string | null {
-  if (!userId) return null;
-  const user = users.find((item) => item.id === userId);
-  return user ? user.displayName || user.username : userId;
-}
-
-/** 脱敏变更值的只读呈现；缺失值在调用处显式标注，不伪造内容。 */
-function jsonBlock(value: unknown) {
-  return (
-    <pre style={{ margin: 0, font: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
-function resultTag(value: string) {
-  return value === 'success' ? (
-    <Tag color="success">{c.success}</Tag>
-  ) : value === 'failure' ? (
-    <Tag color="error">{c.failure}</Tag>
-  ) : (
-    <Tag>{shown(value)}</Tag>
-  );
-}
-
-function objectLabel(record: { readonly resourceType?: string; readonly resourceId?: string }) {
-  return record.resourceType ? `${record.resourceType} / ${record.resourceId ?? c.unknown}` : record.resourceId;
-}
-
-/** 操作详情：正文展示脱敏变更与失败原因，事件代码与稳定标识归入技术详情。 */
-function OperationDetail({ record, actor }: { record: AdminAuditRecord; actor: string | null }) {
+/** 操作详情：正文展示中文概览与脱敏变更，原始码与稳定标识归入技术详情。 */
+function OperationDetail({
+  record,
+  directory,
+}: {
+  readonly record: AdminAuditRecord;
+  readonly directory: AuditDirectory;
+}) {
   const changes = record.changes ?? null;
   const requestId = changes && typeof changes.requestId === 'string' ? changes.requestId : null;
-  const hasBefore = changes !== null && 'before' in changes;
-  const hasAfter = changes !== null && 'after' in changes;
-  const extraKeys = changes ? Object.keys(changes).filter((key) => key !== 'before' && key !== 'after') : [];
+  const technical: AuditDetailRow[] = [
+    // 这里是审计序号（cursor），不是请求标识；只有失败行 payload 的 requestId 才叫操作标识。
+    { key: 'cursor', label: c.recordIndex, children: shown(record.cursor) },
+    { key: 'action', label: c.type, children: shown(record.action) },
+    { key: 'actorId', label: c.userId, children: shown(record.actorUserId) },
+    { key: 'resourceType', label: c.resourceType, children: shown(record.resourceType) },
+    { key: 'resourceId', label: c.resourceId, children: shown(record.resourceId) },
+    { key: 'createdAt', label: c.time, children: shown(record.createdAt) },
+    ...(requestId ? [{ key: 'requestId', label: c.operationId, children: requestId }] : []),
+  ];
   return (
-    <>
-      <Descriptions
-        column={1}
-        bordered
-        items={[
-          { key: 'time', label: c.opsTime, children: formatTimestampSeconds(record.createdAt) || c.unknown },
-          { key: 'actor', label: c.actor, children: shown(actor) },
-          { key: 'object', label: c.object, children: shown(objectLabel(record)) },
-          { key: 'result', label: c.result, children: resultTag(record.result) },
-          { key: 'reason', label: c.reason, children: shown(record.reason) },
-          ...(changes === null
-            ? [{ key: 'changes', label: c.changes, children: c.noChanges }]
-            : [
-                ...(hasBefore ? [{ key: 'before', label: c.changedBefore, children: jsonBlock(changes.before) }] : []),
-                ...(hasAfter ? [{ key: 'after', label: c.changedAfter, children: jsonBlock(changes.after) }] : []),
-                ...(!hasBefore || !hasAfter || extraKeys.length > 0
-                  ? [{ key: 'payload', label: c.changes, children: jsonBlock(changes) }]
-                  : []),
-              ]),
-        ]}
-      />
-      <Typography.Title level={5} style={{ marginTop: 20 }}>
-        {c.technical}
-      </Typography.Title>
-      <Descriptions
-        column={1}
-        bordered
-        items={[
-          { key: 'action', label: c.type, children: shown(record.action) },
-          { key: 'actorId', label: c.actorId, children: shown(record.actorUserId) },
-          { key: 'resourceType', label: c.resourceType, children: shown(record.resourceType) },
-          { key: 'resourceId', label: c.resourceId, children: shown(record.resourceId) },
-          { key: 'createdAt', label: c.opsTime, children: shown(record.createdAt) },
-          { key: 'cursor', label: c.operationId, children: shown(record.cursor) },
-          ...(requestId ? [{ key: 'requestId', label: c.requestId, children: requestId }] : []),
-        ]}
-      />
-    </>
+    <AuditDetail
+      overview={[
+        { key: 'time', label: c.time, children: timeCell(record.createdAt) },
+        { key: 'user', label: c.user, children: <UserCell userId={record.actorUserId} users={directory.users} /> },
+        { key: 'type', label: c.type, children: codeCell(record.action) },
+        { key: 'object', label: c.object, children: shown(objectText(record.resourceType, record.resourceId)) },
+        { key: 'result', label: c.result, children: resultCell(record.result) },
+      ]}
+      changes={changes}
+      failure={[{ key: 'reason', label: c.reason, children: shown(record.reason) }]}
+      technical={technical}
+    />
   );
 }
 
@@ -773,7 +699,7 @@ function OperationDetail({ record, actor }: { record: AdminAuditRecord; actor: s
  * 过旧（不返回生效窗口、不支持 result），此时进入旧后端态：提示升级、禁用这些筛选，
  * 并不再发送它们。
  */
-function OperationLog({ client }: { client: AdminConsoleClient }) {
+function OperationLog({ client, directory }: TabProps) {
   const [form] = Form.useForm<OperationFormValues>();
   const [filters, setFilters] = useState<OperationFilters>({});
   const [window, setWindow] = useState<OperationWindow | null>(null);
@@ -785,38 +711,11 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
   const [unavailable, setUnavailable] = useState(false);
   const [legacy, setLegacy] = useState(false);
   const [actorProblem, setActorProblem] = useState<string | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
   const [selected, setSelected] = useState<AdminAuditRecord | null>(null);
   const [revision, refresh] = useState(0);
   const requestVersion = useRef(0);
   // 能力判断是后端属性，确认后一直保留：重新查询不能把被忽略的筛选重新放开。
   const legacyRef = useRef(false);
-  const directory = useRef<Promise<readonly PlatformUser[]> | null>(null);
-
-  /** 用户目录只取一次，姓名解析与操作人显示共用；失败后下次查询再试。 */
-  const loadUsers = useCallback(async () => {
-    if (directory.current) return directory.current;
-    const pending = client.users();
-    directory.current = pending;
-    try {
-      return await pending;
-    } catch (cause) {
-      directory.current = null;
-      throw cause;
-    }
-  }, [client]);
-  useEffect(() => {
-    let live = true;
-    void loadUsers()
-      .then((items) => {
-        if (live) setUsers(items);
-      })
-      // 目录取不到（无权限或离线）不影响审计查询，操作人如实按 ID 显示。
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [loadUsers]);
   useEffect(() => {
     requestVersion.current += 1;
     const version = requestVersion.current;
@@ -892,10 +791,10 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
         }`
       : null;
   const appliedFilters = [
-    filters.actorUserId ? `${c.actor}: ${actorLabel(users, filters.actorUserId) ?? filters.actorUserId}` : '',
+    filters.actorUserId ? `${c.user}: ${userLabel(directory.users, filters.actorUserId)}` : '',
     filters.resourceId ? `${c.resourceId}: ${filters.resourceId}` : '',
-    filters.action ? `${c.type}: ${filters.action}` : '',
-    filters.result ? `${c.result}: ${filters.result === 'success' ? c.success : c.failure}` : '',
+    filters.action ? `${c.type}: ${auditCodeLabel(filters.action)}` : '',
+    filters.result ? `${c.result}: ${resultLabel(filters.result)}` : '',
     filters.range ? `${c.range}: ${rangeLabel ?? ''}` : '',
   ].filter((item) => item);
   if (unavailable) {
@@ -914,8 +813,8 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
       )}
       {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
-        <Form.Item name="actor" label={c.actorField}>
-          <Input allowClear />
+        <Form.Item name="actor" label={c.user}>
+          <Input allowClear placeholder={c.userPlaceholder} />
         </Form.Item>
         <Form.Item name="resourceId" label={c.resourceId} extra={c.objectIdHint}>
           <Input allowClear />
@@ -928,11 +827,8 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
             allowClear
             disabled={legacy}
             style={{ width: 130 }}
-            placeholder={c.all}
-            options={[
-              { value: 'success', label: c.success },
-              { value: 'failure', label: c.failure },
-            ]}
+            placeholder={c.allResults}
+            options={resultOptions(operationResults)}
           />
         </Form.Item>
         <Form.Item name="range" label={c.range}>
@@ -941,30 +837,22 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
         <ListQueryActions
           form={form}
           searching={loading}
+          showReset
           search={{
             run: async (values) => {
+              const actor = await resolveActorFilter(values.actor, directory);
+              if (actor && 'problem' in actor) {
+                setActorProblem(actorProblemText(actor.problem, actor.name));
+                return;
+              }
+              setActorProblem(null);
               const next: OperationFilters = {};
               if (values.action?.trim()) next.action = values.action.trim();
               if (values.resourceId?.trim()) next.resourceId = values.resourceId.trim();
               if (values.result) next.result = values.result;
               const range = values.range;
               if (range?.[0] && range[1]) next.range = [range[0], range[1]];
-              const actor = values.actor?.trim();
-              if (actor) {
-                let resolution: OperationActor;
-                try {
-                  resolution = resolveOperationActor(actor, await loadUsers());
-                } catch {
-                  resolution = { problem: 'unverified', name: actor };
-                }
-                if ('problem' in resolution) {
-                  // 解析不出来就不发请求：后端按 actor_user_id 精确匹配，姓名发出去永不命中。
-                  setActorProblem(actorProblemCopy[resolution.problem].replace('{name}', resolution.name));
-                  return;
-                }
-                next.actorUserId = resolution.userId;
-              }
-              setActorProblem(null);
+              if (actor) next.actorUserId = actor.userId;
               setFilters(next);
             },
           }}
@@ -1022,18 +910,15 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
           ),
         }}
         columns={[
+          { title: c.time, dataIndex: 'createdAt', render: (value: string) => timeCell(value) },
           {
-            title: c.opsTime,
-            dataIndex: 'createdAt',
-            render: (value: string) => formatTimestampSeconds(value) || c.unknown,
+            title: c.user,
+            dataIndex: 'actorUserId',
+            render: (value?: string) => <UserCell userId={value} users={directory.users} />,
           },
-          { title: c.actor, dataIndex: 'actorUserId', render: (value?: string) => shown(actorLabel(users, value)) },
-          { title: c.type, dataIndex: 'action', render: shown },
-          {
-            title: c.object,
-            render: (_, row) => shown(objectLabel(row)),
-          },
-          { title: c.result, dataIndex: 'result', render: resultTag },
+          { title: c.type, dataIndex: 'action', render: (value: string) => codeCell(value) },
+          { title: c.object, render: (_, row) => shown(objectText(row.resourceType, row.resourceId)) },
+          { title: c.result, dataIndex: 'result', render: (value: string) => resultCell(value) },
           {
             title: c.details,
             render: (_, row) => (
@@ -1051,7 +936,7 @@ function OperationLog({ client }: { client: AdminConsoleClient }) {
       )}
       <Drawer title={c.detailTitle} open={Boolean(selected)} onClose={() => setSelected(null)} size={560}>
         <Alert type="info" title={c.scopeNote} style={{ marginBottom: 20 }} />
-        {selected && <OperationDetail record={selected} actor={actorLabel(users, selected.actorUserId)} />}
+        {selected && <OperationDetail record={selected} directory={directory} />}
       </Drawer>
     </>
   );
