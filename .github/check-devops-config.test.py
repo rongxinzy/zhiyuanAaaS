@@ -94,9 +94,9 @@ class WorkflowBoundaryTests(unittest.TestCase):
                     data[True]["workflow_run"].update(types=["requested", "in_progress"]))
         self.assertNotEqual(self.check().returncode, 0)
 
-    def test_missing_security_workflow_watcher_is_rejected(self):
+    def test_extra_completion_watcher_is_rejected(self):
         self.mutate("workflows/devops-gate.yml", lambda data:
-                    data[True]["workflow_run"]["workflows"].remove("CodeQL"))
+                    data[True]["workflow_run"]["workflows"].append("CodeQL"))
         self.assertNotEqual(self.check().returncode, 0)
 
     def test_pr_test_write_permission_is_rejected(self):
@@ -104,14 +104,9 @@ class WorkflowBoundaryTests(unittest.TestCase):
                     data["permissions"].update(checks="write"))
         self.assertNotEqual(self.check().returncode, 0)
 
-    def test_legacy_bootstrap_write_permission_is_rejected(self):
+    def test_independent_gate_test_trigger_is_rejected(self):
         self.mutate("workflows/devops-gate-tests.yml", lambda data:
-                    data["jobs"]["bootstrap-gate"]["permissions"].update(checks="write"))
-        self.assertNotEqual(self.check().returncode, 0)
-
-    def test_inactive_legacy_required_name_is_rejected(self):
-        self.mutate("workflows/devops-gate-tests.yml", lambda data:
-                    data["jobs"]["bootstrap-gate"].update(name="ci-gate"))
+                    data[True].update(push={"branches": ["main"]}))
         self.assertNotEqual(self.check().returncode, 0)
 
     def test_unpinned_privileged_action_is_rejected(self):
