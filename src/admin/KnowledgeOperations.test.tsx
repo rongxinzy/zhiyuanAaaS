@@ -129,10 +129,11 @@ function renderOperations(portal: PortalClient) {
 
 describe('KnowledgeOperations', () => {
   afterEach(() => cleanup());
-  test('loads managed operations and submits a tag through the fixed client method', async () => {
+  // 标签管理界面已按设计移除；本页保留文件夹与 FAQ，标签只作为 FAQ 的既有分类读出来。
+  test('loads the folder and FAQ surfaces, and no longer offers tag management', async () => {
     const portal = makePortal();
     renderOperations(portal);
-    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'))).toBeInTheDocument();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeFoldersEmpty'))).toBeInTheDocument();
     expect(portal.listManagedKnowledgeTags).toHaveBeenCalledWith('kb-1', '', expect.any(AbortSignal));
     expect(portal.getManagedKnowledgeFolders).toHaveBeenCalledWith('kb-1', expect.any(AbortSignal));
     expect(portal.listManagedKnowledgeFAQ).toHaveBeenCalledWith(
@@ -140,19 +141,18 @@ describe('KnowledgeOperations', () => {
       { page: 1, pageSize: 20 },
       expect.any(AbortSignal),
     );
-
-    fireEvent.change(screen.getByPlaceholderText('标签名称'), { target: { value: 'Policies' } });
-    fireEvent.click(screen.getByRole('button', { name: '新建标签' }));
-    await waitFor(() => expect(portal.createManagedKnowledgeTag).toHaveBeenCalledWith('kb-1', { name: 'Policies' }));
+    expect(screen.queryByRole('tab', { name: '标签' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '新建标签' })).not.toBeInTheDocument();
+    expect(portal.createManagedKnowledgeTag).not.toHaveBeenCalled();
   });
 
   test('does not render an empty state when a required operations read fails', async () => {
     const portal = makePortal({
-      listManagedKnowledgeTags: vi.fn().mockRejectedValue(new Error('access denied')),
+      getManagedKnowledgeFolders: vi.fn().mockRejectedValue(new Error('access denied')),
     });
     renderOperations(portal);
     expect(await screen.findByRole('alert')).toHaveTextContent('access denied');
-    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeFoldersEmpty'))).not.toBeInTheDocument();
   });
 
   test('does not call FAQ endpoints for a document knowledge base', async () => {
@@ -164,24 +164,26 @@ describe('KnowledgeOperations', () => {
         </App>
       </ConfigProvider>,
     );
-    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'))).toBeInTheDocument();
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeFoldersEmpty'))).toBeInTheDocument();
     expect(portal.listManagedKnowledgeFAQ).not.toHaveBeenCalled();
     expect(screen.queryByRole('tab', { name: translate(ADMIN_LANGUAGE, 'knowledgeFAQ') })).not.toBeInTheDocument();
   });
 
-  test('a late operation from an old base cannot replace the new base tag list', async () => {
-    let finishOldCreate!: (result: { data: { id: string }; operationId: string }) => void;
+  // 读了 A 库又切到 B 库时，A 的迟到响应不能覆盖 B 的文件夹树。
+  test('a late read from an old base cannot replace the new base folder tree', async () => {
+    let finishOldRead!: (value: unknown) => void;
     const portal = makePortal({
-      listManagedKnowledgeTags: vi
-        .fn()
-        .mockImplementation(async (baseId: string) =>
-          baseId === 'kb-2'
-            ? [{ id: 'new-tag', seq_id: 1, name: 'New base tag', color: '', sort_order: 0, knowledge_base_id: 'kb-2' }]
-            : [],
-        ),
-      createManagedKnowledgeTag: vi
-        .fn()
-        .mockImplementationOnce(() => new Promise((resolve) => (finishOldCreate = resolve))),
+      getManagedKnowledgeFolders: vi.fn().mockImplementation(async (baseId: string) =>
+        baseId === 'kb-2'
+          ? {
+              root_document_count: 0,
+              total_document_count: 1,
+              folders: [{ path: 'new-base-folder', name: 'new-base-folder', document_count: 1, total_count: 1 }],
+            }
+          : new Promise((resolve) => {
+              finishOldRead = resolve;
+            }),
+      ),
     });
     const renderBase = (baseId: string) => (
       <ConfigProvider>
@@ -191,42 +193,49 @@ describe('KnowledgeOperations', () => {
       </ConfigProvider>
     );
     const view = render(renderBase('kb-1'));
-    await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'));
-    fireEvent.change(screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeTagName')), {
-      target: { value: 'Old base tag' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeTagCreate') }));
-    await waitFor(() =>
-      expect(portal.createManagedKnowledgeTag).toHaveBeenCalledWith('kb-1', { name: 'Old base tag' }),
-    );
-
     view.rerender(renderBase('kb-2'));
-    expect(await screen.findByText('New base tag')).toBeInTheDocument();
-    finishOldCreate({ data: { id: 'old-tag' }, operationId: 'op-old' });
-    await waitFor(() => expect(portal.listManagedKnowledgeTags).toHaveBeenCalledWith('kb-1', '', undefined));
-    expect(screen.getByText('New base tag')).toBeInTheDocument();
-    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'))).not.toBeInTheDocument();
+    expect(await screen.findByText('new-base-folder')).toBeInTheDocument();
+
+    finishOldRead({
+      root_document_count: 0,
+      total_document_count: 1,
+      folders: [{ path: 'old-base-folder', name: 'old-base-folder', document_count: 1, total_count: 1 }],
+    });
+    // kb-1 的读取确实发生过（带 signal），只是它的迟到结果被丢弃。
+    await waitFor(() =>
+      expect(vi.mocked(portal.getManagedKnowledgeFolders).mock.calls.some((call) => call[0] === 'kb-1')).toBe(true),
+    );
+    expect(screen.queryByText('old-base-folder')).not.toBeInTheDocument();
+    expect(screen.getByText('new-base-folder')).toBeInTheDocument();
   });
 
   test('shows operation identifiers and blocks blind writes until a read retry succeeds', async () => {
     const portal = makePortal({
-      createManagedKnowledgeTag: vi
+      getManagedKnowledgeFolders: vi.fn().mockResolvedValue({
+        root_document_count: 0,
+        total_document_count: 1,
+        folders: [{ path: 'manuals', name: 'manuals', document_count: 1, total_count: 1 }],
+      }),
+      renameManagedKnowledgeFolder: vi
         .fn()
-        .mockRejectedValue(new PortalError(502, 'write outcome unknown', 'UPSTREAM', 'op-unknown', 'tag-99')),
+        .mockRejectedValue(new PortalError(502, 'write outcome unknown', 'UPSTREAM', 'op-unknown', 'folder-99')),
     });
     renderOperations(portal);
-    await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeTagsEmpty'));
-    const tagName = screen.getByPlaceholderText(translate(ADMIN_LANGUAGE, 'knowledgeTagName'));
-    fireEvent.change(tagName, { target: { value: 'Policies' } });
-    const createButton = screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeTagCreate') });
-    fireEvent.click(createButton);
+    fireEvent.click(screen.getByRole('tab', { name: labelPattern('knowledgeFolders') }));
+    expect(await screen.findByText('manuals')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: labelPattern('knowledgeFolderRename') }));
+    const dialog = within(screen.getByRole('dialog'));
+    const saveButton = dialog.getByRole('button', { name: labelPattern('knowledgeSave') });
+    fireEvent.click(saveButton);
     expect(await screen.findByText(/op-unknown/)).toBeInTheDocument();
-    expect(screen.getByText(/tag-99/)).toBeInTheDocument();
-    expect(createButton).toBeDisabled();
+    expect(screen.getByText(/folder-99/)).toBeInTheDocument();
+    expect(saveButton).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeRetryRead') }));
-    await waitFor(() => expect(portal.listManagedKnowledgeTags).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(portal.getManagedKnowledgeFolders).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeTagCreate') })).toBeEnabled(),
+      expect(
+        within(screen.getByRole('dialog')).getByRole('button', { name: labelPattern('knowledgeSave') }),
+      ).toBeEnabled(),
     );
   });
 
