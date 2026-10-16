@@ -267,116 +267,132 @@ export function KnowledgeGrants({
 
   return (
     <section aria-label={tr('knowledgeGrants')}>
-      <Typography.Title level={5}>{tr('knowledgeGrants')}</Typography.Title>
-      {error ? (
-        <Alert
-          showIcon
-          type="error"
-          title={tr('knowledgeGrantsReadFailed')}
-          description={error}
-          action={
-            <Button size="small" onClick={() => void load()}>
-              {tr('knowledgeRetryRead')}
-            </Button>
-          }
-        />
-      ) : (
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
-          <Alert
-            showIcon
-            type="warning"
-            title={tr('knowledgeGrantsReplaceHint')}
-            action={
-              <Button
-                size="small"
-                danger
-                disabled={editLocked || !grants.length}
-                onClick={() =>
-                  modal.confirm({
-                    title: tr('knowledgeGrantsRevokeConfirm'),
-                    okText: tr('knowledgeGrantsRevokeAll'),
-                    cancelText: tr('knowledgeCancel'),
-                    okButtonProps: { danger: true },
-                    onOk: () => save([]),
-                  })
-                }
-              >
-                {tr('knowledgeGrantsRevokeAll')}
-              </Button>
-            }
-          />
-          {subjects && !subjects.complete && (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div>
+          <Typography.Title level={5} style={{ marginBottom: 4 }}>
+            用户与团队
+          </Typography.Title>
+          <Typography.Paragraph type="secondary">{tr('knowledgeGrantsHint')}</Typography.Paragraph>
+          {error ? (
             <Alert
               showIcon
-              type="warning"
-              title={tr('knowledgeGrantSubjectsIncomplete')}
-              description={subjects.error}
+              type="error"
+              title={tr('knowledgeGrantsReadFailed')}
+              description={error}
               action={
-                <Button size="small" onClick={() => void loadSubjects()}>
+                <Button size="small" onClick={() => void load()}>
                   {tr('knowledgeRetryRead')}
                 </Button>
               }
             />
+          ) : (
+            <Space orientation="vertical" style={{ width: '100%' }}>
+              <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
+              <Alert
+                showIcon
+                type="warning"
+                title={tr('knowledgeGrantsReplaceHint')}
+                action={
+                  <Button
+                    size="small"
+                    danger
+                    disabled={editLocked || !grants.length}
+                    onClick={() =>
+                      modal.confirm({
+                        title: tr('knowledgeGrantsRevokeConfirm'),
+                        okText: tr('knowledgeGrantsRevokeAll'),
+                        cancelText: tr('knowledgeCancel'),
+                        okButtonProps: { danger: true },
+                        onOk: () => save([]),
+                      })
+                    }
+                  >
+                    {tr('knowledgeGrantsRevokeAll')}
+                  </Button>
+                }
+              />
+              {subjects && !subjects.complete && (
+                <Alert
+                  showIcon
+                  type="warning"
+                  title={tr('knowledgeGrantSubjectsIncomplete')}
+                  description={subjects.error}
+                  action={
+                    <Button size="small" onClick={() => void loadSubjects()}>
+                      {tr('knowledgeRetryRead')}
+                    </Button>
+                  }
+                />
+              )}
+              <Space wrap>
+                <Select
+                  aria-label={tr('knowledgeGrantUser')}
+                  mode="multiple"
+                  showSearch={{
+                    filterOption: (input, option) =>
+                      subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+                  }}
+                  allowClear
+                  loading={subjectsLoading}
+                  value={userDrafts}
+                  onChange={setUserDrafts}
+                  options={grantOptions.users}
+                  placeholder={tr('knowledgeGrantUserSelect')}
+                  notFoundContent={tr('knowledgeGrantNoUserMatch')}
+                  disabled={editLocked || subjectsLoading}
+                  style={{ minWidth: 240 }}
+                />
+                <Button disabled={editLocked || userDrafts.length === 0} onClick={() => addGrants('user')}>
+                  {tr('knowledgeGrantAddUser')}
+                </Button>
+                <Select
+                  aria-label={tr('knowledgeGrantTeam')}
+                  mode="multiple"
+                  showSearch={{
+                    filterOption: (input, option) =>
+                      subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+                  }}
+                  allowClear
+                  loading={subjectsLoading}
+                  value={teamDrafts}
+                  onChange={setTeamDrafts}
+                  options={grantOptions.teams}
+                  placeholder={tr('knowledgeGrantTeamSelect')}
+                  notFoundContent={tr('knowledgeGrantNoTeamMatch')}
+                  disabled={editLocked || subjectsLoading}
+                  style={{ minWidth: 240 }}
+                />
+                <Button disabled={editLocked || teamDrafts.length === 0} onClick={() => addGrants('team')}>
+                  {tr('knowledgeGrantAddTeam')}
+                </Button>
+              </Space>
+              {unknownGrants.length > 0 && <Alert showIcon type="warning" title={tr('knowledgeGrantUnknownHint')} />}
+              <Table<ManagedKnowledgeGrant>
+                rowKey={(grant) => `${grant.type}:${grant.id}`}
+                size="small"
+                loading={loading}
+                columns={columns}
+                dataSource={grants}
+                pagination={false}
+                locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
+                scroll={{ x: 480 }}
+              />
+              <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
+                {tr('knowledgeGrantsSave')}
+              </Button>
+            </Space>
           )}
-          <Space wrap>
-            <Select
-              aria-label={tr('knowledgeGrantUser')}
-              mode="multiple"
-              showSearch={{
-                filterOption: (input, option) =>
-                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
-              }}
-              allowClear
-              loading={subjectsLoading}
-              value={userDrafts}
-              onChange={setUserDrafts}
-              options={grantOptions.users}
-              placeholder={tr('knowledgeGrantUserSelect')}
-              notFoundContent={tr('knowledgeGrantNoUserMatch')}
-              disabled={editLocked || subjectsLoading}
-              style={{ minWidth: 240 }}
-            />
-            <Button disabled={editLocked || userDrafts.length === 0} onClick={() => addGrants('user')}>
-              {tr('knowledgeGrantAddUser')}
-            </Button>
-            <Select
-              aria-label={tr('knowledgeGrantTeam')}
-              mode="multiple"
-              showSearch={{
-                filterOption: (input, option) =>
-                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
-              }}
-              allowClear
-              loading={subjectsLoading}
-              value={teamDrafts}
-              onChange={setTeamDrafts}
-              options={grantOptions.teams}
-              placeholder={tr('knowledgeGrantTeamSelect')}
-              notFoundContent={tr('knowledgeGrantNoTeamMatch')}
-              disabled={editLocked || subjectsLoading}
-              style={{ minWidth: 240 }}
-            />
-            <Button disabled={editLocked || teamDrafts.length === 0} onClick={() => addGrants('team')}>
-              {tr('knowledgeGrantAddTeam')}
-            </Button>
-          </Space>
-          {unknownGrants.length > 0 && <Alert showIcon type="warning" title={tr('knowledgeGrantUnknownHint')} />}
-          <Table<ManagedKnowledgeGrant>
-            rowKey={(grant) => `${grant.type}:${grant.id}`}
-            size="small"
-            loading={loading}
-            columns={columns}
-            dataSource={grants}
-            pagination={false}
-            locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
-            scroll={{ x: 480 }}
-          />
-          <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
-            {tr('knowledgeGrantsSave')}
-          </Button>
-        </Space>
-      )}
+        </div>
+        <div>
+          <Typography.Title level={5} style={{ marginBottom: 4 }}>
+            关联 Agent
+          </Typography.Title>
+          <Typography.Paragraph type="secondary">关联后，Agent 仍按请求者权限检索。</Typography.Paragraph>
+          <Typography.Text type="secondary">
+            在数字员工页把本库加入或移出知识库绑定；这里不提供没有契约的假开关。
+          </Typography.Text>
+        </div>
+      </div>
       {modalContext}
     </section>
   );

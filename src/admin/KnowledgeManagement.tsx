@@ -1,17 +1,21 @@
 import {
+  BookOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
-  EditOutlined,
+  DownOutlined,
   ExclamationCircleOutlined,
+  FilePdfOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
+  FolderOutlined,
   LinkOutlined,
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
   SearchOutlined,
+  SettingOutlined,
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
@@ -148,6 +152,7 @@ const copyKeys = {
   folderFiles: 'knowledgeFolderFiles',
   folderLimit: 'knowledgeFolderLimit',
   folderHint: 'knowledgeFolderHint',
+  indexHint: 'knowledgeIndexHint',
   tabDocuments: 'knowledgeTabDocuments',
   tabRetrieval: 'knowledgeTabRetrieval',
   tabAccess: 'knowledgeTabAccess',
@@ -244,6 +249,15 @@ const pollable = new Set(['pending', 'processing', 'finalizing', 'deleting']);
 // 目录树里「全部资料」节点的 key：选中它表示不带 folder_path 过滤。
 const ALL_FOLDERS_KEY = '__all__';
 
+/** 按原型的时间样式显示：YYYY-MM-DD HH:mm（空值给占位符，不显示 Invalid Date）。 */
+function formatTimestamp(value: string | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** 文件大小换算成可读单位；缺失、非正数或非有限值返回空串，不显示「0 B」。 */
 function formatFileSize(bytes: number | undefined): string {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '';
@@ -266,16 +280,6 @@ const sourceCopy: Readonly<Record<string, CopyKey>> = {
   faq: 'sourceFaq',
   web: 'sourceWeb',
   folder: 'sourceFolder',
-};
-
-const baseTypeCopy: Readonly<Record<string, CopyKey>> = {
-  document: 'baseTypeDocument',
-  faq: 'baseTypeFaq',
-};
-
-const baseTypeLabel = (value: string | undefined): string => {
-  if (!value) return t('notStatistic');
-  return baseTypeCopy[value] ? t(baseTypeCopy[value]!) : value;
 };
 
 function isUncertain(error: unknown): boolean {
@@ -899,11 +903,19 @@ export function KnowledgeManagement({
     const build = (nodes: readonly ManagedKnowledgeFolder[]): TreeDataNode[] =>
       nodes.map((node) => ({
         key: node.path,
-        title: `${node.name}（${node.total_count}）`,
+        title: (
+          <span>
+            <FolderOutlined /> {node.name}
+            <Typography.Text type="secondary">{`（${node.total_count}）`}</Typography.Text>
+          </span>
+        ),
         children: build(node.children ?? []),
       }));
     return [
-      { key: ALL_FOLDERS_KEY, title: `${t('allMaterials')}（${folderTree?.total_document_count ?? 0}）` },
+      {
+        key: ALL_FOLDERS_KEY,
+        title: `${t('allMaterials')}（${folderTree?.total_document_count ?? 0}）`,
+      },
       ...build(folderTree?.folders ?? []),
     ];
   }, [folderTree, t]);
@@ -1452,11 +1464,19 @@ export function KnowledgeManagement({
         ]
           .filter((part): part is string => Boolean(part))
           .join(' · ');
+        const isPdf = (row.file_type ?? row.file_name ?? '').toLowerCase().includes('pdf');
         return (
           <Space orientation="vertical" size={0}>
-            <Typography.Link onClick={() => void inspectDocument(row, 'spans')}>
-              {row.name || row.file_name}
-            </Typography.Link>
+            <Space size={6}>
+              {isPdf ? (
+                <FilePdfOutlined style={{ color: '#cf1322' }} />
+              ) : (
+                <FileTextOutlined style={{ color: '#1677ff' }} />
+              )}
+              <Typography.Link onClick={() => void inspectDocument(row, 'spans')}>
+                {row.name || row.file_name}
+              </Typography.Link>
+            </Space>
             {secondary ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {secondary}
@@ -1508,7 +1528,7 @@ export function KnowledgeManagement({
       title: t('createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (value: string) => (value ? new Date(value).toLocaleString() : '—'),
+      render: (value: string) => formatTimestamp(value),
     },
     {
       title: t('knowledgeActions'),
@@ -1792,17 +1812,31 @@ export function KnowledgeManagement({
                   <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
                 )}
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <Typography.Title level={5} style={{ margin: 0 }}>
-                      {selected.name}
-                    </Typography.Title>
-                    {selected.description && (
-                      <Typography.Paragraph style={{ margin: '4px 0 0' }}>{selected.description}</Typography.Paragraph>
-                    )}
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span
+                      aria-hidden
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg text-white"
+                      style={{ background: '#1677ff' }}
+                    >
+                      <BookOutlined />
+                    </span>
+                    <div className="min-w-0">
+                      <Typography.Title level={3} style={{ margin: 0 }}>
+                        {selected.name}
+                      </Typography.Title>
+                      {selected.description ? (
+                        <Typography.Text type="secondary">{selected.description}</Typography.Text>
+                      ) : null}
+                      <div>
+                        <Typography.Text code copyable={{ text: selected.id }} style={{ fontSize: 12 }}>
+                          {selected.id}
+                        </Typography.Text>
+                      </div>
+                    </div>
                   </div>
                   <Space wrap>
                     <Button
-                      icon={<EditOutlined />}
+                      icon={<SettingOutlined />}
                       disabled={writeBlocked || uploading}
                       onClick={() => openEdit(selected)}
                     >
@@ -1826,37 +1860,13 @@ export function KnowledgeManagement({
                     >
                       {t('remove')}
                     </Button>
+                    <Dropdown trigger={['click']} menu={{ items: addMaterialItems, onClick: onAddMaterial }}>
+                      <Button type="primary" icon={<PlusOutlined />} disabled={writeBlocked}>
+                        {t('addMaterial')} <DownOutlined />
+                      </Button>
+                    </Dropdown>
                   </Space>
                 </div>
-
-                <Descriptions
-                  size="small"
-                  column={{ xs: 1, sm: 2, xl: 3 }}
-                  items={[
-                    {
-                      key: 'id',
-                      label: t('id'),
-                      children: (
-                        <Space size={4}>
-                          <Typography.Text code>{selected.id}</Typography.Text>
-                          <Typography.Text copyable={{ text: selected.id }} />
-                        </Space>
-                      ),
-                    },
-                    { key: 'type', label: t('baseType'), children: baseTypeLabel(selected.type) },
-                    {
-                      key: 'embedding',
-                      label: t('fieldEmbeddingModel'),
-                      children: readiness?.embeddingModel.name || readiness?.embeddingModel.id || t('notStatistic'),
-                    },
-                    {
-                      key: 'documents',
-                      label: t('columnDocs'),
-                      children: visibleDocs ? (visibleDocs.total ?? 0) : t('notStatistic'),
-                    },
-                    { key: 'tenant', label: t('fieldTenant'), children: selected.tenant_id || t('notStatistic') },
-                  ]}
-                />
 
                 <section aria-label={t('summaryLabel')}>
                   <Space size={16} wrap>
@@ -1951,14 +1961,6 @@ export function KnowledgeManagement({
                                       setPage(1);
                                     }}
                                   />
-                                  <Dropdown
-                                    trigger={['click']}
-                                    menu={{ items: addMaterialItems, onClick: onAddMaterial }}
-                                  >
-                                    <Button type="primary" icon={<PlusOutlined />} disabled={writeBlocked}>
-                                      {t('addMaterial')}
-                                    </Button>
-                                  </Dropdown>
                                   <Button
                                     icon={<ReloadOutlined />}
                                     aria-label={t('refresh')}
@@ -2113,18 +2115,29 @@ export function KnowledgeManagement({
                                   total: visibleDocs?.total ?? 0,
                                   showSizeChanger: false,
                                   onChange: (next) => setPage(next),
-                                  showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
+                                  showTotal: (total) => `共 ${total} 篇资料`,
+                                  hideOnSinglePage: true,
                                 }}
-                                scroll={{ x: 560 }}
+                                scroll={{ x: 800 }}
                               />
-                              <KnowledgeOperations
-                                key={`operations:${selected.id}`}
-                                portal={portal}
-                                baseId={selected.id}
-                                baseType={selected.type}
-                                documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
-                                disabled={writeBlocked || uploading}
-                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Typography.Text type="secondary">
+                                  {pickedDocs.length > 0
+                                    ? t('batchPicked').replace('{count}', String(pickedDocs.length))
+                                    : `共 ${visibleDocs?.total ?? 0} 篇资料`}
+                                </Typography.Text>
+                                <Typography.Text type="secondary">{t('indexHint')}</Typography.Text>
+                              </div>
+                              {selected.type === 'faq' ? (
+                                <KnowledgeOperations
+                                  key={`operations:${selected.id}`}
+                                  portal={portal}
+                                  baseId={selected.id}
+                                  baseType={selected.type}
+                                  documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+                                  disabled={writeBlocked || uploading}
+                                />
+                              ) : null}
                             </div>
                           </div>
                         </>
