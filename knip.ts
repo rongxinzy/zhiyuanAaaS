@@ -21,6 +21,7 @@ const config: KnipConfig = {
     '.github/ci-results.cjs',
     '.github/devops-gate.cjs',
     'scripts/**/*.mjs',
+    'scripts/check-large-files.mjs',
     // Manual screenshot harness (docs/screenshots/gateway-user-filters).
     'scripts/verify-gateway-user-filters-browser.mjs',
   ],

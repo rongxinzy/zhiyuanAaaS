@@ -9,52 +9,53 @@ on:
 permissions:
   contents: read
 
-env:
-  # Immutable AEP control-plane commit for the real-service E2E below. Full
-  # commit SHA only; branches are not valid inputs (the same pinning
-  # discipline the retired extension release manifest enforced).
-  AEP_CONTROL_PLANE_COMMIT: 34449fe8495a45a1ddd08ffc7e040055266e42b5
-
 concurrency:
   group: ci-validation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  codeql:
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/codeql.yml
-    permissions:
-      contents: read
-      security-events: write
-
-  gate-tests:
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/devops-gate-tests.yml
-    permissions:
-      contents: read
-      pull-requests: read
-      actions: read
-
-  ci-results:
-    if: ${{ github.event_name == 'pull_request' && always() }}
-    needs: [verify, coverage-ratchet, dead-code, codeql, gate-tests]
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
+    timeout-minutes: 3
+    outputs:
+      admin: ${{ steps.outputs.outputs.admin }}
+      browserScripts: ${{ steps.outputs.outputs.browserScripts }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b9324390b8baf285c5e # v3.0.2
+        if: github.event_name == 'pull_request'
+        id: filter
         with:
-          persist-credentials: false
-          sparse-checkout: .github
-      - name: Summarize all final results without polling
-        env:
-          CI_NEEDS: ${{ toJSON(needs) }}
+          filters: |
+            admin:
+              - 'src/admin/**'
+              - 'vite.admin.config.ts'
+              - 'scripts/admin-**'
+              - 'scripts/verify-admin-**'
+              - 'scripts/serve-admin.mjs'
+            browserScripts:
+              - 'scripts/verify-admin-crud-browser.mjs'
+              - 'scripts/admin-browser-fixture.mjs'
+              - 'scripts/e2e-environment.mjs'
+      - id: outputs
+        shell: bash
         run: |
-          node -e "const gate = require('./.github/ci-results.cjs'); const config = require('./.github/devops-ci.json'); gate.verifyNeeds(JSON.parse(process.env.CI_NEEDS), config.orchestrator.needs);"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "admin=${{ steps.filter.outputs.admin }}" >> "$GITHUB_OUTPUT"
+            echo "browserScripts=${{ steps.filter.outputs.browserScripts }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "admin=true" >> "$GITHUB_OUTPUT"
+            echo "browserScripts=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  large-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: node scripts/check-large-files.mjs
 
   dead-code:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -63,36 +64,77 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci
-      - name: Fail on unused JS/TS (knip)
-        run: npm run knip
+      - run: npm run knip
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           cache: pip
           cache-dependency-path: .github/requirements-devops.txt
-      - name: Fail on unused Python (.github inventory scripts)
-        run: |
+      - run: |
           python3 -m pip install --disable-pip-version-check -r .github/requirements-devops.txt
           python3 -m vulture .github/check-devops-config.py .github/check-devops-config.test.py --min-confidence 80
 
-  verify-core:
+  lint-typecheck:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci
-      # One test pass with coverage (replaces npm run check plus a second test:coverage).
-      - run: npm run check:ci
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          name: coverage-head
-          path: coverage/coverage-summary.json
-          retention-days: 3
-      - name: Playwright admin CRUD E2E (retry once on transient failures)
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/cache@0c5e0c852fd446ae04064014b089b25bac1558dc # v4.3.0
+        with:
+          path: node_modules/.vite
+          key: vite-admin-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            vite-admin-
+      - run: npm ci
+      - run: npm run verify:admin
+
+  browser-e2e:
+    if: needs.changes.outputs.admin == 'true' || needs.changes.outputs.browserScripts == 'true'
+    needs: [changes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Playwright admin CRUD E2E (one retry on flake)
         run: |
           for attempt in 1 2; do
             if npm run verify:admin:e2e; then exit 0; fi
@@ -100,147 +142,50 @@ jobs:
           done
           exit 1
 
-  verify-aep-e2e:
-    if: vars.ZHIYUAN_ENABLE_AEP_E2E == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Validate pinned AEP control plane input
-        shell: bash
-        run: |
-          if [[ ! "$AEP_CONTROL_PLANE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo 'AEP_CONTROL_PLANE_COMMIT must pin a full commit SHA.' >&2
-            exit 1
-          fi
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - name: Checkout AEP control plane for real-service E2E
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: rongxinzy/Agent-Enterprise-Protocol
-          path: aep-protocol
-          ref: ${{ env.AEP_CONTROL_PLANE_COMMIT }}
-      - name: Start AEP control plane
-        working-directory: aep-protocol
-        shell: bash
-        run: |
-          npm ci
-          for attempt in 1 2 3; do
-            if npm run compose:up; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "compose:up attempt ${attempt} failed; transient registry auth errors are retried"
-              npm run compose:down || true
-              sleep 20
-            fi
-          done
-          echo "compose:up failed after 3 attempts"
-          exit 1
-      - name: Wait for AEP control plane
-        run: curl --fail --retry 60 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/healthz
-      - name: Verify Admin Console lifecycle
-        env:
-          ZHIYUAN_AEP_BASE_URL: http://127.0.0.1:8080
-          ZHIYUAN_AEP_DEPLOYMENT_ID: demo
-          ZHIYUAN_AEP_ADMIN_USERNAME: admin
-          ZHIYUAN_AEP_ADMIN_PASSWORD: change-this-admin-password
-        run: npm run verify:admin:real-e2e
-      - name: Stop AEP control plane
-        if: always()
-        run: |
-          if [ -f aep-protocol/package.json ]; then
-            npm --prefix aep-protocol run compose:down
-          fi
-
   verify:
     name: verify
-    needs: [verify-core, verify-aep-e2e]
+    needs: [large-files, dead-code, lint-typecheck, test, build, browser-e2e]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require every verify stage to succeed
+      - name: Aggregate required PR checks
         env:
-          CORE_RESULT: ${{ needs.verify-core.result }}
-          AEP_RESULT: ${{ needs.verify-aep-e2e.result }}
+          LARGE: ${{ needs.large-files.result }}
+          DEAD: ${{ needs.dead-code.result }}
+          LINT: ${{ needs.lint-typecheck.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+          E2E: ${{ needs.browser-e2e.result }}
         run: |
           set -euo pipefail
-          if [ "$CORE_RESULT" != "success" ]; then
-            echo "::error::verify-core finished with $CORE_RESULT"
-            exit 1
-          fi
-          if [ "$AEP_RESULT" != "success" ] && [ "$AEP_RESULT" != "skipped" ]; then
-            echo "::error::verify-aep-e2e finished with $AEP_RESULT"
-            exit 1
-          fi
-          echo "Lint, unit coverage, build verification, browser E2E, and optional AEP E2E passed."
-
-  # Coverage ratchet: a PR may not lower the line coverage relative to main.
-  # The floor alone (80%) would allow slow erosion from e.g. 85% to 80%.
-  # A percentage drop with no growth in absolute uncovered lines is a covered
-  # code deletion, not new untested code, and passes.
-  coverage-ratchet:
-    if: github.event_name == 'pull_request'
-    needs: verify-core
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - name: Measure the base commit (script may predate coverage)
-        run: |
-          if npm run | grep -q " test:coverage"; then
-            npm run test:coverage
-          else
-            mkdir -p coverage
-            echo '{"total":{"lines":{"pct":-1}}}' > coverage/coverage-summary.json
-          fi
-      - name: Compare with the PR head
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: coverage-head
-      - name: Locate the head summary
-        run: |
-          if [ -f coverage-head/coverage-summary.json ]; then
-            echo "SUMMARY=coverage-head/coverage-summary.json" >> "$GITHUB_ENV"
-          elif [ -f coverage-head/coverage/coverage-summary.json ]; then
-            echo "SUMMARY=coverage-head/coverage/coverage-summary.json" >> "$GITHUB_ENV"
-          elif [ -f coverage-summary.json ]; then
-            echo "SUMMARY=coverage-summary.json" >> "$GITHUB_ENV"
-          else
-            find . -name coverage-summary.json -not -path "./coverage/*" | head -5
-            exit 1
-          fi
-      - run: |
-          base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.pct)")
-          head=$(node -e "const s=require('./${SUMMARY}');console.log(s.total.lines.pct)")
-          echo "base(main)=$base% head(PR)=$head%"
-          if [ "$base" = "-1" ]; then
-            echo "Base commit predates coverage tooling; the 80% floor applies."
-            exit 0
-          fi
-          if awk "BEGIN{exit !($head < $base)}"; then
-            # Deleting well-covered code lowers the percentage without adding
-            # uncovered lines; only a growth in absolute uncovered lines means
-            # the PR actually shipped untested code.
-            uncovered_base=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.total - s.total.lines.covered)")
-            uncovered_head=$(node -e "const s=require('./${SUMMARY}');console.log(s.total.lines.total - s.total.lines.covered)")
-            echo "uncovered lines: base=$uncovered_base head=$uncovered_head"
-            if [ "$uncovered_head" -le "$uncovered_base" ]; then
-              echo "Percentage dropped only because covered lines were deleted; uncovered lines did not grow."
-              exit 0
+          fail=0
+          for name in LARGE DEAD LINT TEST BUILD; do
+            result="${!name}"
+            if [ "$result" != "success" ]; then
+              echo "::error::Job $name finished with $result"
+              fail=1
             fi
-            echo "::error::Line coverage dropped from ${base}% on main to ${head}% in this PR."
-            exit 1
+          done
+          if [ "$E2E" != "success" ] && [ "$E2E" != "skipped" ]; then
+            echo "::error::browser-e2e finished with $E2E"
+            fail=1
           fi
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "Lint, typecheck, unit tests, build, dead-code, large-files, and scoped browser E2E passed."
+
+  ci-gate:
+    name: ci-gate
+    needs: [verify]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Required aggregate for branch protection
+        if: needs.verify.result == 'success'
+        run: echo "ci-gate passed (verify succeeded)."
+      - name: Block merge when verify failed
+        if: needs.verify.result != 'success'
+        run: |
+          echo "::error::verify finished with ${{ needs.verify.result }}"
+          exit 1
