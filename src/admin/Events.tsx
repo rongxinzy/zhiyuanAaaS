@@ -879,8 +879,12 @@ function OperationLog({ client, directory }: TabProps) {
       )}
       <Table
         loading={loading}
-        rowKey={(row) => row.cursor}
-        dataSource={[...rows]}
+        rowKey="key"
+        dataSource={
+          // Pages only append within a query. Keep reported rows distinct even
+          // when an older service repeats a cursor and timestamp.
+          rows.map((row, index) => ({ ...row, key: `${row.cursor}:${index}` }))
+        }
         pagination={false}
         scroll={{ x: 880 }}
         locale={{

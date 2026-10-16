@@ -658,11 +658,24 @@ describe('read-only operations audit', () => {
     expect(await screen.findByText('当前条件下暂无记录')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('用户'), { target: { value: '张三' } });
-    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
-    expect(await screen.findByText('当前条件: 用户: zhangsan')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
-    await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ limit: 50 }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    });
+    expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ actorUserId: 'user-a', limit: 50 });
+    expect(screen.getByText('当前条件: 用户: zhangsan')).toBeInTheDocument();
+    // The role/name query inside the empty table spends seconds computing
+    // jsdom styles under V8 coverage. Click the same action by its visible text.
+    await act(async () => {
+      fireEvent.click(screen.getByText('清除筛选'));
+    });
+    expect(client.searchAdminAudit.mock.calls).toEqual([
+      [{ limit: 50 }],
+      [{ actorUserId: 'user-a', limit: 50 }],
+      [{ limit: 50 }],
+    ]);
+    expect(screen.getByLabelText('用户')).toHaveValue('');
     expect(screen.queryByText('当前条件: 用户: zhangsan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
   });
 
   test('degrades to a not-connected state when the endpoint is missing', async () => {
@@ -720,19 +733,69 @@ describe('read-only operations audit', () => {
 
   test('keeps the first-page window when paging through the default range', async () => {
     const client = fixture();
-    client.searchAdminAudit.mockResolvedValue(auditPage({ nextCursor: '51' }));
+    const timeRange = { after: '2026-10-08T00:00:00Z', before: '2026-10-15T00:00:00Z' };
+    client.searchAdminAudit
+      .mockResolvedValueOnce(auditPage({ nextCursor: '51', timeRange }))
+      .mockResolvedValueOnce(
+        auditPage({
+          items: [auditRow({ cursor: '8', action: 'model.create' })],
+          nextCursor: '41',
+          timeRange: { after: '2026-10-09T00:00:00Z', before: '2026-10-16T00:00:00Z' },
+        }),
+      )
+      .mockResolvedValueOnce(auditPage({ items: [auditRow({ cursor: '7', action: 'model.delete' })], timeRange }));
     render(<Events client={client as never} identity={administratorIdentity} />);
     fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
     await screen.findByText('模型更新');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    });
+    await screen.findByText('模型创建');
+    await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /加载更多/ }));
+    });
+    await screen.findByText('模型删除');
+    // 后续每一页都携带首屏的上下界，不能采用后续响应中漂移的窗口。
+    const bounds = { createdAfter: timeRange.after, createdBefore: timeRange.before };
+    expect(client.searchAdminAudit.mock.calls).toEqual([
+      [{ limit: 50 }],
+      [{ ...bounds, cursor: '51', limit: 50 }],
+      [{ ...bounds, cursor: '41', limit: 50 }],
+    ]);
+  });
+
+  test('keeps operation rows distinct when cursors and timestamps repeat across pages', async () => {
+    const client = fixture();
+    client.searchAdminAudit
+      .mockResolvedValueOnce(
+        auditPage({
+          items: [auditRow(), auditRow({ action: 'model.create', resourceId: 'm2' })],
+          nextCursor: '51',
+        }),
+      )
+      .mockResolvedValueOnce(
+        auditPage({
+          items: [
+            auditRow({ action: 'credential.rotate', resourceType: 'credential', resourceId: 'c1' }),
+            auditRow({ action: 'model.delete', createdAt: '2026-10-13T00:00:00Z' }),
+          ],
+        }),
+      );
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    await screen.findByText('模型更新');
+    const firstRow = screen.getByText('模型更新').closest('tr')!;
+    const firstKey = firstRow.dataset.rowKey;
     fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    // 第二页显式携带首屏的生效下界，服务端不再重算 now()-7d。
-    await waitFor(() =>
-      expect(client.searchAdminAudit).toHaveBeenLastCalledWith({
-        cursor: '51',
-        limit: 50,
-        createdAfter: '2026-10-08T00:00:00Z',
-      }),
+    await screen.findByText('凭据轮换');
+    const renderedRows = ['模型更新', '模型创建', '凭据轮换', '模型删除'].map(
+      (action) => screen.getByText(action).closest('tr')!,
     );
+    expect(new Set(renderedRows.map((row) => row.dataset.rowKey)).size).toBe(4);
+    // Appending a page must preserve the identity of rows already displayed.
+    expect(renderedRows[0]).toBe(firstRow);
+    expect(renderedRows[0]?.dataset.rowKey).toBe(firstKey);
   });
 
   test('carries an explicit range into later pages', async () => {

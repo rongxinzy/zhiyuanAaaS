@@ -156,6 +156,31 @@ export interface AdminSkillVersion {
   readonly createdAt?: string;
 }
 
+export interface AdminSkillInstallation {
+  readonly userId: string;
+  readonly state: 'missing' | 'unreported';
+  readonly revision?: string;
+  readonly reportedAt?: string;
+  readonly itemStatus?: string;
+}
+
+export interface AdminSkillInstallationSummary {
+  readonly granted: number;
+  readonly reported: number;
+  readonly installed: number;
+  readonly missing: number;
+  readonly unreported: number;
+  readonly latestReportedAt: string | null;
+}
+
+/** What Agents last reported about one Skill: counts plus granted users that need attention. */
+export interface AdminSkillInstallations {
+  readonly skillId: string;
+  readonly summary: AdminSkillInstallationSummary;
+  readonly items: readonly AdminSkillInstallation[];
+  readonly truncated: boolean;
+}
+
 export interface AdminSkillAssignment {
   readonly id: string;
   readonly skillId: string;
@@ -779,6 +804,17 @@ export class AdminConsoleClient {
       path: `/aep/v1/admin/skills/${segment(skillId)}${force ? '?force=true' : ''}`,
       responseType: 'empty',
     });
+  }
+
+  // The endpoint is newer than the pinned SDK package, so it goes through the
+  // console's own request path (same as deleteSkill).
+  async skillInstallations(skillId: string): Promise<AdminSkillInstallations> {
+    return parseSkillInstallations(
+      await this.#request<JsonObject>(this.#requireClient(), {
+        method: HttpMethod.Get,
+        path: `/aep/v1/admin/skills/${segment(skillId)}/installations`,
+      }),
+    );
   }
 
   async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {
@@ -1858,6 +1894,46 @@ function listCount(value: unknown): number {
     return (value as { skills: unknown[] }).skills.length;
   }
   return 0;
+}
+
+function parseSkillInstallations(value: unknown): AdminSkillInstallations {
+  const record = isRecord(value) ? value : {};
+  const summary = isRecord(record.summary) ? record.summary : {};
+  const count = (key: string): number => (typeof summary[key] === 'number' ? (summary[key] as number) : 0);
+  const items = Array.isArray(record.items)
+    ? record.items.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const userId = nonEmptyString(item.userId);
+        const state =
+          item.state === 'missing' || item.state === 'unreported' ? (item.state as 'missing' | 'unreported') : null;
+        if (!userId || !state) return [];
+        const revision = nonEmptyString(item.revision);
+        const reportedAt = nonEmptyString(item.reportedAt);
+        const itemStatus = nonEmptyString(item.itemStatus);
+        return [
+          {
+            userId,
+            state,
+            ...(revision ? { revision } : {}),
+            ...(reportedAt ? { reportedAt } : {}),
+            ...(itemStatus ? { itemStatus } : {}),
+          },
+        ];
+      })
+    : [];
+  return {
+    skillId: nonEmptyString(record.skillId) ?? '',
+    summary: {
+      granted: count('granted'),
+      reported: count('reported'),
+      installed: count('installed'),
+      missing: count('missing'),
+      unreported: count('unreported'),
+      latestReportedAt: nonEmptyString(summary.latestReportedAt) ?? null,
+    },
+    items,
+    truncated: record.truncated === true,
+  };
 }
 
 function parseSkills(value: unknown): AdminSkill[] {
