@@ -3499,7 +3499,7 @@ function SkillsSection({
     {
       title: t('skill'),
       key: 'skill',
-      render: (_, skill) => <NameCell name={skill.name} detail={skill.description || skill.id} />,
+      render: (_, skill) => <NameCell name={skill.name} detail={skill.id} />,
     },
     {
       title: rc.skillPurpose,
