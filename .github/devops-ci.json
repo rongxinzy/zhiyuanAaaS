@@ -7,8 +7,8 @@
       "codeql": ".github/workflows/codeql.yml",
       "gate-tests": ".github/workflows/devops-gate-tests.yml"
     },
-    "localNeeds": ["verify", "coverage-ratchet"],
-    "needs": ["verify", "coverage-ratchet", "codeql", "gate-tests"]
+    "localNeeds": ["verify", "coverage-ratchet", "dead-code"],
+    "needs": ["verify", "coverage-ratchet", "dead-code", "codeql", "gate-tests"]
   },
   "workflows": [
     {

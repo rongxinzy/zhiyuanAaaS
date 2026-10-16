@@ -33,8 +33,9 @@ Admin Console's required `verify` name. CodeQL, gate regression tests and AEP
 security checks are called concurrently as reusable workflows. They retain
 their own scheduled/main/manual triggers, but no longer start independently
 on each PR. A new PR head triggers no initial privileged publisher; only
-the parent completion triggers publication. Title/body/base edits and manual
-recovery still revalidate current metadata.
+the parent completion triggers publication. Title/body edits refresh the gate
+snapshot, but the gate no longer validates PR templates or titles—only workflow
+results and file-list completeness. Manual recovery still revalidates the open PR.
 
 The final read-only `ci-results` job depends on all required caller results.
 AEP's existing `release-gate` continues to check its full business/E2E DAG,
@@ -49,8 +50,8 @@ through the Checks API, separately from the short `refresh-ci-gate` helper job:
 | Current PR state | Required `ci-gate` result |
 | --- | --- |
 | An applicable workflow is missing, queued or running | Queued, without a passing conclusion |
-| All applicable workflows and PR metadata pass | Success |
-| Metadata validation or an applicable workflow fails/cancels/times out/skips | Failure |
+| All applicable workflows pass | Success |
+| An applicable workflow fails/cancels/times out/skips, or the file list is incomplete | Failure |
 | Head, base branch, metadata or open state changes during aggregation | Cancelled snapshot; the new event evaluates the current state |
 
 The helper takes one API snapshot and exits. It never sleeps while another
