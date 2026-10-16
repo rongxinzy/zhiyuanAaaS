@@ -30,6 +30,7 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { EmployeeChannelsPanel } from './Channels.js';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
 import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
 import { employeesT } from './employees-copy.js';
@@ -1339,6 +1340,7 @@ function EmployeeDetail({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   // The real web entry for this employee on the portal host. It never
   // contains an access token — sessions are minted by the portal itself.
   const entryURL = `${botUIBaseURL()}/#/emp/${encodeURIComponent(employee.name)}`;
@@ -1503,11 +1505,11 @@ function EmployeeDetail({
                       ),
                     },
                     {
-                      key: 'wecom',
-                      label: t('publishWecom'),
-                      children: employee.channels?.wecom
-                        ? `${t('publishChannelOn')}（${employee.channels.wecomName ?? t('publishChannelUnknownName')}）`
-                        : t('publishChannelOff'),
+                      key: 'channels',
+                      label: translate(language, 'channelTitle'),
+                      children: (
+                        <Button onClick={() => setChannelsOpen(true)}>{translate(language, 'channelManage')}</Button>
+                      ),
                     },
                   ]}
                 />
@@ -1530,6 +1532,15 @@ function EmployeeDetail({
       />
 
       <DeleteBlockedModal employee={deleting ? employee : null} onClose={() => setDeleting(false)} />
+      <Drawer
+        open={channelsOpen}
+        title={translate(language, 'channelManage')}
+        onClose={() => setChannelsOpen(false)}
+        width={960}
+        destroyOnHidden
+      >
+        <EmployeeChannelsPanel portal={portal} employeeName={employee.name} />
+      </Drawer>
       <EditEmployeeModal
         employee={employee}
         client={client}
