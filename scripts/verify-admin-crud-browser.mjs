@@ -188,7 +188,7 @@ try {
   await grantUser.fill('E2E 授权用户');
   await page
     .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
-    .filter({ hasText: 'E2E 授权用户 · user-e2e' })
+    .filter({ hasText: /^E2E 授权用户$/ })
     .click();
   assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/contacts'));
   assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/departments'));
@@ -201,7 +201,12 @@ try {
     true,
   );
   assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
-  assert.ok(state.requests.some((item) => item.method === 'PUT' && item.path === revokePath));
+  assert.deepEqual(state.requests.find((item) => item.method === 'PUT' && item.path === revokePath)?.body, {
+    grants: [
+      { type: 'user', id: 'user-1' },
+      { type: 'user', id: 'user-e2e' },
+    ],
+  });
   expectedFailurePaths.add(revokePath);
   state.failNext = `PUT ${revokePath}`;
   await grants.getByRole('button', { name: '撤销全部', exact: true }).click();

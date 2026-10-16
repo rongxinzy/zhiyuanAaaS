@@ -9,6 +9,12 @@ import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
+// 主体下拉的搜索口径：显示名和 ID 都命中（ID 仍是服务端唯一认得的键，
+// 只是不再占标签位），空输入视为不过滤。
+const subjectMatches = (input: string, candidate: unknown): boolean =>
+  input.trim() === '' ||
+  (typeof candidate === 'string' && candidate.toLowerCase().includes(input.trim().toLowerCase()));
+
 type GrantSubject = { readonly id: string; readonly name: string };
 
 // The picker's candidate lists plus how much they can be trusted. `complete`
@@ -35,8 +41,8 @@ export function KnowledgeGrants({
   const [grants, setGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
   const [subjects, setSubjects] = useState<GrantSubjects | null>(null);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
-  const [userDraft, setUserDraft] = useState<string | null>(null);
-  const [teamDraft, setTeamDraft] = useState<string | null>(null);
+  const [userDrafts, setUserDrafts] = useState<string[]>([]);
+  const [teamDrafts, setTeamDrafts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,8 +129,8 @@ export function KnowledgeGrants({
     setLoading(true);
     setSaving(false);
     setGrants([]);
-    setUserDraft(null);
-    setTeamDraft(null);
+    setUserDrafts([]);
+    setTeamDrafts([]);
     setError(null);
     setBlocked(false);
     void load(controller.signal);
@@ -140,31 +146,46 @@ export function KnowledgeGrants({
   // 编辑门禁：读取/保存还没就绪、或上次写结果未知时，只允许看。
   const editLocked = disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId;
 
-  const addGrant = (type: 'user' | 'team') => {
+  // 与技能授权一致：一次可以挑多个主体再加。挑中的 id 全部并入待保存列表，
+  // 已经在列表里的直接跳过，避免出现重复行；同一个 id 只会有一行。
+  const addGrants = (type: ManagedKnowledgeGrant['type']) => {
     if (editLocked) return;
-    const id = (type === 'user' ? userDraft : teamDraft)?.trim();
-    if (!id || grants.some((grant) => grant.type === type && grant.id === id)) return;
-    setGrants((current) => [...current, { type, id }]);
-    if (type === 'user') setUserDraft(null);
-    else setTeamDraft(null);
+    const drafts = type === 'user' ? userDrafts : teamDrafts;
+    if (drafts.length === 0) return;
+    setGrants((current) => {
+      const existing = new Set(current.map((grant) => `${grant.type}:${grant.id}`));
+      const additions = drafts.filter((id) => !existing.has(`${type}:${id}`)).map((id) => ({ type, id }));
+      return additions.length > 0 ? [...current, ...additions] : current;
+    });
+    if (type === 'user') setUserDrafts([]);
+    else setTeamDrafts([]);
   };
 
   const grantOptions = useMemo(() => {
     const granted = new Set(grants.map((grant) => `${grant.type}:${grant.id}`));
-    // 标签写「显示名 · ID」：Select 的搜索按 label 过滤，名称和 ID 两种输入
-    // 都能命中，同时把服务端唯一认得的 ID 摊开给管理员看。已在授权里的主体直接
-    // 置灰，从选项层面就杜绝重复添加。
+    // 标签只写显示名：ID 是服务端唯一认得的键，但管理员挑人时看的是名字，
+    // 所以 ID 不占标签位（授权表里仍有 ID 列）。名字重名时，选之前分不出是谁，
+    // 就只给重名的那些补 ID 前 8 位；搜索把 value（完整 ID）也纳入匹配，想按
+    // ID 找人照样能直接粘贴 ID。已在授权里的主体直接置灰，从选项层面杜绝重复添加。
+    const withLabels = (list: readonly GrantSubject[], type: ManagedKnowledgeGrant['type']) => {
+      const nameCounts = new Map<string, number>();
+      for (const subject of list) {
+        const label = subject.name ? subject.name : subject.id;
+        nameCounts.set(label, (nameCounts.get(label) ?? 0) + 1);
+      }
+      return list.map((subject) => {
+        const label = subject.name ? subject.name : subject.id;
+        const ambiguous = (nameCounts.get(label) ?? 0) > 1;
+        return {
+          value: subject.id,
+          label: ambiguous ? `${label} · ${subject.id.slice(0, 8)}` : label,
+          disabled: granted.has(`${type}:${subject.id}`),
+        };
+      });
+    };
     return {
-      users: (subjects?.users ?? []).map((subject) => ({
-        value: subject.id,
-        label: subject.name ? `${subject.name} · ${subject.id}` : subject.id,
-        disabled: granted.has(`user:${subject.id}`),
-      })),
-      teams: (subjects?.teams ?? []).map((subject) => ({
-        value: subject.id,
-        label: subject.name ? `${subject.name} · ${subject.id}` : subject.id,
-        disabled: granted.has(`team:${subject.id}`),
-      })),
+      users: withLabels(subjects?.users ?? [], 'user'),
+      teams: withLabels(subjects?.teams ?? [], 'team'),
     };
   }, [grants, subjects]);
 
@@ -301,34 +322,42 @@ export function KnowledgeGrants({
           <Space wrap>
             <Select
               aria-label={tr('knowledgeGrantUser')}
-              showSearch={{ optionFilterProp: 'label' }}
+              mode="multiple"
+              showSearch={{
+                filterOption: (input, option) =>
+                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+              }}
               allowClear
               loading={subjectsLoading}
-              value={userDraft ?? undefined}
-              onChange={(value: string | undefined) => setUserDraft(value ?? null)}
+              value={userDrafts}
+              onChange={setUserDrafts}
               options={grantOptions.users}
               placeholder={tr('knowledgeGrantUserSelect')}
               notFoundContent={tr('knowledgeGrantNoUserMatch')}
               disabled={editLocked || subjectsLoading}
               style={{ minWidth: 240 }}
             />
-            <Button disabled={editLocked || !userDraft} onClick={() => addGrant('user')}>
+            <Button disabled={editLocked || userDrafts.length === 0} onClick={() => addGrants('user')}>
               {tr('knowledgeGrantAddUser')}
             </Button>
             <Select
               aria-label={tr('knowledgeGrantTeam')}
-              showSearch={{ optionFilterProp: 'label' }}
+              mode="multiple"
+              showSearch={{
+                filterOption: (input, option) =>
+                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+              }}
               allowClear
               loading={subjectsLoading}
-              value={teamDraft ?? undefined}
-              onChange={(value: string | undefined) => setTeamDraft(value ?? null)}
+              value={teamDrafts}
+              onChange={setTeamDrafts}
               options={grantOptions.teams}
               placeholder={tr('knowledgeGrantTeamSelect')}
               notFoundContent={tr('knowledgeGrantNoTeamMatch')}
               disabled={editLocked || subjectsLoading}
               style={{ minWidth: 240 }}
             />
-            <Button disabled={editLocked || !teamDraft} onClick={() => addGrant('team')}>
+            <Button disabled={editLocked || teamDrafts.length === 0} onClick={() => addGrants('team')}>
               {tr('knowledgeGrantAddTeam')}
             </Button>
           </Space>
