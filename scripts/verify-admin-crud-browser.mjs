@@ -169,6 +169,34 @@ try {
   );
   checks.push('native managed knowledge registry and create operation');
   // 标签管理界面已按设计移除；运营（文件夹 + FAQ）现在位于文档管理页签内，不再是独立页签。
+  assert.equal(
+    await page.locator('main [data-icon="book"]').count(),
+    0,
+    'Knowledge heading must not have a decorative book icon',
+  );
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-detail-light.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.getByRole('combobox', { name: '外观', exact: true }).click();
+  await page.getByText('深色', { exact: true }).click();
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-detail-dark.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.setViewportSize({ width: 430, height: 900 });
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-detail-narrow.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('combobox', { name: '外观', exact: true }).click();
+  await page.getByText('浅色', { exact: true }).click();
+  checks.push('knowledge heading without decorative icon; light/dark and narrow layout');
   const knowledgeOperations = page.getByRole('region', { name: '知识运营', exact: true });
   await page.getByRole('tab', { name: '访问与关联', exact: true }).click();
   const grantRegion = page.getByRole('region', { name: '知识库访问授权', exact: true });
@@ -217,11 +245,11 @@ try {
   await grants.waitFor({ state: 'hidden' });
 
   await page.getByRole('tab', { name: '检索测试', exact: true }).click();
-  const retrieval = page.getByRole('region', { name: '检索与来源', exact: true });
+  const retrieval = page.getByRole('region', { name: '验证知识是否找得到', exact: true });
   await retrieval.locator('.ant-select').first().click();
   await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
-  await retrieval.getByLabel('输入知识检索问题').fill('退款期限');
-  await retrieval.getByRole('button', { name: '检索', exact: true }).click();
+  await retrieval.getByRole('textbox').fill('退款期限');
+  await retrieval.getByRole('button', { name: '开始检索', exact: true }).click();
   await retrieval.getByRole('button', { name: '退款政策', exact: true }).waitFor();
   await retrieval.getByRole('button', { name: '退款政策', exact: true }).click();
   await retrieval.getByText('refund-policy.pdf · pdf', { exact: true }).waitFor();

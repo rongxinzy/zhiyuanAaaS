@@ -255,7 +255,9 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
                 <Typography.Text type="secondary">
                   {tr('knowledgeMatchedChunk')}: {sourceHit.source.chunk_id}
                 </Typography.Text>
-                <Typography.Paragraph>{sourceHit.content}</Typography.Paragraph>
+                {!source.chunks.some(
+                  (chunk) => chunk.id === sourceHit.source.chunk_id && chunk.content === sourceHit.content,
+                ) && <Typography.Paragraph>{sourceHit.content}</Typography.Paragraph>}
                 <Typography.Text type="secondary">
                   {source.document.file_name || source.document.id} · {source.document.file_type || '—'}
                 </Typography.Text>

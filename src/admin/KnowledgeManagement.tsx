@@ -504,6 +504,7 @@ export function KnowledgeManagement({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [fileOutcomeUncertain, setFileOutcomeUncertain] = useState(false);
   const [importKind, setImportKind] = useState<'url' | 'manual' | null>(null);
   const [importing, setImporting] = useState(false);
   // 进行中的资料级动作按「行」记账（预览/下载/分块/重解析/启停）。单个全局 id 会在切库、
@@ -719,6 +720,13 @@ export function KnowledgeManagement({
     // 也会让新库的行显示上一个库残留的忙碌/锁状态。
     setFolderQueue([]);
     setDocumentActions((current) => (current.length === 0 ? current : []));
+    setFiles([]);
+    setFileOutcomeUncertain(false);
+    setFolderManagerOpen(false);
+    setMaterialModal(null);
+    setFolderPath(null);
+    setFolderTree(null);
+    setPage(1);
   }, [selectedId]);
 
   useEffect(() => {
@@ -1038,7 +1046,7 @@ export function KnowledgeManagement({
   const uploadFile = async () => {
     const entry = files[0];
     const file = entry?.originFileObj ?? (entry instanceof File ? entry : undefined);
-    if (!file || !selectedId || writeBlocked || uploading) return false;
+    if (!file || !selectedId || writeBlocked || uploading || fileOutcomeUncertain) return false;
     if (file.size > 63 * 1024 * 1024) {
       setWriteNotice(t('fileLimit'));
       return false;
@@ -1062,6 +1070,7 @@ export function KnowledgeManagement({
       setWriteNotice(
         `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
       );
+      if (isUncertain(cause)) setFileOutcomeUncertain(true);
       return false;
     } finally {
       setUploading(false);
@@ -1520,33 +1529,41 @@ export function KnowledgeManagement({
       render: (_: unknown, row: ManagedKnowledgeDocument) => {
         const completed = row.parse_status === 'completed';
         const disabled = completed ? row.enable_status === 'disabled' : row.manual_disabled === true;
-        if (disabled) {
-          return <Tag title={row.enable_status}>{t('enableDisabled')}</Tag>;
-        }
-        if (completed) {
-          return <Tag color="success">{t('statusSearchable')}</Tag>;
-        }
-        if (row.parse_status === 'failed') {
-          return (
-            <Space orientation="vertical" size={2}>
-              <Tag color="error">{t('statusFailedShort')}</Tag>
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0 }}
-                onClick={() => void inspectDocument(row, 'spans')}
-              >
-                {t('viewReason')}
-              </Button>
-            </Space>
-          );
-        }
         return (
           <Space orientation="vertical" size={2}>
-            <Tag color="processing">{t('processing')}</Tag>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('parsingHint')}
-            </Typography.Text>
+            <Tag color={completed ? 'success' : row.parse_status === 'failed' ? 'error' : 'processing'}>
+              {pollable.has(row.parse_status) || ['completed', 'failed', 'cancelled'].includes(row.parse_status)
+                ? t(row.parse_status as CopyKey)
+                : t('unknown')}
+            </Tag>
+            <Space size={4}>
+              <Typography.Text type="secondary">
+                {disabled
+                  ? t('enableDisabled')
+                  : row.enable_status === 'enabled'
+                    ? t('enableEnabled')
+                    : t('notStatistic')}
+              </Typography.Text>
+              <Switch
+                checked={completed ? row.enable_status === 'enabled' : row.manual_disabled === true}
+                aria-label={
+                  completed
+                    ? row.enable_status === 'enabled'
+                      ? t('disableDocument')
+                      : t('enableDocument')
+                    : t('keepDisabledAfterParse')
+                }
+                loading={documentActionBusy(row.id)}
+                disabled={
+                  writeBlocked ||
+                  uploading ||
+                  importing ||
+                  documentActionBusy(row.id) ||
+                  (!completed && (row.manual_disabled === undefined || row.manual_disabled))
+                }
+                onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
+              />
+            </Space>
           </Space>
         );
       },
@@ -1584,7 +1601,13 @@ export function KnowledgeManagement({
         ];
         return (
           <Space size={4}>
-            <Button type="link" size="small" disabled={actionBusy} onClick={() => void inspectDocument(row, 'spans')}>
+            <Button
+              type="link"
+              size="small"
+              aria-label={t('knowledgePreview')}
+              disabled={actionBusy}
+              onClick={() => void openDocumentFile(row, 'preview')}
+            >
               {t('viewDocument')}
             </Button>
             <Dropdown
@@ -1801,7 +1824,7 @@ export function KnowledgeManagement({
               }
             />
           )}
-          {writeNotice && (
+          {writeNotice && materialModal === null && (
             <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
           )}
 
@@ -1837,7 +1860,7 @@ export function KnowledgeManagement({
                     }
                   />
                 )}
-                {writeNotice && (
+                {writeNotice && materialModal === null && (
                   <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
                 )}
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1854,6 +1877,12 @@ export function KnowledgeManagement({
                           {selected.id}
                         </Typography.Text>
                       </div>
+                      <Space wrap>
+                        <Tag>{selected.type === 'faq' ? t('baseTypeFaq') : t('baseTypeDocument')}</Tag>
+                        <Typography.Text type="secondary">
+                          {readiness?.embeddingModel.name || readiness?.embeddingModel.id || t('notStatistic')}
+                        </Typography.Text>
+                      </Space>
                     </div>
                   </div>
                   <Space wrap>
@@ -2001,7 +2030,7 @@ export function KnowledgeManagement({
                                   />
                                 </Space>
                               </div>
-                              {folderQueue.length > 0 && (
+                              {folderQueue.length > 0 && materialModal === null && (
                                 <div
                                   className="flex flex-col gap-2 rounded-md border border-dashed p-3"
                                   style={{ borderColor: token.colorBorder }}
@@ -2306,7 +2335,9 @@ export function KnowledgeManagement({
         cancelText={t('cancel')}
         confirmLoading={materialModal === 'folder' ? folderUploading : uploading}
         okButtonProps={{
-          disabled: writeBlocked || (materialModal === 'folder' ? queuedFolderItems.length === 0 : files.length === 0),
+          disabled:
+            writeBlocked ||
+            (materialModal === 'folder' ? queuedFolderItems.length === 0 : files.length === 0 || fileOutcomeUncertain),
         }}
         onOk={() => {
           const closeOnSuccess = (succeeded: boolean) => {
@@ -2321,6 +2352,38 @@ export function KnowledgeManagement({
           <Typography.Text type="secondary">
             {t('uploadTargetFolder').replace('{path}', folderPath ?? t('uncategorized'))}
           </Typography.Text>
+          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
+          {materialModal === 'folder' && folderQueue.length > 0 && (
+            <>
+              {folderQueue.map((item) => (
+                <div key={item.key}>
+                  <Typography.Text>{item.label}</Typography.Text>{' '}
+                  <Tag>
+                    {item.status === 'uncertain'
+                      ? translate(ADMIN_LANGUAGE, 'knowledgeOutcomeUncertain')
+                      : item.status === 'accepted'
+                        ? t('folderAccepted')
+                        : item.status === 'failed'
+                          ? t('folderFailed')
+                          : item.status === 'uploading'
+                            ? t('folderUploading')
+                            : t('folderQueued')}
+                  </Tag>
+                  {item.detail && <Typography.Text type="secondary">{item.detail}</Typography.Text>}
+                </div>
+              ))}
+              <Button
+                disabled={writeBlocked || folderUploading || failedFolderItems.length === 0}
+                onClick={() => {
+                  void runFolderUpload(failedFolderItems).then((succeeded) => {
+                    if (succeeded) setMaterialModal(null);
+                  });
+                }}
+              >
+                {t('folderRetryFailed')}
+              </Button>
+            </>
+          )}
           {materialModal === 'folder' ? (
             <>
               <Upload
@@ -2345,7 +2408,10 @@ export function KnowledgeManagement({
               fileList={files}
               disabled={uploading || writeBlocked}
               beforeUpload={() => false}
-              onChange={(info) => setFiles(info.fileList.slice(-1))}
+              onChange={(info) => {
+                setFiles(info.fileList.slice(-1));
+                setFileOutcomeUncertain(false);
+              }}
               onRemove={() => {
                 setFiles([]);
                 return true;

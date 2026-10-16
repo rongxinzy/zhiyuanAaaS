@@ -124,11 +124,8 @@ function render(ui: ReactElement): ReturnType<typeof rtlRender> {
   );
 }
 
-// The detail page (Tabs + Descriptions + a folder tree + a summary strip + a row
-// menu) makes antd's cssinjs style computation noticeably heavier in jsdom, so the
-// tests that open a document Modal get an explicit budget instead of the default
-// 5 s. The detail page grew with the prototype alignment, and the CI runner is
-// slower than a workstation, so the budget covers the full-suite parallel run.
+// Bound asynchronous document operations; preview controls are located by their
+// explicit accessible label to avoid jsdom's expensive CSS visibility traversal.
 const TIMEOUT = 10000;
 
 const base: ManagedKnowledgeBase = {
@@ -297,7 +294,7 @@ describe('KnowledgeManagement component state', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
 
     expect(await screen.findByRole('heading', { name: 'Renamed research' })).toBeInTheDocument();
-    expect(screen.getAllByText('Updated details').some((element) => element.tagName === 'DIV')).toBe(true);
+    expect(screen.getByText('Updated details')).toBeInTheDocument();
     expect(portal.updateManagedKnowledgeBase).toHaveBeenCalledWith(base.id, {
       name: 'Renamed research',
       description: 'Updated details',
@@ -968,7 +965,7 @@ describe('KnowledgeManagement component state', () => {
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
       const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      fireEvent.click(rowUi().getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }));
       // 文本走内联渲染：内容出现、没有 iframe、也不用建 object URL。
       const body = await screen.findByText('original', undefined, { timeout: TIMEOUT });
       // 弹窗正文固定高度，不随文件长短跳动。
@@ -992,7 +989,12 @@ describe('KnowledgeManagement component state', () => {
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Manual')).toBeInTheDocument();
-      fireEvent.click(within(screen.getByText('Manual').closest('tr')!).getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        within(screen.getByText('Manual').closest('tr')!).getByLabelText(
+          translate(ADMIN_LANGUAGE, 'knowledgePreview'),
+          { selector: 'button' },
+        ),
+      );
       const frame = await screen.findByTitle('manual.pdf', undefined, { timeout: TIMEOUT });
       expect(frame).toHaveAttribute('src', 'blob:test-pdf');
       expect(frame).not.toHaveAttribute('sandbox');
@@ -1012,17 +1014,16 @@ describe('KnowledgeManagement component state', () => {
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
       const rowUi = () => within(screen.getByText('Lifecycle guide').closest('tr')!);
-      // 直接读模态里的 <pre>：整个页面树很大，findByText 每轮都要遍历全 DOM，会慢到几十秒。
+      // 在预览正文中核对缓存结果。
       const previewText = () => document.querySelector('.ant-modal pre')?.textContent ?? '';
-      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      fireEvent.click(rowUi().getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }));
       await waitFor(() => expect(previewText()).toBe('original'));
       // 再点一次同一条：命中缓存，不再走网络。
-      fireEvent.click(rowUi().getByRole('button', { name: /预览/ }));
+      fireEvent.click(rowUi().getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }));
       await waitFor(() => expect(previewText()).toBe('original'));
       expect(getFile).toHaveBeenCalledTimes(1);
     },
-    // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
-    TIMEOUT * 4,
+    TIMEOUT,
   );
 
   test(
@@ -1037,7 +1038,12 @@ describe('KnowledgeManagement component state', () => {
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Manual')).toBeInTheDocument();
-      fireEvent.click(within(screen.getByText('Manual').closest('tr')!).getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        within(screen.getByText('Manual').closest('tr')!).getByLabelText(
+          translate(ADMIN_LANGUAGE, 'knowledgePreview'),
+          { selector: 'button' },
+        ),
+      );
       expect(await screen.findByText(/未在框架中打开/, undefined, { timeout: TIMEOUT })).toBeInTheDocument();
       expect(screen.queryByTitle('manual.pdf')).not.toBeInTheDocument();
       expect(createObjectUrl).not.toHaveBeenCalled();
@@ -1062,7 +1068,12 @@ describe('KnowledgeManagement component state', () => {
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Lifecycle guide')).toBeInTheDocument();
-      fireEvent.click(within(screen.getByText('Lifecycle guide').closest('tr')!).getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        within(screen.getByText('Lifecycle guide').closest('tr')!).getByLabelText(
+          translate(ADMIN_LANGUAGE, 'knowledgePreview'),
+          { selector: 'button' },
+        ),
+      );
       await waitFor(() => expect(getFile).toHaveBeenCalledTimes(1));
       // 关闭弹窗：此时请求还在途。
       fireEvent.click(document.querySelector('.ant-modal-close')!);
@@ -1101,13 +1112,19 @@ describe('KnowledgeManagement component state', () => {
       const previewText = () => document.querySelector('.ant-modal pre')?.textContent ?? '';
       const rowUi = (name: string) => within(screen.getByText(name).closest('tr')!);
       // 先把 B 缓存下来。
-      fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        rowUi('Beta doc').getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }),
+      );
       await waitFor(() => expect(previewText()).toBe('beta-content'));
       // 再点 A：请求在途，弹窗先占位。
-      fireEvent.click(rowUi('Alpha doc').getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        rowUi('Alpha doc').getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }),
+      );
       await waitFor(() => expect(getFile).toHaveBeenCalledWith(docA.id, 'preview'));
       // 回到已缓存的 B。
-      fireEvent.click(rowUi('Beta doc').getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        rowUi('Beta doc').getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), { selector: 'button' }),
+      );
       await waitFor(() => expect(previewText()).toBe('beta-content'));
       // A 迟到：不能把 B 盖回去。
       await act(async () => {
@@ -1117,8 +1134,7 @@ describe('KnowledgeManagement component state', () => {
       // 结构断言，别在整棵大树上做文本查询。
       expect(previewText()).not.toContain('alpha-content');
     },
-    // 预览缓存这两个用例在 jsdom 下单个 45~70s（本地实测），CI 机器更慢，单独放宽。
-    TIMEOUT * 4,
+    TIMEOUT,
   );
 
   test(
@@ -1147,7 +1163,9 @@ describe('KnowledgeManagement component state', () => {
       const rowUi = () => within(screen.getByText('Manual').closest('tr')!);
       // 同一条资料连点两次：第一次在途，第二次先返回并占用缓存。
       // 两次点击放在同一个 act 里，避免第一次点击后行内按钮被置灰而吞掉第二次（真实双击同理）。
-      const previewButton = rowUi().getByRole('button', { name: /预览/ });
+      const previewButton = rowUi().getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), {
+        selector: 'button',
+      });
       await act(async () => {
         fireEvent.click(previewButton);
         fireEvent.click(previewButton);
@@ -1239,7 +1257,11 @@ describe('KnowledgeManagement component state', () => {
       });
       render(<KnowledgeManagement portal={portal} baseId={base.id} />);
       expect(await screen.findByText('Chart')).toBeInTheDocument();
-      fireEvent.click(within(screen.getByText('Chart').closest('tr')!).getByRole('button', { name: /预览/ }));
+      fireEvent.click(
+        within(screen.getByText('Chart').closest('tr')!).getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgePreview'), {
+          selector: 'button',
+        }),
+      );
       expect(await screen.findByAltText('chart.png', undefined, { timeout: TIMEOUT })).toHaveAttribute(
         'src',
         'blob:test-image',

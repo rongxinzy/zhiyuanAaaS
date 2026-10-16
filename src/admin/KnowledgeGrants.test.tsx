@@ -102,6 +102,19 @@ describe('KnowledgeGrants', () => {
     expect(navigate).toHaveBeenCalledOnce();
   });
 
+  test('does not label an unsaved removal as effective access after closing the editor', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: /移\s*除/ }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    const region = within(screen.getByRole('region', { name: tr('knowledgeGrants') }));
+    expect(region.getByText('user-1')).toBeInTheDocument();
+    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+  });
+
   test('blocks grant writes until the current base has loaded', async () => {
     let resolveGrants!: (value: { knowledge_base_id: string; tenant_id: string; grants: [] }) => void;
     const portal = makePortal({

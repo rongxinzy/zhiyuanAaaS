@@ -44,6 +44,7 @@ export function KnowledgeGrants({
   const { message } = App.useApp();
   const [modal, modalContext] = Modal.useModal();
   const [grants, setGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
+  const [savedGrants, setSavedGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
   const [subjects, setSubjects] = useState<GrantSubjects | null>(null);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [userDrafts, setUserDrafts] = useState<string[]>([]);
@@ -91,6 +92,7 @@ export function KnowledgeGrants({
           requestVersion === requestGeneration.current
         ) {
           setGrants(result.grants);
+          setSavedGrants(result.grants);
           setBlocked(false);
           setLoadedBaseId(base);
         }
@@ -153,6 +155,7 @@ export function KnowledgeGrants({
     setLoading(true);
     setSaving(false);
     setGrants([]);
+    setSavedGrants([]);
     setUserDrafts([]);
     setTeamDrafts([]);
     setError(null);
@@ -237,6 +240,7 @@ export function KnowledgeGrants({
       );
       if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
         setGrants(result.grants);
+        setSavedGrants(result.grants);
         setError(null);
         message.success(tr('knowledgeGrantsSaved'));
       }
@@ -309,7 +313,7 @@ export function KnowledgeGrants({
               {tr('knowledgeGrantEdit')}
             </Button>
           </div>
-          {error ? (
+          {error && !editorOpen ? (
             <Alert
               showIcon
               type="error"
@@ -324,7 +328,7 @@ export function KnowledgeGrants({
           ) : (
             <List
               loading={loading}
-              dataSource={[...grants]}
+              dataSource={[...savedGrants]}
               locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
               renderItem={(grant) => {
                 const name = subjectName(grant);
@@ -398,9 +402,25 @@ export function KnowledgeGrants({
         open={editorOpen}
         footer={null}
         onCancel={() => setEditorOpen(false)}
+        closable={!saving}
+        keyboard={!saving}
+        mask={{ closable: !saving }}
         width={720}
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
+          {error && (
+            <Alert
+              showIcon
+              type="error"
+              title={tr('knowledgeGrantsReadFailed')}
+              description={error}
+              action={
+                <Button size="small" onClick={() => void load()}>
+                  {tr('knowledgeRetryRead')}
+                </Button>
+              }
+            />
+          )}
           <Alert
             showIcon
             type="warning"
