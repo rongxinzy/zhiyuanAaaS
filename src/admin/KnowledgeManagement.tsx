@@ -2170,6 +2170,7 @@ export function KnowledgeManagement({
                           portal={portal}
                           baseId={selected.id}
                           disabled={writeBlocked || uploading}
+                          onOpenRetrieval={() => setDetailTab('retrieval')}
                         />
                       ),
                     },

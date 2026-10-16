@@ -1,4 +1,5 @@
-import { Alert, App, Button, Modal, Select, Space, Table, Tag, Typography } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
+import { Alert, App, Button, List, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -31,10 +32,12 @@ export function KnowledgeGrants({
   portal,
   baseId,
   disabled = false,
+  onOpenRetrieval,
 }: {
   readonly portal: PortalClient;
   readonly baseId: string;
   readonly disabled?: boolean;
+  readonly onOpenRetrieval?: () => void;
 }) {
   const { message } = App.useApp();
   const [modal, modalContext] = Modal.useModal();
@@ -48,6 +51,7 @@ export function KnowledgeGrants({
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [loadedBaseId, setLoadedBaseId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const baseGeneration = useRef(0);
   const requestGeneration = useRef(0);
   const subjectsGeneration = useRef(0);
@@ -265,14 +269,26 @@ export function KnowledgeGrants({
     },
   ];
 
+  const subjectName = (grant: ManagedKnowledgeGrant): string => {
+    const pool = grant.type === 'user' ? subjects?.users : subjects?.teams;
+    return pool?.find((item) => item.id === grant.id)?.name ?? grant.id;
+  };
+
   return (
     <section aria-label={tr('knowledgeGrants')}>
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <Typography.Title level={5} style={{ marginBottom: 4 }}>
-            用户与团队
-          </Typography.Title>
-          <Typography.Paragraph type="secondary">{tr('knowledgeGrantsHint')}</Typography.Paragraph>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 4 }}>
+                {tr('knowledgeGrantUser')}
+              </Typography.Title>
+              <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
+            </div>
+            <Button disabled={!!error} onClick={() => setEditorOpen(true)}>
+              {tr('knowledgeGrantEdit')}
+            </Button>
+          </div>
           {error ? (
             <Alert
               showIcon
@@ -286,113 +302,144 @@ export function KnowledgeGrants({
               }
             />
           ) : (
-            <Space orientation="vertical" style={{ width: '100%' }}>
-              <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
-              <Alert
-                showIcon
-                type="warning"
-                title={tr('knowledgeGrantsReplaceHint')}
-                action={
-                  <Button
-                    size="small"
-                    danger
-                    disabled={editLocked || !grants.length}
-                    onClick={() =>
-                      modal.confirm({
-                        title: tr('knowledgeGrantsRevokeConfirm'),
-                        okText: tr('knowledgeGrantsRevokeAll'),
-                        cancelText: tr('knowledgeCancel'),
-                        okButtonProps: { danger: true },
-                        onOk: () => save([]),
-                      })
-                    }
-                  >
-                    {tr('knowledgeGrantsRevokeAll')}
-                  </Button>
-                }
-              />
-              {subjects && !subjects.complete && (
-                <Alert
-                  showIcon
-                  type="warning"
-                  title={tr('knowledgeGrantSubjectsIncomplete')}
-                  description={subjects.error}
-                  action={
-                    <Button size="small" onClick={() => void loadSubjects()}>
-                      {tr('knowledgeRetryRead')}
-                    </Button>
-                  }
-                />
-              )}
-              <Space wrap>
-                <Select
-                  aria-label={tr('knowledgeGrantUser')}
-                  mode="multiple"
-                  showSearch={{
-                    filterOption: (input, option) =>
-                      subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
-                  }}
-                  allowClear
-                  loading={subjectsLoading}
-                  value={userDrafts}
-                  onChange={setUserDrafts}
-                  options={grantOptions.users}
-                  placeholder={tr('knowledgeGrantUserSelect')}
-                  notFoundContent={tr('knowledgeGrantNoUserMatch')}
-                  disabled={editLocked || subjectsLoading}
-                  style={{ minWidth: 240 }}
-                />
-                <Button disabled={editLocked || userDrafts.length === 0} onClick={() => addGrants('user')}>
-                  {tr('knowledgeGrantAddUser')}
+            <List
+              loading={loading}
+              dataSource={[...grants]}
+              locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
+              renderItem={(grant) => {
+                const name = subjectName(grant);
+                return (
+                  <List.Item>
+                    <List.Item.Meta title={name} description={name === grant.id ? undefined : grant.id} />
+                    <Tag color="blue">{tr('knowledgeGrantReadable')}</Tag>
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+          {subjects && !subjects.complete && (
+            <Alert
+              showIcon
+              type="warning"
+              title={tr('knowledgeGrantSubjectsIncomplete')}
+              description={subjects.error}
+              style={{ marginTop: 12 }}
+              action={
+                <Button size="small" onClick={() => void loadSubjects()}>
+                  {tr('knowledgeRetryRead')}
                 </Button>
-                <Select
-                  aria-label={tr('knowledgeGrantTeam')}
-                  mode="multiple"
-                  showSearch={{
-                    filterOption: (input, option) =>
-                      subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
-                  }}
-                  allowClear
-                  loading={subjectsLoading}
-                  value={teamDrafts}
-                  onChange={setTeamDrafts}
-                  options={grantOptions.teams}
-                  placeholder={tr('knowledgeGrantTeamSelect')}
-                  notFoundContent={tr('knowledgeGrantNoTeamMatch')}
-                  disabled={editLocked || subjectsLoading}
-                  style={{ minWidth: 240 }}
-                />
-                <Button disabled={editLocked || teamDrafts.length === 0} onClick={() => addGrants('team')}>
-                  {tr('knowledgeGrantAddTeam')}
-                </Button>
-              </Space>
-              {unknownGrants.length > 0 && <Alert showIcon type="warning" title={tr('knowledgeGrantUnknownHint')} />}
-              <Table<ManagedKnowledgeGrant>
-                rowKey={(grant) => `${grant.type}:${grant.id}`}
-                size="small"
-                loading={loading}
-                columns={columns}
-                dataSource={grants}
-                pagination={false}
-                locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
-                scroll={{ x: 480 }}
-              />
-              <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
-                {tr('knowledgeGrantsSave')}
-              </Button>
-            </Space>
+              }
+            />
           )}
         </div>
         <div>
-          <Typography.Title level={5} style={{ marginBottom: 4 }}>
-            关联 Agent
-          </Typography.Title>
-          <Typography.Paragraph type="secondary">关联后，Agent 仍按请求者权限检索。</Typography.Paragraph>
-          <Typography.Text type="secondary">
-            在数字员工页把本库加入或移出知识库绑定；这里不提供没有契约的假开关。
-          </Typography.Text>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 4 }}>
+                {tr('knowledgeAgentColumn')}
+              </Typography.Title>
+              <Typography.Text type="secondary">{tr('knowledgeAgentColumnHint')}</Typography.Text>
+            </div>
+            <Button disabled>{tr('knowledgeAgentManage')}</Button>
+          </div>
+          <Typography.Paragraph type="secondary">{tr('knowledgeAgentManageHint')}</Typography.Paragraph>
+          <Typography.Text type="secondary">{tr('knowledgeAgentEmpty')}</Typography.Text>
         </div>
       </div>
+      {onOpenRetrieval ? (
+        <Button type="link" icon={<SearchOutlined />} onClick={onOpenRetrieval} style={{ paddingInline: 0 }}>
+          {tr('knowledgeVerifyAgent')}
+        </Button>
+      ) : null}
+      <Modal
+        title={tr('knowledgeGrantEdit')}
+        open={editorOpen}
+        footer={null}
+        onCancel={() => setEditorOpen(false)}
+        width={720}
+      >
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          <Alert
+            showIcon
+            type="warning"
+            title={tr('knowledgeGrantsReplaceHint')}
+            action={
+              <Button
+                size="small"
+                danger
+                disabled={editLocked || !grants.length}
+                onClick={() =>
+                  modal.confirm({
+                    title: tr('knowledgeGrantsRevokeConfirm'),
+                    okText: tr('knowledgeGrantsRevokeAll'),
+                    cancelText: tr('knowledgeCancel'),
+                    okButtonProps: { danger: true },
+                    onOk: () => save([]),
+                  })
+                }
+              >
+                {tr('knowledgeGrantsRevokeAll')}
+              </Button>
+            }
+          />
+          <Space wrap>
+            <Select
+              aria-label={tr('knowledgeGrantUser')}
+              mode="multiple"
+              showSearch={{
+                filterOption: (input, option) =>
+                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+              }}
+              allowClear
+              loading={subjectsLoading}
+              value={userDrafts}
+              onChange={setUserDrafts}
+              options={grantOptions.users}
+              placeholder={tr('knowledgeGrantUserSelect')}
+              notFoundContent={tr('knowledgeGrantNoUserMatch')}
+              disabled={editLocked || subjectsLoading}
+              style={{ minWidth: 240 }}
+            />
+            <Button disabled={editLocked || userDrafts.length === 0} onClick={() => addGrants('user')}>
+              {tr('knowledgeGrantAddUser')}
+            </Button>
+            <Select
+              aria-label={tr('knowledgeGrantTeam')}
+              mode="multiple"
+              showSearch={{
+                filterOption: (input, option) =>
+                  subjectMatches(input, option?.label) || subjectMatches(input, option?.value),
+              }}
+              allowClear
+              loading={subjectsLoading}
+              value={teamDrafts}
+              onChange={setTeamDrafts}
+              options={grantOptions.teams}
+              placeholder={tr('knowledgeGrantTeamSelect')}
+              notFoundContent={tr('knowledgeGrantNoTeamMatch')}
+              disabled={editLocked || subjectsLoading}
+              style={{ minWidth: 240 }}
+            />
+            <Button disabled={editLocked || teamDrafts.length === 0} onClick={() => addGrants('team')}>
+              {tr('knowledgeGrantAddTeam')}
+            </Button>
+          </Space>
+          {unknownGrants.length > 0 && <Alert showIcon type="warning" title={tr('knowledgeGrantUnknownHint')} />}
+          <Table<ManagedKnowledgeGrant>
+            rowKey={(grant) => `${grant.type}:${grant.id}`}
+            size="small"
+            loading={loading}
+            columns={columns}
+            dataSource={[...grants]}
+            pagination={false}
+            locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
+            scroll={{ x: 480 }}
+          />
+          <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
+            {tr('knowledgeGrantsSave')}
+          </Button>
+        </Space>
+      </Modal>
       {modalContext}
     </section>
   );
