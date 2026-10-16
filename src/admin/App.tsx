@@ -719,7 +719,7 @@ function Overview({
     setLoading(true);
     setFailed(false);
     setAuditFailed(false);
-    const portal = new PortalClient(() => client.getAccessToken());
+    const portal = new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken));
     void portal
       .listEmployees()
       .then((items) => {

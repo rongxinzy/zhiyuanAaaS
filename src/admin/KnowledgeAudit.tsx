@@ -15,7 +15,9 @@ export function KnowledgeAudit({
   readonly client: AdminConsoleClient;
   readonly portal?: PortalClient;
 }) {
-  const [portal] = useState(() => supplied ?? new PortalClient(() => client.getAccessToken()));
+  const [portal] = useState(
+    () => supplied ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [form] = Form.useForm<Filters>();
   const [filters, setFilters] = useState<Filters>({});
   const [rows, setRows] = useState<readonly KnowledgeAuditRecord[]>([]);

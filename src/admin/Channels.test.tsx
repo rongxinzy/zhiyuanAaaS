@@ -87,6 +87,36 @@ test('shows Feishu, WeCom and WeChat with actual configuration actions', async (
   expect(screen.queryByText('通道运行中')).not.toBeInTheDocument();
 });
 
+test('selects a Ready employee initially instead of the first deployment failure', async () => {
+  const portal = mockPortal();
+  portal.listEmployees.mockResolvedValue([
+    { name: 'broken', displayName: '部署失败员工', phase: 'Error' },
+    { name: 'hr-bot', displayName: '人事助理', phase: 'Ready' },
+  ]);
+  render(
+    <ConfigProvider>
+      <App>
+        <Channels client={{} as AdminConsoleClient} portal={portal as unknown as PortalClient} />
+      </App>
+    </ConfigProvider>,
+  );
+  await screen.findByText('飞书');
+  expect(portal.employeeChannels).toHaveBeenCalledWith('hr-bot', expect.any(AbortSignal));
+  expect(portal.employeeChannels).not.toHaveBeenCalledWith('broken', expect.anything());
+});
+
+test('explains deployment failure and prevents starting a new channel on an Error employee', async () => {
+  const portal = mockPortal({
+    ...initial,
+    phase: 'Error',
+    runtimeAvailable: false,
+    providers: initial.providers.map((item) => ({ ...item, enabled: false })),
+  });
+  panel(portal);
+  expect(await screen.findByText('数字员工部署失败，请先修复部署或选择已就绪员工。')).toBeInTheDocument();
+  for (const button of screen.getAllByRole('button', { name: /启用接入/ })) expect(button).toBeDisabled();
+});
+
 test('enables an unconfigured employee before asking for credentials', async () => {
   const portal = mockPortal({
     ...initial,

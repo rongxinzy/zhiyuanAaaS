@@ -39,6 +39,7 @@ const translations = {
     channelRestarted: '已请求重连，请刷新状态确认结果。',
     channelDisabledDone: '渠道已停用，等待配置同步。',
     channelUnavailable: '无法读取运行时状态。请确认数字员工已就绪，并已部署配套渠道管理版本。',
+    channelEmployeeFailed: '数字员工部署失败，请先修复部署或选择已就绪员工。',
     channelStatusScope: '通道运行中不代表真实消息收发已验证；请在对应平台向机器人发送消息。',
     channelAppId: 'App ID',
     channelAppSecret: 'App Secret',
@@ -1371,6 +1372,8 @@ const translations = {
     channelDisabledDone: 'Channel disabled; configuration synchronization is pending.',
     channelUnavailable:
       'Runtime status unavailable. Check employee readiness and deploy the matching channel management runtime.',
+    channelEmployeeFailed:
+      'Employee deployment failed. Fix the deployment or select a ready employee before connecting a channel.',
     channelStatusScope: 'A running worker does not prove message delivery. Send a message to the bot on the platform.',
     channelAppId: 'App ID',
     channelAppSecret: 'App Secret',

@@ -546,9 +546,9 @@ export type ChannelQR = {
 };
 
 export class PortalClient {
-  readonly #tokenProvider: () => Promise<string | null>;
+  readonly #tokenProvider: (rejectedToken?: string) => Promise<string | null>;
 
-  constructor(tokenProvider: () => Promise<string | null>) {
+  constructor(tokenProvider: (rejectedToken?: string) => Promise<string | null>) {
     this.#tokenProvider = tokenProvider;
   }
 
@@ -559,17 +559,42 @@ export class PortalClient {
     extraHeaders?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
   ): Promise<{ readonly status: number; readonly data: unknown }> {
+    signal?.throwIfAborted();
     const headers: Record<string, string> = { ...extraHeaders };
     if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const token = await this.#tokenProvider();
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(path, {
-      method,
-      headers,
-      ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
-      ...(signal ? { signal } : {}),
-    });
-    const data: unknown = await response.json().catch(() => null);
+    const send = () =>
+      fetch(path, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
+        ...(signal ? { signal } : {}),
+      });
+    signal?.throwIfAborted();
+    let response = await send();
+    let data: unknown = await response.json().catch(() => null);
+    // AUTH_REQUIRED is returned before a Portal handler runs. Other 401s can
+    // come from downstream services and must not replay a mutation.
+    if (
+      response.status === 401 &&
+      token &&
+      (data as { error?: { code?: unknown } } | null)?.error?.code === 'AUTH_REQUIRED'
+    ) {
+      signal?.throwIfAborted();
+      let renewed: string | null;
+      try {
+        renewed = await this.#tokenProvider(token);
+      } catch {
+        return { status: response.status, data };
+      }
+      signal?.throwIfAborted();
+      if (renewed && renewed !== token) {
+        headers.Authorization = `Bearer ${renewed}`;
+        response = await send();
+        data = await response.json().catch(() => null);
+      }
+    }
     return { status: response.status, data };
   }
 

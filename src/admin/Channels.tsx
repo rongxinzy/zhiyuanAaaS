@@ -46,7 +46,9 @@ export function Channels({
   readonly language?: AdminLanguage;
 }) {
   const t = (key: AdminTranslationKey) => translate(language, key);
-  const [portal] = useState(() => supplied ?? new PortalClient(() => client.getAccessToken()));
+  const [portal] = useState(
+    () => supplied ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
   const [selected, setSelected] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,11 @@ export function Channels({
       .then((items) => {
         if (controller.signal.aborted) return;
         setEmployees(items);
-        setSelected((current) => (items.some((item) => item.name === current) ? current : items[0]?.name));
+        setSelected((current) =>
+          items.some((item) => item.name === current)
+            ? current
+            : (items.find((item) => item.phase === 'Ready') ?? items[0])?.name,
+        );
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setError(errorText(cause, language));
@@ -262,7 +268,7 @@ export function EmployeeChannelsPanel({
         <Alert
           type="warning"
           showIcon
-          title={t('channelUnavailable')}
+          title={t(data.phase === 'Error' ? 'channelEmployeeFailed' : 'channelUnavailable')}
           action={
             data.phase === 'Sleeping' ? (
               <Button
@@ -332,7 +338,7 @@ export function EmployeeChannelsPanel({
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
-                    disabled={busy || loading || data?.hibernationEnabled === true}
+                    disabled={busy || loading || data?.hibernationEnabled === true || data?.phase === 'Error'}
                     onClick={() =>
                       void run(
                         () => portal.activateChannel(employeeName, item.provider, true),

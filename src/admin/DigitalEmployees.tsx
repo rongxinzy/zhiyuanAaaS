@@ -72,7 +72,9 @@ export function DigitalEmployees({
   /** Lets the shell deep-link straight into the approvals tab. */
   readonly initialTab?: DigitalEmployeesTab | undefined;
 }) {
-  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
+  const [resolvedPortal] = useState(
+    () => portal ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [tab, setTab] = useState<DigitalEmployeesTab>(initialTab ?? DigitalEmployeesTab.Employees);
   return (
     <div className="flex w-full flex-col gap-6">
