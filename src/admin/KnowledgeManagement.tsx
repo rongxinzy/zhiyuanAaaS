@@ -4,7 +4,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
-  EyeOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   LinkOutlined,
@@ -119,6 +118,20 @@ const copyKeys = {
   summaryGrants: 'knowledgeSummaryGrants',
   summaryReadyUnknown: 'knowledgeSummaryReadyUnknown',
   summaryLabel: 'knowledgeSummary',
+  statusSearchable: 'knowledgeStatusSearchable',
+  statusFailedShort: 'knowledgeStatusFailedShort',
+  viewReason: 'knowledgeViewReason',
+  viewDocument: 'knowledgeViewDocument',
+  batchPicked: 'knowledgeBatchPicked',
+  batchMove: 'knowledgeBatchMove',
+  batchRetry: 'knowledgeBatchRetry',
+  batchDelete: 'knowledgeBatchDelete',
+  batchBar: 'knowledgeBatchBar',
+  batchMoveTitle: 'knowledgeBatchMoveTitle',
+  batchMoveTarget: 'knowledgeBatchMoveTarget',
+  batchFailed: 'knowledgeBatchFailed',
+  uploadTargetFolder: 'knowledgeUploadTargetFolder',
+  uncategorized: 'knowledgeUncategorized',
   foldersLabel: 'knowledgeFolders',
   uploadFile: 'knowledgeUploadFile',
   importFolder: 'knowledgeImportFolder',
@@ -243,16 +256,6 @@ function formatFileSize(bytes: number | undefined): string {
   }
   return `${unit === 0 ? value : Number(value.toFixed(1))} ${units[unit]}`;
 }
-
-const parseStatusCopy: Readonly<Record<string, CopyKey>> = {
-  pending: 'pending',
-  processing: 'processing',
-  finalizing: 'finalizing',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'cancelled',
-  deleting: 'deleting',
-};
 
 /** 上游枚举 → 中文（未收录的值原样显示，不隐藏信息）。 */
 const sourceCopy: Readonly<Record<string, CopyKey>> = {
@@ -467,7 +470,12 @@ export function KnowledgeManagement({
   // 所以「全部」必须是不传该参数，而不是传空串。
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [materialModal, setMaterialModal] = useState<'file' | 'folder' | null>(null); // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
+  const [materialModal, setMaterialModal] = useState<'file' | 'folder' | null>(null);
+  const [pickedDocs, setPickedDocs] = useState<readonly string[]>([]);
+  const [moveDialog, setMoveDialog] = useState(false);
+  const [moveTarget, setMoveTarget] = useState('');
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchFailures, setBatchFailures] = useState<readonly string[]>([]); // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
   // 「可检索数」上游没有按启用状态统计的接口，保持 null → 界面显示暂未统计，不推断。
   const [summaryFailed, setSummaryFailed] = useState<number | null>(null);
   const [summaryAgents, setSummaryAgents] = useState<number | null>(null);
@@ -1013,7 +1021,9 @@ export function KnowledgeManagement({
     setUploading(true);
     setWriteNotice(null);
     try {
-      const result = await portal.uploadManagedKnowledgeDocument(selectedId, file as File);
+      // 目录树里选中某目录时，单文件也进那个目录（原型：「目标目录：X」）。
+      const uploadPath = folderPath ? `${folderPath}/${file.name}` : file.name;
+      const result = await portal.uploadManagedKnowledgeDocument(selectedId, file as File, uploadPath);
       setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`);
       setFiles([]);
       pollRounds.current = 0;
@@ -1444,7 +1454,9 @@ export function KnowledgeManagement({
           .join(' · ');
         return (
           <Space orientation="vertical" size={0}>
-            <Typography.Text strong>{row.name || row.file_name}</Typography.Text>
+            <Typography.Link onClick={() => void inspectDocument(row, 'spans')}>
+              {row.name || row.file_name}
+            </Typography.Link>
             {secondary ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {secondary}
@@ -1455,49 +1467,39 @@ export function KnowledgeManagement({
       },
     },
     {
-      // 处理状态 + 启停开关合成一列：状态与「能不能被检索」是同一件事的两个面。
+      // 按原型：状态只说「能不能被检索」，启停动作移入行操作菜单。
       title: t('parse'),
       key: 'parse_status',
       render: (_: unknown, row: ManagedKnowledgeDocument) => {
         const completed = row.parse_status === 'completed';
-        const enabled = completed ? row.enable_status === 'enabled' : row.manual_disabled === true;
-        const actionBusy = documentActionBusy(row.id);
-        const label = completed ? (enabled ? t('disableDocument') : t('enableDocument')) : t('keepDisabledAfterParse');
+        const disabled = completed ? row.enable_status === 'disabled' : row.manual_disabled === true;
+        if (disabled) {
+          return <Tag title={row.enable_status}>{t('enableDisabled')}</Tag>;
+        }
+        if (completed) {
+          return <Tag color="success">{t('statusSearchable')}</Tag>;
+        }
+        if (row.parse_status === 'failed') {
+          return (
+            <Space orientation="vertical" size={2}>
+              <Tag color="error">{t('statusFailedShort')}</Tag>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0 }}
+                onClick={() => void inspectDocument(row, 'spans')}
+              >
+                {t('viewReason')}
+              </Button>
+            </Space>
+          );
+        }
         return (
           <Space orientation="vertical" size={2}>
-            <Tag
-              color={row.parse_status === 'completed' ? 'success' : row.parse_status === 'failed' ? 'error' : 'default'}
-              title={row.parse_status}
-            >
-              {parseStatusCopy[row.parse_status] ? t(parseStatusCopy[row.parse_status]!) : t('unknown')}
-            </Tag>
-            {pollable.has(row.parse_status) ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('parsingHint')}
-              </Typography.Text>
-            ) : null}
-            <Space size={4}>
-              <Tag title={row.enable_status}>
-                {row.enable_status === 'enabled'
-                  ? t('enableEnabled')
-                  : row.enable_status === 'disabled'
-                    ? t('enableDisabled')
-                    : (row.enable_status ?? '—')}
-              </Tag>
-              <Switch
-                checked={enabled}
-                aria-label={label}
-                loading={actionBusy}
-                disabled={
-                  writeBlocked ||
-                  uploading ||
-                  importing ||
-                  actionBusy ||
-                  (!completed && (row.manual_disabled === undefined || enabled))
-                }
-                onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
-              />
-            </Space>
+            <Tag color="processing">{t('processing')}</Tag>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t('parsingHint')}
+            </Typography.Text>
           </Space>
         );
       },
@@ -1516,25 +1518,27 @@ export function KnowledgeManagement({
         const actionBusy = documentActionBusy(row.id);
         const canCancel = ['pending', 'processing', 'finalizing'].includes(row.parse_status);
         const writesDisabled = writeBlocked || actionBusy || uploading || importing;
+        const completed = row.parse_status === 'completed';
+        const enabled = completed ? row.enable_status === 'enabled' : row.manual_disabled !== true;
         const moreItems: MenuProps['items'] = [
-          { key: 'download', label: t('knowledgeDownload'), disabled: !row.file_name || actionBusy },
           { key: 'chunks', label: t('knowledgeChunks'), disabled: actionBusy },
           { key: 'spans', label: t('knowledgeSpans'), disabled: actionBusy },
+          { key: 'download', label: t('knowledgeDownload'), disabled: !row.file_name || actionBusy },
           { type: 'divider' },
           { key: 'reparse', label: t('knowledgeRetryParse'), disabled: writesDisabled },
           ...(canCancel ? [{ key: 'cancel-parse', label: t('knowledgeCancelParse'), disabled: writesDisabled }] : []),
+          {
+            key: 'toggle',
+            label: enabled ? t('disableDocument') : t('enableDocument'),
+            disabled: writesDisabled || (!completed && (row.manual_disabled === undefined || enabled)),
+          },
           { type: 'divider' },
           { key: 'delete', label: t('knowledgeDeleteDocument'), danger: true, disabled: writesDisabled },
         ];
         return (
           <Space size={4}>
-            <Button
-              size="small"
-              icon={<EyeOutlined />}
-              disabled={!row.file_name || actionBusy}
-              onClick={() => void openDocumentFile(row, 'preview')}
-            >
-              {t('knowledgePreview')}
+            <Button type="link" size="small" disabled={actionBusy} onClick={() => void inspectDocument(row, 'spans')}>
+              {t('viewDocument')}
             </Button>
             <Dropdown
               menu={{
@@ -1544,6 +1548,7 @@ export function KnowledgeManagement({
                   if (key === 'download') return void openDocumentFile(row, 'download');
                   if (key === 'chunks') return void inspectDocument(row, 'chunks');
                   if (key === 'spans') return void inspectDocument(row, 'spans');
+                  if (key === 'toggle') return void setDocumentEnabled(row, !enabled);
                   if (key === 'delete')
                     return modal.confirm({
                       title: t('knowledgeDeleteDocument'),
@@ -1564,6 +1569,64 @@ export function KnowledgeManagement({
       },
     },
   ];
+
+  // 查询条件变化就清掉不可见的选择项，避免把上一屏的选择带到新结果上。
+  useEffect(() => {
+    setPickedDocs([]);
+    setBatchFailures([]);
+  }, [folderPath, page, search, statusFilter]);
+
+  // 批量重解析/删除如实保留逐项结果：失败项留在提示里并保留选择，可重试。
+  const runBatchAction = async (action: 'reparse' | 'delete') => {
+    const targets = (visibleDocs?.data ?? []).filter((document) => pickedDocs.includes(document.id));
+    if (targets.length === 0) return;
+    setBatchBusy(true);
+    setBatchFailures([]);
+    setWriteNotice(null);
+    const failedIds: string[] = [];
+    const failedNames: string[] = [];
+    for (const document of targets) {
+      try {
+        await portal.runManagedKnowledgeDocumentAction(document.id, action);
+      } catch (cause) {
+        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+        if (isUncertain(cause)) markUncertainWrite();
+        failedIds.push(document.id);
+        failedNames.push(document.name || document.file_name);
+      }
+    }
+    setBatchFailures(failedNames);
+    setPickedDocs(failedIds);
+    setBatchBusy(false);
+    setDocsRefresh((current) => current + 1);
+  };
+
+  // 移动是服务端一次性操作（不是逐项），所以只按服务端结果反馈。
+  const runBatchMove = async () => {
+    const target = selectedId;
+    if (!target || pickedDocs.length === 0) return;
+    setBatchBusy(true);
+    setWriteNotice(null);
+    try {
+      const result = await portal.moveManagedKnowledgeDocuments(target, pickedDocs, moveTarget);
+      setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`);
+      setPickedDocs([]);
+      setMoveDialog(false);
+      setDocsRefresh((current) => current + 1);
+    } catch (cause) {
+      if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+      if (isUncertain(cause)) markUncertainWrite();
+      setWriteNotice(knowledgeErrorText(cause));
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const folderPathsForMove = useMemo(() => {
+    const collect = (nodes: readonly ManagedKnowledgeFolder[]): string[] =>
+      nodes.flatMap((node) => [node.path, ...collect(node.children ?? [])]);
+    return collect(folderTree?.folders ?? []);
+  }, [folderTree]);
 
   const modelState = readiness?.embeddingModel.state;
   const queuedFolderItems = folderQueue.filter((item) => item.status === 'queued');
@@ -1791,7 +1854,6 @@ export function KnowledgeManagement({
                       label: t('columnDocs'),
                       children: visibleDocs ? (visibleDocs.total ?? 0) : t('notStatistic'),
                     },
-                    { key: 'scope', label: t('columnScope'), children: t('notStatistic') },
                     { key: 'tenant', label: t('fieldTenant'), children: selected.tenant_id || t('notStatistic') },
                   ]}
                 />
@@ -1979,10 +2041,69 @@ export function KnowledgeManagement({
                                   }}
                                 />
                               )}
+                              {pickedDocs.length > 0 && (
+                                <section aria-label={t('batchBar')}>
+                                  <Space wrap>
+                                    <Typography.Text>
+                                      {t('batchPicked').replace('{count}', String(pickedDocs.length))}
+                                    </Typography.Text>
+                                    <Button
+                                      size="small"
+                                      icon={<FolderOpenOutlined />}
+                                      disabled={batchBusy || writeBlocked}
+                                      onClick={() => {
+                                        setMoveTarget(folderPath ?? '');
+                                        setMoveDialog(true);
+                                      }}
+                                    >
+                                      {t('batchMove')}
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      icon={<ReloadOutlined />}
+                                      disabled={batchBusy || writeBlocked}
+                                      onClick={() => void runBatchAction('reparse')}
+                                    >
+                                      {t('batchRetry')}
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      danger
+                                      disabled={batchBusy || writeBlocked}
+                                      onClick={() =>
+                                        modal.confirm({
+                                          title: t('batchDelete'),
+                                          content: t('knowledgeDeleteDocumentHint'),
+                                          okText: t('knowledgeDeleteConfirm'),
+                                          cancelText: t('cancel'),
+                                          okButtonProps: { danger: true },
+                                          onOk: () => runBatchAction('delete'),
+                                        })
+                                      }
+                                    >
+                                      {t('batchDelete')}
+                                    </Button>
+                                  </Space>
+                                </section>
+                              )}
+                              {batchFailures.length > 0 && (
+                                <Alert
+                                  showIcon
+                                  type="warning"
+                                  closable
+                                  title={t('batchFailed')}
+                                  description={batchFailures.join('、')}
+                                  onClose={() => setBatchFailures([])}
+                                />
+                              )}
                               <Table<ManagedKnowledgeDocument>
                                 rowKey="id"
                                 size="small"
                                 loading={docsLoading}
+                                rowSelection={{
+                                  selectedRowKeys: [...pickedDocs],
+                                  onChange: (keys) => setPickedDocs(keys.map((key) => String(key))),
+                                }}
                                 columns={columns}
                                 dataSource={visibleDocs?.data ?? []}
                                 locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
@@ -2077,6 +2198,33 @@ export function KnowledgeManagement({
           </Form.Item>
         </Form>
       </Modal>
+      <Modal
+        title={t('batchMoveTitle')}
+        open={moveDialog}
+        onCancel={() => setMoveDialog(false)}
+        okText={t('batchMove')}
+        cancelText={t('cancel')}
+        confirmLoading={batchBusy}
+        okButtonProps={{ disabled: writeBlocked || batchBusy || pickedDocs.length === 0 }}
+        onOk={() => void runBatchMove()}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            {t('batchPicked').replace('{count}', String(pickedDocs.length))}
+          </Typography.Text>
+          <Select
+            aria-label={t('batchMoveTarget')}
+            value={moveTarget}
+            onChange={setMoveTarget}
+            style={{ width: '100%' }}
+            options={[
+              { value: '', label: t('uncategorized') },
+              ...folderPathsForMove.map((path) => ({ value: path, label: path })),
+            ]}
+          />
+        </Space>
+      </Modal>
       {/* 「添加资料」的文件/文件夹入口：选择后才提交，进度与失败重试仍走下面的队列面板 */}
       <Modal
         title={materialModal === 'folder' ? t('importFolder') : t('uploadFile')}
@@ -2097,6 +2245,9 @@ export function KnowledgeManagement({
         destroyOnHidden
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            {t('uploadTargetFolder').replace('{path}', folderPath ?? t('uncategorized'))}
+          </Typography.Text>
           {materialModal === 'folder' ? (
             <>
               <Upload
