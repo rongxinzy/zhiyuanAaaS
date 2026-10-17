@@ -1,3 +1,11 @@
+export type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
+
+import type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
+import {
+  type KnowledgeAuditFilters,
+  type ManagedKnowledgeDocumentQuery,
+  managedKnowledgeDocumentQuery,
+} from './portal-knowledge-query.js';
 // Digital-employee portal (de-portal) client. The console reaches it
 // same-origin through the admin server's /api proxy — the same pattern as
 // the /aep proxy — so all paths are relative and no CORS is involved.
@@ -200,19 +208,6 @@ export type ManagedKnowledgeBase = {
   readonly processing_count?: number;
   readonly updated_at?: string;
   readonly scope?: ManagedKnowledgeBaseScope;
-};
-
-export type KnowledgeAuditRecord = {
-  readonly cursor: string;
-  readonly operationId: string;
-  readonly actorUserId: string;
-  readonly action: string;
-  readonly resourceType: string;
-  readonly resourceId: string;
-  readonly parentResourceId: string;
-  readonly outcome: string;
-  readonly statusCode: number;
-  readonly createdAt: string;
 };
 
 export type ManagedKnowledgeDocument = {
@@ -584,12 +579,7 @@ export class PortalClient {
   }
 
   async knowledgeAudit(
-    filters: {
-      readonly operationId?: string;
-      readonly actorUserId?: string;
-      readonly cursor?: string;
-      readonly knowledgeBaseId?: string;
-    } = {},
+    filters: KnowledgeAuditFilters = {},
     signal?: AbortSignal,
   ): Promise<{ readonly items: readonly KnowledgeAuditRecord[]; readonly nextCursor: string | null }> {
     const query = new URLSearchParams({ limit: '50' });
@@ -681,25 +671,10 @@ export class PortalClient {
 
   async listManagedKnowledgeDocuments(
     id: string,
-    query: {
-      readonly page: number;
-      readonly pageSize: number;
-      readonly keyword?: string;
-      readonly parseStatus?: string;
-      readonly folderPath?: string;
-      readonly folderRecursive?: boolean;
-    },
+    query: ManagedKnowledgeDocumentQuery,
     signal?: AbortSignal,
   ): Promise<ManagedKnowledgePage> {
-    const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
-    if (query.keyword) params.set('keyword', query.keyword);
-    // 上游按 parse_status / folder_path(+recursive) 过滤，并返回过滤后的真实 total；
-    // portal 已白名单转发这几个参数，这里只是把它们透出去。
-    if (query.parseStatus) params.set('parse_status', query.parseStatus);
-    if (query.folderPath !== undefined) {
-      params.set('folder_path', query.folderPath);
-      if (query.folderRecursive) params.set('folder_recursive', 'true');
-    }
+    const params = managedKnowledgeDocumentQuery(query);
     const { status, data } = await this.#request(
       'GET',
       `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents?${params.toString()}`,

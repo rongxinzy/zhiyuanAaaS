@@ -23,19 +23,13 @@ import {
   Alert,
   Button,
   Card,
-  Descriptions,
-  Drawer,
   Dropdown,
   Empty,
   Form,
-  Image,
   Input,
-  Listy,
   Modal,
-  Pagination,
   Select,
   Space,
-  Spin,
   Switch,
   Table,
   Tabs,
@@ -48,11 +42,41 @@ import {
 } from 'antd';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
+import { KnowledgeDocumentInspector } from './KnowledgeDocumentInspector.js';
 import { KnowledgeGrants } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
+import { knowledgeBaseColumns } from './knowledge-base-columns.js';
 import { knowledgeErrorText } from './knowledge-error.js';
+import {
+  ALL_FOLDERS_KEY,
+  byteLength,
+  byteLimitRule,
+  CONTENT_MAX_BYTES,
+  type CopyKey,
+  DESCRIPTION_MAX_BYTES,
+  DOC_HINT_DISMISSED_KEY,
+  FOLDER_UPLOAD_CONCURRENCY,
+  FOLDER_UPLOAD_MAX_FILE_BYTES,
+  FOLDER_UPLOAD_MAX_FILES,
+  type FolderUploadItem,
+  formatFileSize,
+  formatTimestamp,
+  isUncertain,
+  type KnowledgeInspectorState,
+  NAME_MAX_BYTES,
+  PREVIEW_CACHE_LIMIT,
+  type PreviewEntry,
+  type PreviewState,
+  pollable,
+  previewKindOf,
+  sourceCopy,
+  sourceURLRule,
+  TITLE_MAX_BYTES,
+  t,
+  URL_MAX_BYTES,
+} from './knowledge-management-support.js';
 import { usePageCrumb } from './page-crumb.js';
 import {
   type ManagedKnowledgeBase,
@@ -66,382 +90,6 @@ import {
   type PortalClient,
   PortalError,
 } from './portal.js';
-
-const language: AdminLanguage = ADMIN_LANGUAGE;
-type SpanTreeNode = { readonly key: string; readonly title: ReactNode; readonly children?: SpanTreeNode[] };
-const copyKeys = {
-  knowledgeBaseType: 'knowledgeBaseType',
-  knowledgeDocumentBase: 'knowledgeDocumentBase',
-  knowledgeFAQBase: 'knowledgeFAQBase',
-  title: 'knowledgeManagementTitle',
-  description: 'knowledgeManagementDescription',
-  add: 'knowledgeCreate',
-  refresh: 'statusRefresh',
-  empty: 'knowledgeEmptyManaged',
-  emptyHint: 'knowledgeEmptyManagedHint',
-  name: 'knowledgeName',
-  descriptionField: 'knowledgeDescriptionField',
-  id: 'knowledgeId',
-  documents: 'knowledgeDocuments',
-  edit: 'knowledgeEdit',
-  remove: 'knowledgeDelete',
-  createTitle: 'knowledgeCreateTitle',
-  editTitle: 'knowledgeEditTitle',
-  nameRequired: 'knowledgeNameRequired',
-  save: 'knowledgeSave',
-  cancel: 'knowledgeCancel',
-  deleteTitle: 'knowledgeDeleteTitle',
-  deleteHint: 'knowledgeDeleteHint',
-  deleteConfirm: 'knowledgeDeleteConfirm',
-  saveDone: 'knowledgeSaved',
-  created: 'knowledgeCreated',
-  deleted: 'knowledgeDeleted',
-  operation: 'knowledgeOperation',
-  uncertain: 'knowledgeUncertain',
-  docsTitle: 'knowledgeDocsTitle',
-  docName: 'knowledgeDocName',
-  fileName: 'knowledgeFileName',
-  parse: 'knowledgeParseStatus',
-  createdAt: 'knowledgeCreatedAt',
-  search: 'knowledgeSearchDocs',
-  upload: 'knowledgeUpload',
-  chooseFile: 'knowledgeChooseFile',
-  chooseFolder: 'knowledgeChooseFolder',
-  uploadFolder: 'knowledgeUploadFolder',
-  addMaterial: 'knowledgeAddMaterial',
-  parsingHint: 'knowledgeParsingHint',
-  summaryTotal: 'knowledgeSummaryTotal',
-  summaryReady: 'knowledgeSummaryReady',
-  summaryProcessing: 'knowledgeSummaryProcessing',
-  summaryFailed: 'knowledgeSummaryFailed',
-  summaryAgents: 'knowledgeSummaryAgents',
-  summaryGrants: 'knowledgeSummaryGrants',
-  summaryReadyUnknown: 'knowledgeSummaryReadyUnknown',
-  summaryLabel: 'knowledgeSummary',
-  statusSearchable: 'knowledgeStatusSearchable',
-  statusFailedShort: 'knowledgeStatusFailedShort',
-  viewReason: 'knowledgeViewReason',
-  viewDocument: 'knowledgeViewDocument',
-  batchPicked: 'knowledgeBatchPicked',
-  batchMove: 'knowledgeBatchMove',
-  batchRetry: 'knowledgeBatchRetry',
-  batchDelete: 'knowledgeBatchDelete',
-  batchBar: 'knowledgeBatchBar',
-  batchMoveTitle: 'knowledgeBatchMoveTitle',
-  batchMoveTarget: 'knowledgeBatchMoveTarget',
-  batchFailed: 'knowledgeBatchFailed',
-  uploadTargetFolder: 'knowledgeUploadTargetFolder',
-  uncategorized: 'knowledgeUncategorized',
-  foldersLabel: 'knowledgeFolders',
-  uploadFile: 'knowledgeUploadFile',
-  importFolder: 'knowledgeImportFolder',
-  allMaterials: 'knowledgeAllMaterials',
-  documentCount: 'knowledgeDocumentCount',
-  statusAll: 'knowledgeStatusAll',
-  documentsTab: 'knowledgeTabDocuments',
-  folderQueued: 'knowledgeFolderQueued',
-  folderUploading: 'knowledgeFolderUploading',
-  folderAccepted: 'knowledgeFolderAccepted',
-  folderFailed: 'knowledgeFolderFailed',
-  folderRetryFailed: 'knowledgeFolderRetryFailed',
-  folderClear: 'knowledgeFolderClear',
-  folderFiles: 'knowledgeFolderFiles',
-  folderLimit: 'knowledgeFolderLimit',
-  folderHint: 'knowledgeFolderHint',
-  indexHint: 'knowledgeIndexHint',
-  tabDocuments: 'knowledgeTabDocuments',
-  tabRetrieval: 'knowledgeTabRetrieval',
-  tabAccess: 'knowledgeTabAccess',
-  manageDocuments: 'knowledgeManageDocuments',
-  columnScope: 'knowledgeColumnScope',
-  columnUpdated: 'knowledgeColumnUpdated',
-  columnDocs: 'knowledgeColumnDocs',
-  baseType: 'knowledgeBaseType',
-  notStatistic: 'knowledgeNotStatistic',
-  parseProcessing: 'knowledgeParseProcessing',
-  parseCompleted: 'knowledgeParseCompleted',
-  scopeSummary: 'knowledgeScopeSummary',
-  sectionSummary: 'knowledgeSummary',
-  fieldTenant: 'knowledgeTenant',
-  fieldEmbeddingModel: 'knowledgeEmbeddingModel',
-  moreActions: 'knowledgeMoreActions',
-  fileLimit: 'knowledgeFileLimit',
-  uploadAccepted: 'knowledgeUploadAccepted',
-  knowledgeImportUrl: 'knowledgeImportUrl',
-  knowledgeImportManual: 'knowledgeImportManual',
-  knowledgeUrl: 'knowledgeUrl',
-  knowledgeTitle: 'knowledgeTitle',
-  knowledgeContent: 'knowledgeContent',
-  knowledgeImport: 'knowledgeImport',
-  knowledgeRetryParse: 'knowledgeRetryParse',
-  knowledgeCancelParse: 'knowledgeCancelParse',
-  knowledgeDeleteDocument: 'knowledgeDeleteDocument',
-  knowledgeDeleteDocumentHint: 'knowledgeDeleteDocumentHint',
-  knowledgeDeleteConfirm: 'knowledgeDeleteConfirm',
-  knowledgePreview: 'knowledgePreview',
-  knowledgePreviewUnavailable: 'knowledgePreviewUnavailable',
-  knowledgeDownload: 'knowledgeDownload',
-  knowledgeChunks: 'knowledgeChunks',
-  chunkCount: 'knowledgeChunkCount',
-  chunkEmpty: 'knowledgeNoChunks',
-  knowledgeSpans: 'knowledgeSpans',
-  chunkText: 'knowledgeChunkText',
-  chunkEnabled: 'knowledgeChunkEnabled',
-  chunkDisabled: 'knowledgeChunkDisabled',
-  currentStage: 'knowledgeCurrentStage',
-  attempt: 'knowledgeAttempt',
-  knowledgeNoOriginal: 'knowledgeNoOriginal',
-  knowledgeDocumentEnableHint: 'knowledgeDocumentEnableHint',
-  knowledgeFileOnlyPreview: 'knowledgeFileOnlyPreview',
-  knowledgeSource: 'knowledgeSource',
-  knowledgeEnableState: 'knowledgeEnableState',
-  sourceFile: 'knowledgeSourceFile',
-  sourceUrl: 'knowledgeSourceUrl',
-  sourceManual: 'knowledgeSourceManual',
-  sourceFaq: 'knowledgeSourceFaq',
-  sourceWeb: 'knowledgeSourceWeb',
-  sourceFolder: 'knowledgeSourceFolder',
-  enableEnabled: 'knowledgeEnableEnabled',
-  enableDisabled: 'knowledgeEnableDisabled',
-  baseTypeDocument: 'knowledgeBaseTypeDocument',
-  baseTypeFaq: 'knowledgeBaseTypeFaq',
-  enableDocument: 'knowledgeEnableDocument',
-  disableDocument: 'knowledgeDisableDocument',
-  keepDisabledAfterParse: 'knowledgeKeepDisabledAfterParse',
-  imagePreview: 'knowledgeImagePreview',
-  chunkEdit: 'knowledgeChunkEdit',
-  chunkRevision: 'knowledgeChunkRevision',
-  chunkSaved: 'knowledgeChunkSaved',
-  chunkIndexFailed: 'knowledgeChunkIndexFailed',
-  chunkIndexStatus: 'knowledgeChunkIndexStatus',
-  knowledgeActions: 'knowledgeActions',
-  active: 'knowledgeStatusActive',
-  completed: 'knowledgeStatusCompleted',
-  failed: 'knowledgeStatusFailed',
-  cancelled: 'knowledgeStatusCancelled',
-  deleting: 'knowledgeStatusDeleting',
-  pending: 'knowledgeStatusPending',
-  processing: 'knowledgeStatusProcessing',
-  finalizing: 'knowledgeStatusFinalizing',
-  unknown: 'knowledgeStatusUnknown',
-  error: 'knowledgeOperationFailed',
-  retry: 'knowledgeRetryRead',
-  noSelection: 'knowledgeSelectBase',
-  emptyDocs: 'knowledgeNoDocuments',
-  page: 'knowledgeCreatedAt',
-  writeRecovered: 'knowledgeWriteRecovered',
-  byteLimitExceeded: 'knowledgeByteLimitExceeded',
-  byteUnit: 'knowledgeByteUnit',
-  urlInvalid: 'knowledgeURLInvalid',
-  urlScheme: 'knowledgeURLScheme',
-  urlUserInfo: 'knowledgeURLUserInfo',
-  urlFragment: 'knowledgeURLFragment',
-  urlPrivateHost: 'knowledgeURLPrivateHost',
-  chunkContent: 'knowledgeChunkContent',
-} as const satisfies Record<string, AdminTranslationKey>;
-type CopyKey = keyof typeof copyKeys;
-const t = (key: CopyKey) => translate(language, copyKeys[key]);
-const pollable = new Set(['pending', 'processing', 'finalizing', 'deleting']);
-// 目录树里「全部资料」节点的 key：选中它表示不带 folder_path 过滤。
-const ALL_FOLDERS_KEY = '__all__';
-
-/** 按原型的时间样式显示：YYYY-MM-DD HH:mm（空值给占位符，不显示 Invalid Date）。 */
-function formatTimestamp(value: string | undefined): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-/** 文件大小换算成可读单位；缺失、非正数或非有限值返回空串，不显示「0 B」。 */
-function formatFileSize(bytes: number | undefined): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${unit === 0 ? value : Number(value.toFixed(1))} ${units[unit]}`;
-}
-
-/** 上游枚举 → 中文（未收录的值原样显示，不隐藏信息）。 */
-const sourceCopy: Readonly<Record<string, CopyKey>> = {
-  file: 'sourceFile',
-  url: 'sourceUrl',
-  link: 'sourceUrl',
-  manual: 'sourceManual',
-  faq: 'sourceFaq',
-  web: 'sourceWeb',
-  folder: 'sourceFolder',
-};
-
-function isUncertain(error: unknown): boolean {
-  return !(error instanceof PortalError) || error.status >= 500;
-}
-
-/**
- * 长度口径：portal 用 Go 的 `len()` 校验这些字段，即 **UTF-8 字节**。
- * 前端按字符数限会把「67 个汉字」当成 67，放行后由后端 400 打回，
- * 而错误文案只有笼统的「名称或描述无效」，所以这里统一按字节判断并给出具体字节数。
- */
-const byteLength = (value: string): number => new TextEncoder().encode(value).length;
-
-const NAME_MAX_BYTES = 200;
-const DESCRIPTION_MAX_BYTES = 2000;
-const TITLE_MAX_BYTES = 200;
-const URL_MAX_BYTES = 2048;
-/** portal 对正文的字段上限是 1<<20，但对整个 JSON body 也是 1<<20；
- *  1,000,000 字节给标题与序列化开销留出余量，不会出现「正好卡在边界被 400」。 */
-const CONTENT_MAX_BYTES = 1_000_000;
-
-const byteLimitMessage = (label: string, limit: number, bytes: number): string =>
-  `${t('byteLimitExceeded')}：${label} ${bytes} ${t('byteUnit')} > ${limit} ${t('byteUnit')}`;
-
-/** 表单规则：值不超过 `limit` 字节，超限时报出字段名与当前字节数。 */
-const byteLimitRule = (label: string, limit: number) => ({
-  validator: (_rule: unknown, value: unknown) => {
-    const bytes = byteLength(typeof value === 'string' ? value : '');
-    if (bytes <= limit) return Promise.resolve();
-    return Promise.reject(new Error(byteLimitMessage(label, limit, bytes)));
-  },
-});
-
-/**
- * portal 的 `validateManagedKnowledgeURL` 拒绝一切非公网字面量地址。这里复刻它的判定集合
- * （IPv4 私网/环回/链路本地/CGNAT/组播保留、IPv6 环回/唯一本地/链路本地/组播）；
- * 形如 `intranet.corp` 的域名控制台无法判定，留给 portal 的 DNS 结果兜底。
- */
-function privateHost(host: string): boolean {
-  // URL 给 IPv6 保留方括号，portal（Go）的 Hostname() 不带。
-  const value = host.replace(/^\[|\]$/g, '').toLowerCase();
-  if (value.includes(':')) {
-    if (
-      value === '::' ||
-      value === '::1' ||
-      /^f[cd]/.test(value) || // fc00::/7 唯一本地
-      /^fe[89ab]/.test(value) || // fe80::/10 链路本地
-      /^ff/.test(value) // 组播
-    )
-      return true;
-    // IPv4-mapped（::ffff:0:0/96）会被 URL 序列化成十六进制，取低 32 位回到 IPv4 判定。
-    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(value);
-    if (!mapped) return false;
-    const high = Number.parseInt(mapped[1]!, 16);
-    const low = Number.parseInt(mapped[2]!, 16);
-    return privateHost(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
-  }
-  if (!/^[\d.]+$/.test(value)) return false;
-  const parts = value.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-  const [a = 0, b = 0] = parts;
-  return (
-    a === 0 ||
-    a === 10 || // 10/8 私网
-    a === 127 || // 127/8 环回
-    (a === 169 && b === 254) || // 169.254/16 链路本地
-    (a === 172 && b >= 16 && b <= 31) || // 172.16/12 私网
-    (a === 192 && b === 168) || // 192.168/16 私网
-    (a === 100 && b >= 64 && b <= 127) || // 100.64/10 CGNAT
-    a >= 224 // 组播、保留与广播
-  );
-}
-
-/**
- * 与 portal 的 `validateManagedKnowledgeURL` 同口径的提交前校验：只放行可公开访问的
- * http(s) 来源。控制台不做 DNS 解析，域名解析到内网 IP 的情况仍由 portal 兜底。
- */
-function sourceURLError(value: string): CopyKey | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(value.trim());
-  } catch {
-    return 'urlInvalid';
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'urlScheme';
-  if (parsed.username || parsed.password) return 'urlUserInfo';
-  // portal 明确拒绝带 fragment 的地址（fragment 只对浏览器有意义，上游抓不到）。
-  if (parsed.hash) return 'urlFragment';
-  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
-  if (!host) return 'urlInvalid';
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return 'urlPrivateHost';
-  if (privateHost(host)) return 'urlPrivateHost';
-  return null;
-}
-
-/** URL 表单规则：先按字节卡长度（portal 用 len()），再做协议/私网预校验。 */
-const sourceURLRule = {
-  validator: (_rule: unknown, value: unknown) => {
-    const text = typeof value === 'string' ? value : '';
-    if (!text.trim()) return Promise.resolve();
-    const bytes = byteLength(text);
-    if (bytes > URL_MAX_BYTES)
-      return Promise.reject(new Error(byteLimitMessage(t('knowledgeUrl'), URL_MAX_BYTES, bytes)));
-    const problem = sourceURLError(text);
-    return problem ? Promise.reject(new Error(t(problem))) : Promise.resolve();
-  },
-};
-
-/**
- * 原文件预览按类型分流：文本内联渲染，图片用 <img>，PDF 才用 iframe。
- * 页面自身的 CSP 有 frame-ancestors（原来 'none'），把文本/图片塞进 iframe
- * 会被浏览器直接拦成「该内容被屏蔽了」。
- */
-type PreviewKind = 'text' | 'image' | 'pdf';
-
-interface PreviewEntry {
-  readonly kind: PreviewKind;
-  readonly url: string;
-  readonly name: string;
-  /** Only for `text`: decoded 原文，直接内联显示（iframe 会被自身 CSP 的 frame-ancestors 拦掉）。 */
-  readonly text?: string;
-  /** PDF 路径专用：服务端下发的不是 `application/pdf` 时不进 iframe，改显示提示。 */
-  readonly incompatible?: boolean;
-}
-
-interface PreviewState extends PreviewEntry {
-  /** 首次拉取中：弹窗先按固定尺寸打开，内容位置先放占位。 */
-  readonly loading?: boolean;
-}
-
-/** 预览缓存上限：超出后按最久未预览淘汰（blob URL 一并回收，防止内存随浏览增长）。 */
-const PREVIEW_CACHE_LIMIT = 6;
-
-function previewKindOf(fileName: string): PreviewKind | null {
-  if (/\.(txt|md|csv)$/i.test(fileName)) return 'text';
-  if (/\.(png|jpe?g|gif|webp)$/i.test(fileName)) return 'image';
-  if (/\.pdf$/i.test(fileName)) return 'pdf';
-  return null;
-}
-
-/**
- * One file of a folder upload. The folder structure travels as WeKnora's
- * `fileName` (the upstream splits it into folder path + file name), so the
- * console only has to keep the browser-provided relative path intact.
- */
-interface FolderUploadItem {
-  readonly key: string;
-  /** 入库归属：队列跨「切库」存在过，没有它会把 A 库挑的文件静默传进 B 库。 */
-  readonly baseId: string;
-  readonly label: string;
-  readonly relativePath: string;
-  readonly file: File;
-  readonly status: 'queued' | 'uploading' | 'accepted' | 'failed' | 'uncertain';
-  readonly detail?: string;
-}
-
-/** Matches WeKnora's own upload queue: a small bound keeps the pipe full
- *  without piling hashing work on the upstream. */
-const FOLDER_UPLOAD_CONCURRENCY = 3;
-const FOLDER_UPLOAD_MAX_FILES = 200;
-/** Same ceiling the single-file picker enforces; the portal caps the multipart
- *  body itself, so an oversized member would only fail upstream. */
-const FOLDER_UPLOAD_MAX_FILE_BYTES = 63 * 1024 * 1024;
-
-/** 「文档管理」上方那条口径说明被关掉后记住，别再每次占位。 */
-const DOC_HINT_DISMISSED_KEY = 'admin-knowledge-doc-hint-dismissed';
 
 export function KnowledgeManagement({
   portal,
@@ -505,24 +153,7 @@ export function KnowledgeManagement({
   // 进行中的资料级动作按「行」记账（预览/下载/分块/重解析/启停）。单个全局 id 会在切库、
   // 或另一行并发操作时把别的行永久锁死（旧实现里那些守卫只判 `documentActionId` 真值）。
   const [documentActions, setDocumentActions] = useState<readonly string[]>([]);
-  const [inspector, setInspector] = useState<
-    | {
-        readonly title: string;
-        readonly kind: 'chunks';
-        readonly documentId: string;
-        readonly content: readonly ManagedKnowledgeChunk[];
-        readonly total: number;
-        readonly page: number;
-        readonly pageSize: number;
-      }
-    | {
-        readonly title: string;
-        readonly kind: 'spans';
-        readonly documentId: string;
-        readonly content: ManagedKnowledgeSpans;
-      }
-    | null
-  >(null);
+  const [inspector, setInspector] = useState<KnowledgeInspectorState>(null);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [chunkSavingId, setChunkSavingId] = useState<string | null>(null);
   const [chunkEditor, setChunkEditor] = useState<ManagedKnowledgeChunk | null>(null);
@@ -1699,84 +1330,7 @@ export function KnowledgeManagement({
   const queuedFolderItems = folderQueue.filter((item) => item.status === 'queued');
   const failedFolderItems = folderQueue.filter((item) => item.status === 'failed');
   const acceptedFolderCount = folderQueue.filter((item) => item.status === 'accepted').length;
-  const spanTree = (span: ManagedKnowledgeSpans['trace']): SpanTreeNode => ({
-    key: span.span_id,
-    title: (
-      <Space size={6} wrap>
-        <Typography.Text>{span.name || span.kind}</Typography.Text>
-        <Tag color={span.status === 'failed' ? 'error' : span.status === 'completed' ? 'success' : 'processing'}>
-          {span.status || 'unknown'}
-        </Tag>
-        {span.duration_ms !== undefined && <Typography.Text type="secondary">{span.duration_ms} ms</Typography.Text>}
-        {span.error_code && <Typography.Text type="danger">{span.error_code}</Typography.Text>}
-      </Space>
-    ),
-    ...(span.children?.length ? { children: span.children.map(spanTree) } : {}),
-  });
-  const baseColumns = [
-    {
-      title: t('name'),
-      key: 'name',
-      render: (_: unknown, row: ManagedKnowledgeBase) => (
-        <Space orientation="vertical" size={0}>
-          <Typography.Text strong>{row.name}</Typography.Text>
-          <Typography.Text type="secondary" className="text-xs">
-            {row.id}
-          </Typography.Text>
-        </Space>
-      ),
-    },
-    {
-      title: t('descriptionField'),
-      dataIndex: 'description',
-      key: 'description',
-      render: (value: string | undefined) => value || t('notStatistic'),
-    },
-    // 文档数 / 解析状态 / 使用范围 / 更新时间：取 portal 下发的真实统计；
-    // 任一项缺失（老服务、上游没报、刚创建）都按后台设计约定显示「暂未统计」。
-    {
-      title: t('columnDocs'),
-      key: 'documents',
-      render: (_: unknown, row: ManagedKnowledgeBase) => {
-        // FAQ 库的知识条目落在 chunk 上，上游对 document 型才填 knowledge_count。
-        const count = row.type === 'faq' ? row.chunk_count : row.knowledge_count;
-        return typeof count === 'number' ? String(count) : t('notStatistic');
-      },
-    },
-    {
-      title: t('parse'),
-      key: 'parse',
-      render: (_: unknown, row: ManagedKnowledgeBase) =>
-        typeof row.processing_count !== 'number'
-          ? t('notStatistic')
-          : row.processing_count > 0
-            ? t('parseProcessing').replace('{count}', String(row.processing_count))
-            : t('parseCompleted'),
-    },
-    {
-      title: t('columnScope'),
-      key: 'scope',
-      render: (_: unknown, row: ManagedKnowledgeBase) =>
-        row.scope
-          ? t('scopeSummary').replace('{users}', String(row.scope.users)).replace('{teams}', String(row.scope.teams))
-          : t('notStatistic'),
-    },
-    {
-      title: t('columnUpdated'),
-      key: 'updated',
-      render: (_: unknown, row: ManagedKnowledgeBase) =>
-        row.updated_at ? new Date(row.updated_at).toLocaleString() : t('notStatistic'),
-    },
-    {
-      title: t('knowledgeActions'),
-      key: 'actions',
-      render: (_: unknown, row: ManagedKnowledgeBase) => (
-        <Button type="link" style={{ paddingInline: 0 }} onClick={() => openBase(row.id)}>
-          {t('manageDocuments')}
-        </Button>
-      ),
-    },
-  ];
+  const baseColumns = knowledgeBaseColumns(openBase);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -2483,12 +2037,22 @@ export function KnowledgeManagement({
           )}
         </Form>
       </Modal>
-      <Drawer
-        title={inspector?.title}
-        placement="right"
-        size={720}
-        open={inspector !== null}
-        onClose={() => {
+      <KnowledgeDocumentInspector
+        inspector={inspector}
+        chunksLoading={chunksLoading}
+        chunkSavingId={chunkSavingId}
+        chunkEditor={chunkEditor}
+        chunkEditorText={chunkEditorText}
+        chunkEditorOverLimit={chunkEditorOverLimit}
+        chunkImageURLs={chunkImageURLs}
+        chunkImageLoading={chunkImageLoading}
+        preview={preview}
+        writeBlocked={writeBlocked}
+        uncertainWrite={uncertainWrite}
+        saveChunk={saveChunk}
+        previewChunkImage={previewChunkImage}
+        changeChunkPage={changeChunkPage}
+        onCloseInspector={() => {
           chunkRequestGeneration.current += 1;
           chunkSaveGeneration.current += 1;
           chunkImageRequests.current.forEach((controller) => {
@@ -2498,205 +2062,23 @@ export function KnowledgeManagement({
           setChunksLoading(false);
           setInspector(null);
         }}
-        destroyOnHidden
-      >
-        <Tabs
-          activeKey={inspector?.kind === 'chunks' ? 'chunks' : 'spans'}
-          onChange={(key) => {
-            const row = visibleDocs?.data.find((item) => item.id === inspector?.documentId);
-            if (!row || !inspector || key === inspector.kind) return;
-            void inspectDocument(row, key === 'chunks' ? 'chunks' : 'spans');
-          }}
-          items={[
-            { key: 'spans', label: t('knowledgeSpans') },
-            { key: 'chunks', label: t('knowledgeChunks') },
-          ]}
-        />
-        {inspector?.kind === 'chunks' && (
-          <Spin spinning={chunksLoading}>
-            <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-              <Typography.Text type="secondary">
-                {t('chunkCount')}: {inspector.total}
-              </Typography.Text>
-              {inspector.content.length > 0 ? (
-                <Listy
-                  items={[...inspector.content]}
-                  rowKey="id"
-                  itemRender={(chunk) => (
-                    <div>
-                      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                        <Space wrap>
-                          <Typography.Text strong>#{chunk.seq_id}</Typography.Text>
-                          <Tag>{chunk.chunk_type || t('chunkText')}</Tag>
-                          <Tag color={chunk.is_enabled ? 'success' : 'default'}>
-                            {chunk.is_enabled ? t('chunkEnabled') : t('chunkDisabled')}
-                          </Tag>
-                          <Button
-                            size="small"
-                            disabled={writeBlocked || uncertainWrite || chunkSavingId !== null}
-                            onClick={() => {
-                              setChunkEditor(chunk);
-                              setChunkEditorText(chunk.content);
-                            }}
-                          >
-                            {t('chunkEdit')}
-                          </Button>
-                          <Switch
-                            size="small"
-                            checked={chunk.is_enabled}
-                            loading={chunkSavingId === chunk.id}
-                            disabled={writeBlocked || uncertainWrite || chunkSavingId !== null}
-                            aria-label={chunk.is_enabled ? t('chunkDisabled') : t('chunkEnabled')}
-                            onChange={(checked) => void saveChunk(chunk, { is_enabled: checked })}
-                          />
-                        </Space>
-                        <Typography.Paragraph
-                          style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 0 }}
-                        >
-                          {chunk.content}
-                        </Typography.Paragraph>
-                        {chunk.index_status === 'failed' && (
-                          <Alert type="warning" showIcon title={t('chunkIndexFailed')} />
-                        )}
-                        {chunk.images?.map((image) => {
-                          const imageKey = `${inspector.documentId}:${chunk.id}:${image.index}`;
-                          const imageURL = chunkImageURLs[imageKey];
-                          return (
-                            <Space key={image.index} orientation="vertical" size={4}>
-                              {imageURL ? (
-                                <Image src={imageURL} alt={`${t('imagePreview')} ${image.index + 1}`} width={120} />
-                              ) : (
-                                <Button
-                                  size="small"
-                                  loading={chunkImageLoading === imageKey}
-                                  onClick={() => void previewChunkImage(inspector.documentId, chunk.id, image.index)}
-                                >
-                                  {t('imagePreview')} {image.index + 1}
-                                </Button>
-                              )}
-                            </Space>
-                          );
-                        })}
-                      </Space>
-                    </div>
-                  )}
-                />
-              ) : (
-                <Empty description={t('chunkEmpty')} />
-              )}
-              {inspector.total > inspector.pageSize && (
-                <Pagination
-                  current={inspector.page}
-                  pageSize={inspector.pageSize}
-                  total={inspector.total}
-                  pageSizeOptions={[20, 50, 100]}
-                  showSizeChanger
-                  showTotal={(total) => `${t('chunkCount')}: ${total}`}
-                  disabled={chunksLoading}
-                  onChange={(nextPage, nextPageSize) => void changeChunkPage(nextPage, nextPageSize)}
-                />
-              )}
-            </Space>
-          </Spin>
-        )}
-        {inspector?.kind === 'spans' && (
-          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label={t('parse')}>{inspector.content.parse_status || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('currentStage')}>{inspector.content.current_stage || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('attempt')}>
-                {inspector.content.attempt} / {inspector.content.latest_attempt}
-              </Descriptions.Item>
-            </Descriptions>
-            <Tree style={{ width: '100%' }} treeData={[spanTree(inspector.content.trace)]} defaultExpandAll />
-          </Space>
-        )}
-      </Drawer>
-      <Modal
-        title={t('chunkEdit')}
-        open={chunkEditor !== null}
-        onCancel={() => setChunkEditor(null)}
-        onOk={() => chunkEditor && void saveChunk(chunkEditor, { content: chunkEditorText })}
-        confirmLoading={chunkSavingId === chunkEditor?.id}
-        okButtonProps={{
-          disabled: writeBlocked || uncertainWrite || !chunkEditorText.trim() || chunkEditorOverLimit,
+        onInspectorTabChange={(key) => {
+          const row = visibleDocs?.data.find((item) => item.id === inspector?.documentId);
+          if (!row || !inspector || key === inspector.kind) return;
+          void inspectDocument(row, key === 'chunks' ? 'chunks' : 'spans');
         }}
-        okText={t('save')}
-        cancelText={t('cancel')}
-        destroyOnHidden
-      >
-        <Typography.Text type="secondary">
-          {t('chunkRevision')}: {chunkEditor?.content_revision}
-        </Typography.Text>
-        {chunkEditorOverLimit && (
-          <Alert
-            type="warning"
-            showIcon
-            title={byteLimitMessage(t('chunkContent'), CONTENT_MAX_BYTES, byteLength(chunkEditorText))}
-          />
-        )}
-        <Input.TextArea
-          value={chunkEditorText}
-          onChange={(event) => setChunkEditorText(event.target.value)}
-          rows={10}
-          maxLength={CONTENT_MAX_BYTES}
-          showCount
-        />
-      </Modal>
-      <Modal
-        title={preview?.name ?? t('knowledgePreview')}
-        open={preview !== null}
-        footer={null}
-        onCancel={() => {
+        onEditChunk={(chunk) => {
+          setChunkEditor(chunk);
+          setChunkEditorText(chunk.content);
+        }}
+        onCloseEditor={() => setChunkEditor(null)}
+        onEditText={setChunkEditorText}
+        onClosePreview={() => {
           // 关闭也要推进 generation：在途预览返回时不能再把弹窗重新弹开。
           previewGeneration.current += 1;
           setPreview(null);
         }}
-        width={960}
-        destroyOnHidden
-      >
-        {preview &&
-          (preview.loading ? (
-            <div
-              style={{
-                alignItems: 'center',
-                display: 'flex',
-                height: '70vh',
-                justifyContent: 'center',
-              }}
-            >
-              <Spin />
-            </div>
-          ) : (
-            // 固定高度：不随文件长短跳动；内容超出在框内滚动/缩放。
-            <div style={{ height: '70vh', overflow: 'auto' }}>
-              {preview.kind === 'text' ? (
-                <pre className="whitespace-pre-wrap break-words" style={{ fontSize: 13, margin: 0 }}>
-                  {preview.text}
-                </pre>
-              ) : preview.kind === 'image' ? (
-                <img
-                  src={preview.url}
-                  alt={preview.name}
-                  style={{ display: 'block', margin: '0 auto', maxHeight: '100%', maxWidth: '100%' }}
-                />
-              ) : preview.incompatible ? (
-                <Alert
-                  type="warning"
-                  showIcon
-                  title={t('knowledgePreviewUnavailable')}
-                  description={`${t('fileName')}: ${preview.name}`}
-                />
-              ) : (
-                <iframe
-                  title={preview.name}
-                  src={preview.url}
-                  style={{ border: 0, display: 'block', height: '100%', width: '100%' }}
-                />
-              )}
-            </div>
-          ))}
-      </Modal>
+      />
     </div>
   );
 }

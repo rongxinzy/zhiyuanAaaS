@@ -16,7 +16,7 @@ import {
   Typography,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import {
   type AdminAuditFilters,
@@ -26,13 +26,13 @@ import {
   type AdminConsoleClient,
   type AdminDeliveryRecord,
   type AdminEventRecord,
-  type AdminIdentity,
   AdminPermission,
   AdminRequestError,
   hasAdminPermission,
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import type { AuditTabItem, EventsProps } from './events-types.js';
 import { formatTimestampSeconds } from './format.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeAudit } from './KnowledgeAudit.js';
@@ -40,18 +40,7 @@ import { shellCopy } from './shell-copy.js';
 
 type Filters = { type?: string; userId?: string; result?: string };
 const shown = (value?: string | null) => value || c.unknown;
-type AuditTabItem = { readonly key: string; readonly label: ReactNode; readonly children: ReactNode };
-export function Events({
-  client,
-  identity,
-  initialTab = 'operations',
-  knowledgeBaseId,
-}: {
-  readonly client: AdminConsoleClient;
-  readonly identity?: AdminIdentity | undefined;
-  readonly initialTab?: string | undefined;
-  readonly knowledgeBaseId?: string | undefined;
-}) {
+export function Events({ client, identity, initialTab = 'operations', knowledgeBaseId }: EventsProps) {
   // 遥测（events.read）和管理审计（audit.read）是两套模型、两套权限，逐 tab 门控：
   // 无权限的 tab 不出现，而不是摆一个 403 占位；默认落第一个可用 tab。
   const canReadTelemetry = hasAdminPermission(identity, AdminPermission.EventsRead);
