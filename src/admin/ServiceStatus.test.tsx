@@ -169,9 +169,10 @@ describe('admin service status views', () => {
     'KnowledgeView uses managed APIs, shows parse status, and never links to WeKnora UI',
     async () => {
       const portal = makePortal();
-      // 列表页：readiness 提示与「暂未统计」占位；不跳转 WeKnora 页面。
+      // 列表页保留真实统计占位，不展示服务配置横幅或跳转 WeKnora。
       const list = render(<KnowledgeView client={client as never} portal={portal} />);
-      expect(await screen.findByText(/可用性未验证/)).toBeInTheDocument();
+      expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
+      expect(screen.queryByText(/服务配置状态/)).not.toBeInTheDocument();
       expect(screen.getAllByText('暂未统计').length).toBeGreaterThan(0);
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
       expect(portal.listManagedKnowledgeBases).toHaveBeenCalled();
@@ -190,7 +191,7 @@ describe('admin service status views', () => {
   );
 
   test(
-    'KnowledgeView exposes readiness gaps and disables creation without an embedding model',
+    'KnowledgeView keeps creation disabled without an embedding model after hiding the readiness banner',
     async () => {
       const portal = makePortal({
         managedKnowledgeReadiness: vi.fn().mockResolvedValue({
@@ -203,7 +204,8 @@ describe('admin service status views', () => {
         }),
       });
       render(<KnowledgeView client={client as never} portal={portal} />);
-      expect(await screen.findByText(/暂不能新建知识库/)).toBeInTheDocument();
+      expect(await screen.findByText('销售产品资料')).toBeInTheDocument();
+      expect(screen.queryByText(/服务配置状态/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /新建知识库/ })).toBeDisabled();
     },
     TIMEOUT,

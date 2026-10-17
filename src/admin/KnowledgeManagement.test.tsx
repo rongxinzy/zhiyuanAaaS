@@ -253,6 +253,19 @@ describe('KnowledgeManagement component state', () => {
     expect(portal.deleteManagedKnowledgeBase).toHaveBeenCalledWith(base.id);
   });
 
+  test('returns to the registry after a confirmed successful base deletion', async () => {
+    const remove = vi.fn().mockResolvedValue({ operationId: 'kbop-base-deleted' });
+    const portal = makePortal({ deleteManagedKnowledgeBase: remove });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    expect(await screen.findByRole('heading', { name: base.name })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /删除/ }));
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+    expect(await screen.findByText(/kbop-base-deleted/)).toBeInTheDocument();
+    expect(remove).toHaveBeenCalledWith(base.id);
+    expect(screen.getByRole('heading', { name: '知识库管理' })).toBeInTheDocument();
+  });
+
   test('creates a registered knowledge base and displays the returned operation id', async () => {
     const created = { ...base, id: 'kb-created-1', name: 'New research', description: 'Created in console' };
     const portal = makePortal({
@@ -331,6 +344,20 @@ describe('KnowledgeManagement component state', () => {
     expect(await screen.findByText(/文件已受理/)).toBeInTheDocument();
     expect(await screen.findByText('排队中')).toBeInTheDocument();
     expect(portal.uploadManagedKnowledgeDocument).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects an oversized single file locally and retains the upload dialog', async () => {
+    const portal = makePortal();
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    await screen.findByRole('heading', { name: base.name });
+    await openAddMaterial('file');
+    const file = new File(['synthetic oversized file'], 'large.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'size', { value: 64 * 1024 * 1024 });
+    fireEvent.change(screen.getByLabelText('test file picker'), { target: { files: [file] } });
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /上传文档/ }));
+    expect(await within(dialog).findByText(translate(ADMIN_LANGUAGE, 'knowledgeFileLimit'))).toBeInTheDocument();
+    expect(portal.uploadManagedKnowledgeDocument).not.toHaveBeenCalled();
   });
 
   test('uploads a picked folder file by file, keeping each relative path', async () => {
@@ -658,6 +685,93 @@ describe('KnowledgeManagement component state', () => {
   });
 
   // 设计确定三页签：文档管理 / 检索测试 / 访问与关联；文件夹与 FAQ 归入文档管理，不再有独立运营页签。
+  test('moves only selected files and refreshes the document list after confirmation', async () => {
+    const doc = lifecycleDocument('completed');
+    const move = vi.fn().mockResolvedValue({ operationId: 'kbop-move-file' });
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      moveManagedKnowledgeDocuments: move,
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    fireEvent.click(within((await screen.findByText(doc.name)).closest('tr')!).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /移动$/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(move).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: /移\s*动/ }));
+    await waitFor(() => expect(move).toHaveBeenCalledWith(base.id, [doc.id], ''));
+    expect(await screen.findByText(/kbop-move-file/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(portal.listManagedKnowledgeDocuments).toHaveBeenCalledTimes(4));
+    expect(within(screen.getByText(doc.name).closest('tr')!).getByRole('checkbox')).not.toBeChecked();
+  });
+
+  test('retains selected files and the operation identifier when a move outcome is uncertain', async () => {
+    const doc = lifecycleDocument('completed');
+    const move = vi
+      .fn()
+      .mockRejectedValue(
+        new PortalError(502, 'move outcome unknown', 'KNOWLEDGE_WRITE_UNCERTAIN', 'kbop-move-unknown'),
+      );
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      moveManagedKnowledgeDocuments: move,
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    fireEvent.click(within((await screen.findByText(doc.name)).closest('tr')!).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /移动$/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /移\s*动/ }));
+    expect(await within(dialog).findByText(/kbop-move-unknown/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /移\s*动/ })).toBeDisabled();
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(within(screen.getByText(doc.name).closest('tr')!).getByRole('checkbox')).toBeChecked();
+  });
+
+  test('reprocesses selected files once and retains only failed files for retry', async () => {
+    const docs = [
+      lifecycleDocument('failed'),
+      { ...lifecycleDocument('failed'), id: 'doc-second', name: 'Second guide' },
+    ];
+    const action = vi
+      .fn()
+      .mockResolvedValueOnce({ operationId: 'kbop-first' })
+      .mockRejectedValueOnce(new PortalError(400, 'parser unavailable'))
+      .mockResolvedValueOnce({ operationId: 'kbop-retry' });
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: docs, total: 2, page: 1, pageSize: 10 }),
+      runManagedKnowledgeDocumentAction: action,
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    for (const doc of docs)
+      fireEvent.click(within((await screen.findByText(doc.name)).closest('tr')!).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /重新处理$/ }));
+    expect(await screen.findByText(/Second guide: parser unavailable/)).toBeInTheDocument();
+    expect(action.mock.calls).toEqual([
+      [docs[0]!.id, 'reparse'],
+      [docs[1]!.id, 'reparse'],
+    ]);
+    expect(within(screen.getByText(docs[0]!.name).closest('tr')!).getByRole('checkbox')).not.toBeChecked();
+    expect(within(screen.getByText(docs[1]!.name).closest('tr')!).getByRole('checkbox')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /重新处理$/ }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(3));
+    expect(action).toHaveBeenLastCalledWith(docs[1]!.id, 'reparse');
+  });
+
+  test('requires confirmation before deleting selected files', async () => {
+    const doc = lifecycleDocument('completed');
+    const action = vi.fn().mockResolvedValue({ operationId: 'kbop-delete-file' });
+    const portal = makePortal({
+      listManagedKnowledgeDocuments: vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 }),
+      runManagedKnowledgeDocumentAction: action,
+    });
+    render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+    fireEvent.click(within((await screen.findByText(doc.name)).closest('tr')!).getByRole('checkbox'));
+    fireEvent.click(within(screen.getByRole('region', { name: '批量操作' })).getByRole('button', { name: /删\s*除/ }));
+    expect(action).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(action).toHaveBeenCalledWith(doc.id, 'delete'));
+  });
+
   test('renders base detail heading summary and the three business tabs', async () => {
     const portal = makePortal();
     render(<KnowledgeManagement portal={portal} baseId={base.id} onNavigate={vi.fn()} />);

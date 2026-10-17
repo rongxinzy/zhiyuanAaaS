@@ -79,11 +79,6 @@ const copyKeys = {
   refresh: 'statusRefresh',
   empty: 'knowledgeEmptyManaged',
   emptyHint: 'knowledgeEmptyManagedHint',
-  readiness: 'knowledgeReadiness',
-  modelReady: 'knowledgeModelConfigured',
-  modelMissing: 'knowledgeModelMissing',
-  modelUnavailable: 'knowledgeModelUnavailable',
-  unverified: 'knowledgeCapabilitiesUnverified',
   name: 'knowledgeName',
   descriptionField: 'knowledgeDescriptionField',
   id: 'knowledgeId',
@@ -655,8 +650,7 @@ export function KnowledgeManagement({
           if (generation === listGeneration.current && !signal?.aborted) setLoading(false);
         }
       };
-      // readiness 只是顶部横幅的信息来源；它单独失败（上游字段改名/探针报错）时
-      // 不能把知识库列表和详情一起拖下水，所以和列表并发但各自 try/catch。
+      // readiness 用于新建权限和模型信息；读取失败不影响知识库列表和详情。
       const loadReadiness = async () => {
         try {
           const ready = await portal.managedKnowledgeReadiness(signal);
@@ -1688,7 +1682,9 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(
+        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
+      );
     } finally {
       setBatchBusy(false);
     }
@@ -1700,7 +1696,6 @@ export function KnowledgeManagement({
     return collect(folderTree?.folders ?? []);
   }, [folderTree]);
 
-  const modelState = readiness?.embeddingModel.state;
   const queuedFolderItems = folderQueue.filter((item) => item.status === 'queued');
   const failedFolderItems = folderQueue.filter((item) => item.status === 'failed');
   const acceptedFolderCount = folderQueue.filter((item) => item.status === 'accepted').length;
@@ -1804,14 +1799,6 @@ export function KnowledgeManagement({
             </Space>
           </div>
 
-          {readiness && (
-            <Alert
-              showIcon
-              type={modelState === 'configured' ? 'info' : 'warning'}
-              title={`${t('readiness')} · ${modelState === 'configured' ? t('modelReady') : modelState === 'unavailable' ? t('modelUnavailable') : t('modelMissing')}`}
-              description={`${t('unverified')} (${readiness.storage}, ${readiness.parser})`}
-            />
-          )}
           {error && (
             <Alert
               type="error"
@@ -2122,6 +2109,7 @@ export function KnowledgeManagement({
                                       icon={<FolderOpenOutlined />}
                                       disabled={batchBusy || writeBlocked}
                                       onClick={() => {
+                                        setWriteNotice(null);
                                         setMoveTarget(folderPath ?? '');
                                         setMoveDialog(true);
                                       }}
@@ -2305,6 +2293,7 @@ export function KnowledgeManagement({
         destroyOnHidden
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
+          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
           <Typography.Text type="secondary">
             {t('batchPicked').replace('{count}', String(pickedDocs.length))}
           </Typography.Text>
