@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { Departments } from './Departments.js';
 import type { PortalDepartment } from './portal.js';
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // AntD form feedback schedules a 10 ms debounce without unmount cleanup.
+  // Drain it while jsdom still exists, before Vitest tears down window.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+});
 
 const departments: readonly PortalDepartment[] = [
   { id: 'rd-dept', name: '研发部' },
