@@ -21,6 +21,23 @@ const row = {
   createdAt: '2026-10-11T00:00:00Z',
 };
 
+test('keeps the route-selected base scope through filtering, pagination and reset', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [row], nextCursor: '12' })
+    .mockResolvedValue({ items: [], nextCursor: null });
+  const portal = { knowledgeAudit: request } as unknown as PortalClient;
+  const view = render(<KnowledgeAudit client={client} portal={portal} knowledgeBaseId="kb-1" />);
+  await screen.findByText('kbop-delete');
+  expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1' }, expect.any(AbortSignal));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1', cursor: '12' }));
+  fireEvent.click(screen.getByRole('button', { name: /重\s*置/ }));
+  await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1' }, expect.any(AbortSignal)));
+  view.rerender(<KnowledgeAudit client={client} portal={portal} knowledgeBaseId="kb-2" />);
+  await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-2' }, expect.any(AbortSignal)));
+});
+
 test('shows real actor and uncertain result, filters and pages within Portal', async () => {
   const request = vi
     .fn()

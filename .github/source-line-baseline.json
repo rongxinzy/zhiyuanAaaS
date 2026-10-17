@@ -1,18 +1,17 @@
 {
   "caps": {
     "scripts/admin-browser-fixture.mjs": 1421,
+    "src/admin/DigitalEmployees.tsx": 1924,
+    "src/admin/Events.tsx": 1056,
+    "src/admin/KnowledgeManagement.tsx": 2084,
+    "src/admin/Models.tsx": 1565,
+    "src/admin/Operations.tsx": 2264,
     "src/admin/Resources.test.tsx": 1832,
     "src/admin/Resources.tsx": 4700,
     "src/admin/client.test.ts": 1349,
     "src/admin/client.ts": 2139,
-    "src/admin/DigitalEmployees.tsx": 1924,
-    "src/admin/Events.tsx": 1062,
-    "src/admin/i18n.ts": 2595,
-    "src/admin/KnowledgeManagement.test.tsx": 1399,
-    "src/admin/KnowledgeManagement.tsx": 2107,
-    "src/admin/Models.tsx": 1565,
-    "src/admin/Operations.tsx": 2264,
-    "src/admin/portal.test.ts": 1043,
-    "src/admin/portal.ts": 1926
+    "src/admin/i18n.ts": 2105,
+    "src/admin/portal.test.ts": 1033,
+    "src/admin/portal.ts": 1920
   }
 }
