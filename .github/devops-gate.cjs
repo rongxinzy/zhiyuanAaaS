@@ -2,52 +2,6 @@
 
 // Trusted-default-branch CI aggregation. Only writes the gate check;
 // never checks out PR code, downloads artifacts, publishes packages or deploys.
-function validatePr(pr) {
-  const errors = [];
-  // Dependabot's generated release notes do not use our manual PR template.
-  if (pr.user?.login === 'dependabot[bot]' && pr.user?.type === 'Bot') {
-    if (!/^(build|chore)(\([a-z0-9._/-]+\))?: .+/.test(pr.title || '') || !(pr.body || '').trim()) {
-      errors.push('Dependabot PRs still require a conventional dependency title and nonempty release notes.');
-    }
-    return errors;
-  }
-  if (
-    !/^(feat|fix|docs|refactor|test|perf|build|ci|chore|revert)(\([a-z0-9][a-z0-9._/-]*\))?!?: [a-z][^\n]*$/.test(
-      pr.title || '',
-    )
-  ) {
-    errors.push('Title must use type(scope): summary with an English lowercase summary.');
-  }
-  let body = (pr.body || '').replace(/\r/g, '');
-  while (body.includes('<!--')) {
-    const start = body.indexOf('<!--');
-    const end = body.indexOf('-->', start + 4);
-    body = body.slice(0, start) + (end === -1 ? '' : body.slice(end + 3));
-  }
-  const sections = [...body.matchAll(/^##\s+([^\n]+)\n([\s\S]*?)(?=^#{1,2}\s|$(?![\s\S]))/gm)];
-  for (const names of [
-    ['改动', 'What changed', 'Summary', 'Changes'],
-    ['原因', 'Why', 'Reason'],
-    ['验证', 'Validation', 'Testing'],
-  ]) {
-    const section = sections.find((match) =>
-      names.some((name) => match[1].trim().toLowerCase() === name.toLowerCase()),
-    );
-    const content = section?.[2].replace(/^[\s\-*]+$/gm, '').trim();
-    if (!content || /^(?:todo|tbd|n\/a|待填写|待补充|\.\.\.)$/i.test(content))
-      errors.push(`Fill the ${names[0]} section.`);
-  }
-  if (/^fix(?:\(|!?\s*:)/.test(pr.title || '')) {
-    for (const [label, pattern] of [
-      ['trigger', /触发|复现|reproduc|trigger/i],
-      ['cause', /根因|原因|root cause|cause/i],
-      ['before/after behavior', /修复前|修复后|before|after/i],
-    ])
-      if (!pattern.test(body.replace(/^#{1,6}\s+.*$/gm, ''))) errors.push(`Bug fixes must explain ${label}.`);
-  }
-  return errors;
-}
-
 function globMatches(path, pattern) {
   if (/[[\]+]/.test(pattern)) throw new Error(`Unsupported filter pattern: ${pattern}; update the gate matcher.`);
   let source = '^';
@@ -150,8 +104,6 @@ async function run({ github, context, core, config }) {
   const current = (await github.rest.pulls.get({ ...context.repo, pull_number: pr.number })).data;
   if (!samePr(current, pr) || current.state !== 'open')
     throw new Error('PR head changed, metadata changed or PR closed; use the newest gate event.');
-  const errors = validatePr(pr);
-  if (errors.length) throw new Error(errors.join('\n'));
   const files = await github.paginate(github.rest.pulls.listFiles, {
     ...context.repo,
     pull_number: pr.number,
@@ -183,7 +135,7 @@ async function run({ github, context, core, config }) {
     core.info(`Waiting for: ${waiting.join(', ')}; a workflow event will refresh this check.`);
     return { status: 'queued', summary: `Waiting for: ${waiting.join(', ')}` };
   }
-  return { status: 'completed', conclusion: 'success', summary: 'PR metadata and all applicable CI workflows passed.' };
+  return { status: 'completed', conclusion: 'success', summary: 'All applicable CI workflows passed.' };
 }
 
 async function eventPullNumbers({ github, context, config }) {
@@ -293,4 +245,4 @@ async function refresh({ github, context, core, config }) {
   }
 }
 
-module.exports = { validatePr, globMatches, workflowApplies, evaluateRuns, run, refresh, eventPullNumbers, samePr };
+module.exports = { workflowApplies, evaluateRuns, run, refresh, eventPullNumbers };

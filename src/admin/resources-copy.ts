@@ -377,7 +377,3 @@ const copy = {
   },
 } as const;
 export const resourcesCopy = copy.zh;
-export type ResourcesCopyKey = keyof (typeof copy)['zh'];
-export function getResourcesCopy(language: keyof typeof copy) {
-  return copy[language];
-}

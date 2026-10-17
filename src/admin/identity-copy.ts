@@ -123,7 +123,3 @@ const copy = {
   },
 } as const;
 export const identityCopy = copy.zh;
-export type IdentityCopyKey = keyof (typeof copy)['zh'];
-export function getIdentityCopy(language: keyof typeof copy) {
-  return copy[language];
-}

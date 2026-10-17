@@ -46,14 +46,14 @@ export type PortalEmployee = {
 // owner | all | team | user | legacy-team | admin. team carries the
 // granting team (spec name snapshot when present); legacy-team ids resolve
 // client-side against the caller's /api/v1/me teams.
-export type PortalEmployeeAccess = {
+type PortalEmployeeAccess = {
   readonly kind: string;
   readonly teamId?: string;
   readonly teamName?: string;
   readonly userId?: string;
 };
 
-export type PortalEmployeeVisibility = {
+type PortalEmployeeVisibility = {
   readonly mode: 'all' | 'restricted' | string;
   readonly teams: readonly { readonly id: string; readonly name: string }[];
   readonly users: readonly { readonly id: string; readonly name: string }[];
@@ -115,7 +115,7 @@ export type PortalRequest = {
 // The deployment leg of a request, kept separate from the approval state:
 // exists/phase come from the employee CR; pending and rejected requests
 // carry exists=false without probing the cluster.
-export type PortalRequestDeploy = {
+type PortalRequestDeploy = {
   readonly exists: boolean;
   readonly phase: string;
   readonly message?: string;
@@ -187,7 +187,7 @@ export type ManagedKnowledgeReadiness = {
   readonly parser: 'unverified';
 };
 
-export type ManagedKnowledgeBaseScope = {
+type ManagedKnowledgeBaseScope = {
   readonly users: number;
   readonly teams: number;
 };
@@ -240,7 +240,7 @@ export type ManagedKnowledgeDocument = {
   readonly created_at: string;
 };
 
-export type ManagedKnowledgeSpan = {
+type ManagedKnowledgeSpan = {
   readonly knowledge_id: string;
   readonly attempt: number;
   readonly span_id: string;
@@ -408,7 +408,7 @@ export function isSessionExpired(error: unknown): boolean {
 // release-condition violations / 409 duplicate / 403 quota-policy /
 // anything else). Violations are field-anchored so the wizard can point
 // at the exact item.
-export type PortalApplyViolation = {
+type PortalApplyViolation = {
   readonly field: string;
   readonly message: string;
 };
@@ -444,7 +444,7 @@ export type PortalApplyInput = {
   readonly note?: string;
 };
 
-export type PortalApplyVisibility = {
+type PortalApplyVisibility = {
   readonly mode: 'all' | 'restricted';
   readonly teams?: readonly string[];
   readonly users?: readonly string[];
@@ -2097,13 +2097,4 @@ export function botUIBaseURL(): string {
     return `${window.location.protocol}//${window.location.hostname}:30202`;
   }
   return 'http://localhost:30202';
-}
-
-export function portalChatBaseURL(): string {
-  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  if (env?.VITE_PORTAL_URL) return env.VITE_PORTAL_URL;
-  if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:30190`;
-  }
-  return 'http://localhost:30190';
 }

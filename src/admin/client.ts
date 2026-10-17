@@ -72,14 +72,14 @@ export interface AdminOverview {
   readonly failed?: readonly AdminOverviewMetric[];
 }
 
-export const AdminOverviewMetric = {
+const AdminOverviewMetric = {
   Users: 'users',
   Teams: 'teams',
   Skills: 'skills',
   Models: 'models',
   PendingEvents: 'pendingEvents',
 } as const;
-export type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
+type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
 
 export interface AdminSession {
   readonly status: AdminConsoleStatus;
@@ -165,7 +165,7 @@ export interface AdminSkillInstallation {
   readonly itemStatus?: string;
 }
 
-export interface AdminSkillInstallationSummary {
+interface AdminSkillInstallationSummary {
   readonly granted: number;
   readonly reported: number;
   readonly installed: number;
@@ -268,7 +268,7 @@ export interface AdminDataPlaneCatalogComparison {
 // The SDK now carries catalogComparison on DataPlaneStatus; Omit keeps the
 // local readonly collection shape instead of intersecting with it. The field
 // is absent only in responses predating catalogComparison.
-export type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
+type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
   readonly catalogComparison?: AdminDataPlaneCatalogComparison;
 };
 
@@ -277,13 +277,12 @@ export interface AdminDataPlane {
   readonly status: AdminDataPlaneStatus;
 }
 
-export const AdminDeploymentSettingSource = {
+const AdminDeploymentSettingSource = {
   Override: 'override',
   Env: 'env',
   Unset: 'unset',
 } as const;
-export type AdminDeploymentSettingSource =
-  (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
+type AdminDeploymentSettingSource = (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
 
 export interface AdminDeploymentSettingValue {
   readonly override: string | null;
@@ -291,7 +290,7 @@ export interface AdminDeploymentSettingValue {
   readonly source: AdminDeploymentSettingSource;
 }
 
-export interface AdminDeploymentIntegerSettingValue {
+interface AdminDeploymentIntegerSettingValue {
   readonly override: number | null;
   readonly effectiveValue: number | null;
   readonly source: AdminDeploymentSettingSource;

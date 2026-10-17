@@ -21,6 +21,3 @@ const copy = {
   },
 };
 export const connectionCopy = copy.zh;
-export function getConnectionCopy(language: keyof typeof copy) {
-  return copy[language];
-}
