@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles); nothing extra is needed here.
 import { ConfigProvider } from 'antd';
@@ -47,8 +47,13 @@ async function pickOption(combobox: HTMLElement, optionName: RegExp) {
 }
 
 describe('admin digital employees', () => {
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    // AntD form feedback schedules a 10 ms debounce without unmount cleanup.
+    // Drain it while jsdom still exists, before Vitest tears down window.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
     vi.restoreAllMocks();
   });
 
