@@ -1,5 +1,20 @@
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Alert, App, Button, Empty, Form, Input, Modal, QRCode, Select, Space, Table, Tag, Typography } from 'antd';
+import {
+  Alert,
+  App,
+  Button,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  QRCode,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import type { AdminConsoleClient } from './client.js';
 import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
@@ -113,6 +128,26 @@ export function Channels({
         selected && <EmployeeChannelsPanel key={selected} portal={portal} employeeName={selected} language={language} />
       )}
     </section>
+  );
+}
+
+export function EmployeeChannelsDrawer({
+  portal,
+  employeeName,
+  language,
+  open,
+  onClose,
+}: {
+  readonly portal: PortalClient;
+  readonly employeeName: string;
+  readonly language: AdminLanguage;
+  readonly open: boolean;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Drawer open={open} title={translate(language, 'channelManage')} onClose={onClose} width={960} destroyOnHidden>
+      <EmployeeChannelsPanel portal={portal} employeeName={employeeName} language={language} />
+    </Drawer>
   );
 }
 

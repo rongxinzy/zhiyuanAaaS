@@ -732,7 +732,23 @@ try {
   await page.evaluate(() => localStorage.setItem('zhiyuan.admin.theme', 'light'));
   await page.reload({ waitUntil: 'networkidle' });
   checks.push('model gateway: six top-level underline tabs, light/dark, desktop/narrow, keyboard focus');
-  await visit('system/channels', 'E2E 企业微信');
+  await visit('system/channels', '渠道接入');
+  await page.getByRole('cell', { name: '企业微信', exact: true }).waitFor();
+  assert.equal(await page.getByRole('cell', { name: '飞书', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('cell', { name: '微信', exact: true }).count(), 1);
+  const wecomRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: '企业微信', exact: true }) });
+  await wecomRow.getByRole('button', { name: '配置接入', exact: true }).click();
+  const channelDialog = page.getByRole('dialog');
+  await channelDialog.getByLabel('Bot ID', { exact: true }).fill('browser-fixture-bot');
+  await channelDialog.getByLabel('Bot Secret', { exact: true }).fill('disposable-browser-fixture');
+  await channelDialog.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await channelDialog.waitFor({ state: 'hidden' });
+  await wecomRow.getByText('已保存凭据', { exact: true }).waitFor();
+  assert.equal(await wecomRow.getByText('平台连接已建立', { exact: true }).count(), 0);
+  await wecomRow.getByRole('button', { name: '更新凭据', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').getByLabel('Bot Secret', { exact: true }).inputValue(), '');
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  checks.push('native channel configuration saves credentials without echo or fabricated platform connection');
   assert.equal(await page.getByRole('tab', { name: '模型服务', exact: true }).count(), 0);
   await visit('system/services', '服务状态');
   await page.screenshot({

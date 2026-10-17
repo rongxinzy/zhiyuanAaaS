@@ -30,9 +30,10 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { EmployeeChannelsPanel } from './Channels.js';
+import { EmployeeChannelsDrawer } from './Channels.js';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
 import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
+import { PhaseTag } from './employee-phase.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
@@ -110,18 +111,6 @@ function formatDateTime(value: string): string {
   if (Number.isNaN(date.getTime())) return value;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-// "Ready" only claims the runtime instance is deployed — it says nothing
-// about model auth or publish completeness. Unknown values render raw.
-function PhaseTag({ phase }: { readonly phase: string }) {
-  if (phase === 'Ready') return <Tag color="success">{t('phaseReady')}</Tag>;
-  if (phase === 'Pending') return <Tag color="processing">{t('phasePending')}</Tag>;
-  // Idle-hibernated runtime: no pod is resident, first chat wakes it.
-  if (phase === 'Sleeping') return <Tag color="default">💤 {t('phaseSleeping')}</Tag>;
-  if (phase === 'Error') return <Tag color="error">{t('phaseError')}</Tag>;
-  if (!phase) return <Tag>{t('phaseUnknown')}</Tag>;
-  return <Tag>{phase}</Tag>;
 }
 
 function wecomTag(employee: PortalEmployee) {
@@ -1534,15 +1523,13 @@ function EmployeeDetail({
       />
 
       <DeleteBlockedModal employee={deleting ? employee : null} onClose={() => setDeleting(false)} />
-      <Drawer
+      <EmployeeChannelsDrawer
+        portal={portal}
+        employeeName={employee.name}
+        language={language}
         open={channelsOpen}
-        title={translate(language, 'channelManage')}
         onClose={() => setChannelsOpen(false)}
-        width={960}
-        destroyOnHidden
-      >
-        <EmployeeChannelsPanel portal={portal} employeeName={employee.name} language={language} />
-      </Drawer>
+      />
       <EditEmployeeModal
         employee={employee}
         client={client}

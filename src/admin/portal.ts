@@ -1,63 +1,16 @@
+import type { PortalEmployee } from './portal-employee-types.js';
+
+export type { PortalEmployee } from './portal-employee-types.js';
+
+import { ChannelClient } from './channel-api.js';
+
+export type { ChannelProvider, ChannelQR, EmployeeChannel, EmployeeChannels } from './channel-api.js';
+
 // Digital-employee portal (de-portal) client. The console reaches it
 // same-origin through the admin server's /api proxy — the same pattern as
 // the /aep proxy — so all paths are relative and no CORS is involved.
 // Bearer-only: portal sessions and CSRF belong to the browser chat entry,
 // not to these calls. Errors are plain {error: string} JSON, not RFC 9457.
-
-export type PortalEmployee = {
-  readonly name: string;
-  readonly displayName: string;
-  readonly phase: string;
-  readonly runtime: string;
-  readonly model: string;
-  /** Full ordered model list (first = default); feeds the edit form. */
-  readonly models: readonly string[];
-  readonly owner: string;
-  readonly ownerId: string;
-  /** Owning department (AEP team id), empty for legacy unscoped employees. */
-  readonly team?: string;
-  readonly memoryUser: string;
-  readonly createdAt: string;
-  readonly channels?: {
-    readonly wecom: boolean;
-    readonly wecomName?: string;
-    readonly feishu?: boolean;
-    readonly feishuName?: string;
-    readonly wechat?: boolean;
-  };
-  /** 用途说明 (release condition, new employees only). */
-  readonly description?: string | null;
-  /** null/undefined = legacy unrestricted policy (not configured). */
-  readonly knowledgeBases?: readonly { readonly id: string; readonly name: string }[] | null;
-  readonly skills?: readonly { readonly id: string; readonly name: string; readonly version: string }[] | null;
-  /** null/undefined = legacy owner/team rules (not explicitly configured). */
-  readonly visibility?: PortalEmployeeVisibility | null;
-  /** Workbench roster: why the caller can see this employee. */
-  readonly accessReason?: PortalEmployeeAccess | undefined;
-  /**
-   * Set while the platform failover watcher is serving this employee from a
-   * fallback model (the default model failed its health probe). null/absent
-   * = the default model is serving.
-   */
-  readonly modelFailover?: { readonly original: string; readonly active: string; readonly switchedAt: string } | null;
-};
-
-// accessReason.kind mirrors the portal's canAccessEmployee branch order:
-// owner | all | team | user | legacy-team | admin. team carries the
-// granting team (spec name snapshot when present); legacy-team ids resolve
-// client-side against the caller's /api/v1/me teams.
-type PortalEmployeeAccess = {
-  readonly kind: string;
-  readonly teamId?: string;
-  readonly teamName?: string;
-  readonly userId?: string;
-};
-
-type PortalEmployeeVisibility = {
-  readonly mode: 'all' | 'restricted' | string;
-  readonly teams: readonly { readonly id: string; readonly name: string }[];
-  readonly users: readonly { readonly id: string; readonly name: string }[];
-};
 
 export type PortalMemoryStatus = {
   readonly server: string;
@@ -520,31 +473,6 @@ export type PortalUsageStats = {
   readonly modelCalls7d: Record<string, number>;
 };
 
-export type ChannelProvider = 'feishu' | 'wecom' | 'wechat';
-export type EmployeeChannel = {
-  readonly provider: ChannelProvider;
-  readonly enabled: boolean;
-  readonly runtimeReady: boolean;
-  readonly configured: boolean;
-  readonly workerState: 'unknown' | 'running' | 'connected' | 'stopped';
-  readonly values: Readonly<Record<string, string>>;
-  readonly hasSecret: boolean;
-};
-export type EmployeeChannels = {
-  readonly employee: string;
-  readonly phase: string;
-  readonly runtimeAvailable: boolean;
-  readonly hibernationEnabled: boolean;
-  readonly checkedAt?: string;
-  readonly providers: readonly EmployeeChannel[];
-};
-export type ChannelQR = {
-  readonly id: string;
-  readonly status: 'pending' | 'scanned' | 'verification_required' | 'confirmed' | 'expired' | 'failed';
-  readonly qrcode_content: string;
-  readonly expires_in: number;
-};
-
 export class PortalClient {
   readonly #tokenProvider: (rejectedToken?: string) => Promise<string | null>;
 
@@ -605,119 +533,17 @@ export class PortalClient {
     return items.map((raw) => parseEmployee(raw));
   }
 
-  // Sidebar service-status probes (the portal holds the OpenViking root key
-  async employeeChannels(name: string, signal?: AbortSignal): Promise<EmployeeChannels> {
-    const { status, data } = await this.#request(
-      'GET',
-      `/api/v1/employees/${encodeURIComponent(name)}/channels`,
-      undefined,
-      undefined,
-      signal,
-    );
-    if (status !== 200) throw portalError(status, data);
-    const result = data as EmployeeChannels | null;
-    if (
-      !result ||
-      result.employee !== name ||
-      typeof result.phase !== 'string' ||
-      typeof result.runtimeAvailable !== 'boolean' ||
-      typeof result.hibernationEnabled !== 'boolean' ||
-      !Array.isArray(result.providers) ||
-      result.providers.length !== 3
-    )
-      throw new PortalError(502, 'Invalid channel response');
-    const seen = new Set<string>();
-    const providers = result.providers.map((item) => {
-      if (
-        !item ||
-        !['feishu', 'wecom', 'wechat'].includes(item.provider) ||
-        seen.has(item.provider) ||
-        typeof item.enabled !== 'boolean' ||
-        typeof item.runtimeReady !== 'boolean' ||
-        typeof item.configured !== 'boolean' ||
-        typeof item.hasSecret !== 'boolean' ||
-        !['unknown', 'running', 'connected', 'stopped'].includes(item.workerState)
-      )
-        throw new PortalError(502, 'Invalid channel response');
-      seen.add(item.provider);
-      const values: Record<string, string> = {};
-      const key = item.provider === 'feishu' ? 'app_id' : item.provider === 'wecom' ? 'bot_id' : '';
-      if (key && typeof item.values?.[key] === 'string') values[key] = item.values[key];
-      return {
-        provider: item.provider,
-        enabled: item.enabled,
-        runtimeReady: item.runtimeReady,
-        configured: item.configured,
-        workerState: item.workerState,
-        hasSecret: item.hasSecret,
-        values,
-      };
-    });
-    return { ...result, providers };
-  }
-
-  async activateChannel(name: string, provider: ChannelProvider, enabled: boolean): Promise<void> {
-    const { status, data } = await this.#request(
-      'PUT',
-      `/api/v1/employees/${encodeURIComponent(name)}/channels/${provider}/activation`,
-      { enabled },
-    );
-    if (status !== 202) throw portalError(status, data);
-  }
-
-  async wakeChannelEmployee(name: string): Promise<void> {
-    const { status, data } = await this.#request('POST', `/api/v1/employees/${encodeURIComponent(name)}/channels/wake`);
-    if (status !== 202) throw portalError(status, data);
-  }
-
-  async configureChannel(
-    name: string,
-    provider: ChannelProvider,
-    values: Readonly<Record<string, string>>,
-  ): Promise<void> {
-    const { status, data } = await this.#request(
-      'POST',
-      `/api/v1/employees/${encodeURIComponent(name)}/channels/${provider}/runtime-config`,
-      { values },
-    );
-    if (status !== 200 || (data as { accepted?: unknown } | null)?.accepted !== true) throw portalError(status, data);
-  }
-
-  async restartChannel(name: string, provider: ChannelProvider): Promise<void> {
-    const { status, data } = await this.#request(
-      'POST',
-      `/api/v1/employees/${encodeURIComponent(name)}/channels/${provider}/restart`,
-    );
-    if (status !== 200 || (data as { accepted?: unknown } | null)?.accepted !== true) throw portalError(status, data);
-  }
-
-  async channelQR(
-    name: string,
-    action: 'qr-login' | 'qr-poll' | 'qr-cancel',
-    id?: string,
-    verifyCode?: string,
-    signal?: AbortSignal,
-  ): Promise<ChannelQR | null> {
-    const { status, data } = await this.#request(
-      'POST',
-      `/api/v1/employees/${encodeURIComponent(name)}/channels/wechat/${action}`,
-      id ? { id, ...(verifyCode ? { verifyCode } : {}) } : undefined,
-      undefined,
-      signal,
-    );
-    if (status !== 200) throw portalError(status, data);
-    if (action === 'qr-cancel') return null;
-    const result = data as ChannelQR | null;
-    if (
-      !result ||
-      typeof result.id !== 'string' ||
-      typeof result.qrcode_content !== 'string' ||
-      typeof result.expires_in !== 'number' ||
-      !['pending', 'scanned', 'verification_required', 'confirmed', 'expired', 'failed'].includes(result.status)
-    )
-      throw new PortalError(502, 'Invalid QR response');
-    return result;
-  }
+  readonly #channels = new ChannelClient(
+    (...args) => this.#request(...args),
+    portalError,
+    (message) => new PortalError(502, message),
+  );
+  readonly employeeChannels = this.#channels.employeeChannels.bind(this.#channels);
+  readonly activateChannel = this.#channels.activateChannel.bind(this.#channels);
+  readonly wakeChannelEmployee = this.#channels.wakeChannelEmployee.bind(this.#channels);
+  readonly configureChannel = this.#channels.configureChannel.bind(this.#channels);
+  readonly restartChannel = this.#channels.restartChannel.bind(this.#channels);
+  readonly channelQR = this.#channels.channelQR.bind(this.#channels);
 
   // Sidebar service-status probes (the portal holds the OpenViking root key
   // server-side; the console only ever sees summaries).

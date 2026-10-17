@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
+import { handleChannelFixture } from './admin-channel-fixture.mjs';
+import { readBody, writeJson } from './admin-fixture-http.mjs';
 
 // Deterministic test-only API fixtures; never loaded by the admin application.
 export const state = {
@@ -245,6 +247,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
     state.failNext = null;
     return writeJson(response, 503, { code: 'TEST_FAILURE', detail: 'Temporary test failure' });
   }
+  if (handleChannelFixture(method, pathname, rawBody, response, state.employees)) return;
   const gatewayPrefix = '/aep/v1/admin/model-gateway';
   if (pathname.startsWith(gatewayPrefix)) {
     const suffix = pathname.slice(gatewayPrefix.length);
@@ -1415,17 +1418,4 @@ function jsonBody(raw) {
 
 function sessionUser() {
   return state.users.find((user) => user.id === state.sessionUserId) ?? state.users[0];
-}
-
-function readBody(request) {
-  return new Promise((resolve) => {
-    const chunks = [];
-    request.on('data', (chunk) => chunks.push(chunk));
-    request.on('end', () => resolve(Buffer.concat(chunks)));
-  });
-}
-
-function writeJson(response, status, value) {
-  response.writeHead(status, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(value));
 }

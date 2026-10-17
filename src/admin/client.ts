@@ -631,9 +631,6 @@ export class AdminConsoleClient {
     this.#sessionId = null;
   }
 
-  // Portal calls share the SDK session. An explicit auth rejection of this
-  // exact token requests renewal. Concurrent SDK refreshes win without
-  // rotating the refresh token again; signed-out sessions stay signed out.
   async getAccessToken(rejectedToken?: string): Promise<string | null> {
     const tokens = await this.#tokenStore.get();
     if (!tokens || !rejectedToken || tokens.accessToken !== rejectedToken) return tokens?.accessToken ?? null;
