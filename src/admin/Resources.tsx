@@ -139,9 +139,9 @@ const EMPTY_RESOURCES: AdminResources = {
   skills: [],
   assignments: [],
 };
-
 export function Resources({ client, tab, identity, portal }: ResourcesProps) {
-  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
+  const createPortal = () => portal ?? new PortalClient((token) => client.getAccessToken(token));
+  const [resolvedPortal] = useState(createPortal);
   const [resources, setResources] = useState<AdminResources | null>(null);
   const [modelResources, setModelResources] = useState<ModelResources>({
     models: [],

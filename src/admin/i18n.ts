@@ -1,7 +1,9 @@
+import { channelTranslations } from './channel-translations.js';
 import { knowledgeTranslations } from './knowledge-translations.js';
 
 const translations = {
   zh: {
+    ...channelTranslations.zh,
     ...knowledgeTranslations.zh,
     publicationLimitsTitle: '限流配额发布进度',
     publicationLimitsEmpty: '当前会话尚未提交限流规则发布。请保存草稿后提交，并检查对应版本的应用状态。',
@@ -1026,6 +1028,7 @@ const translations = {
     computeSourceTagDefault: '默认',
   },
   en: {
+    ...channelTranslations.en,
     ...knowledgeTranslations.en,
     publicationLimitsTitle: 'Rate limit and quota publication',
     publicationLimitsEmpty:
@@ -2096,12 +2099,7 @@ const translations = {
     computeSourceTagDefault: 'Default',
   },
 } as const;
-
 export type AdminLanguage = keyof typeof translations;
 export type AdminTranslationKey = keyof (typeof translations)['zh'];
-
 export const ADMIN_LANGUAGE: AdminLanguage = 'zh';
-
-export function translate(language: AdminLanguage, key: AdminTranslationKey): string {
-  return translations[language][key];
-}
+export const translate = (language: AdminLanguage, key: AdminTranslationKey): string => translations[language][key];

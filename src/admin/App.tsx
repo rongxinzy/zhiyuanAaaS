@@ -47,10 +47,10 @@ import {
   hasAdminPermission,
   AdminPermission as P,
 } from './client.js';
-import { translate } from './i18n.js';
+import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
 import { PageCrumbContext } from './page-crumb.js';
-import { botUIBaseURL, PortalClient, type PortalEmployee } from './portal.js';
+import { botUIBaseURL, PortalClient } from './portal.js';
 import { shellCopy as c } from './shell-copy.js';
 import {
   type AdminThemeMode,
@@ -62,6 +62,7 @@ import {
 
 const Resources = lazy(() => import('./Resources.js').then((m) => ({ default: m.Resources })));
 const Identity = lazy(() => import('./Identity.js').then((m) => ({ default: m.Identity })));
+const Channels = lazy(() => import('./Channels.js').then((m) => ({ default: m.Channels })));
 const Models = lazy(() => import('./Models.js').then((m) => ({ default: m.Models })));
 const Employees = lazy(() =>
   import('./DigitalEmployees.js').then((m) => ({
@@ -507,7 +508,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
         {
           key: 'channels',
           label: c.channels,
-          children: <Channels client={client} />,
+          children: <Channels client={client} language={ADMIN_LANGUAGE} />,
         },
         {
           key: 'services',
@@ -692,67 +693,6 @@ function ForcedPasswordChange({
   );
 }
 
-function Channels({ client }: { client: AdminConsoleClient }) {
-  const [rows, setRows] = useState<readonly PortalEmployee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setError(false);
-    void new PortalClient(() => client.getAccessToken())
-      .listEmployees()
-      .then((items) => {
-        if (live) setRows(items.filter((item) => item.channels?.wecom));
-      })
-      .catch(() => {
-        if (live) {
-          setRows([]);
-          setError(true);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, revision]);
-  return (
-    <section>
-      <div className="admin-page-heading">
-        <div>
-          <Typography.Title level={2}>{c.channels}</Typography.Title>
-          <Typography.Paragraph type="secondary">{c.channelHint}</Typography.Paragraph>
-        </div>
-        <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
-          {t('refresh')}
-        </Button>
-      </div>
-      <Alert
-        type={error ? 'error' : 'info'}
-        title={error ? c.channelFailure : c.channelScope}
-        style={{ marginBottom: 16 }}
-      />
-      <Table
-        rowKey="name"
-        loading={loading}
-        dataSource={[...rows]}
-        scroll={{ x: 580 }}
-        columns={[
-          { title: c.employees, dataIndex: 'displayName' },
-          {
-            title: c.channelName,
-            render: (_, employee) => employee.channels?.wecomName || t('wecomBadge'),
-          },
-          { title: c.channelStatus, render: () => c.configured },
-        ]}
-      />
-    </section>
-  );
-}
-
 function Overview({
   client,
   identity,
@@ -779,7 +719,7 @@ function Overview({
     setLoading(true);
     setFailed(false);
     setAuditFailed(false);
-    const portal = new PortalClient(() => client.getAccessToken());
+    const portal = new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken));
     void portal
       .listEmployees()
       .then((items) => {

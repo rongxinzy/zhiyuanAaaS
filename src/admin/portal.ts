@@ -1,3 +1,11 @@
+import type { PortalEmployee } from './portal-employee-types.js';
+
+export type { PortalEmployee } from './portal-employee-types.js';
+
+import { ChannelClient } from './channel-api.js';
+
+export type { ChannelProvider, ChannelQR, EmployeeChannel, EmployeeChannels } from './channel-api.js';
+
 export type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
 
 import type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
@@ -11,55 +19,6 @@ import {
 // the /aep proxy — so all paths are relative and no CORS is involved.
 // Bearer-only: portal sessions and CSRF belong to the browser chat entry,
 // not to these calls. Errors are plain {error: string} JSON, not RFC 9457.
-
-export type PortalEmployee = {
-  readonly name: string;
-  readonly displayName: string;
-  readonly phase: string;
-  readonly runtime: string;
-  readonly model: string;
-  /** Full ordered model list (first = default); feeds the edit form. */
-  readonly models: readonly string[];
-  readonly owner: string;
-  readonly ownerId: string;
-  /** Owning department (AEP team id), empty for legacy unscoped employees. */
-  readonly team?: string;
-  readonly memoryUser: string;
-  readonly createdAt: string;
-  readonly channels?: { readonly wecom: boolean; readonly wecomName?: string };
-  /** 用途说明 (release condition, new employees only). */
-  readonly description?: string | null;
-  /** null/undefined = legacy unrestricted policy (not configured). */
-  readonly knowledgeBases?: readonly { readonly id: string; readonly name: string }[] | null;
-  readonly skills?: readonly { readonly id: string; readonly name: string; readonly version: string }[] | null;
-  /** null/undefined = legacy owner/team rules (not explicitly configured). */
-  readonly visibility?: PortalEmployeeVisibility | null;
-  /** Workbench roster: why the caller can see this employee. */
-  readonly accessReason?: PortalEmployeeAccess | undefined;
-  /**
-   * Set while the platform failover watcher is serving this employee from a
-   * fallback model (the default model failed its health probe). null/absent
-   * = the default model is serving.
-   */
-  readonly modelFailover?: { readonly original: string; readonly active: string; readonly switchedAt: string } | null;
-};
-
-// accessReason.kind mirrors the portal's canAccessEmployee branch order:
-// owner | all | team | user | legacy-team | admin. team carries the
-// granting team (spec name snapshot when present); legacy-team ids resolve
-// client-side against the caller's /api/v1/me teams.
-type PortalEmployeeAccess = {
-  readonly kind: string;
-  readonly teamId?: string;
-  readonly teamName?: string;
-  readonly userId?: string;
-};
-
-type PortalEmployeeVisibility = {
-  readonly mode: 'all' | 'restricted' | string;
-  readonly teams: readonly { readonly id: string; readonly name: string }[];
-  readonly users: readonly { readonly id: string; readonly name: string }[];
-};
 
 export type PortalMemoryStatus = {
   readonly server: string;
@@ -510,9 +469,9 @@ export type PortalUsageStats = {
 };
 
 export class PortalClient {
-  readonly #tokenProvider: () => Promise<string | null>;
+  readonly #tokenProvider: (rejectedToken?: string) => Promise<string | null>;
 
-  constructor(tokenProvider: () => Promise<string | null>) {
+  constructor(tokenProvider: (rejectedToken?: string) => Promise<string | null>) {
     this.#tokenProvider = tokenProvider;
   }
 
@@ -523,17 +482,42 @@ export class PortalClient {
     extraHeaders?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
   ): Promise<{ readonly status: number; readonly data: unknown }> {
+    signal?.throwIfAborted();
     const headers: Record<string, string> = { ...extraHeaders };
     if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const token = await this.#tokenProvider();
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(path, {
-      method,
-      headers,
-      ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
-      ...(signal ? { signal } : {}),
-    });
-    const data: unknown = await response.json().catch(() => null);
+    const send = () =>
+      fetch(path, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
+        ...(signal ? { signal } : {}),
+      });
+    signal?.throwIfAborted();
+    let response = await send();
+    let data: unknown = await response.json().catch(() => null);
+    // AUTH_REQUIRED is returned before a Portal handler runs. Other 401s can
+    // come from downstream services and must not replay a mutation.
+    if (
+      response.status === 401 &&
+      token &&
+      (data as { error?: { code?: unknown } } | null)?.error?.code === 'AUTH_REQUIRED'
+    ) {
+      signal?.throwIfAborted();
+      let renewed: string | null;
+      try {
+        renewed = await this.#tokenProvider(token);
+      } catch {
+        return { status: response.status, data };
+      }
+      signal?.throwIfAborted();
+      if (renewed && renewed !== token) {
+        headers.Authorization = `Bearer ${renewed}`;
+        response = await send();
+        data = await response.json().catch(() => null);
+      }
+    }
     return { status: response.status, data };
   }
 
@@ -543,6 +527,18 @@ export class PortalClient {
     const items = (data as { employees?: unknown[] } | null)?.employees ?? [];
     return items.map((raw) => parseEmployee(raw));
   }
+
+  readonly #channels = new ChannelClient(
+    (...args) => this.#request(...args),
+    portalError,
+    (message) => new PortalError(502, message),
+  );
+  readonly employeeChannels = this.#channels.employeeChannels.bind(this.#channels);
+  readonly activateChannel = this.#channels.activateChannel.bind(this.#channels);
+  readonly wakeChannelEmployee = this.#channels.wakeChannelEmployee.bind(this.#channels);
+  readonly configureChannel = this.#channels.configureChannel.bind(this.#channels);
+  readonly restartChannel = this.#channels.restartChannel.bind(this.#channels);
+  readonly channelQR = this.#channels.channelQR.bind(this.#channels);
 
   // Sidebar service-status probes (the portal holds the OpenViking root key
   // server-side; the console only ever sees summaries).

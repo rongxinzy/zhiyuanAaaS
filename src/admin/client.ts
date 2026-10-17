@@ -631,12 +631,12 @@ export class AdminConsoleClient {
     this.#sessionId = null;
   }
 
-  // Digital-employee portal calls carry the same bearer, and the portal
-  // /chat entry link hands the raw token over in a URL fragment. The store
-  // is memory-only, so this returns null once signed out.
-  async getAccessToken(): Promise<string | null> {
+  async getAccessToken(rejectedToken?: string): Promise<string | null> {
     const tokens = await this.#tokenStore.get();
-    return tokens?.accessToken ?? null;
+    if (!tokens || !rejectedToken || tokens.accessToken !== rejectedToken) return tokens?.accessToken ?? null;
+    const renewed = await this.#getClient().refreshSession();
+    this.#sessionId = renewed.sessionId ?? this.#sessionId;
+    return renewed.accessToken;
   }
 
   async overview(identity?: AdminIdentity): Promise<AdminOverview> {
