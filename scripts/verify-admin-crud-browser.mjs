@@ -286,7 +286,7 @@ try {
   await knowledgeOperations.getByRole('tab', { name: 'FAQ', exact: true }).click();
   await page.getByRole('button', { name: '新建 FAQ', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').first().waitFor();
-  await page.getByRole('dialog').getByRole('button', { name: /^取\s*消$/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
   checks.push('create FAQ library and enter native FAQ editor without upstream login');
   await visit('knowledge', 'E2E 常见问题');
   await page
@@ -747,7 +747,10 @@ try {
   assert.equal(await wecomRow.getByText('平台连接已建立', { exact: true }).count(), 0);
   await wecomRow.getByRole('button', { name: '更新凭据', exact: true }).click();
   assert.equal(await page.getByRole('dialog').getByLabel('Bot Secret', { exact: true }).inputValue(), '');
-  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /^取\s*消$/ })
+    .click();
   checks.push('native channel configuration saves credentials without echo or fabricated platform connection');
   assert.equal(await page.getByRole('tab', { name: '模型服务', exact: true }).count(), 0);
   await visit('system/services', '服务状态');
