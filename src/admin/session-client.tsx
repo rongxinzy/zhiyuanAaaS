@@ -15,17 +15,17 @@ const USER_AGENT_CLIENT_LABELS: Readonly<Record<string, AdminTranslationKey>> = 
 
 // User-Agent-derived names are coarse server labels and get localized; a
 // self-reported client name is shown as recorded.
-export function sessionClientNameLabel(name: string): string {
+function sessionClientNameLabel(name: string): string {
   const key = USER_AGENT_CLIENT_LABELS[name.toLowerCase()];
   return key ? t(key) : name;
 }
 
-export function formatSessionClientName(client: AdminSessionClient): string {
+function formatSessionClientName(client: AdminSessionClient): string {
   const label = sessionClientNameLabel(client.name);
   return client.version ? `${label} ${client.version}` : label;
 }
 
-export function truncateSessionDeviceId(deviceId: string): string {
+function truncateSessionDeviceId(deviceId: string): string {
   return deviceId.length > 11 ? `${deviceId.slice(0, 8)}…` : deviceId;
 }
 

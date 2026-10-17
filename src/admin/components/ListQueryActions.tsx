@@ -19,7 +19,7 @@ const t = (key: 'search' | 'reset' | 'export' | 'searchFailed' | 'exportFailed' 
  * `url` + `request` when the same component is reused against different
  * list/export endpoints — only the URL changes per call site.
  */
-export type ListQueryAction<Values extends object> =
+type ListQueryAction<Values extends object> =
   | {
       /** 2026-09-30 LiXiang2019 页面自行接入的业务接口调用 */
       readonly run: (values: Values) => void | Promise<void>;

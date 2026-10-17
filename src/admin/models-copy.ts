@@ -213,7 +213,7 @@ const en: Record<keyof typeof zh, string> = {
   fieldCredentialRef: 'credential reference',
 };
 
-export const modelsCopy: Record<AdminLanguage, Record<keyof typeof zh, string>> = { zh, en };
+const modelsCopy: Record<AdminLanguage, Record<keyof typeof zh, string>> = { zh, en };
 
 export type ModelsCopyKey = keyof typeof zh;
 
