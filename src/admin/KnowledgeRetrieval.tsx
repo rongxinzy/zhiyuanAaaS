@@ -1,5 +1,5 @@
-import { Alert, Button, Input, Pagination, Select, Space, Table, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Input, Pagination, Segmented, Select, Space, Tag, Typography, theme } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
@@ -9,6 +9,7 @@ import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient,
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
 export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: PortalClient; readonly baseId: string }) {
+  const { token } = theme.useToken();
   const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
   const [employee, setEmployee] = useState<string>();
   const [employeeLoading, setEmployeeLoading] = useState(false);
@@ -130,111 +131,157 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
     }
   };
 
-  const resultColumns: ColumnsType<EmployeeKnowledgeSearchHit> = [
-    { title: tr('knowledgeSearchScore'), dataIndex: 'score', width: 90, render: (score: number) => score.toFixed(3) },
-    { title: tr('knowledgeSearchContent'), dataIndex: 'content', ellipsis: true },
-    {
-      title: tr('knowledgeSearchSource'),
-      render: (_, hit) => (
-        <Button type="link" onClick={() => void loadSource(hit, 1)}>
-          {hit.source.title || hit.source.document_id}
-        </Button>
-      ),
-    },
-  ];
-
-  const sourceColumns: ColumnsType<EmployeeKnowledgeSource['chunks'][number]> = [
-    { title: tr('knowledgeChunkCount'), dataIndex: 'seq_id', width: 90 },
-    { title: tr('knowledgeChunkText'), dataIndex: 'content', ellipsis: true },
-  ];
+  const examples = [tr('knowledgeExampleTravel'), tr('knowledgeExampleLeave'), tr('knowledgeExampleOnboarding')];
 
   return (
-    <section aria-label={tr('knowledgeRetrieval')}>
-      <Typography.Title level={5}>{tr('knowledgeRetrieval')}</Typography.Title>
-      <Space orientation="vertical" style={{ width: '100%' }}>
-        <Typography.Text type="secondary">{tr('knowledgeRetrievalHint')}</Typography.Text>
-        {employeeError ? (
-          <Alert showIcon type="error" title={tr('knowledgeSearchEmployeesFailed')} description={employeeError} />
-        ) : (
-          <Space.Compact style={{ width: '100%' }}>
+    <section aria-label={tr('knowledgeRetrieval')} className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {tr('knowledgeRetrieval')}
+          </Typography.Title>
+          <Typography.Text type="secondary">{tr('knowledgeRetrievalHint')}</Typography.Text>
+        </div>
+      </div>
+      <Segmented
+        value="agent"
+        options={[
+          {
+            label: tr('knowledgeSearchLibrary'),
+            value: 'library',
+            disabled: true,
+            title: tr('knowledgeSearchLibraryDisabled'),
+          },
+          { label: tr('knowledgeSearchAgent'), value: 'agent' },
+        ]}
+      />
+      <Typography.Text type="secondary">{tr('knowledgeSearchLibraryDisabled')}</Typography.Text>
+      {employeeError ? (
+        <Alert showIcon type="error" title={tr('knowledgeSearchEmployeesFailed')} description={employeeError} />
+      ) : (
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          <Space wrap>
+            <Typography.Text>{tr('knowledgeSearchEmployee')}</Typography.Text>
             <Select
               aria-label={tr('knowledgeSearchEmployee')}
               showSearch={{ optionFilterProp: 'label' }}
               loading={employeeLoading}
               value={employee}
               onChange={setEmployee}
-              options={employees.map((item) => ({ value: item.name, label: `${item.displayName} (${item.name})` }))}
+              options={employees.map((item) => ({
+                value: item.name,
+                label: `${item.displayName} (${item.name})`,
+              }))}
               placeholder={tr('knowledgeSearchEmployee')}
-              style={{ minWidth: 220 }}
+              style={{ minWidth: 240 }}
             />
+          </Space>
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Input
+              size="large"
               aria-label={tr('knowledgeSearchQuery')}
               value={query}
               maxLength={4000}
+              prefix={<SearchOutlined />}
               onChange={(event) => setQuery(event.target.value)}
               onPressEnter={() => void runSearch()}
               placeholder={tr('knowledgeSearchQuery')}
             />
             <Button
               type="primary"
+              size="large"
               loading={searching}
               disabled={!employee || !query.trim()}
               onClick={() => void runSearch()}
             >
               {tr('knowledgeSearchButton')}
             </Button>
-          </Space.Compact>
-        )}
-        {searchError && <Alert showIcon type="error" title={tr('knowledgeSearchFailed')} description={searchError} />}
-        {results !== null && (
-          <Table<EmployeeKnowledgeSearchHit>
-            rowKey={(hit) => `${hit.source.document_id}:${hit.source.chunk_id}`}
-            size="small"
-            columns={resultColumns}
-            dataSource={results}
-            loading={searching}
-            pagination={false}
-            locale={{ emptyText: tr('knowledgeSearchEmpty') }}
-            scroll={{ x: 560 }}
-          />
-        )}
-        {sourceHit && (
-          <section aria-label={tr('knowledgeSource')}>
-            <Typography.Title level={5}>
-              {tr('knowledgeSource')}: {sourceHit.source.title}
-            </Typography.Title>
+          </div>
+          <Space wrap>
+            <Typography.Text type="secondary">{tr('knowledgeSearchTry')}</Typography.Text>
+            {examples.map((example) => (
+              <Button key={example} type="text" size="small" onClick={() => setQuery(example)}>
+                {example}
+              </Button>
+            ))}
+          </Space>
+        </Space>
+      )}
+      {searchError && <Alert showIcon type="error" title={tr('knowledgeSearchFailed')} description={searchError} />}
+      {results === null && !searching && !searchError ? (
+        <div className="flex flex-col items-center gap-2 py-10 text-center">
+          <SearchOutlined style={{ fontSize: 28 }} />
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {tr('knowledgeSearchWelcome')}
+          </Typography.Title>
+          <Typography.Text type="secondary">{tr('knowledgeSearchWelcomeHint')}</Typography.Text>
+        </div>
+      ) : null}
+      {results !== null && results.length === 0 ? <Empty description={tr('knowledgeSearchEmpty')} /> : null}
+      {results !== null && results.length > 0 ? (
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            {results.map((hit, index) => (
+              <div
+                key={`${hit.source.document_id}:${hit.source.chunk_id}`}
+                className="rounded-md border p-3"
+                style={{ borderColor: token.colorBorder }}
+              >
+                <Space>
+                  <Tag>{tr('knowledgeHitFragment').replace('{index}', String(index + 1))}</Tag>
+                </Space>
+                <div>
+                  <Button type="link" style={{ padding: 0 }} onClick={() => void loadSource(hit, 1)}>
+                    {hit.source.title || hit.source.document_id}
+                  </Button>
+                </div>
+                <Typography.Paragraph
+                  ellipsis={{ rows: 3, expandable: true, symbol: tr('knowledgeExpand') }}
+                  style={{ marginBottom: 0 }}
+                >
+                  {hit.content}
+                </Typography.Paragraph>
+              </div>
+            ))}
+          </div>
+          <section aria-label={tr('knowledgeSource')} className="min-w-0 flex-1">
+            <Typography.Title level={5}>{tr('knowledgeSource')}</Typography.Title>
             {sourceError && (
               <Alert showIcon type="error" title={tr('knowledgeSourceFailed')} description={sourceError} />
             )}
-            {source && (
+            {sourceHit && source && (
               <Space orientation="vertical" style={{ width: '100%' }}>
+                <Typography.Text strong>{sourceHit.source.title}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {tr('knowledgeMatchedChunk')}: {sourceHit.source.chunk_id}
+                </Typography.Text>
+                {!source.chunks.some(
+                  (chunk) => chunk.id === sourceHit.source.chunk_id && chunk.content === sourceHit.content,
+                ) && <Typography.Paragraph>{sourceHit.content}</Typography.Paragraph>}
                 <Typography.Text type="secondary">
                   {source.document.file_name || source.document.id} · {source.document.file_type || '—'}
                 </Typography.Text>
-                <Table<EmployeeKnowledgeSource['chunks'][number]>
-                  rowKey="id"
-                  size="small"
-                  columns={sourceColumns}
-                  dataSource={source.chunks}
-                  loading={sourceLoading}
-                  pagination={false}
-                  locale={{ emptyText: tr('knowledgeSourceEmpty') }}
-                  scroll={{ x: 560 }}
-                />
+                {source.chunks.map((chunk) => (
+                  <Typography.Paragraph key={chunk.id} style={{ marginBottom: 8 }}>
+                    {chunk.content}
+                  </Typography.Paragraph>
+                ))}
                 <Pagination
                   current={sourcePage}
                   pageSize={source.page_size}
                   total={source.total}
                   showSizeChanger={false}
-                  onChange={(page) => void loadSource(sourceHit, page)}
+                  onChange={(page) => sourceHit && void loadSource(sourceHit, page)}
                   showTotal={(total, range) => `${range[0]}-${range[1]} / ${total}`}
                 />
               </Space>
             )}
-            {sourceLoading && !source && <Typography.Text type="secondary">{tr('statusLoading')}</Typography.Text>}
+            {sourceLoading && !source ? (
+              <Typography.Text type="secondary">{tr('statusLoading')}</Typography.Text>
+            ) : null}
           </section>
-        )}
-      </Space>
+        </div>
+      ) : null}
     </section>
   );
 }

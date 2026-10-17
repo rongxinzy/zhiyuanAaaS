@@ -449,7 +449,7 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
       ]);
       break;
     case 'audit':
-      content = <Events {...props} />;
+      content = <Events {...props} initialTab={subpage} knowledgeBaseId={route.split('/')[2]} />;
       break;
     case ModelGatewayRoute.Page:
       content = tabs([

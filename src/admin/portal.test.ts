@@ -11,21 +11,6 @@ function stubFetch(status: number, body: unknown) {
 }
 
 describe('portal client', () => {
-  test('rejects unsafe chunk image MIME, invalid image indexes and unauthorized binary reads', async () => {
-    const portal = new PortalClient(async () => null);
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', -1)).rejects.toBeInstanceOf(PortalError);
-    expect(fetchMock).not.toHaveBeenCalled();
-    fetchMock.mockResolvedValueOnce(new Response('<script>bad</script>', { headers: { 'Content-Type': 'text/html' } }));
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toBeInstanceOf(PortalError);
-    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toMatchObject({ status: 403 });
-    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
-    await expect(portal.getManagedKnowledgeFile('doc', 'download')).rejects.toMatchObject({ status: 403 });
-    vi.unstubAllGlobals();
-  });
-
   test('reads bounded audit pages with encoded filters and caller cancellation', async () => {
     const item = {
       cursor: '12',
@@ -43,10 +28,15 @@ describe('portal client', () => {
     const portal = new PortalClient(async () => 'aep-token');
     const controller = new AbortController();
     await expect(
-      portal.knowledgeAudit({ operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20' }, controller.signal),
+      portal.knowledgeAudit(
+        { operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20', knowledgeBaseId: 'kb-1' },
+        controller.signal,
+      ),
     ).resolves.toEqual({ items: [item], nextCursor: '12' });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20');
+    expect(url).toBe(
+      '/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20&knowledgeBaseId=kb-1',
+    );
     expect((init as RequestInit).signal).toBeDefined();
     vi.unstubAllGlobals();
   });

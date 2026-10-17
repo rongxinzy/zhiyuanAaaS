@@ -24,12 +24,14 @@ export function KnowledgeOperations({
   documentIds,
   baseType,
   disabled = false,
+  onFoldersChanged,
 }: {
   readonly portal: PortalClient;
   readonly baseId: string;
   readonly documentIds: readonly string[];
   readonly baseType: string;
   readonly disabled?: boolean;
+  readonly onFoldersChanged?: () => void;
 }) {
   const { message } = App.useApp();
   const [tags, setTags] = useState<readonly ManagedKnowledgeTag[]>([]);
@@ -38,16 +40,12 @@ export function KnowledgeOperations({
   const [faqPage, setFaqPage] = useState(1);
   const [faqTotal, setFaqTotal] = useState(0);
   const [selectedDocs, setSelectedDocs] = useState<readonly string[]>([]);
-  const [selectedDocTags, setSelectedDocTags] = useState<readonly string[]>([]);
   const [selectedFAQ, setSelectedFAQ] = useState<readonly number[]>([]);
   const [selectedFAQTag, setSelectedFAQTag] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tagName, setTagName] = useState('');
-  const [tagColor, setTagColor] = useState('');
-  const [tagEditor, setTagEditor] = useState<{ readonly id: string } | null>(null);
   const [folderFrom, setFolderFrom] = useState('');
   const [folderTo, setFolderTo] = useState('');
   const [folderEditor, setFolderEditor] = useState(false);
@@ -64,7 +62,7 @@ export function KnowledgeOperations({
       setError(null);
       try {
         const [tagRows, folderTree, faqResult] = await Promise.all([
-          portal.listManagedKnowledgeTags(baseId, '', signal),
+          baseType === 'faq' ? portal.listManagedKnowledgeTags(baseId, '', signal) : Promise.resolve([]),
           portal.getManagedKnowledgeFolders(baseId, signal),
           baseType === 'faq'
             ? portal.listManagedKnowledgeFAQ(baseId, { page: faqPage, pageSize: 20 }, signal)
@@ -95,7 +93,6 @@ export function KnowledgeOperations({
     setFolders([]);
     setFaq([]);
     setSelectedDocs([]);
-    setSelectedDocTags([]);
     setSelectedFAQ([]);
     void load(controller.signal);
     return () => {
@@ -138,36 +135,6 @@ export function KnowledgeOperations({
   const flatten = (items: readonly ManagedKnowledgeFolder[]): ManagedKnowledgeFolder[] =>
     items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
   const folderRows = flatten(folders);
-  const tagColumns: ColumnsType<ManagedKnowledgeTag> = [
-    { title: tr('knowledgeTagName'), dataIndex: 'name' },
-    { title: tr('knowledgeTagColor'), dataIndex: 'color', render: (value: string) => value || '—' },
-    {
-      title: tr('knowledgeActions'),
-      render: (_, tag) => (
-        <Space>
-          <Button
-            size="small"
-            disabled={writesDisabled}
-            onClick={() => {
-              setTagName(tag.name);
-              setTagColor(tag.color);
-              setTagEditor({ id: tag.id });
-            }}
-          >
-            {tr('knowledgeEdit')}
-          </Button>
-          <Popconfirm
-            title={tr('knowledgeTagDeleteConfirm')}
-            onConfirm={() => void mutate(() => portal.deleteManagedKnowledgeTag(baseId, tag.id))}
-          >
-            <Button size="small" danger disabled={writesDisabled}>
-              {tr('knowledgeDelete')}
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
   const faqColumns: ColumnsType<ManagedKnowledgeFAQEntry> = [
     { title: tr('knowledgeFAQQuestion'), dataIndex: 'standard_question', ellipsis: true },
     {
@@ -260,57 +227,6 @@ export function KnowledgeOperations({
         <Tabs
           items={[
             {
-              key: 'tags',
-              label: tr('knowledgeTags'),
-              children: (
-                <Space orientation="vertical" style={{ width: '100%' }}>
-                  <Space wrap>
-                    <Input
-                      aria-label={tr('knowledgeTagName')}
-                      maxLength={128}
-                      value={tagName}
-                      onChange={(event) => setTagName(event.target.value)}
-                      placeholder={tr('knowledgeTagName')}
-                    />
-                    <Input
-                      aria-label={tr('knowledgeTagColor')}
-                      maxLength={32}
-                      value={tagColor}
-                      onChange={(event) => setTagColor(event.target.value)}
-                      placeholder={tr('knowledgeTagColor')}
-                    />
-                    <Button
-                      type="primary"
-                      disabled={writesDisabled || !tagName.trim()}
-                      loading={busy}
-                      onClick={() =>
-                        void mutate(async () => {
-                          const result = await portal.createManagedKnowledgeTag(baseId, {
-                            name: tagName.trim(),
-                            ...(tagColor ? { color: tagColor } : {}),
-                          });
-                          setTagName('');
-                          setTagColor('');
-                          return result;
-                        })
-                      }
-                    >
-                      {tr('knowledgeTagCreate')}
-                    </Button>
-                  </Space>
-                  <Table
-                    rowKey="id"
-                    size="small"
-                    loading={loading}
-                    columns={tagColumns}
-                    dataSource={tags}
-                    pagination={false}
-                    locale={{ emptyText: tr('knowledgeTagsEmpty') }}
-                  />
-                </Space>
-              ),
-            },
-            {
               key: 'folders',
               label: tr('knowledgeFolders'),
               children: (
@@ -354,15 +270,6 @@ export function KnowledgeOperations({
                       placeholder={tr('knowledgeSelectDocuments')}
                       style={{ minWidth: 260 }}
                     />
-                    <Select
-                      mode="multiple"
-                      maxTagCount="responsive"
-                      value={selectedDocTags}
-                      options={tags.map((tag) => ({ value: tag.id, label: tag.name }))}
-                      onChange={setSelectedDocTags}
-                      placeholder={tr('knowledgeSelectTags')}
-                      style={{ minWidth: 220 }}
-                    />
                     <Input
                       value={folderTo}
                       onChange={(event) => setFolderTo(event.target.value)}
@@ -373,24 +280,14 @@ export function KnowledgeOperations({
                       disabled={writesDisabled || !selectedDocs.length}
                       loading={busy}
                       onClick={() =>
-                        void mutate(() => portal.moveManagedKnowledgeDocuments(baseId, selectedDocs, folderTo))
-                      }
-                    >
-                      {tr('knowledgeMove')}
-                    </Button>
-                    <Button
-                      disabled={writesDisabled || !selectedDocs.length}
-                      loading={busy}
-                      onClick={() =>
-                        void mutate(() =>
-                          portal.setManagedKnowledgeDocumentTags(
-                            baseId,
-                            Object.fromEntries(selectedDocs.map((id) => [id, selectedDocTags])),
-                          ),
+                        void mutate(() => portal.moveManagedKnowledgeDocuments(baseId, selectedDocs, folderTo)).then(
+                          (succeeded) => {
+                            if (succeeded) onFoldersChanged?.();
+                          },
                         )
                       }
                     >
-                      {tr('knowledgeSetDocumentTags')}
+                      {tr('knowledgeMove')}
                     </Button>
                   </Space>
                 </Space>
@@ -495,39 +392,6 @@ export function KnowledgeOperations({
         />
       )}
       <Modal
-        title={tr('knowledgeTagEdit')}
-        open={tagEditor !== null}
-        onCancel={() => setTagEditor(null)}
-        okText={tr('knowledgeSave')}
-        cancelText={tr('knowledgeCancel')}
-        onOk={() => {
-          if (tagEditor)
-            void mutate(() =>
-              portal.updateManagedKnowledgeTag(baseId, tagEditor.id, { name: tagName.trim(), color: tagColor }),
-            ).then((succeeded) => {
-              if (succeeded) setTagEditor(null);
-            });
-        }}
-        confirmLoading={busy}
-        okButtonProps={{ disabled: writesDisabled || !tagName.trim() }}
-        destroyOnHidden
-      >
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          <Input
-            aria-label={tr('knowledgeTagName')}
-            maxLength={128}
-            value={tagName}
-            onChange={(event) => setTagName(event.target.value)}
-          />
-          <Input
-            aria-label={tr('knowledgeTagColor')}
-            maxLength={32}
-            value={tagColor}
-            onChange={(event) => setTagColor(event.target.value)}
-          />
-        </Space>
-      </Modal>
-      <Modal
         title={tr('knowledgeFolderRename')}
         open={folderEditor}
         onCancel={() => setFolderEditor(false)}
@@ -535,6 +399,7 @@ export function KnowledgeOperations({
         cancelText={tr('knowledgeCancel')}
         onOk={() => {
           void mutate(() => portal.renameManagedKnowledgeFolder(baseId, folderFrom, folderTo)).then((succeeded) => {
+            if (succeeded) onFoldersChanged?.();
             if (succeeded) setFolderEditor(false);
           });
         }}

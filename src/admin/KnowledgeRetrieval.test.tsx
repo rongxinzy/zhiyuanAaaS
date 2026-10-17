@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -165,6 +165,34 @@ describe('KnowledgeRetrieval', () => {
       20,
       expect.any(AbortSignal),
     );
+  });
+
+  test('shows the matched fragment even when the current source page contains other chunks', async () => {
+    const portal = makePortal({
+      getEmployeeKnowledgeSource: vi.fn().mockResolvedValue({
+        document: { id: 'doc-1', file_name: 'refund.pdf', file_type: 'pdf' },
+        chunks: [{ id: 'chunk-2', content: 'Another source page' }],
+        total: 40,
+        page: 1,
+        page_size: 20,
+      }),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+      </ConfigProvider>,
+    );
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: translate(ADMIN_LANGUAGE, 'knowledgeSearchEmployee') }));
+    fireEvent.click(await screen.findByText('Sales helper (sales-helper)'));
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'refund' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund policy' }));
+    const source = within(screen.getByRole('region', { name: translate(ADMIN_LANGUAGE, 'knowledgeSource') }));
+    expect(await source.findByText('Another source page')).toBeInTheDocument();
+    expect(source.getByText('Refunds are available within 30 days.')).toBeInTheDocument();
+    expect(source.getByText(/chunk-1/)).toBeInTheDocument();
   });
 
   test('shows authorization failures instead of an empty search result', async () => {
