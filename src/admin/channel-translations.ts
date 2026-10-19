@@ -34,7 +34,7 @@ export const channelTranslations = {
     channelDisable: '停用接入',
     channelDisableTitle: '停用此渠道？',
     channelDisableDetail: '将停止该数字员工的此渠道，并移除其运行时凭据。再次接入需重新配置。',
-    channelActivationSaved: '已提交启用配置。待数字员工更新就绪后，点击“配置接入”。',
+    channelActivationSaved: '已启用渠道接入，连接正在建立；请稍后刷新状态确认。',
     channelSaved: '渠道配置已提交，请刷新状态并在平台内发送消息验证。',
     channelSavedNotConnected: '凭据已保存，但平台连接尚未建立，请核对凭据与平台事件订阅后重试。',
     channelRestarted: '已请求重连，请刷新状态确认结果。',
@@ -113,7 +113,7 @@ export const channelTranslations = {
     channelDisableTitle: 'Disable this channel?',
     channelDisableDetail:
       'Stops this employee channel and removes its runtime credentials. Reconnecting requires configuration again.',
-    channelActivationSaved: 'Activation submitted. Configure credentials after the employee rollout is ready.',
+    channelActivationSaved: 'Channel enabled. The runtime is connecting; refresh the status to confirm.',
     channelSaved: 'Configuration submitted. Refresh status and send a message on the platform to verify delivery.',
     channelSavedNotConnected:
       'Credentials saved, but the platform connection is not established. Check the credentials and platform event subscription, then retry.',

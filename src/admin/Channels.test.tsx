@@ -127,7 +127,7 @@ test('enables an unconfigured employee before asking for credentials', async () 
   const row = (await screen.findByText('飞书')).closest('tr')!;
   fireEvent.click(within(row).getByRole('button', { name: /启用接入/ }));
   await waitFor(() => expect(portal.activateChannel).toHaveBeenCalledWith('hr-bot', 'feishu', true));
-  expect(await screen.findByText(/已提交启用配置/)).toBeInTheDocument();
+  expect(await screen.findByText(/已启用渠道接入/)).toBeInTheDocument();
   expect(screen.queryByLabelText('App Secret')).not.toBeInTheDocument();
 });
 
