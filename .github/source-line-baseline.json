@@ -1,8 +1,8 @@
 {
   "caps": {
-    "scripts/admin-browser-fixture.mjs": 1421,
+    "scripts/admin-browser-fixture.mjs": 1390,
     "src/admin/DigitalEmployees.tsx": 1924,
-    "src/admin/KnowledgeManagement.tsx": 2084,
+    "src/admin/KnowledgeManagement.tsx": 2082,
     "src/admin/Models.tsx": 1565,
     "src/admin/Operations.tsx": 2264,
     "src/admin/Resources.test.tsx": 1832,
@@ -11,6 +11,6 @@
     "src/admin/client.ts": 2139,
     "src/admin/i18n.ts": 2105,
     "src/admin/portal.test.ts": 1033,
-    "src/admin/portal.ts": 1920
+    "src/admin/portal.ts": 1778
   }
 }

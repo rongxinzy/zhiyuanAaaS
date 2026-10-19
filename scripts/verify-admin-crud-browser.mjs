@@ -246,9 +246,52 @@ try {
 
   await page.getByRole('tab', { name: '检索测试', exact: true }).click();
   const retrieval = page.getByRole('region', { name: '验证知识是否找得到', exact: true });
+  assert.equal(await retrieval.getByRole('combobox').count(), 0, 'library inspection must not require an employee');
+  await retrieval.getByRole('textbox').fill('退款期限');
+  await retrieval.getByRole('button', { name: '开始检索', exact: true }).click();
+  await retrieval.getByRole('button', { name: '退款政策', exact: true }).click();
+  await retrieval.getByText('refund-policy.pdf · pdf', { exact: true }).waitFor();
+  assert.ok(
+    state.requests.some(
+      (item) =>
+        item.method === 'POST' && item.path === `/api/v1/knowledge/managed/bases/${createdKnowledgeBase.id}/search`,
+    ),
+  );
+  assert.ok(
+    state.requests.some(
+      (item) =>
+        item.method === 'GET' &&
+        item.path === `/api/v1/knowledge/managed/bases/${createdKnowledgeBase.id}/documents/doc-e2e-policy/source`,
+    ),
+  );
+  checks.push('administrator library search and verified source without employee selection or personal grants');
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-library-source-light.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.getByRole('combobox', { name: '外观', exact: true }).click();
+  await page.getByText('深色', { exact: true }).click();
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-library-source-dark.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.setViewportSize({ width: 430, height: 900 });
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-library-source-narrow.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('combobox', { name: '外观', exact: true }).click();
+  await page.getByText('浅色', { exact: true }).click();
+  await retrieval.getByText('Agent 权限验证', { exact: true }).click();
   await retrieval.locator('.ant-select').first().click();
   await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
   await retrieval.getByRole('textbox').fill('退款期限');
+  assert.match(await retrieval.ariaSnapshot(), /- button "开始检索"$/m);
   await retrieval.getByRole('button', { name: '开始检索', exact: true }).click();
   await retrieval.getByRole('button', { name: '退款政策', exact: true }).waitFor();
   await retrieval.getByRole('button', { name: '退款政策', exact: true }).click();

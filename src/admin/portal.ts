@@ -3,10 +3,14 @@ import type { PortalEmployee } from './portal-employee-types.js';
 export type { PortalEmployee } from './portal-employee-types.js';
 
 import { ChannelClient } from './channel-api.js';
+import { KnowledgeRetrievalClient } from './portal-knowledge-retrieval.js';
 
 export type { ChannelProvider, ChannelQR, EmployeeChannel, EmployeeChannels } from './channel-api.js';
-
 export type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
+export type {
+  EmployeeKnowledgeSearchHit,
+  EmployeeKnowledgeSource,
+} from './portal-knowledge-retrieval.js';
 
 import type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
 import {
@@ -302,43 +306,6 @@ export type ManagedKnowledgeGrantSet = {
   readonly knowledge_base_id: string;
   readonly tenant_id: string;
   readonly grants: readonly ManagedKnowledgeGrant[];
-};
-
-export type EmployeeKnowledgeSearchHit = {
-  readonly score: number;
-  readonly content: string;
-  readonly source: {
-    readonly knowledge_base_id: string;
-    readonly document_id: string;
-    readonly chunk_id: string;
-    readonly title: string;
-  };
-};
-
-export type EmployeeKnowledgeSearchResponse = {
-  readonly query: string;
-  readonly mode: 'hybrid';
-  readonly results: readonly EmployeeKnowledgeSearchHit[];
-};
-
-export type EmployeeKnowledgeSource = {
-  readonly document: {
-    readonly id: string;
-    readonly title: string;
-    readonly file_name: string;
-    readonly file_type: string;
-    readonly source: string;
-    readonly knowledge_base_id: string;
-  };
-  readonly chunks: readonly {
-    readonly id: string;
-    readonly seq_id: number;
-    readonly chunk_type: string;
-    readonly content: string;
-  }[];
-  readonly total: number;
-  readonly page: number;
-  readonly page_size: number;
 };
 
 // Mirrors the portal's own apply-time validation (portal/api.go namePattern):
@@ -1156,45 +1123,19 @@ export class PortalClient {
     return parseManagedKnowledgeGrantSet(data, baseId);
   }
 
-  async searchEmployeeKnowledge(
-    employee: string,
-    input: {
-      readonly query: string;
-      readonly knowledge_base_ids: readonly string[];
-      readonly mode: 'hybrid';
-      readonly limit: number;
-    },
-    signal?: AbortSignal,
-  ): Promise<EmployeeKnowledgeSearchResponse> {
-    const { status, data } = await this.#request(
-      'POST',
-      `/api/v1/knowledge/employees/${encodeURIComponent(employee)}/search`,
-      input,
-      undefined,
-      signal,
-    );
-    if (status !== 200) throw portalError(status, data);
-    return parseEmployeeKnowledgeSearch(data);
-  }
-
-  async getEmployeeKnowledgeSource(
-    employee: string,
-    documentId: string,
-    page: number,
-    pageSize: number,
-    signal?: AbortSignal,
-  ): Promise<EmployeeKnowledgeSource> {
-    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    const { status, data } = await this.#request(
-      'GET',
-      `/api/v1/knowledge/employees/${encodeURIComponent(employee)}/documents/${encodeURIComponent(documentId)}?${query}`,
-      undefined,
-      undefined,
-      signal,
-    );
-    if (status !== 200) throw portalError(status, data);
-    return parseEmployeeKnowledgeSource(data, documentId);
-  }
+  readonly #knowledgeRetrieval = new KnowledgeRetrievalClient(
+    (...args) => this.#request(...args),
+    portalError,
+    invalidManagedResponse,
+  );
+  readonly searchManagedKnowledge = this.#knowledgeRetrieval.searchManagedKnowledge.bind(this.#knowledgeRetrieval);
+  readonly getManagedKnowledgeSource = this.#knowledgeRetrieval.getManagedKnowledgeSource.bind(
+    this.#knowledgeRetrieval,
+  );
+  readonly searchEmployeeKnowledge = this.#knowledgeRetrieval.searchEmployeeKnowledge.bind(this.#knowledgeRetrieval);
+  readonly getEmployeeKnowledgeSource = this.#knowledgeRetrieval.getEmployeeKnowledgeSource.bind(
+    this.#knowledgeRetrieval,
+  );
 
   async getManagedKnowledgeChunkImage(
     documentId: string,
@@ -1714,89 +1655,6 @@ function parseManagedKnowledgeGrantSet(value: unknown, expectedBaseId: string): 
     } satisfies ManagedKnowledgeGrant;
   });
   return { knowledge_base_id: expectedBaseId, tenant_id: record.tenant_id, grants };
-}
-
-function parseEmployeeKnowledgeSearch(value: unknown): EmployeeKnowledgeSearchResponse {
-  const record = objectOf(value);
-  if (!record || typeof record.query !== 'string' || record.mode !== 'hybrid' || !Array.isArray(record.results))
-    throw invalidManagedResponse();
-  const results = record.results.map((value) => {
-    const hit = objectOf(value);
-    const source = objectOf(hit?.source);
-    if (
-      !hit ||
-      !isFiniteNumber(hit.score) ||
-      typeof hit.content !== 'string' ||
-      !source ||
-      !nonEmptyString(source.knowledge_base_id) ||
-      !nonEmptyString(source.document_id) ||
-      !nonEmptyString(source.chunk_id) ||
-      typeof source.title !== 'string'
-    )
-      throw invalidManagedResponse();
-    return {
-      score: hit.score,
-      content: hit.content,
-      source: {
-        knowledge_base_id: source.knowledge_base_id,
-        document_id: source.document_id,
-        chunk_id: source.chunk_id,
-        title: source.title,
-      },
-    };
-  });
-  return { query: record.query, mode: 'hybrid', results };
-}
-
-function parseEmployeeKnowledgeSource(value: unknown, expectedDocumentId: string): EmployeeKnowledgeSource {
-  const record = objectOf(value);
-  const document = objectOf(record?.document);
-  if (
-    !document ||
-    document.id !== expectedDocumentId ||
-    !nonEmptyString(document.knowledge_base_id) ||
-    typeof document.title !== 'string' ||
-    typeof document.file_name !== 'string' ||
-    typeof document.file_type !== 'string' ||
-    typeof document.source !== 'string' ||
-    !Array.isArray(record?.chunks) ||
-    !isFiniteNumber(record.total) ||
-    !Number.isInteger(record.total) ||
-    record.total < 0 ||
-    !isFiniteNumber(record.page) ||
-    !Number.isInteger(record.page) ||
-    record.page < 1 ||
-    !isFiniteNumber(record.page_size) ||
-    !Number.isInteger(record.page_size) ||
-    record.page_size < 1
-  )
-    throw invalidManagedResponse();
-  const chunks = record.chunks.map((value) => {
-    const chunk = objectOf(value);
-    if (
-      !chunk ||
-      !nonEmptyString(chunk.id) ||
-      !isFiniteNumber(chunk.seq_id) ||
-      typeof chunk.chunk_type !== 'string' ||
-      typeof chunk.content !== 'string'
-    )
-      throw invalidManagedResponse();
-    return { id: chunk.id, seq_id: chunk.seq_id, chunk_type: chunk.chunk_type, content: chunk.content };
-  });
-  return {
-    document: {
-      id: expectedDocumentId,
-      title: document.title,
-      file_name: document.file_name,
-      file_type: document.file_type,
-      source: document.source,
-      knowledge_base_id: document.knowledge_base_id,
-    },
-    chunks,
-    total: record.total,
-    page: record.page,
-    page_size: record.page_size,
-  };
 }
 
 function parseManagedMutation<T>(value: unknown, parse: (data: unknown) => T): ManagedKnowledgeMutation<T> {

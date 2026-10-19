@@ -21,7 +21,11 @@ export function knowledgeErrorText(error: unknown): string {
     // 上游缺接口/返回无法核对（如 WeKnora 版本过旧）时说清怎么办，别只丢一句“无法安全验证”。
     if (error.code === 'KNOWLEDGE_UPSTREAM_INVALID')
       return translate(ADMIN_LANGUAGE, 'knowledgeUpstreamInvalidManaged');
-    // 认不出 code 的 403 才是真的没权限。
+    // 检索/授权拒绝：与「没有权限访问知识库管理」分开，避免 Agent 未授权也显示成管理权限问题。
+    if (error.code === 'KNOWLEDGE_NOT_GRANTED') return translate(ADMIN_LANGUAGE, 'knowledgeNotGranted');
+    if (error.code === 'KNOWLEDGE_ACCESS_DENIED') return translate(ADMIN_LANGUAGE, 'knowledgeAccessDenied');
+    if (error.code === 'ADMIN_REQUIRED') return translate(ADMIN_LANGUAGE, 'knowledgeAdminRequired');
+    // 认不出 code 的 403 才是真的没管理权限。
     if (error.status === 403) return translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged');
   }
   return error instanceof Error ? error.message : String(error);
