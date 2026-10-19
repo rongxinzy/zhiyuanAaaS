@@ -22,6 +22,7 @@ const results: Bilingual = {
     succeeded: '已完成',
     uncertain: '结果未知',
     unverified: '未核实',
+    conflict: '冲突',
   },
   en: {
     success: 'Success',
@@ -33,6 +34,7 @@ const results: Bilingual = {
     succeeded: 'Succeeded',
     uncertain: 'Uncertain',
     unverified: 'Unverified',
+    conflict: 'Conflict',
   },
 };
 
@@ -57,6 +59,24 @@ const resourceTypes: Bilingual = {
     faq: '问答',
     knowledge_base: '知识库',
     'knowledge-base': '知识库',
+    chunk: '分块',
+    document_batch: '文档（批量）',
+    faq_entry: '问答条目',
+    faq_batch: '问答（批量）',
+    knowledge_tag: '知识标签',
+    knowledge_folder: '知识文件夹',
+    knowledge_scope: '知识范围',
+    user_rbac: '用户权限',
+    model_assignment: '模型分配',
+    skill_assignment: '技能分配',
+    credential_assignment: '凭据分配',
+    data_plane: '数据面',
+    deployment_settings: '部署设置',
+    compute_assignment: '算力分配',
+    compute_tier: '算力档位',
+    gateway: '模型网关',
+    gateway_quota: '网关配额',
+    gateway_model: '网关模型',
   },
   en: {
     model: 'Model',
@@ -77,12 +97,33 @@ const resourceTypes: Bilingual = {
     faq: 'FAQ',
     knowledge_base: 'Knowledge base',
     'knowledge-base': 'Knowledge base',
+    chunk: 'Chunk',
+    document_batch: 'Document batch',
+    faq_entry: 'FAQ entry',
+    faq_batch: 'FAQ batch',
+    knowledge_tag: 'Knowledge tag',
+    knowledge_folder: 'Knowledge folder',
+    knowledge_scope: 'Knowledge scope',
+    user_rbac: 'User RBAC',
+    model_assignment: 'Model assignment',
+    skill_assignment: 'Skill assignment',
+    credential_assignment: 'Credential assignment',
+    data_plane: 'Data plane',
+    deployment_settings: 'Deployment settings',
+    compute_assignment: 'Compute assignment',
+    compute_tier: 'Compute tier',
+    gateway: 'Model gateway',
+    gateway_quota: 'Gateway quota',
+    gateway_model: 'Gateway model',
   },
 };
 
 /**
- * 动作：管理审计的 action 尾段与事件码尾段。
- * 组合规则是「资源 + 动作」，例如 `skill.updated` → 技能更新、`model.catalog.changed` → 模型目录变更。
+ * 动作：整段动作码 +「资源.动作」里的动作尾段。
+ *
+ * 两种形态都查这张表：整段蛇形码（知识审计的 `upload_file`、`create_tag`…）直接命中；
+ * 点分隔的事件码（`skill.updated`、`model.catalog.changed`）先按第一个 `.` 拆成
+ * 「资源 + 动作」再拼中文。查不到就交给调用方原样显示英文码。
  */
 const actions: Bilingual = {
   zh: {
@@ -116,6 +157,47 @@ const actions: Bilingual = {
     succeeded: '成功',
     failed: '失败',
     throttled: '受限',
+    // 知识审计（portal `beginManagedAudit`）写入的是整段蛇形动作，没有点分隔。
+    upload_file: '上传文件',
+    create_url: '导入链接',
+    create_manual: '手写录入',
+    cancel_parse: '取消解析',
+    delete_document: '删除文档',
+    set_enabled: '启用/停用',
+    read_preview: '预览文档',
+    read_download: '下载文档',
+    read_chunks: '读取分块',
+    read_spans: '读取解析片段',
+    read_chunk_image: '读取分块图片',
+    update_chunk: '更新分块',
+    replace_grants: '更新授权',
+    list_grants: '查看授权',
+    create_tag: '创建标签',
+    update_tag: '更新标签',
+    delete_tag: '删除标签',
+    list_tags: '查看标签',
+    list_folders: '查看文件夹',
+    move_documents: '移动文档',
+    rename_folder: '重命名文件夹',
+    update_document_tags: '更新文档标签',
+    list_faq: '查看问答',
+    create_faq: '创建问答',
+    update_faq: '更新问答',
+    update_faq_fields: '更新问答字段',
+    update_faq_tags: '更新问答标签',
+    delete_faq_entries: '删除问答',
+    employee_search: '员工检索',
+    employee_read_source: '员工读取原文',
+    runtime_search: '运行时检索',
+    runtime_list_bases: '运行时列出知识库',
+    runtime_read_base: '运行时读取知识库',
+    runtime_list_documents: '运行时列出文档',
+    runtime_read_document: '运行时读取文档',
+    runtime_read_chunks: '运行时读取分块',
+    runtime_wiki_search: '运行时检索 Wiki',
+    runtime_wiki_read_page: '运行时读取 Wiki 页面',
+    runtime_wiki_index: '运行时读取 Wiki 目录',
+    runtime_read: '运行时读取',
   },
   en: {
     create: 'created',
@@ -148,6 +230,46 @@ const actions: Bilingual = {
     succeeded: 'succeeded',
     failed: 'failed',
     throttled: 'throttled',
+    upload_file: 'upload file',
+    create_url: 'import URL',
+    create_manual: 'manual entry',
+    cancel_parse: 'cancel parse',
+    delete_document: 'delete document',
+    set_enabled: 'enable or disable',
+    read_preview: 'preview document',
+    read_download: 'download document',
+    read_chunks: 'read chunks',
+    read_spans: 'read spans',
+    read_chunk_image: 'read chunk image',
+    update_chunk: 'update chunk',
+    replace_grants: 'replace grants',
+    list_grants: 'list grants',
+    create_tag: 'create tag',
+    update_tag: 'update tag',
+    delete_tag: 'delete tag',
+    list_tags: 'list tags',
+    list_folders: 'list folders',
+    move_documents: 'move documents',
+    rename_folder: 'rename folder',
+    update_document_tags: 'update document tags',
+    list_faq: 'list FAQ',
+    create_faq: 'create FAQ',
+    update_faq: 'update FAQ',
+    update_faq_fields: 'update FAQ fields',
+    update_faq_tags: 'update FAQ tags',
+    delete_faq_entries: 'delete FAQ entries',
+    employee_search: 'employee search',
+    employee_read_source: 'employee read source',
+    runtime_search: 'runtime search',
+    runtime_list_bases: 'runtime list knowledge bases',
+    runtime_read_base: 'runtime read knowledge base',
+    runtime_list_documents: 'runtime list documents',
+    runtime_read_document: 'runtime read document',
+    runtime_read_chunks: 'runtime read chunks',
+    runtime_wiki_search: 'runtime wiki search',
+    runtime_wiki_read_page: 'runtime wiki read page',
+    runtime_wiki_index: 'runtime wiki index',
+    runtime_read: 'runtime read',
   },
 };
 
@@ -273,8 +395,10 @@ export function resourceTypeLabel(value?: string | null, language: AdminLanguage
 }
 
 /**
- * 事件码 / 动作文案：先查登记过的码，再按「资源.动作」组合，都命中不了返回原码。
- * `skill.updated` → 技能更新；`model.catalog.changed` → 模型目录变更；未登记的码原样返回。
+ * 事件码 / 动作文案：先整段查表，再按「资源.动作」组合。
+ * `skill.updated` → 技能更新；`model.catalog.changed` → 模型目录变更；
+ * `upload_file` → 上传文件（整段蛇形码）。未登记的码返回 null，
+ * 由调用方（`codeCell`）原样显示英文码 —— 这里不猜、也不写「未知类型」。
  */
 export function auditCodeLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
   if (!value) return null;

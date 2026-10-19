@@ -783,19 +783,31 @@ try {
   await visit('system/licenses', '产品授权');
   await visit('audit', '日志审计');
   await page.getByRole('tab', { name: '知识审计', exact: true }).click();
-  await page.getByText('kbop-e2e-delete', { exact: true }).waitFor();
-  await page.getByText('admin-e2e', { exact: true }).waitFor();
-  await page.getByText('uncertain', { exact: true }).waitFor();
-  await page.getByLabel('操作人 ID', { exact: true }).fill('admin-e2e');
+  // 新设计：列表只给中文（动作、对象、结果），原始码归「详情」抽屉的技术详情。
+  await page.getByText('删除', { exact: true }).waitFor();
+  await page.getByText('知识库 / kb-1', { exact: true }).waitFor();
+  await page.getByText('结果未知', { exact: true }).waitFor();
+  assert.equal(await page.getByText('uncertain', { exact: true }).count(), 0);
+  await page.getByRole('button', { name: '详情', exact: true }).first().click();
+  const auditDrawer = page.getByRole('dialog');
+  await auditDrawer.getByText('kbop-e2e-delete', { exact: true }).waitFor();
+  assert.ok((await auditDrawer.getByText('admin-e2e', { exact: true }).count()) > 0);
+  await auditDrawer.getByText('knowledge-base', { exact: true }).waitFor();
+  await auditDrawer.getByRole('button', { name: /Close|关闭/ }).click();
+  await auditDrawer.waitFor({ state: 'hidden' });
+  // 用户检索按用户名解析出用户 ID 再查询，不把姓名当 ID 发出去。
+  await page.getByLabel('用户', { exact: true }).fill('admin');
   await page.getByRole('button', { name: '查询', exact: true }).click();
   await waitForValue(
     () =>
       state.requests.some(
-        (item) => item.path === '/api/v1/knowledge/managed/audit' && item.query.includes('actorUserId=admin-e2e'),
+        (item) => item.path === '/api/v1/knowledge/managed/audit' && item.query.includes('actorUserId=admin-1'),
       ),
     true,
   );
-  checks.push('knowledge audit remains in native log page with actor filter and uncertain outcome');
+  checks.push(
+    'knowledge audit stays in the native log page, labels raw codes in Chinese and resolves the actor filter',
+  );
   await page.getByRole('tab', { name: '登录日志', exact: true }).click();
   await page.getByText('invalid_credentials', { exact: true }).waitFor();
   assert.equal(await page.getByText('登录历史查询尚未接入', { exact: true }).count(), 0);

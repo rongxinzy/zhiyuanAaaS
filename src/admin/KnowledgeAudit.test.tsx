@@ -117,6 +117,54 @@ test('keeps the raw codes in the technical details of the drawer', async () => {
   expect(screen.getByText('无变更记录')).toBeInTheDocument();
 });
 
+test('renders real knowledge codes in Chinese and keeps the raw codes in the technical details', async () => {
+  const rows = [
+    {
+      ...row,
+      cursor: '13',
+      operationId: 'kbop-upload',
+      action: 'upload_file',
+      resourceType: 'chunk',
+      resourceId: 'chunk-1',
+      outcome: 'conflict',
+    },
+    {
+      ...row,
+      cursor: '12',
+      operationId: 'kbop-cancel',
+      action: 'cancel_parse',
+      resourceType: 'document_batch',
+      resourceId: 'doc-1',
+      outcome: 'uncertain',
+    },
+  ];
+  const request = vi.fn().mockResolvedValue({ items: rows, nextCursor: null });
+  render(
+    <KnowledgeAudit
+      client={client}
+      portal={{ knowledgeAudit: request } as unknown as PortalClient}
+      directory={directory}
+    />,
+  );
+  // 列表必须是中文：整段蛇形动作、资源类型与 409 冲突结果都不留英文码。
+  expect(await screen.findByText('上传文件')).toBeInTheDocument();
+  expect(screen.getByText('取消解析')).toBeInTheDocument();
+  expect(screen.getByText('分块 / chunk-1')).toBeInTheDocument();
+  expect(screen.getByText('文档（批量） / doc-1')).toBeInTheDocument();
+  expect(screen.getByText('冲突')).toBeInTheDocument();
+  expect(screen.queryByText('upload_file')).not.toBeInTheDocument();
+  expect(screen.queryByText('cancel_parse')).not.toBeInTheDocument();
+  expect(screen.queryByText('conflict')).not.toBeInTheDocument();
+  // 技术详情仍是原码：抽屉里保留动作与资源类型的原始码。
+  fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0]!);
+  expect(await screen.findByText('技术详情')).toBeInTheDocument();
+  expect(screen.getByText('kbop-upload')).toBeInTheDocument();
+  expect(screen.getByText('upload_file')).toBeInTheDocument();
+  expect(screen.getByText('chunk')).toBeInTheDocument();
+  // 概览同时给出中文，原始码不回流到列表与概览。
+  expect(screen.getAllByText('上传文件').length).toBeGreaterThan(1);
+});
+
 test('reports read failure and supports explicit retry', async () => {
   const request = vi
     .fn()

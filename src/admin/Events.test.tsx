@@ -126,10 +126,96 @@ describe('audit terminology', () => {
     expect(auditCodeLabel('update')).toBe('更新');
     expect(auditCodeLabel('reset_password')).toBe('重置密码');
     expect(objectText('skill', 'test2')).toBe('技能 / test2');
+    // 实码：整段蛇形动作（知识审计没有点分隔）与 409 冲突结果。
+    expect(auditCodeLabel('upload_file')).toBe('上传文件');
+    expect(auditCodeLabel('cancel_parse')).toBe('取消解析');
+    expect(objectText('chunk', 'c1')).toBe('分块 / c1');
+    expect(resultLabel('conflict')).toBe('冲突');
+    // 点分隔形态同样成立：资源 + 动作尾段。
+    expect(auditCodeLabel('document.read_chunks')).toBe('文档读取分块');
     // 英文表同样维护完整，术语不会只剩中文。
     expect(resultLabel('success', 'en')).toBe('Success');
     expect(auditCodeLabel('model.catalog.changed', 'en')).toBe('Model catalog changed');
     expect(objectText('skill', 'test2', 'en')).toBe('Skill / test2');
+  });
+
+  test('maps every real portal and control-plane code to Chinese', () => {
+    // 清单取自 portal `beginManagedAudit` 的实际调用点（knowledge_managed*.go、knowledge_grants.go、
+    // knowledge_runtime_context.go）与后台管理审计的 `adminAuditResourceType`。
+    for (const code of [
+      'upload_file',
+      'create_url',
+      'create_manual',
+      'cancel_parse',
+      'delete_document',
+      'set_enabled',
+      'read_preview',
+      'read_download',
+      'read_chunks',
+      'read_spans',
+      'read_chunk_image',
+      'update_chunk',
+      'replace_grants',
+      'list_grants',
+      'create_tag',
+      'update_tag',
+      'delete_tag',
+      'list_tags',
+      'list_folders',
+      'move_documents',
+      'rename_folder',
+      'update_document_tags',
+      'list_faq',
+      'create_faq',
+      'update_faq',
+      'update_faq_fields',
+      'update_faq_tags',
+      'delete_faq_entries',
+      'employee_search',
+      'employee_read_source',
+      'runtime_search',
+      'runtime_list_bases',
+      'runtime_read_base',
+      'runtime_list_documents',
+      'runtime_read_document',
+      'runtime_read_chunks',
+      'runtime_wiki_search',
+      'runtime_wiki_read_page',
+      'runtime_wiki_index',
+      'runtime_read',
+    ] as const) {
+      const label = auditCodeLabel(code);
+      expect(label, code).not.toBeNull();
+      expect(label, code).not.toBe(code);
+      // 英文表同步登记，英文界面不会退回原码。
+      expect(auditCodeLabel(code, 'en'), code).not.toBeNull();
+    }
+    for (const type of [
+      'chunk',
+      'document_batch',
+      'faq_entry',
+      'faq_batch',
+      'knowledge_tag',
+      'knowledge_folder',
+      'knowledge_scope',
+      'knowledge-base',
+      'knowledge_base',
+      'user_rbac',
+      'model_assignment',
+      'skill_assignment',
+      'credential_assignment',
+      'data_plane',
+      'deployment_settings',
+      'compute_assignment',
+      'compute_tier',
+      'gateway',
+      'gateway_model',
+      'gateway_quota',
+      'gateway_limit',
+    ] as const) {
+      // 资源类型未登记时对象列会原样显示英文码，这里逐一确认已经登记。
+      expect(objectText(type, 'x1'), type).not.toBe(`${type} / x1`);
+    }
   });
 
   test('leaves unknown codes and values exactly as they came', () => {
