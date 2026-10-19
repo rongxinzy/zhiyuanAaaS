@@ -1,3 +1,13 @@
+import { afterEach } from 'vitest';
+
+// Ant Design's Button drives its loading state through useDelayState with a
+// zero-delay timeout. A test that ends right after a render leaves that timer
+// pending, so it fires after jsdom is gone and vitest fails the run with
+// "window is not defined". Drain zero-delay work while the DOM still exists.
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
 // Browser APIs needed by Ant Design's responsive layouts in jsdom.
 if (typeof window !== 'undefined') {
   if (!window.matchMedia)
