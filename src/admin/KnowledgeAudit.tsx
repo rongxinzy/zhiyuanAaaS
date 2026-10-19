@@ -157,12 +157,12 @@ export function KnowledgeAudit({
         pagination={false}
         scroll={{ x: 1080 }}
         columns={[
-          { title: c.time, dataIndex: 'createdAt', render: (value: string) => timeCell(value) },
           {
             title: c.user,
             dataIndex: 'actorUserId',
             render: (value: string) => <UserCell userId={value} users={directory.users} />,
           },
+          { title: c.time, dataIndex: 'createdAt', render: (value: string) => timeCell(value) },
           { title: c.action, dataIndex: 'action', render: (value: string) => codeCell(value) },
           { title: c.object, render: (_, row) => shown(objectText(row.resourceType, row.resourceId)) },
           { title: c.result, dataIndex: 'outcome', render: (value: string) => resultCell(value) },

@@ -246,8 +246,8 @@ function TelemetryRecords({ client, directory }: TabProps) {
         scroll={{ x: 800 }}
         locale={{ emptyText: error ? c.failed : c.empty }}
         columns={[
-          { title: c.eventTime, render: (_, row) => timeCell(row.receivedAt ?? row.createdAt) },
           { title: c.user, render: (_, row) => <UserCell userId={row.userId} users={directory.users} /> },
+          { title: c.eventTime, render: (_, row) => timeCell(row.receivedAt ?? row.createdAt) },
           { title: c.type, dataIndex: 'type', render: (value: string) => codeCell(value) },
           { title: c.object, render: (_, row) => shown(objectText(row.resourceType, row.resourceId)) },
           { title: c.result, dataIndex: 'result', render: (value: string) => resultCell(value) },
@@ -372,12 +372,12 @@ function ExecutionRecords({ client, directory }: TabProps) {
         pagination={false}
         scroll={{ x: 960 }}
         columns={[
-          { title: c.eventTime, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
           {
             title: c.user,
             dataIndex: 'createdBy',
             render: (value?: string) => <UserCell userId={value} users={directory.users} />,
           },
+          { title: c.eventTime, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
           { title: c.eventType, dataIndex: 'type', render: (value: string) => codeCell(value) },
           { title: c.object, render: (_, row) => shown(objectText(row.resource?.type, row.resource?.id)) },
           { title: c.deliveryState, render: (_, row) => deliveryRollup(row.deliverySummary) },
@@ -574,12 +574,12 @@ function LoginRecords({ client, directory }: TabProps) {
         scroll={{ x: 720 }}
         locale={{ emptyText: error ? c.failed : c.empty }}
         columns={[
-          { title: c.time, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
           {
             title: c.user,
             dataIndex: 'userId',
             render: (value?: string) => <UserCell userId={value} users={directory.users} />,
           },
+          { title: c.time, dataIndex: 'createdAt', render: (value?: string) => timeCell(value) },
           // 事件码走共用映射：登记过的给中文，未登记的码原样显示。
           { title: c.loginEvent, dataIndex: 'eventType', render: (value: string) => codeCell(value) },
           { title: c.result, dataIndex: 'outcome', render: (value: string) => resultCell(value) },
@@ -908,12 +908,12 @@ function OperationLog({ client, directory }: TabProps) {
           ),
         }}
         columns={[
-          { title: c.time, dataIndex: 'createdAt', render: (value: string) => timeCell(value) },
           {
             title: c.user,
             dataIndex: 'actorUserId',
             render: (value?: string) => <UserCell userId={value} users={directory.users} />,
           },
+          { title: c.time, dataIndex: 'createdAt', render: (value: string) => timeCell(value) },
           { title: c.type, dataIndex: 'action', render: (value: string) => codeCell(value) },
           { title: c.object, render: (_, row) => shown(objectText(row.resourceType, row.resourceId)) },
           { title: c.result, dataIndex: 'result', render: (value: string) => resultCell(value) },
