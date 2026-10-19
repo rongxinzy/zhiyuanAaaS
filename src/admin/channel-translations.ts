@@ -59,9 +59,9 @@ export const channelTranslations = {
     channelFeishuSetup:
       '在飞书开放平台创建企业自建应用并启用机器人，配置消息接收事件与所需权限，采用长连接接收事件，发布到可用范围后填写应用凭据。',
     channelFeishuCreateApp: '创建企业自建应用',
-    channelFeishuLongConnection: '用长连接接收事件',
     channelWecomSetup:
       '在企业微信创建支持 API 长连接的智能机器人，取得 Bot ID 和 Bot Secret。此入口不使用群机器人 Webhook。',
+    channelWecomCredentialHelp: '如何获取 Bot ID 和 Secret',
     channelWechatSetup:
       '微信与企业微信是独立渠道。使用运行时支持的微信扫码接入，或填写兼容的 Bot Token；可用性以当前微信账号及平台能力为准。',
     channelQRStart: '微信扫码接入',
@@ -140,9 +140,9 @@ export const channelTranslations = {
     channelFeishuSetup:
       'Create an enterprise app with a bot on the Feishu platform. Configure message events, required permissions and long connections, then publish it to the intended audience.',
     channelFeishuCreateApp: 'Create an enterprise app',
-    channelFeishuLongConnection: 'Receive events over long connections',
     channelWecomSetup:
       'Create a WeCom smart bot supporting API long connections and obtain its Bot ID and Bot Secret. Group-bot webhooks are not used here.',
+    channelWecomCredentialHelp: 'How to get the Bot ID and secret',
     channelWechatSetup:
       'WeChat and WeCom are separate channels. Scan with a compatible account or enter a compatible bot token; availability depends on the account and platform.',
     channelQRStart: 'Connect WeChat by QR',

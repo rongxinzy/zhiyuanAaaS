@@ -524,18 +524,20 @@ export function EmployeeChannelsPanel({
             <Typography.Paragraph>{t(instructions[editing.provider])}</Typography.Paragraph>
             {editing.provider === 'feishu' && (
               <Typography.Paragraph>
-                <Space orientation="vertical" size={0}>
-                  <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noopener noreferrer">
-                    {t('channelFeishuCreateApp')}
-                  </Typography.Link>
-                  <Typography.Link
-                    href="https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/event-subscription-guide/long-connection-mode"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {t('channelFeishuLongConnection')}
-                  </Typography.Link>
-                </Space>
+                <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noopener noreferrer">
+                  {t('channelFeishuCreateApp')}
+                </Typography.Link>
+              </Typography.Paragraph>
+            )}
+            {editing.provider === 'wecom' && (
+              <Typography.Paragraph>
+                <Typography.Link
+                  href="https://open.work.weixin.qq.com/help2/pc/21677"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('channelWecomCredentialHelp')}
+                </Typography.Link>
               </Typography.Paragraph>
             )}
             <Form

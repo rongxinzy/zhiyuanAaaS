@@ -286,18 +286,27 @@ test('saving credentials reports an unestablished platform connection', async ()
   expect(screen.queryByText(/渠道配置已提交/)).not.toBeInTheDocument();
 });
 
-test('Feishu configuration links to the app console and the long connection guide', async () => {
+test('Feishu configuration links to the app console only', async () => {
   const portal = mockPortal();
   panel(portal);
   fireEvent.click(within((await screen.findByText('飞书')).closest('tr')!).getByRole('button', { name: '配置接入' }));
   const app = await screen.findByRole('link', { name: '创建企业自建应用' });
   expect(app).toHaveAttribute('href', 'https://open.feishu.cn/app');
   expect(app).toHaveAttribute('rel', 'noopener noreferrer');
-  const guide = screen.getByRole('link', { name: '用长连接接收事件' });
-  expect(guide).toHaveAttribute(
-    'href',
-    'https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/event-subscription-guide/long-connection-mode',
+  expect(app).toHaveAttribute('target', '_blank');
+  // Only the deployment guide stays; the extra long-connection link was dropped.
+  expect(screen.queryByRole('link', { name: '用长连接接收事件' })).not.toBeInTheDocument();
+});
+
+test('WeCom configuration links to the Bot ID and secret guide', async () => {
+  const portal = mockPortal();
+  panel(portal);
+  fireEvent.click(
+    within((await screen.findByText('企业微信')).closest('tr')!).getByRole('button', { name: '配置接入' }),
   );
+  const guide = await screen.findByRole('link', { name: '如何获取 Bot ID 和 Secret' });
+  expect(guide).toHaveAttribute('href', 'https://open.work.weixin.qq.com/help2/pc/21677');
+  expect(guide).toHaveAttribute('rel', 'noopener noreferrer');
   expect(guide).toHaveAttribute('target', '_blank');
 });
 
