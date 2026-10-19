@@ -84,7 +84,7 @@ test('shows Feishu, WeCom and WeChat with actual configuration actions', async (
   expect(screen.getByText('微信')).toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: '配置接入' })).toHaveLength(3);
   expect(screen.getByRole('button', { name: '微信扫码接入' })).toBeEnabled();
-  expect(screen.queryByText('通道运行中')).not.toBeInTheDocument();
+  expect(screen.queryByText('已启动（未连接）')).not.toBeInTheDocument();
 });
 
 test('selects a Ready employee initially instead of the first deployment failure', async () => {
@@ -155,6 +155,12 @@ test('allows channel disable to recover an Error employee while configuration re
 
 test('submits Feishu credentials through the employee API and clears the form', async () => {
   const portal = mockPortal();
+  portal.employeeChannels.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+    ...initial,
+    providers: initial.providers.map((item) =>
+      item.provider === 'feishu' ? { ...item, configured: true, hasSecret: true, workerState: 'connected' } : item,
+    ),
+  });
   panel(portal);
   fireEvent.click(within((await screen.findByText('飞书')).closest('tr')!).getByRole('button', { name: '配置接入' }));
   fireEvent.change(await screen.findByLabelText('App ID'), { target: { value: 'cli-test' } });
@@ -206,7 +212,7 @@ test('a runtime error is not presented as an empty channel list or a healthy con
   panel(portal);
   expect(await screen.findAllByText('渠道信息加载失败，请重试。')).not.toHaveLength(0);
   expect(screen.queryByRole('button', { name: '保存并连接' })).not.toBeInTheDocument();
-  expect(screen.queryByText('通道运行中')).not.toBeInTheDocument();
+  expect(screen.queryByText('已启动（未连接）')).not.toBeInTheDocument();
 });
 
 test('provider rollout gates configuration and exposes pending status', async () => {
@@ -240,4 +246,78 @@ test('confirmed QR updates configuration without claiming message delivery succe
   fireEvent.click(await screen.findByRole('button', { name: '检查扫码结果' }));
   expect(await screen.findAllByText('微信接入已确认，请刷新状态并发送消息验证。')).not.toHaveLength(0);
   expect(portal.employeeChannels).toHaveBeenCalledTimes(2);
+});
+
+test('explains a deployment rollout instead of blaming the runtime version', async () => {
+  const portal = mockPortal({
+    ...initial,
+    phase: 'Pending',
+    runtimeAvailable: false,
+    providers: initial.providers.map((item) => ({ ...item, runtimeReady: false })),
+  });
+  panel(portal);
+  expect(await screen.findByText(/数字员工正在部署或更新（当前阶段：Pending）/)).toBeInTheDocument();
+  expect(screen.queryByText(/无法读取运行时状态/)).not.toBeInTheDocument();
+});
+
+test('reports a running worker as started but not connected', async () => {
+  const portal = mockPortal({
+    ...initial,
+    providers: initial.providers.map((item) => ({ ...item, workerState: 'running' })),
+  });
+  panel(portal);
+  expect(await screen.findAllByText('已启动（未连接）')).toHaveLength(3);
+});
+
+test('saving credentials reports an unestablished platform connection', async () => {
+  const portal = mockPortal();
+  portal.employeeChannels.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+    ...initial,
+    providers: initial.providers.map((item) =>
+      item.provider === 'feishu' ? { ...item, configured: true, hasSecret: true, workerState: 'running' } : item,
+    ),
+  });
+  panel(portal);
+  fireEvent.click(within((await screen.findByText('飞书')).closest('tr')!).getByRole('button', { name: '配置接入' }));
+  fireEvent.change(await screen.findByLabelText('App ID'), { target: { value: 'cli-test' } });
+  fireEvent.change(screen.getByLabelText('App Secret'), { target: { value: 'test' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存并连接' }));
+  expect(await screen.findByText(/凭据已保存，但平台连接尚未建立/)).toBeInTheDocument();
+  expect(screen.queryByText(/渠道配置已提交/)).not.toBeInTheDocument();
+});
+
+test('Feishu configuration links to the app console and the long connection guide', async () => {
+  const portal = mockPortal();
+  panel(portal);
+  fireEvent.click(within((await screen.findByText('飞书')).closest('tr')!).getByRole('button', { name: '配置接入' }));
+  const app = await screen.findByRole('link', { name: '创建企业自建应用' });
+  expect(app).toHaveAttribute('href', 'https://open.feishu.cn/app');
+  expect(app).toHaveAttribute('rel', 'noopener noreferrer');
+  const guide = screen.getByRole('link', { name: '用长连接接收事件' });
+  expect(guide).toHaveAttribute(
+    'href',
+    'https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/event-subscription-guide/long-connection-mode',
+  );
+  expect(guide).toHaveAttribute('target', '_blank');
+});
+
+test('shows connection progress on the active row while the others stay disabled', async () => {
+  const portal = mockPortal();
+  let release: (() => void) | undefined;
+  portal.configureChannel.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  panel(portal);
+  fireEvent.click(within((await screen.findByText('飞书')).closest('tr')!).getByRole('button', { name: '配置接入' }));
+  fireEvent.change(await screen.findByLabelText('App ID'), { target: { value: 'cli-test' } });
+  fireEvent.change(screen.getByLabelText('App Secret'), { target: { value: 'test' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存并连接' }));
+  expect(await screen.findByText(/正在连接平台/)).toBeInTheDocument();
+  const otherRow = screen.getByText('企业微信').closest('tr')!;
+  expect(within(otherRow).getByText('配置接入').closest('button')).toBeDisabled();
+  release?.();
+  await waitFor(() => expect(portal.employeeChannels).toHaveBeenCalledTimes(2));
 });

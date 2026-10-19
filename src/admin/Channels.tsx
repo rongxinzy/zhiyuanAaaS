@@ -165,6 +165,7 @@ export function EmployeeChannelsPanel({
   const [data, setData] = useState<EmployeeChannels>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<ChannelProvider>();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [revision, refresh] = useState(0);
@@ -205,9 +206,20 @@ export function EmployeeChannelsPanel({
       });
     return () => controller.abort();
   }, [portal, employeeName, revision, language]);
+  useEffect(() => {
+    const phase = data?.phase;
+    if (!phase || phase === 'Ready' || phase === 'Error' || phase === 'Sleeping') return;
+    const timer = setTimeout(() => refresh((n) => n + 1), 5000);
+    return () => clearTimeout(timer);
+  }, [data]);
 
-  async function run(action: () => Promise<void>, success: AdminTranslationKey): Promise<boolean> {
+  async function run(
+    action: () => Promise<void>,
+    success: AdminTranslationKey,
+    provider?: ChannelProvider,
+  ): Promise<boolean> {
     setBusy(true);
+    setBusyProvider(provider);
     setError('');
     setNotice('');
     try {
@@ -221,7 +233,35 @@ export function EmployeeChannelsPanel({
       if (live.current) setError(errorText(cause, language));
       return false;
     } finally {
-      if (live.current) setBusy(false);
+      if (live.current) {
+        setBusy(false);
+        setBusyProvider(undefined);
+      }
+    }
+  }
+
+  async function connect(item: EmployeeChannel, values: Record<string, string>): Promise<boolean> {
+    setBusy(true);
+    setBusyProvider(item.provider);
+    setError('');
+    setNotice('');
+    try {
+      await portal.configureChannel(employeeName, item.provider, values);
+      const fresh = await portal.employeeChannels(employeeName);
+      if (live.current) {
+        setData(fresh);
+        const state = fresh.providers.find((provider) => provider.provider === item.provider)?.workerState;
+        setNotice(t(state === 'connected' ? 'channelSaved' : 'channelSavedNotConnected'));
+      }
+      return true;
+    } catch (cause) {
+      if (live.current) setError(errorText(cause, language));
+      return false;
+    } finally {
+      if (live.current) {
+        setBusy(false);
+        setBusyProvider(undefined);
+      }
     }
   }
 
@@ -286,6 +326,13 @@ export function EmployeeChannelsPanel({
   }
 
   const unavailable = !data?.runtimeAvailable || data.phase !== 'Ready';
+  const unavailableNotice: AdminTranslationKey | undefined = !data
+    ? undefined
+    : data.phase === 'Error'
+      ? 'channelEmployeeFailed'
+      : data.phase === 'Sleeping' || data.phase === 'Ready'
+        ? 'channelUnavailable'
+        : 'channelRolloutPending';
   return (
     <div className="admin-table-section">
       <Space wrap>
@@ -299,11 +346,11 @@ export function EmployeeChannelsPanel({
       {error && <Alert type="error" showIcon title={error} />}
       {notice && <Alert type="success" showIcon title={notice} closable={{ afterClose: () => setNotice('') }} />}
       {data?.hibernationEnabled && <Alert type="warning" showIcon title={t('channelHibernationConflict')} />}
-      {data && unavailable && (
+      {data && unavailable && unavailableNotice && (
         <Alert
           type="warning"
           showIcon
-          title={t(data.phase === 'Error' ? 'channelEmployeeFailed' : 'channelUnavailable')}
+          title={t(unavailableNotice).replace('{phase}', data.phase)}
           action={
             data.phase === 'Sleeping' ? (
               <Button
@@ -406,9 +453,14 @@ export function EmployeeChannelsPanel({
                     )}
                     {item.configured && (
                       <Button
+                        loading={busy && busyProvider === item.provider}
                         disabled={busy || unavailable}
                         onClick={() =>
-                          void run(() => portal.restartChannel(employeeName, item.provider), 'channelRestarted')
+                          void run(
+                            () => portal.restartChannel(employeeName, item.provider),
+                            'channelRestarted',
+                            item.provider,
+                          )
                         }
                       >
                         {t('channelRestart')}
@@ -438,6 +490,9 @@ export function EmployeeChannelsPanel({
                     >
                       {t('channelDisable')}
                     </Button>
+                    {busy && busyProvider === item.provider && (
+                      <Typography.Text type="secondary">{t('channelConnecting')}</Typography.Text>
+                    )}
                   </>
                 )}
               </Space>
@@ -467,6 +522,22 @@ export function EmployeeChannelsPanel({
           <>
             {error && <Alert type="error" showIcon title={error} />}
             <Typography.Paragraph>{t(instructions[editing.provider])}</Typography.Paragraph>
+            {editing.provider === 'feishu' && (
+              <Typography.Paragraph>
+                <Space orientation="vertical" size={0}>
+                  <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noopener noreferrer">
+                    {t('channelFeishuCreateApp')}
+                  </Typography.Link>
+                  <Typography.Link
+                    href="https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/event-subscription-guide/long-connection-mode"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {t('channelFeishuLongConnection')}
+                  </Typography.Link>
+                </Space>
+              </Typography.Paragraph>
+            )}
             <Form
               form={form}
               layout="vertical"
@@ -478,9 +549,7 @@ export function EmployeeChannelsPanel({
                     .filter(([, value]) => Boolean(value?.trim()))
                     .map(([key, value]) => [key, value.trim()]),
                 );
-                if (
-                  await run(() => portal.configureChannel(employeeName, editing.provider, sanitized), 'channelSaved')
-                ) {
+                if (await connect(editing, sanitized)) {
                   form.resetFields();
                   setEditing(undefined);
                 }

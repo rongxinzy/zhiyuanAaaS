@@ -21,7 +21,7 @@ export const channelTranslations = {
     channelConfigured: '已保存凭据',
     channelUnconfigured: '待配置凭据',
     channelPending: '等待配置生效',
-    channelRunning: '通道运行中',
+    channelRunning: '已启动（未连接）',
     channelConnected: '平台连接已建立',
     channelStopped: '通道已停止',
     channelUnknown: '未知',
@@ -36,11 +36,16 @@ export const channelTranslations = {
     channelDisableDetail: '将停止该数字员工的此渠道，并移除其运行时凭据。再次接入需重新配置。',
     channelActivationSaved: '已提交启用配置。待数字员工更新就绪后，点击“配置接入”。',
     channelSaved: '渠道配置已提交，请刷新状态并在平台内发送消息验证。',
+    channelSavedNotConnected: '凭据已保存，但平台连接尚未建立，请核对凭据与平台事件订阅后重试。',
     channelRestarted: '已请求重连，请刷新状态确认结果。',
     channelDisabledDone: '渠道已停用，等待配置同步。',
     channelUnavailable: '无法读取运行时状态。请确认数字员工已就绪，并已部署配套渠道管理版本。',
+    channelRolloutPending:
+      '数字员工正在部署或更新（当前阶段：{phase}），完成后即可配置渠道；状态会自动刷新，也可手动点击“刷新状态”。',
     channelEmployeeFailed: '数字员工部署失败，请先修复部署或选择已就绪员工。',
-    channelStatusScope: '通道运行中不代表真实消息收发已验证；请在对应平台向机器人发送消息。',
+    channelStatusScope:
+      '“已启动（未连接）”表示进程在线但平台连接尚未建立；即使显示已连接也不代表真实消息收发已验证，请在对应平台向机器人发送消息。',
+    channelConnecting: '正在连接平台，最长可能需要数十秒，请勿重复提交。',
     channelAppId: 'App ID',
     channelAppSecret: 'App Secret',
     channelBotId: 'Bot ID',
@@ -53,6 +58,8 @@ export const channelTranslations = {
     channelClose: '关闭',
     channelFeishuSetup:
       '在飞书开放平台创建企业自建应用并启用机器人，配置消息接收事件与所需权限，采用长连接接收事件，发布到可用范围后填写应用凭据。',
+    channelFeishuCreateApp: '创建企业自建应用',
+    channelFeishuLongConnection: '用长连接接收事件',
     channelWecomSetup:
       '在企业微信创建支持 API 长连接的智能机器人，取得 Bot ID 和 Bot Secret。此入口不使用群机器人 Webhook。',
     channelWechatSetup:
@@ -91,7 +98,7 @@ export const channelTranslations = {
     channelConfigured: 'Credentials saved',
     channelUnconfigured: 'Credentials required',
     channelPending: 'Waiting for rollout',
-    channelRunning: 'Worker running',
+    channelRunning: 'Started (not connected)',
     channelConnected: 'Platform connection established',
     channelStopped: 'Worker stopped',
     channelUnknown: 'Unknown',
@@ -107,13 +114,19 @@ export const channelTranslations = {
       'Stops this employee channel and removes its runtime credentials. Reconnecting requires configuration again.',
     channelActivationSaved: 'Activation submitted. Configure credentials after the employee rollout is ready.',
     channelSaved: 'Configuration submitted. Refresh status and send a message on the platform to verify delivery.',
+    channelSavedNotConnected:
+      'Credentials saved, but the platform connection is not established. Check the credentials and platform event subscription, then retry.',
     channelRestarted: 'Reconnect requested. Refresh status to check the result.',
     channelDisabledDone: 'Channel disabled; configuration synchronization is pending.',
     channelUnavailable:
       'Runtime status unavailable. Check employee readiness and deploy the matching channel management runtime.',
+    channelRolloutPending:
+      'The digital employee is deploying or updating (current phase: {phase}). Channels can be configured once it is ready; the status refreshes automatically, or use "Refresh status".',
     channelEmployeeFailed:
       'Employee deployment failed. Fix the deployment or select a ready employee before connecting a channel.',
-    channelStatusScope: 'A running worker does not prove message delivery. Send a message to the bot on the platform.',
+    channelStatusScope:
+      '"Started (not connected)" means the worker is up but the platform connection is not established. Even a connected status does not prove real delivery; send a message to the bot on the platform.',
+    channelConnecting: 'Connecting to the platform; this can take tens of seconds. Do not submit again.',
     channelAppId: 'App ID',
     channelAppSecret: 'App Secret',
     channelBotId: 'Bot ID',
@@ -126,6 +139,8 @@ export const channelTranslations = {
     channelClose: 'Close',
     channelFeishuSetup:
       'Create an enterprise app with a bot on the Feishu platform. Configure message events, required permissions and long connections, then publish it to the intended audience.',
+    channelFeishuCreateApp: 'Create an enterprise app',
+    channelFeishuLongConnection: 'Receive events over long connections',
     channelWecomSetup:
       'Create a WeCom smart bot supporting API long connections and obtain its Bot ID and Bot Secret. Group-bot webhooks are not used here.',
     channelWechatSetup:
