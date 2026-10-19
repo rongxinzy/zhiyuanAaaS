@@ -506,11 +506,6 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     case 'system':
       content = tabs([
         {
-          key: 'channels',
-          label: c.channels,
-          children: <Channels client={client} language={ADMIN_LANGUAGE} />,
-        },
-        {
           key: 'services',
           label: c.services,
           children: <Services client={client} />,
@@ -531,6 +526,15 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
           label: c.licenses,
           permission: P.LicensesRead,
           children: <Operations {...props} />,
+        },
+        {
+          // Last on purpose: channels are the outward-facing result of the
+          // configuration above (settings, resources, licences), not the entry
+          // point of the page. The tab key is unchanged, so #system/channels
+          // deep links keep working.
+          key: 'channels',
+          label: c.channels,
+          children: <Channels client={client} language={ADMIN_LANGUAGE} />,
         },
       ]);
       break;

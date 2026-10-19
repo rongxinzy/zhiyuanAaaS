@@ -242,10 +242,19 @@ describe('Ant Design admin shell', () => {
     expect(await screen.findByText('configuration-content')).toBeInTheDocument();
     expect(window.location.hash).toBe('#model-gateway/configuration');
     fireEvent.click(screen.getByRole('menuitem', { name: '系统管理' }));
-    await screen.findByRole('tab', { name: '渠道接入' });
+    await screen.findByRole('tab', { name: '服务状态' });
     expect(screen.queryByRole('tab', { name: '模型服务' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: '模型列表' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '渠道接入' })).toHaveAttribute('aria-selected', 'true');
+    // The channel tab is deliberately last (channels are the outward-facing
+    // result of this page's configuration), so the page lands on the first tab.
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      '服务状态',
+      '基本设置',
+      '资源分配',
+      '产品授权',
+      '渠道接入',
+    ]);
+    expect(screen.getByRole('tab', { name: '服务状态' })).toHaveAttribute('aria-selected', 'true');
   });
   test('navigates from the narrow viewport drawer and closes it after selection', async () => {
     authenticated();
