@@ -390,7 +390,7 @@ export function resultLabel(value?: string | null, language: AdminLanguage = ADM
 }
 
 /** 资源类型文案：规则同 `resultLabel`。 */
-export function resourceTypeLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
+function resourceTypeLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
   return value ? (resourceTypes[language][value] ?? value) : null;
 }
 

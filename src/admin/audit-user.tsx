@@ -69,7 +69,7 @@ export function useUserDirectory(client: AdminConsoleClient, enabled: boolean): 
  * 用户检索：主键是用户名，其次接受用户 ID，显示名称只在唯一命中时接受；
  * 解析不出来返回问题，绝不把姓名当 ID 发出去。UUID 由调用方直接透传，不走目录。
  */
-export function resolveAuditActor(input: string, users: readonly PlatformUser[] | null): AuditActor {
+function resolveAuditActor(input: string, users: readonly PlatformUser[] | null): AuditActor {
   const name = input.trim();
   if (users === null) return { problem: 'unverified', name };
   const byUsername = users.filter((user) => user.username === name);
