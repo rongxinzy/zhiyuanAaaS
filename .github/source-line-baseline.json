@@ -2,7 +2,6 @@
   "caps": {
     "scripts/admin-browser-fixture.mjs": 1421,
     "src/admin/DigitalEmployees.tsx": 1924,
-    "src/admin/Events.tsx": 1056,
     "src/admin/KnowledgeManagement.tsx": 2084,
     "src/admin/Models.tsx": 1565,
     "src/admin/Operations.tsx": 2264,
