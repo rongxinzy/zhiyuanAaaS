@@ -49,7 +49,13 @@ function panel(portal: ReturnType<typeof mockPortal>) {
   );
 }
 
-afterEach(() => {
+afterEach(async () => {
+  // antd Button schedules a zero-delay state update (useDelayState); let it run
+  // while jsdom still exists, otherwise it fires after teardown and fails CI
+  // with "window is not defined".
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
