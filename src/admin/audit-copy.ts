@@ -14,6 +14,7 @@ const copy = {
     knowledge: '知识审计',
     knowledgeHint: '查看当前企业的知识操作与读取记录；处理中和结果不确定的操作保留实际状态。',
     knowledgeFailed: '知识审计读取失败',
+    knowledgeBase: '知识库',
     login: '登录日志',
     loginUnavailable: '登录历史查询尚未接入',
     opsLog: '操作日志',
@@ -92,6 +93,7 @@ const copy = {
     knowledgeHint:
       'Knowledge operations and reads for this tenant. In-flight and uncertain operations keep their real state.',
     knowledgeFailed: 'Failed to load knowledge audit',
+    knowledgeBase: 'Knowledge base',
     login: 'Login history',
     loginUnavailable: 'Login history is not connected',
     opsLog: 'Activity log',
@@ -161,6 +163,3 @@ const copy = {
   },
 };
 export const auditCopy = copy.zh;
-export function getAuditCopy(language: keyof typeof copy) {
-  return copy[language];
-}

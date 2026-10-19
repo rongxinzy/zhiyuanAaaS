@@ -164,6 +164,24 @@ function stub(overrides: Record<string, unknown> = {}) {
       .mockImplementation((id, configuration) => Promise.resolve({ id, version: 5, configuration })),
     deleteGatewayLimit: vi.fn().mockResolvedValue(undefined),
     publishGatewayLimits: vi.fn().mockResolvedValue({ revision: 'rev2' }),
+    createDataPlanePublication: vi.fn().mockResolvedValue({
+      operationId: '11111111-1111-4111-8111-111111111111',
+      deploymentId: 'demo',
+      revision: 'rules-1',
+      phase: 'projected',
+      createdAt: '2026-10-15T00:00:00Z',
+      updatedAt: '2026-10-15T00:00:00Z',
+      idempotencyExpiresAt: '2099-10-16T00:00:00Z',
+      errorCode: null,
+      conditions: ['Accepted', 'Applied', 'Ready'].map((type) => ({
+        type,
+        status: type === 'Ready' ? 'Unknown' : 'True',
+        observedRevision: type === 'Ready' ? null : 'rules-1',
+        reason: 'OperatorConfirmed',
+        lastTransitionTime: '2026-10-15T00:00:00Z',
+      })),
+    }),
+    getDataPlanePublication: vi.fn().mockRejectedValue(new Error('observation unavailable')),
     getGatewayQuota: vi.fn().mockResolvedValue({ consumer: 'aep.demo.u1', quota: 123 }),
     refreshGatewayQuota: vi.fn().mockResolvedValue({ quota: 1000 }),
     changeGatewayQuota: vi.fn().mockResolvedValue({ quota: 118 }),
@@ -203,6 +221,7 @@ async function confirm(button: string, title: string) {
 }
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -576,9 +595,11 @@ test('limit edits preserve version and subject × model; saving never publishes 
   );
   expect(client.publishGatewayLimits).not.toHaveBeenCalled();
   await screen.findByText('规则已修改，请发布使其同步到网关');
-  await confirm('发布配置', '发布当前限流规则？');
-  expect(client.publishGatewayLimits).toHaveBeenCalledOnce();
-  expect(screen.getByText('后端尚未报告实际请求的运行验证；已应用不代表已验证拦截。')).toBeInTheDocument();
+  await confirm('发布路由与规则', '发布模型路由与限流配额草稿');
+  expect(client.createDataPlanePublication).toHaveBeenCalledWith(expect.any(String), { includeGatewayLimits: true });
+  expect(client.publishGatewayLimits).not.toHaveBeenCalled();
+  expect(client.getGatewayLimitsStatus).not.toHaveBeenCalled();
+  expect(screen.getByText(/规则编辑仅保存草稿/)).toBeInTheDocument();
   await waitFor(() => expect(screen.getByRole('button', { name: '新增规则' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '新增规则' }));
   expect(screen.getByLabelText('规则 ID')).toHaveValue('');

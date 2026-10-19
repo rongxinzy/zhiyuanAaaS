@@ -24,7 +24,9 @@ export function Departments({
   const [portal] = useState(
     () =>
       injectedPortal ??
-      new PortalClient(() => (client as { getAccessToken(): Promise<string | null> }).getAccessToken()),
+      new PortalClient((rejectedToken) =>
+        (client as { getAccessToken(rejectedToken?: string): Promise<string | null> }).getAccessToken(rejectedToken),
+      ),
   );
   const [departments, setDepartments] = useState<readonly PortalDepartment[] | null>(null);
   const [loading, setLoading] = useState(true);

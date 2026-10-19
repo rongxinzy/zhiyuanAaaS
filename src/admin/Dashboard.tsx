@@ -17,10 +17,12 @@ export function Dashboard({
   client,
   portal: injectedPortal,
 }: {
-  readonly client: { getAccessToken(): Promise<string | null> };
+  readonly client: { getAccessToken(rejectedToken?: string): Promise<string | null> };
   readonly portal?: PortalClient | undefined;
 }) {
-  const [portal] = useState(() => injectedPortal ?? new PortalClient(() => client.getAccessToken()));
+  const [portal] = useState(
+    () => injectedPortal ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [stats, setStats] = useState<PortalUsageStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

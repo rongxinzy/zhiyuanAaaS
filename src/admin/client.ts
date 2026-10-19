@@ -49,6 +49,7 @@ import type {
   GatewayTestAccess,
 } from './gateway-api.js';
 import type { ModelPricing, ModelPricingWrite } from './model-pricing-api.js';
+import { type DataPlanePublication, parsePublication, publicationId } from './publication-contract.js';
 
 // Additive AEP team-default-role contract; keep the published SDK dependency.
 export type AdminTeam = SdkTeam & { readonly defaultRoleIds?: readonly string[] };
@@ -71,14 +72,14 @@ export interface AdminOverview {
   readonly failed?: readonly AdminOverviewMetric[];
 }
 
-export const AdminOverviewMetric = {
+const AdminOverviewMetric = {
   Users: 'users',
   Teams: 'teams',
   Skills: 'skills',
   Models: 'models',
   PendingEvents: 'pendingEvents',
 } as const;
-export type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
+type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
 
 export interface AdminSession {
   readonly status: AdminConsoleStatus;
@@ -164,7 +165,7 @@ export interface AdminSkillInstallation {
   readonly itemStatus?: string;
 }
 
-export interface AdminSkillInstallationSummary {
+interface AdminSkillInstallationSummary {
   readonly granted: number;
   readonly reported: number;
   readonly installed: number;
@@ -267,7 +268,7 @@ export interface AdminDataPlaneCatalogComparison {
 // The SDK now carries catalogComparison on DataPlaneStatus; Omit keeps the
 // local readonly collection shape instead of intersecting with it. The field
 // is absent only in responses predating catalogComparison.
-export type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
+type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
   readonly catalogComparison?: AdminDataPlaneCatalogComparison;
 };
 
@@ -276,13 +277,12 @@ export interface AdminDataPlane {
   readonly status: AdminDataPlaneStatus;
 }
 
-export const AdminDeploymentSettingSource = {
+const AdminDeploymentSettingSource = {
   Override: 'override',
   Env: 'env',
   Unset: 'unset',
 } as const;
-export type AdminDeploymentSettingSource =
-  (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
+type AdminDeploymentSettingSource = (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
 
 export interface AdminDeploymentSettingValue {
   readonly override: string | null;
@@ -290,7 +290,7 @@ export interface AdminDeploymentSettingValue {
   readonly source: AdminDeploymentSettingSource;
 }
 
-export interface AdminDeploymentIntegerSettingValue {
+interface AdminDeploymentIntegerSettingValue {
   readonly override: number | null;
   readonly effectiveValue: number | null;
   readonly source: AdminDeploymentSettingSource;
@@ -572,6 +572,41 @@ export class AdminConsoleClient {
     return this.#sessionId;
   }
 
+  // Used only to scope non-secret publication pointers; never includes tokens.
+  get publicationScope(): string | null {
+    return this.#deploymentId ? JSON.stringify([this.#baseUrl, this.#deploymentId]) : null;
+  }
+
+  async createDataPlanePublication(
+    idempotencyKey: string,
+    input: { readonly includeGatewayLimits?: boolean } = {},
+  ): Promise<DataPlanePublication> {
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) throw new TypeError('Invalid publication key.');
+    const result = parsePublication(
+      await this.#request<unknown>(this.#requireClient(), {
+        method: HttpMethod.Post,
+        path: '/aep/v1/admin/data-plane/publications',
+        body: input.includeGatewayLimits === true ? { includeGatewayLimits: true } : {},
+        idempotencyKey,
+      }),
+    );
+    if (result.deploymentId !== this.#deploymentId) throw new Error('Publication deployment mismatch.');
+    return result;
+  }
+
+  async getDataPlanePublication(operationId: string): Promise<DataPlanePublication> {
+    if (!publicationId(operationId)) throw new TypeError('Invalid publication ID.');
+    const result = parsePublication(
+      await this.#request<unknown>(this.#requireClient(), {
+        method: HttpMethod.Get,
+        path: `/aep/v1/admin/data-plane/publications/${encodeURIComponent(operationId)}`,
+      }),
+    );
+    if (result.operationId !== operationId || result.deploymentId !== this.#deploymentId)
+      throw new Error('Publication identity mismatch.');
+    return result;
+  }
+
   async restore(): Promise<AdminSession> {
     const client = this.#getClient();
     const tokens = await client.restoreSession();
@@ -596,12 +631,12 @@ export class AdminConsoleClient {
     this.#sessionId = null;
   }
 
-  // Digital-employee portal calls carry the same bearer, and the portal
-  // /chat entry link hands the raw token over in a URL fragment. The store
-  // is memory-only, so this returns null once signed out.
-  async getAccessToken(): Promise<string | null> {
+  async getAccessToken(rejectedToken?: string): Promise<string | null> {
     const tokens = await this.#tokenStore.get();
-    return tokens?.accessToken ?? null;
+    if (!tokens || !rejectedToken || tokens.accessToken !== rejectedToken) return tokens?.accessToken ?? null;
+    const renewed = await this.#getClient().refreshSession();
+    this.#sessionId = renewed.sessionId ?? this.#sessionId;
+    return renewed.accessToken;
   }
 
   async overview(identity?: AdminIdentity): Promise<AdminOverview> {
@@ -1074,17 +1109,24 @@ export class AdminConsoleClient {
 
   async dataPlane(): Promise<AdminDataPlane> {
     const client = this.#requireClient();
-    const [desired, status] = await Promise.all([
-      client.getDataPlaneDesiredState(),
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const desired = await client.getDataPlaneDesiredState();
       // The pinned SDK release predates the catalogComparison field on the
       // data-plane status, so the status read goes through the same
       // handwritten transport path as the publish endpoint (see #request).
-      this.#request<JsonObject>(client, {
+      const status = await this.#request<JsonObject>(client, {
         method: HttpMethod.Get,
         path: '/aep/v1/admin/data-plane/status',
-      }).then(parseDataPlaneStatus),
-    ]);
-    return { desired, status };
+      }).then(parseDataPlaneStatus);
+      const confirmed = await client.getDataPlaneDesiredState();
+      const stable = desired.revision === confirmed.revision && desired.contentHash === confirmed.contentHash;
+      const wrongReadyHash =
+        status.state === 'ready' &&
+        status.observedRevision === desired.revision &&
+        Boolean(status.contentHash && desired.contentHash && status.contentHash !== desired.contentHash);
+      if (stable && !wrongReadyHash) return { desired, status };
+    }
+    throw new AdminRequestError(503, 'GATEWAY_OBSERVATION_CHANGED', null);
   }
 
   // The pinned SDK release predates the catalog-derived publish endpoint:
@@ -1393,11 +1435,13 @@ export class AdminConsoleClient {
       readonly path: string;
       readonly body?: JsonObject;
       readonly responseType?: 'json' | 'empty';
+      readonly idempotencyKey?: string;
     },
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-AEP-Protocol-Version': AEP_PROTOCOL_VERSION,
+      ...(request.idempotencyKey ? { 'Idempotency-Key': request.idempotencyKey } : {}),
     };
     const tokens = await this.#tokenStore.get();
     if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;

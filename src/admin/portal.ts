@@ -1,57 +1,24 @@
+import type { PortalEmployee } from './portal-employee-types.js';
+
+export type { PortalEmployee } from './portal-employee-types.js';
+
+import { ChannelClient } from './channel-api.js';
+
+export type { ChannelProvider, ChannelQR, EmployeeChannel, EmployeeChannels } from './channel-api.js';
+
+export type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
+
+import type { KnowledgeAuditRecord } from './portal-knowledge-query.js';
+import {
+  type KnowledgeAuditFilters,
+  type ManagedKnowledgeDocumentQuery,
+  managedKnowledgeDocumentQuery,
+} from './portal-knowledge-query.js';
 // Digital-employee portal (de-portal) client. The console reaches it
 // same-origin through the admin server's /api proxy — the same pattern as
 // the /aep proxy — so all paths are relative and no CORS is involved.
 // Bearer-only: portal sessions and CSRF belong to the browser chat entry,
 // not to these calls. Errors are plain {error: string} JSON, not RFC 9457.
-
-export type PortalEmployee = {
-  readonly name: string;
-  readonly displayName: string;
-  readonly phase: string;
-  readonly runtime: string;
-  readonly model: string;
-  /** Full ordered model list (first = default); feeds the edit form. */
-  readonly models: readonly string[];
-  readonly owner: string;
-  readonly ownerId: string;
-  /** Owning department (AEP team id), empty for legacy unscoped employees. */
-  readonly team?: string;
-  readonly memoryUser: string;
-  readonly createdAt: string;
-  readonly channels?: { readonly wecom: boolean; readonly wecomName?: string };
-  /** 用途说明 (release condition, new employees only). */
-  readonly description?: string | null;
-  /** null/undefined = legacy unrestricted policy (not configured). */
-  readonly knowledgeBases?: readonly { readonly id: string; readonly name: string }[] | null;
-  readonly skills?: readonly { readonly id: string; readonly name: string; readonly version: string }[] | null;
-  /** null/undefined = legacy owner/team rules (not explicitly configured). */
-  readonly visibility?: PortalEmployeeVisibility | null;
-  /** Workbench roster: why the caller can see this employee. */
-  readonly accessReason?: PortalEmployeeAccess | undefined;
-  /**
-   * Set while the platform failover watcher is serving this employee from a
-   * fallback model (the default model failed its health probe). null/absent
-   * = the default model is serving.
-   */
-  readonly modelFailover?: { readonly original: string; readonly active: string; readonly switchedAt: string } | null;
-};
-
-// accessReason.kind mirrors the portal's canAccessEmployee branch order:
-// owner | all | team | user | legacy-team | admin. team carries the
-// granting team (spec name snapshot when present); legacy-team ids resolve
-// client-side against the caller's /api/v1/me teams.
-export type PortalEmployeeAccess = {
-  readonly kind: string;
-  readonly teamId?: string;
-  readonly teamName?: string;
-  readonly userId?: string;
-};
-
-export type PortalEmployeeVisibility = {
-  readonly mode: 'all' | 'restricted' | string;
-  readonly teams: readonly { readonly id: string; readonly name: string }[];
-  readonly users: readonly { readonly id: string; readonly name: string }[];
-};
 
 export type PortalMemoryStatus = {
   readonly server: string;
@@ -109,7 +76,7 @@ export type PortalRequest = {
 // The deployment leg of a request, kept separate from the approval state:
 // exists/phase come from the employee CR; pending and rejected requests
 // carry exists=false without probing the cluster.
-export type PortalRequestDeploy = {
+type PortalRequestDeploy = {
   readonly exists: boolean;
   readonly phase: string;
   readonly message?: string;
@@ -181,6 +148,11 @@ export type ManagedKnowledgeReadiness = {
   readonly parser: 'unverified';
 };
 
+type ManagedKnowledgeBaseScope = {
+  readonly users: number;
+  readonly teams: number;
+};
+
 export type ManagedKnowledgeBase = {
   readonly id: string;
   readonly name: string;
@@ -188,19 +160,13 @@ export type ManagedKnowledgeBase = {
   readonly tenant_id: string;
   readonly embedding_model_id: string;
   readonly type: string;
-};
-
-export type KnowledgeAuditRecord = {
-  readonly cursor: string;
-  readonly operationId: string;
-  readonly actorUserId: string;
-  readonly action: string;
-  readonly resourceType: string;
-  readonly resourceId: string;
-  readonly parentResourceId: string;
-  readonly outcome: string;
-  readonly statusCode: number;
-  readonly createdAt: string;
+  // 列表页要用的上游计数与授权范围摘要。portal 只在拿到可信值时下发，
+  // 缺字段时界面按「暂未统计」渲染，不拿 0 冒充真实统计。
+  readonly knowledge_count?: number;
+  readonly chunk_count?: number;
+  readonly processing_count?: number;
+  readonly updated_at?: string;
+  readonly scope?: ManagedKnowledgeBaseScope;
 };
 
 export type ManagedKnowledgeDocument = {
@@ -222,7 +188,7 @@ export type ManagedKnowledgeDocument = {
   readonly created_at: string;
 };
 
-export type ManagedKnowledgeSpan = {
+type ManagedKnowledgeSpan = {
   readonly knowledge_id: string;
   readonly attempt: number;
   readonly span_id: string;
@@ -390,7 +356,7 @@ export function isSessionExpired(error: unknown): boolean {
 // release-condition violations / 409 duplicate / 403 quota-policy /
 // anything else). Violations are field-anchored so the wizard can point
 // at the exact item.
-export type PortalApplyViolation = {
+type PortalApplyViolation = {
   readonly field: string;
   readonly message: string;
 };
@@ -426,7 +392,7 @@ export type PortalApplyInput = {
   readonly note?: string;
 };
 
-export type PortalApplyVisibility = {
+type PortalApplyVisibility = {
   readonly mode: 'all' | 'restricted';
   readonly teams?: readonly string[];
   readonly users?: readonly string[];
@@ -503,9 +469,9 @@ export type PortalUsageStats = {
 };
 
 export class PortalClient {
-  readonly #tokenProvider: () => Promise<string | null>;
+  readonly #tokenProvider: (rejectedToken?: string) => Promise<string | null>;
 
-  constructor(tokenProvider: () => Promise<string | null>) {
+  constructor(tokenProvider: (rejectedToken?: string) => Promise<string | null>) {
     this.#tokenProvider = tokenProvider;
   }
 
@@ -516,17 +482,42 @@ export class PortalClient {
     extraHeaders?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
   ): Promise<{ readonly status: number; readonly data: unknown }> {
+    signal?.throwIfAborted();
     const headers: Record<string, string> = { ...extraHeaders };
     if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const token = await this.#tokenProvider();
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(path, {
-      method,
-      headers,
-      ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
-      ...(signal ? { signal } : {}),
-    });
-    const data: unknown = await response.json().catch(() => null);
+    const send = () =>
+      fetch(path, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
+        ...(signal ? { signal } : {}),
+      });
+    signal?.throwIfAborted();
+    let response = await send();
+    let data: unknown = await response.json().catch(() => null);
+    // AUTH_REQUIRED is returned before a Portal handler runs. Other 401s can
+    // come from downstream services and must not replay a mutation.
+    if (
+      response.status === 401 &&
+      token &&
+      (data as { error?: { code?: unknown } } | null)?.error?.code === 'AUTH_REQUIRED'
+    ) {
+      signal?.throwIfAborted();
+      let renewed: string | null;
+      try {
+        renewed = await this.#tokenProvider(token);
+      } catch {
+        return { status: response.status, data };
+      }
+      signal?.throwIfAborted();
+      if (renewed && renewed !== token) {
+        headers.Authorization = `Bearer ${renewed}`;
+        response = await send();
+        data = await response.json().catch(() => null);
+      }
+    }
     return { status: response.status, data };
   }
 
@@ -536,6 +527,18 @@ export class PortalClient {
     const items = (data as { employees?: unknown[] } | null)?.employees ?? [];
     return items.map((raw) => parseEmployee(raw));
   }
+
+  readonly #channels = new ChannelClient(
+    (...args) => this.#request(...args),
+    portalError,
+    (message) => new PortalError(502, message),
+  );
+  readonly employeeChannels = this.#channels.employeeChannels.bind(this.#channels);
+  readonly activateChannel = this.#channels.activateChannel.bind(this.#channels);
+  readonly wakeChannelEmployee = this.#channels.wakeChannelEmployee.bind(this.#channels);
+  readonly configureChannel = this.#channels.configureChannel.bind(this.#channels);
+  readonly restartChannel = this.#channels.restartChannel.bind(this.#channels);
+  readonly channelQR = this.#channels.channelQR.bind(this.#channels);
 
   // Sidebar service-status probes (the portal holds the OpenViking root key
   // server-side; the console only ever sees summaries).
@@ -572,7 +575,7 @@ export class PortalClient {
   }
 
   async knowledgeAudit(
-    filters: { readonly operationId?: string; readonly actorUserId?: string; readonly cursor?: string } = {},
+    filters: KnowledgeAuditFilters = {},
     signal?: AbortSignal,
   ): Promise<{ readonly items: readonly KnowledgeAuditRecord[]; readonly nextCursor: string | null }> {
     const query = new URLSearchParams({ limit: '50' });
@@ -664,11 +667,10 @@ export class PortalClient {
 
   async listManagedKnowledgeDocuments(
     id: string,
-    query: { readonly page: number; readonly pageSize: number; readonly keyword?: string },
+    query: ManagedKnowledgeDocumentQuery,
     signal?: AbortSignal,
   ): Promise<ManagedKnowledgePage> {
-    const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
-    if (query.keyword) params.set('keyword', query.keyword);
+    const params = managedKnowledgeDocumentQuery(query);
     const { status, data } = await this.#request(
       'GET',
       `/api/v1/knowledge/managed/bases/${encodeURIComponent(id)}/documents?${params.toString()}`,
@@ -1638,7 +1640,37 @@ function parseManagedKnowledgeBase(value: unknown): ManagedKnowledgeBase {
   ) {
     throw invalidManagedResponse();
   }
-  return { ...record, tenant_id: String(record.tenant_id) } as ManagedKnowledgeBase;
+  // 列表统计是可选字段：只接受能安全渲染的值，其余（缺失、类型不对、
+  // 时间不可解析）一律当没有，由界面显示「暂未统计」。
+  const { knowledge_count, chunk_count, processing_count, updated_at, scope, ...base } = record;
+  const knowledgeCount = optionalCount(knowledge_count);
+  const chunkCount = optionalCount(chunk_count);
+  const processingCount = optionalCount(processing_count);
+  const updatedAt = nonEmptyString(updated_at) && !Number.isNaN(Date.parse(updated_at)) ? updated_at : undefined;
+  const parsedScope = optionalSubjectScope(scope);
+  return {
+    ...base,
+    tenant_id: String(base.tenant_id),
+    ...(knowledgeCount === undefined ? {} : { knowledge_count: knowledgeCount }),
+    ...(chunkCount === undefined ? {} : { chunk_count: chunkCount }),
+    ...(processingCount === undefined ? {} : { processing_count: processingCount }),
+    ...(updatedAt === undefined ? {} : { updated_at: updatedAt }),
+    ...(parsedScope === undefined ? {} : { scope: parsedScope }),
+  } as ManagedKnowledgeBase;
+}
+
+function optionalCount(value: unknown): number | undefined {
+  // 计数只接受非负整数：portal 只会下发整数，小数一定是脏数据，宁可显示
+  // 「暂未统计」也不要渲染出「8.5 份处理中」。
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function optionalSubjectScope(value: unknown): ManagedKnowledgeBaseScope | undefined {
+  const record = objectOf(value);
+  if (!record) return undefined;
+  const users = optionalCount(record.users);
+  const teams = optionalCount(record.teams);
+  return users === undefined || teams === undefined ? undefined : { users, teams };
 }
 
 function parseManagedKnowledgeDocument(value: unknown, expectedBaseId: string): ManagedKnowledgeDocument {
@@ -1885,13 +1917,4 @@ export function botUIBaseURL(): string {
     return `${window.location.protocol}//${window.location.hostname}:30202`;
   }
   return 'http://localhost:30202';
-}
-
-export function portalChatBaseURL(): string {
-  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  if (env?.VITE_PORTAL_URL) return env.VITE_PORTAL_URL;
-  if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:30190`;
-  }
-  return 'http://localhost:30190';
 }

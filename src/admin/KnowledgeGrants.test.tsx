@@ -35,6 +35,7 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
     })),
     listContacts: vi.fn().mockResolvedValue(CONTACTS),
     listDepartments: vi.fn().mockResolvedValue(DEPARTMENTS),
+    listEmployees: vi.fn().mockResolvedValue([]),
     ...overrides,
   } as unknown as PortalClient;
 }
@@ -47,7 +48,7 @@ function dropdownOptionLabels(): string[] {
   return [...(latest?.querySelectorAll('.ant-select-item-option') ?? [])].map((item) => item.textContent ?? '');
 }
 
-// 打开下拉并点选标签匹配的选项；标签形如「显示名 · ID」。
+// 打开下拉并点选标签匹配的选项；多选下拉点完不收起，可以连着选多个。
 async function pickSubject(combobox: HTMLElement, label: string) {
   fireEvent.mouseDown(combobox);
   const option = await waitFor(() => {
@@ -72,8 +73,47 @@ function renderGrants(portal: PortalClient) {
   );
 }
 
+function openGrantEditor() {
+  fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantEdit') }));
+}
+
 describe('KnowledgeGrants', () => {
   afterEach(() => cleanup());
+
+  test('shows only employees bound to the selected knowledge base and links to management', async () => {
+    const navigate = vi.fn();
+    const portal = makePortal({
+      listEmployees: vi.fn().mockResolvedValue([
+        { name: 'bound', displayName: 'Bound employee', knowledgeBases: [{ id: 'kb-1' }] },
+        { name: 'other', displayName: 'Other employee', knowledgeBases: [{ id: 'kb-2' }] },
+      ]),
+    });
+    render(
+      <ConfigProvider>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onManageAgents={navigate} />
+        </App>
+      </ConfigProvider>,
+    );
+    expect(await screen.findByText('Bound employee')).toBeInTheDocument();
+    expect(screen.queryByText('Other employee')).not.toBeInTheDocument();
+    expect(screen.queryByText(tr('knowledgeAgentEmpty'))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeAgentManage') }));
+    expect(navigate).toHaveBeenCalledOnce();
+  });
+
+  test('does not label an unsaved removal as effective access after closing the editor', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: /移\s*除/ }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    const region = within(screen.getByRole('region', { name: tr('knowledgeGrants') }));
+    expect(region.getByText('user-1')).toBeInTheDocument();
+    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+  });
 
   test('blocks grant writes until the current base has loaded', async () => {
     let resolveGrants!: (value: { knowledge_base_id: string; tenant_id: string; grants: [] }) => void;
@@ -81,6 +121,7 @@ describe('KnowledgeGrants', () => {
       listManagedKnowledgeGrants: vi.fn().mockImplementation(() => new Promise((resolve) => (resolveGrants = resolve))),
     });
     renderGrants(portal);
+    openGrantEditor();
     const save = screen.getByRole('button', { name: tr('knowledgeGrantsSave') });
     expect(save).toBeDisabled();
     expect(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') })).toBeDisabled();
@@ -165,6 +206,7 @@ describe('KnowledgeGrants', () => {
       </ConfigProvider>,
     );
     await screen.findByText('user-old');
+    openGrantEditor();
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') }));
     await waitFor(() => expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledTimes(1));
     view.rerender(
@@ -174,13 +216,13 @@ describe('KnowledgeGrants', () => {
         </App>
       </ConfigProvider>,
     );
-    await screen.findByText('user-new');
+    expect((await screen.findAllByText('user-new')).length).toBeGreaterThan(0);
     const saveButton = screen.getByRole('button', { name: /保存授权/ });
     expect(saveButton).toBeEnabled();
     fireEvent.click(saveButton);
     await waitFor(() => expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledTimes(2));
     resolveOldSave();
-    await waitFor(() => expect(screen.getByText('user-new')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('user-new').length).toBeGreaterThan(0));
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsEmpty'))).not.toBeInTheDocument();
   });
 
@@ -188,9 +230,10 @@ describe('KnowledgeGrants', () => {
     const portal = makePortal();
     renderGrants(portal);
     expect(await screen.findByText('user-1')).toBeInTheDocument();
-    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四 · user-2');
+    openGrantEditor();
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
-    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }), '研发部 · team-1');
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }), '研发部');
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') }));
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
 
@@ -208,13 +251,15 @@ describe('KnowledgeGrants', () => {
     const portal = makePortal();
     renderGrants(portal);
     expect(await screen.findByText('user-1')).toBeInTheDocument();
+    openGrantEditor();
     // 撤销全部就放在「保存会完整替换当前授权」这条提示里，别埋到表格下面。
     const banner = screen
       .getByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsReplaceHint'))
       .closest('.ant-alert') as HTMLElement;
     const revoke = within(banner).getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') });
     fireEvent.click(revoke);
-    const dialog = await screen.findByRole('dialog');
+    const dialogs = await screen.findAllByRole('dialog');
+    const dialog = dialogs[dialogs.length - 1]!;
     fireEvent.click(
       within(dialog).getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsRevokeAll') }),
     );
@@ -238,40 +283,45 @@ describe('KnowledgeGrants', () => {
     });
     renderGrants(portal);
     await screen.findByText('user-1');
+    openGrantEditor();
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') }));
     expect(await screen.findByText('write outcome unknown')).toBeInTheDocument();
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeGrantsEmpty'))).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeRetryRead') }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') })).toBeEnabled(),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantEdit') })).toBeEnabled());
+    openGrantEditor();
+    const editor = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(editor).getByRole('button', { name: /保存授权/ })).toBeEnabled());
   });
 
-  test('offers the portal directory as subjects, tagged with display name and id', async () => {
+  test('offers the portal directory as subjects, labelled by display name only', async () => {
     const portal = makePortal();
     renderGrants(portal);
     await screen.findByText('user-1');
+    openGrantEditor();
     const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
     fireEvent.mouseDown(userSelect);
-    await waitFor(() => expect(dropdownOptionLabels()).toContain('李四 · user-2'));
-    expect(dropdownOptionLabels()).toContain('张三 · user-1');
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('李四'));
+    expect(dropdownOptionLabels()).toContain('张三');
     fireEvent.mouseDown(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }));
     // 团队取通讯录成员所属团队与部门列表的并集：无成员的 team-2 只有部门列表才有。
-    await waitFor(() => expect(dropdownOptionLabels()).toContain('市场部 · team-2'));
-    expect(dropdownOptionLabels()).toContain('研发部 · team-1');
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('市场部'));
+    expect(dropdownOptionLabels()).toContain('研发部');
   });
 
   test('filters candidates by name and by id before adding the picked one', async () => {
     const portal = makePortal();
     renderGrants(portal);
     await screen.findByText('user-1');
+    openGrantEditor();
     const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
     fireEvent.mouseDown(userSelect);
     fireEvent.change(userSelect, { target: { value: '李' } });
-    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四 · user-2']));
+    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四']));
+    // 标签不再带 ID，但按 ID 搜索仍要命中：管理员可以直接粘贴服务端的键找人。
     fireEvent.change(userSelect, { target: { value: 'user-2' } });
-    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四 · user-2']));
-    fireEvent.click(await screen.findByText('李四 · user-2'));
+    await waitFor(() => expect(dropdownOptionLabels()).toEqual(['李四']));
+    fireEvent.click(await screen.findByText('李四'));
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
     // 断言落在表格里：下拉面板（含 rc-select 给读屏用的隐藏虚拟节点）里也有这个 ID。
     expect(await within(screen.getByRole('table')).findByText('user-2')).toBeInTheDocument();
@@ -281,8 +331,9 @@ describe('KnowledgeGrants', () => {
     const portal = makePortal();
     renderGrants(portal);
     await screen.findByText('user-1');
+    openGrantEditor();
     const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
-    await pickSubject(userSelect, '张三 · user-1');
+    await pickSubject(userSelect, '张三');
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
     await waitFor(() =>
@@ -305,9 +356,11 @@ describe('KnowledgeGrants', () => {
     });
     renderGrants(portal);
     expect(await screen.findByText('team-legacy')).toBeInTheDocument();
-    expect(screen.getAllByText(tr('knowledgeGrantUnknownSubject'))).toHaveLength(1);
-    expect(screen.getByText(tr('knowledgeGrantUnknownHint'))).toBeInTheDocument();
-    const row = screen.getByText('team-legacy').closest('tr');
+    openGrantEditor();
+    const editor = screen.getByRole('dialog');
+    expect(within(editor).getAllByText(tr('knowledgeGrantUnknownSubject'))).toHaveLength(1);
+    expect(within(editor).getByText(tr('knowledgeGrantUnknownHint'))).toBeInTheDocument();
+    const row = within(editor).getByText('team-legacy').closest('tr');
     fireEvent.click(within(row as HTMLElement).getByRole('button', { name: /移\s*除/ }));
     await waitFor(() => expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument());
     expect(screen.queryByText(tr('knowledgeGrantUnknownHint'))).not.toBeInTheDocument();
@@ -332,9 +385,53 @@ describe('KnowledgeGrants', () => {
     // 清单不完整时不下「未知主体」判断（可能是清单自己缺人），仍可删行、可保存。
     expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument();
     expect(screen.queryByText(tr('knowledgeGrantUnknownHint'))).not.toBeInTheDocument();
+    openGrantEditor();
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
     await waitFor(() =>
       expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [{ type: 'user', id: 'user-9' }]),
     );
+  });
+
+  // 与技能授权一致：一次可以挑多个主体再加，不必一人一点。
+  test('adds every picked subject in one click instead of one at a time', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') }));
+    const teamSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') });
+    await pickSubject(teamSelect, '研发部');
+    await pickSubject(teamSelect, '市场部');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') }));
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+
+    await waitFor(() =>
+      expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [
+        { type: 'user', id: 'user-1' },
+        { type: 'user', id: 'user-2' },
+        { type: 'team', id: 'team-1' },
+        { type: 'team', id: 'team-2' },
+      ]),
+    );
+    // 加完就清空草稿：按钮回落到不可点，重复点不会塞进同一个主体。
+    await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') })).toBeDisabled());
+  });
+
+  // 重名的人在选择之前必须能分清：重名的选项补 ID 前 8 位，不重名的保持只写名字。
+  test('disambiguates same-named subjects with a short id, and only those', async () => {
+    const portal = makePortal({
+      listContacts: vi
+        .fn()
+        .mockResolvedValue([...CONTACTS, { userId: 'user-3', username: 'zhangsan2', displayName: '张三', teams: [] }]),
+    });
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }));
+    await waitFor(() => expect(dropdownOptionLabels()).toContain('张三 \u00b7 user-1'));
+    expect(dropdownOptionLabels()).toContain('张三 \u00b7 user-3');
+    // 单名的那个不补后缀，标签仍然是干净的名字。
+    expect(dropdownOptionLabels()).toContain('李四');
   });
 });

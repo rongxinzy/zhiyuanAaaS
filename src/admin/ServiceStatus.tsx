@@ -58,7 +58,9 @@ function safeExternalURL(raw: string): string | null {
 }
 
 function useResolvedPortal(client: AdminConsoleClient, portal?: PortalClient): PortalClient {
-  const [resolved] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
+  const [resolved] = useState(
+    () => portal ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   return resolved;
 }
 

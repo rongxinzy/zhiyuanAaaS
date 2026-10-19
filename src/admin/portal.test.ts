@@ -11,21 +11,6 @@ function stubFetch(status: number, body: unknown) {
 }
 
 describe('portal client', () => {
-  test('rejects unsafe chunk image MIME, invalid image indexes and unauthorized binary reads', async () => {
-    const portal = new PortalClient(async () => null);
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', -1)).rejects.toBeInstanceOf(PortalError);
-    expect(fetchMock).not.toHaveBeenCalled();
-    fetchMock.mockResolvedValueOnce(new Response('<script>bad</script>', { headers: { 'Content-Type': 'text/html' } }));
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toBeInstanceOf(PortalError);
-    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
-    await expect(portal.getManagedKnowledgeChunkImage('doc', 'chunk', 0)).rejects.toMatchObject({ status: 403 });
-    fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }));
-    await expect(portal.getManagedKnowledgeFile('doc', 'download')).rejects.toMatchObject({ status: 403 });
-    vi.unstubAllGlobals();
-  });
-
   test('reads bounded audit pages with encoded filters and caller cancellation', async () => {
     const item = {
       cursor: '12',
@@ -43,10 +28,15 @@ describe('portal client', () => {
     const portal = new PortalClient(async () => 'aep-token');
     const controller = new AbortController();
     await expect(
-      portal.knowledgeAudit({ operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20' }, controller.signal),
+      portal.knowledgeAudit(
+        { operationId: 'kbop/1', actorUserId: 'admin-1', cursor: '20', knowledgeBaseId: 'kb-1' },
+        controller.signal,
+      ),
     ).resolves.toEqual({ items: [item], nextCursor: '12' });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20');
+    expect(url).toBe(
+      '/api/v1/knowledge/managed/audit?limit=50&operationId=kbop%2F1&actorUserId=admin-1&cursor=20&knowledgeBaseId=kb-1',
+    );
     expect((init as RequestInit).signal).toBeDefined();
     vi.unstubAllGlobals();
   });
@@ -409,6 +399,37 @@ describe('portal client departments and lifecycle', () => {
     const fetchMock = stubFetch(200, { data: [base] });
     await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([{ ...base, tenant_id: '10000' }]);
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
+    vi.unstubAllGlobals();
+
+    // 统计字段只保留能安全渲染的：非负整数计数与可解析时间保留，字符串、负数、
+    // 小数一律丢弃，缺字段就是缺字段（界面按「暂未统计」渲染）。
+    const countedFetch = stubFetch(200, {
+      data: [
+        {
+          ...base,
+          knowledge_count: 8,
+          chunk_count: '9',
+          processing_count: 8.5,
+          updated_at: '2026-10-15T06:18:30Z',
+          scope: { users: 2, teams: 1 },
+        },
+      ],
+    });
+    await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([
+      {
+        ...base,
+        tenant_id: '10000',
+        knowledge_count: 8,
+        updated_at: '2026-10-15T06:18:30Z',
+        scope: { users: 2, teams: 1 },
+      },
+    ]);
+    expect(countedFetch.mock.calls[0]![0]).toBe('/api/v1/knowledge/managed/bases');
+    vi.unstubAllGlobals();
+
+    // scope 缺一半（只有 users）时整块丢弃，不渲染半个使用范围。
+    stubFetch(200, { data: [{ ...base, scope: { users: 2 } }] });
+    await expect(portal.listManagedKnowledgeBases()).resolves.toEqual([{ ...base, tenant_id: '10000' }]);
     vi.unstubAllGlobals();
 
     const document = {

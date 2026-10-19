@@ -30,8 +30,10 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { EmployeeChannelsDrawer } from './Channels.js';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
 import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
+import { PhaseTag } from './employee-phase.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
@@ -71,7 +73,9 @@ export function DigitalEmployees({
   /** Lets the shell deep-link straight into the approvals tab. */
   readonly initialTab?: DigitalEmployeesTab | undefined;
 }) {
-  const [resolvedPortal] = useState(() => portal ?? new PortalClient(() => client.getAccessToken()));
+  const [resolvedPortal] = useState(
+    () => portal ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [tab, setTab] = useState<DigitalEmployeesTab>(initialTab ?? DigitalEmployeesTab.Employees);
   return (
     <div className="flex w-full flex-col gap-6">
@@ -107,18 +111,6 @@ function formatDateTime(value: string): string {
   if (Number.isNaN(date.getTime())) return value;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-// "Ready" only claims the runtime instance is deployed — it says nothing
-// about model auth or publish completeness. Unknown values render raw.
-function PhaseTag({ phase }: { readonly phase: string }) {
-  if (phase === 'Ready') return <Tag color="success">{t('phaseReady')}</Tag>;
-  if (phase === 'Pending') return <Tag color="processing">{t('phasePending')}</Tag>;
-  // Idle-hibernated runtime: no pod is resident, first chat wakes it.
-  if (phase === 'Sleeping') return <Tag color="default">💤 {t('phaseSleeping')}</Tag>;
-  if (phase === 'Error') return <Tag color="error">{t('phaseError')}</Tag>;
-  if (!phase) return <Tag>{t('phaseUnknown')}</Tag>;
-  return <Tag>{phase}</Tag>;
 }
 
 function wecomTag(employee: PortalEmployee) {
@@ -1339,6 +1331,7 @@ function EmployeeDetail({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   // The real web entry for this employee on the portal host. It never
   // contains an access token — sessions are minted by the portal itself.
   const entryURL = `${botUIBaseURL()}/#/emp/${encodeURIComponent(employee.name)}`;
@@ -1503,11 +1496,11 @@ function EmployeeDetail({
                       ),
                     },
                     {
-                      key: 'wecom',
-                      label: t('publishWecom'),
-                      children: employee.channels?.wecom
-                        ? `${t('publishChannelOn')}（${employee.channels.wecomName ?? t('publishChannelUnknownName')}）`
-                        : t('publishChannelOff'),
+                      key: 'channels',
+                      label: translate(language, 'channelTitle'),
+                      children: (
+                        <Button onClick={() => setChannelsOpen(true)}>{translate(language, 'channelManage')}</Button>
+                      ),
                     },
                   ]}
                 />
@@ -1530,6 +1523,13 @@ function EmployeeDetail({
       />
 
       <DeleteBlockedModal employee={deleting ? employee : null} onClose={() => setDeleting(false)} />
+      <EmployeeChannelsDrawer
+        portal={portal}
+        employeeName={employee.name}
+        language={language}
+        open={channelsOpen}
+        onClose={() => setChannelsOpen(false)}
+      />
       <EditEmployeeModal
         employee={employee}
         client={client}

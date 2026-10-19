@@ -15,7 +15,7 @@ import {
   Typography,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import { auditCodeLabel, deliveryStateLabel, objectText, resultLabel } from './audit-labels.js';
 import {
@@ -35,17 +35,16 @@ import {
   type AdminConsoleClient,
   type AdminDeliveryRecord,
   type AdminEventRecord,
-  type AdminIdentity,
   AdminPermission,
   AdminRequestError,
   hasAdminPermission,
 } from './client.js';
 /** 2026-09-30 LiXiang2019 列表查询按钮组（查询/重置/导出） */
 import { ListQueryActions } from './components/ListQueryActions.js';
+import type { AuditTabItem, EventsProps } from './events-types.js';
 import { KnowledgeAudit } from './KnowledgeAudit.js';
 import { shellCopy } from './shell-copy.js';
 
-type AuditTabItem = { readonly key: string; readonly label: ReactNode; readonly children: ReactNode };
 type TabProps = { readonly client: AdminConsoleClient; readonly directory: AuditDirectory };
 
 /** 各筛选下拉只接受服务端真正支持的取值，文案一律走共用映射。 */
@@ -73,20 +72,15 @@ function deliveryRollup(summary?: AdminControlEvent['deliverySummary']) {
   return parts.length > 0 ? parts.join(' · ') : c.unknown;
 }
 
-export function Events({
-  client,
-  identity,
-}: {
-  readonly client: AdminConsoleClient;
-  readonly identity?: AdminIdentity | undefined;
-}) {
+export function Events({ client, identity, initialTab = 'operations', knowledgeBaseId }: EventsProps) {
   // 遥测（events.read）和管理审计（audit.read）是两套模型、两套权限，逐 tab 门控：
   // 无权限的 tab 不出现，而不是摆一个 403 占位；默认落第一个可用 tab。
   const canReadTelemetry = hasAdminPermission(identity, AdminPermission.EventsRead);
   const canReadAudit = hasAdminPermission(identity, AdminPermission.AuditRead);
   // 用户目录在页面级只拉一次，三个审计页签共用；没有审计权限就不碰这个接口。
   const directory = useUserDirectory(client, canReadAudit);
-  const [tab, setTab] = useState('operations');
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => setTab(initialTab), [initialTab, knowledgeBaseId]);
   const items: AuditTabItem[] = [
     ...(canReadTelemetry
       ? [
@@ -112,7 +106,7 @@ export function Events({
           {
             key: 'knowledge',
             label: c.knowledge,
-            children: <KnowledgeAudit client={client} directory={directory} />,
+            children: <KnowledgeAudit client={client} directory={directory} knowledgeBaseId={knowledgeBaseId} />,
           },
           {
             key: 'login',

@@ -328,7 +328,7 @@ const en: Record<keyof typeof zh, string> = {
   notProvided: 'Not provided',
 };
 
-export const employeesCopy: Record<AdminLanguage, Record<keyof typeof zh, string>> = { zh, en };
+const employeesCopy: Record<AdminLanguage, Record<keyof typeof zh, string>> = { zh, en };
 
 export type EmployeesCopyKey = keyof typeof zh;
 

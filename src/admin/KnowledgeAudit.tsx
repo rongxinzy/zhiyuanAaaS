@@ -15,12 +15,16 @@ export function KnowledgeAudit({
   client,
   portal: supplied,
   directory,
+  knowledgeBaseId,
 }: {
   readonly client: AdminConsoleClient;
   readonly portal?: PortalClient;
   readonly directory: AuditDirectory;
+  readonly knowledgeBaseId?: string | undefined;
 }) {
-  const [portal] = useState(() => supplied ?? new PortalClient(() => client.getAccessToken()));
+  const [portal] = useState(
+    () => supplied ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
+  );
   const [form] = Form.useForm<{ operationId?: string; actor?: string }>();
   const [filters, setFilters] = useState<Filters>({});
   const [actorProblem, setActorProblem] = useState<string | null>(null);
@@ -39,7 +43,7 @@ export function KnowledgeAudit({
     setRows([]);
     setCursor(null);
     void portal
-      .knowledgeAudit(filters, controller.signal)
+      .knowledgeAudit({ ...filters, ...(knowledgeBaseId ? { knowledgeBaseId } : {}) }, controller.signal)
       .then((page) => {
         if (controller.signal.aborted || generation !== version.current) return;
         setRows(page.items);
@@ -56,14 +60,18 @@ export function KnowledgeAudit({
       controller.abort();
       ++version.current;
     };
-  }, [portal, filters, revision]);
+  }, [portal, filters, revision, knowledgeBaseId]);
   const more = async () => {
     if (!cursor || loading) return;
     const generation = version.current;
     setLoading(true);
     setError(null);
     try {
-      const page = await portal.knowledgeAudit({ ...filters, cursor });
+      const page = await portal.knowledgeAudit({
+        ...filters,
+        ...(knowledgeBaseId ? { knowledgeBaseId } : {}),
+        cursor,
+      });
       if (generation !== version.current) return;
       setRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
@@ -92,6 +100,11 @@ export function KnowledgeAudit({
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
       <Typography.Paragraph type="secondary">{c.knowledgeHint}</Typography.Paragraph>
+      {knowledgeBaseId && (
+        <Typography.Text>
+          {c.knowledgeBase}: {knowledgeBaseId}
+        </Typography.Text>
+      )}
       <Form
         form={form}
         layout="inline"
