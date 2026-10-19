@@ -46,6 +46,8 @@ const qrLabels = {
   expired: 'channelQRExpired',
   failed: 'channelQRFailed',
 } as const;
+const CHANNEL_POLL_INTERVAL_MS = 5000;
+const RUNTIME_RECOVERY_GRACE_MS = 60_000;
 
 function errorText(error: unknown, language: AdminLanguage): string {
   return error instanceof PortalError && error.code ? error.message : translate(language, 'channelLoadFailed');
@@ -206,10 +208,28 @@ export function EmployeeChannelsPanel({
       });
     return () => controller.abort();
   }, [portal, employeeName, revision, language]);
+  const readyRuntimeUnavailable = data?.phase === 'Ready' && data.runtimeAvailable === false;
+  const runtimeUnavailableSince = useRef<number | undefined>(undefined);
+  const [runtimeGraceElapsed, setRuntimeGraceElapsed] = useState(false);
   useEffect(() => {
-    const phase = data?.phase;
-    if (!phase || phase === 'Ready' || phase === 'Error' || phase === 'Sleeping') return;
-    const timer = setTimeout(() => refresh((n) => n + 1), 5000);
+    if (!readyRuntimeUnavailable) {
+      runtimeUnavailableSince.current = undefined;
+      setRuntimeGraceElapsed(false);
+      return;
+    }
+    const since = runtimeUnavailableSince.current ?? Date.now();
+    runtimeUnavailableSince.current = since;
+    setRuntimeGraceElapsed(false);
+    const timer = setTimeout(
+      () => setRuntimeGraceElapsed(true),
+      Math.max(0, since + RUNTIME_RECOVERY_GRACE_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [readyRuntimeUnavailable]);
+  useEffect(() => {
+    if (!data || data.phase === 'Error' || data.phase === 'Sleeping') return;
+    if (data.phase === 'Ready' && data.runtimeAvailable) return;
+    const timer = setTimeout(() => refresh((n) => n + 1), CHANNEL_POLL_INTERVAL_MS);
     return () => clearTimeout(timer);
   }, [data]);
 
@@ -330,9 +350,13 @@ export function EmployeeChannelsPanel({
     ? undefined
     : data.phase === 'Error'
       ? 'channelEmployeeFailed'
-      : data.phase === 'Sleeping' || data.phase === 'Ready'
+      : data.phase === 'Sleeping'
         ? 'channelUnavailable'
-        : 'channelRolloutPending';
+        : data.phase === 'Ready'
+          ? readyRuntimeUnavailable && !runtimeGraceElapsed
+            ? 'channelRuntimeRestarting'
+            : 'channelUnavailable'
+          : 'channelRolloutPending';
   return (
     <div className="admin-table-section">
       <Space wrap>
@@ -348,7 +372,7 @@ export function EmployeeChannelsPanel({
       {data?.hibernationEnabled && <Alert type="warning" showIcon title={t('channelHibernationConflict')} />}
       {data && unavailable && unavailableNotice && (
         <Alert
-          type="warning"
+          type={unavailableNotice === 'channelRuntimeRestarting' ? 'info' : 'warning'}
           showIcon
           title={t(unavailableNotice).replace('{phase}', data.phase)}
           action={

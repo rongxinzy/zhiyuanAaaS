@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App, ConfigProvider } from 'antd';
 import { afterEach, expect, test, vi } from 'vitest';
 import { Channels, EmployeeChannelsPanel } from './Channels.js';
@@ -51,6 +51,7 @@ function panel(portal: ReturnType<typeof mockPortal>) {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -258,6 +259,42 @@ test('explains a deployment rollout instead of blaming the runtime version', asy
   panel(portal);
   expect(await screen.findByText(/数字员工正在部署或更新（当前阶段：Pending）/)).toBeInTheDocument();
   expect(screen.queryByText(/无法读取运行时状态/)).not.toBeInTheDocument();
+});
+
+test('a Ready employee with an unavailable runtime reports an automatic retry, not a version mismatch', async () => {
+  const portal = mockPortal({ ...initial, runtimeAvailable: false });
+  panel(portal);
+  expect(await screen.findByText(/运行时正在启动或重启/)).toBeInTheDocument();
+  expect(screen.queryByText(/无法读取运行时状态/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/部署配套渠道管理版本/)).not.toBeInTheDocument();
+});
+
+test('the runtime restart notice clears once the runtime responds again', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const portal = mockPortal();
+  portal.employeeChannels
+    .mockResolvedValueOnce({ ...initial, runtimeAvailable: false })
+    .mockResolvedValue({ ...initial, runtimeAvailable: true });
+  panel(portal);
+  expect(await screen.findByText(/运行时正在启动或重启/)).toBeInTheDocument();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(screen.queryByText(/运行时正在启动或重启/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/无法读取运行时状态/)).not.toBeInTheDocument();
+  expect(portal.employeeChannels).toHaveBeenCalledTimes(2);
+});
+
+test('a runtime that stays unavailable for a minute falls back to the version guidance', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const portal = mockPortal({ ...initial, runtimeAvailable: false });
+  panel(portal);
+  expect(await screen.findByText(/运行时正在启动或重启/)).toBeInTheDocument();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(await screen.findByText(/无法读取运行时状态/)).toBeInTheDocument();
+  expect(screen.queryByText(/运行时正在启动或重启/)).not.toBeInTheDocument();
 });
 
 test('reports a running worker as started but not connected', async () => {

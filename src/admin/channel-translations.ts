@@ -40,6 +40,7 @@ export const channelTranslations = {
     channelRestarted: '已请求重连，请刷新状态确认结果。',
     channelDisabledDone: '渠道已停用，等待配置同步。',
     channelUnavailable: '无法读取运行时状态。请确认数字员工已就绪，并已部署配套渠道管理版本。',
+    channelRuntimeRestarting: '运行时正在启动或重启（刚修改渠道配置时会短暂不可用），正在自动重试…',
     channelRolloutPending:
       '数字员工正在部署或更新（当前阶段：{phase}），完成后即可配置渠道；状态会自动刷新，也可手动点击“刷新状态”。',
     channelEmployeeFailed: '数字员工部署失败，请先修复部署或选择已就绪员工。',
@@ -120,6 +121,8 @@ export const channelTranslations = {
     channelDisabledDone: 'Channel disabled; configuration synchronization is pending.',
     channelUnavailable:
       'Runtime status unavailable. Check employee readiness and deploy the matching channel management runtime.',
+    channelRuntimeRestarting:
+      'The runtime is starting or restarting (it is briefly unavailable right after channel configuration changes). Retrying automatically…',
     channelRolloutPending:
       'The digital employee is deploying or updating (current phase: {phase}). Channels can be configured once it is ready; the status refreshes automatically, or use "Refresh status".',
     channelEmployeeFailed:
