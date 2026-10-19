@@ -342,9 +342,7 @@ describe('KnowledgeRetrieval', () => {
 
   test('shows library access-denied text instead of management forbidden', async () => {
     const portal = makePortal({
-      searchManagedKnowledge: vi
-        .fn()
-        .mockRejectedValue(new PortalError(403, 'base denied', 'KNOWLEDGE_ACCESS_DENIED')),
+      searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'base denied', 'KNOWLEDGE_ACCESS_DENIED')),
     });
     render(
       <ConfigProvider>

@@ -555,7 +555,8 @@ export const knowledgeTranslations = {
     knowledgeNotConfiguredManaged: 'Knowledge service is not configured',
     knowledgeForbiddenManaged: 'You do not have permission to manage knowledge bases.',
     knowledgeNotGranted: 'The selected agent is not bound to this knowledge base or is not authorized to access it.',
-    knowledgeAccessDenied: 'The requested knowledge base does not belong to this deployment or tenant, or is not registered.',
+    knowledgeAccessDenied:
+      'The requested knowledge base does not belong to this deployment or tenant, or is not registered.',
     knowledgeAdminRequired: 'Administrator permission is required.',
     knowledgeConfigErrorManaged: 'Knowledge service configuration is incomplete.',
     knowledgeUpstreamInvalidManaged:
