@@ -46,6 +46,8 @@ const qrLabels = {
   expired: 'channelQRExpired',
   failed: 'channelQRFailed',
 } as const;
+const CHANNEL_POLL_INTERVAL_MS = 5000;
+const RUNTIME_RECOVERY_GRACE_MS = 60_000;
 
 function errorText(error: unknown, language: AdminLanguage): string {
   return error instanceof PortalError && error.code ? error.message : translate(language, 'channelLoadFailed');
@@ -165,6 +167,7 @@ export function EmployeeChannelsPanel({
   const [data, setData] = useState<EmployeeChannels>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<ChannelProvider>();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [revision, refresh] = useState(0);
@@ -205,9 +208,38 @@ export function EmployeeChannelsPanel({
       });
     return () => controller.abort();
   }, [portal, employeeName, revision, language]);
+  const readyRuntimeUnavailable = data?.phase === 'Ready' && data.runtimeAvailable === false;
+  const runtimeUnavailableSince = useRef<number | undefined>(undefined);
+  const [runtimeGraceElapsed, setRuntimeGraceElapsed] = useState(false);
+  useEffect(() => {
+    if (!readyRuntimeUnavailable) {
+      runtimeUnavailableSince.current = undefined;
+      setRuntimeGraceElapsed(false);
+      return;
+    }
+    const since = runtimeUnavailableSince.current ?? Date.now();
+    runtimeUnavailableSince.current = since;
+    setRuntimeGraceElapsed(false);
+    const timer = setTimeout(
+      () => setRuntimeGraceElapsed(true),
+      Math.max(0, since + RUNTIME_RECOVERY_GRACE_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [readyRuntimeUnavailable]);
+  useEffect(() => {
+    if (!data || data.phase === 'Error' || data.phase === 'Sleeping') return;
+    if (data.phase === 'Ready' && data.runtimeAvailable) return;
+    const timer = setTimeout(() => refresh((n) => n + 1), CHANNEL_POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [data]);
 
-  async function run(action: () => Promise<void>, success: AdminTranslationKey): Promise<boolean> {
+  async function run(
+    action: () => Promise<void>,
+    success: AdminTranslationKey,
+    provider?: ChannelProvider,
+  ): Promise<boolean> {
     setBusy(true);
+    setBusyProvider(provider);
     setError('');
     setNotice('');
     try {
@@ -221,7 +253,35 @@ export function EmployeeChannelsPanel({
       if (live.current) setError(errorText(cause, language));
       return false;
     } finally {
-      if (live.current) setBusy(false);
+      if (live.current) {
+        setBusy(false);
+        setBusyProvider(undefined);
+      }
+    }
+  }
+
+  async function connect(item: EmployeeChannel, values: Record<string, string>): Promise<boolean> {
+    setBusy(true);
+    setBusyProvider(item.provider);
+    setError('');
+    setNotice('');
+    try {
+      await portal.configureChannel(employeeName, item.provider, values);
+      const fresh = await portal.employeeChannels(employeeName);
+      if (live.current) {
+        setData(fresh);
+        const state = fresh.providers.find((provider) => provider.provider === item.provider)?.workerState;
+        setNotice(t(state === 'connected' ? 'channelSaved' : 'channelSavedNotConnected'));
+      }
+      return true;
+    } catch (cause) {
+      if (live.current) setError(errorText(cause, language));
+      return false;
+    } finally {
+      if (live.current) {
+        setBusy(false);
+        setBusyProvider(undefined);
+      }
     }
   }
 
@@ -286,6 +346,17 @@ export function EmployeeChannelsPanel({
   }
 
   const unavailable = !data?.runtimeAvailable || data.phase !== 'Ready';
+  const unavailableNotice: AdminTranslationKey | undefined = !data
+    ? undefined
+    : data.phase === 'Error'
+      ? 'channelEmployeeFailed'
+      : data.phase === 'Sleeping'
+        ? 'channelUnavailable'
+        : data.phase === 'Ready'
+          ? readyRuntimeUnavailable && !runtimeGraceElapsed
+            ? 'channelRuntimeRestarting'
+            : 'channelUnavailable'
+          : 'channelRolloutPending';
   return (
     <div className="admin-table-section">
       <Space wrap>
@@ -299,11 +370,11 @@ export function EmployeeChannelsPanel({
       {error && <Alert type="error" showIcon title={error} />}
       {notice && <Alert type="success" showIcon title={notice} closable={{ afterClose: () => setNotice('') }} />}
       {data?.hibernationEnabled && <Alert type="warning" showIcon title={t('channelHibernationConflict')} />}
-      {data && unavailable && (
+      {data && unavailable && unavailableNotice && (
         <Alert
-          type="warning"
+          type={unavailableNotice === 'channelRuntimeRestarting' ? 'info' : 'warning'}
           showIcon
-          title={t(data.phase === 'Error' ? 'channelEmployeeFailed' : 'channelUnavailable')}
+          title={t(unavailableNotice).replace('{phase}', data.phase)}
           action={
             data.phase === 'Sleeping' ? (
               <Button
@@ -406,9 +477,14 @@ export function EmployeeChannelsPanel({
                     )}
                     {item.configured && (
                       <Button
+                        loading={busy && busyProvider === item.provider}
                         disabled={busy || unavailable}
                         onClick={() =>
-                          void run(() => portal.restartChannel(employeeName, item.provider), 'channelRestarted')
+                          void run(
+                            () => portal.restartChannel(employeeName, item.provider),
+                            'channelRestarted',
+                            item.provider,
+                          )
                         }
                       >
                         {t('channelRestart')}
@@ -438,6 +514,9 @@ export function EmployeeChannelsPanel({
                     >
                       {t('channelDisable')}
                     </Button>
+                    {busy && busyProvider === item.provider && (
+                      <Typography.Text type="secondary">{t('channelConnecting')}</Typography.Text>
+                    )}
                   </>
                 )}
               </Space>
@@ -467,6 +546,24 @@ export function EmployeeChannelsPanel({
           <>
             {error && <Alert type="error" showIcon title={error} />}
             <Typography.Paragraph>{t(instructions[editing.provider])}</Typography.Paragraph>
+            {editing.provider === 'feishu' && (
+              <Typography.Paragraph>
+                <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noopener noreferrer">
+                  {t('channelFeishuCreateApp')}
+                </Typography.Link>
+              </Typography.Paragraph>
+            )}
+            {editing.provider === 'wecom' && (
+              <Typography.Paragraph>
+                <Typography.Link
+                  href="https://open.work.weixin.qq.com/help2/pc/21677"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('channelWecomCredentialHelp')}
+                </Typography.Link>
+              </Typography.Paragraph>
+            )}
             <Form
               form={form}
               layout="vertical"
@@ -478,9 +575,7 @@ export function EmployeeChannelsPanel({
                     .filter(([, value]) => Boolean(value?.trim()))
                     .map(([key, value]) => [key, value.trim()]),
                 );
-                if (
-                  await run(() => portal.configureChannel(employeeName, editing.provider, sanitized), 'channelSaved')
-                ) {
+                if (await connect(editing, sanitized)) {
                   form.resetFields();
                   setEditing(undefined);
                 }
