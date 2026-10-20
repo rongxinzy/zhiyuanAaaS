@@ -7,6 +7,16 @@ import type { AdminLanguage } from './i18n.js';
 
 const zh = {
   modelsListTitle: '模型列表',
+  labelCapabilitiesHint: '声明模型能做什么：供消费端按能力选择模型；不改变网关路由。',
+  capabilityText: '文本对话',
+  capabilityVision: '视觉理解',
+  capabilityVisionOcr: '图文识别（OCR）',
+  capabilityEmbedding: '向量化（Embedding）',
+  capabilityAudioTranscription: '语音转写（ASR）',
+  capabilitySpeechSynthesis: '语音合成（TTS）',
+  capabilityImageGeneration: '图像生成',
+  capabilityVideoGeneration: '视频生成',
+
   modelsListDescription: '配置模型、可用范围，并区分保存、应用与运行健康。',
   colModel: '模型',
   colUpstream: '上游模型',
@@ -107,6 +117,15 @@ const zh = {
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
+  labelCapabilitiesHint: 'Declare what the model can do; consumers select models by capability. Does not change gateway routing.',
+  capabilityText: 'Chat',
+  capabilityVision: 'Vision',
+  capabilityVisionOcr: 'OCR',
+  capabilityEmbedding: 'Embeddings',
+  capabilityAudioTranscription: 'Speech-to-text',
+  capabilitySpeechSynthesis: 'Text-to-speech',
+  capabilityImageGeneration: 'Image generation',
+  capabilityVideoGeneration: 'Video generation',
   modelsListTitle: 'Models',
   modelsListDescription: 'Configure models and audiences; keep save, apply, and runtime health separate.',
   colModel: 'Model',

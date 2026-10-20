@@ -63,6 +63,16 @@ const MODEL_PROTOCOL_OPTIONS = [
   { value: ModelProtocol.OpenAiCompatible, label: 'OpenAI-compatible' },
   { value: ModelProtocol.Anthropic, label: 'Anthropic' },
 ];
+const MODEL_CAPABILITY_OPTIONS = [
+  { value: 'text', copyKey: 'capabilityText' },
+  { value: 'vision', copyKey: 'capabilityVision' },
+  { value: 'vision-ocr', copyKey: 'capabilityVisionOcr' },
+  { value: 'embedding', copyKey: 'capabilityEmbedding' },
+  { value: 'audio-transcription', copyKey: 'capabilityAudioTranscription' },
+  { value: 'speech-synthesis', copyKey: 'capabilitySpeechSynthesis' },
+  { value: 'image-generation', copyKey: 'capabilityImageGeneration' },
+  { value: 'video-generation', copyKey: 'capabilityVideoGeneration' },
+] as const;
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof modelsT>[0]): string => modelsT(key, language);
 
@@ -673,6 +683,7 @@ function ModelCreateModal({
     protocol: 'openai-compatible' | 'anthropic';
     endpoint: string;
     upstreamModel: string;
+    capabilities: string[];
     credentialId?: string | null;
   }>();
   const [pending, setPending] = useState(false);
@@ -684,6 +695,7 @@ function ModelCreateModal({
     readonly protocol: 'openai-compatible' | 'anthropic';
     readonly endpoint: string;
     readonly upstreamModel: string;
+    readonly capabilities: string[];
     readonly credentialId?: string | null;
   }) => {
     setPending(true);
@@ -694,7 +706,7 @@ function ModelCreateModal({
         protocol: values.protocol,
         endpoint: values.endpoint.trim(),
         upstreamModel: values.upstreamModel.trim(),
-        capabilities: [],
+        capabilities: values.capabilities,
         isDefault: false,
         enabled: true,
         // The identifier is server-generated from the display name; for
@@ -752,6 +764,18 @@ function ModelCreateModal({
         >
           <Input disabled={pending} />
         </Form.Item>
+        <Form.Item
+          name="capabilities"
+          label={t('labelCapabilities')}
+          initialValue={['text']}
+          extra={t('labelCapabilitiesHint')}
+        >
+          <Select
+            disabled={pending}
+            mode="multiple"
+            options={MODEL_CAPABILITY_OPTIONS.map(({ value, copyKey }) => ({ value, label: t(copyKey) }))}
+          />
+        </Form.Item>
         <Form.Item name="credentialId" label={t('labelCredential')} initialValue={null}>
           <ModelConnectionSelect client={client} identity={identity} disabled={pending} />
         </Form.Item>
@@ -781,6 +805,7 @@ function ModelEditorModal({
     displayName: string;
     endpoint: string;
     upstreamModel: string;
+    capabilities: string[];
     enabled: boolean;
     isDefault: boolean;
     credentialId?: string | null;
@@ -793,6 +818,7 @@ function ModelEditorModal({
         displayName: model.displayName,
         endpoint: model.endpoint ?? '',
         upstreamModel: model.upstreamModel ?? '',
+        capabilities: model.capabilities ?? [],
         enabled: model.enabled,
         isDefault: model.isDefault,
         credentialId: model.credentialId ?? null,
@@ -803,6 +829,7 @@ function ModelEditorModal({
     readonly displayName: string;
     readonly endpoint: string;
     readonly upstreamModel: string;
+    readonly capabilities: string[];
     readonly enabled: boolean;
     readonly isDefault: boolean;
     readonly credentialId?: string | null;
@@ -814,6 +841,7 @@ function ModelEditorModal({
         displayName: values.displayName.trim(),
         endpoint: values.endpoint.trim(),
         upstreamModel: values.upstreamModel.trim(),
+        capabilities: values.capabilities,
         enabled: values.enabled,
         isDefault: values.isDefault,
         ...(canReadCredentials ? { credentialId: values.credentialId ?? null } : {}),
@@ -860,6 +888,13 @@ function ModelEditorModal({
           rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
         >
           <Input disabled={pending} />
+        </Form.Item>
+        <Form.Item name="capabilities" label={t('labelCapabilities')} extra={t('labelCapabilitiesHint')}>
+          <Select
+            disabled={pending}
+            mode="multiple"
+            options={MODEL_CAPABILITY_OPTIONS.map(({ value, copyKey }) => ({ value, label: t(copyKey) }))}
+          />
         </Form.Item>
         <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
           <Switch checkedChildren={t('stateEnabled')} unCheckedChildren={t('stateDisabled')} disabled={pending} />

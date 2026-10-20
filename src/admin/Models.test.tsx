@@ -167,7 +167,7 @@ describe('admin models', () => {
       fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'claude-sonnet' } });
 
       const modal = await screen.findByRole('dialog');
-      // The protocol select is the first combobox; the credential one second.
+      // Combobox order in the create form: protocol, capabilities, credential.
       fireEvent.mouseDown(within(modal).getAllByRole('combobox')[0]!);
       fireEvent.click(await screen.findByText('Anthropic'));
 
@@ -190,13 +190,39 @@ describe('admin models', () => {
       fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'deepseek-chat' } });
 
       const modal = await screen.findByRole('dialog');
-      // The credential connection select is the second combobox.
-      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[1]!);
+      // The credential connection select is the third combobox (after
+      // protocol and capabilities).
+      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[2]!);
       fireEvent.click(await screen.findByText('在线接入 · openai'));
 
       fireEvent.click(screen.getByRole('button', { name: '保存' }));
       await waitFor(() =>
         expect(client.createModel).toHaveBeenCalledWith(expect.objectContaining({ credentialId: 'cred-1' })),
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'create defaults to the text capability and sends selected capabilities',
+    async () => {
+      const client = makeBaseClient();
+      render(<Models client={client as never} identity={administratorIdentity} />);
+      fireEvent.click(await screen.findByRole('button', { name: /添加模型/ }));
+      fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '向量模型' } });
+      fireEvent.change(screen.getByLabelText('网关地址'), { target: { value: 'http://gpu:8100/v1' } });
+      fireEvent.change(screen.getByLabelText('上游模型'), { target: { value: 'emb' } });
+
+      const modal = await screen.findByRole('dialog');
+      // Capabilities is the second combobox in the create form.
+      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[1]!);
+      fireEvent.click(await screen.findByText('向量化（Embedding）'));
+
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(client.createModel).toHaveBeenCalledWith(
+          expect.objectContaining({ capabilities: ['text', 'embedding'] }),
+        ),
       );
     },
     TIMEOUT,
@@ -227,7 +253,8 @@ describe('admin models', () => {
 
       const modal = await screen.findByRole('dialog');
       expect(await within(modal).findByText('在线接入 · openai')).toBeInTheDocument();
-      fireEvent.mouseDown(within(modal).getByRole('combobox'));
+      // The editor has two comboboxes: capabilities first, credential second.
+      fireEvent.mouseDown(within(modal).getAllByRole('combobox')[1]!);
       fireEvent.click(await screen.findByText('不使用接入密钥'));
 
       fireEvent.click(within(modal).getByRole('button', { name: '保存' }));
