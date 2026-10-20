@@ -421,14 +421,6 @@ function ExecutionRecords({ client, directory }: TabProps) {
             type="error"
             title={c.deliveryError}
             action={<Button onClick={() => retry((n) => n + 1)}>{c.refresh}</Button>}
-          />
-        )}
-        {!deliveryError && !deliveryLoading && deliveries.length === 0 && (
-          <Alert
-            type="info"
-            showIcon
-            title={c.deliveryEmpty}
-            description={c.deliveryEmptyHint}
             style={{ marginBottom: 16 }}
           />
         )}
@@ -437,7 +429,16 @@ function ExecutionRecords({ client, directory }: TabProps) {
           dataSource={[...deliveries]}
           rowKey="deliveryId"
           pagination={false}
-          locale={{ emptyText: deliveryError ? c.deliveryError : c.deliveryEmpty }}
+          locale={{
+            emptyText: deliveryError ? (
+              c.deliveryError
+            ) : (
+              <Space orientation="vertical" size={4}>
+                <Typography.Text type="secondary">{c.deliveryEmpty}</Typography.Text>
+                <Typography.Text type="secondary">{c.deliveryEmptyHint}</Typography.Text>
+              </Space>
+            ),
+          }}
           columns={[
             { title: c.eventId, dataIndex: 'deliveryId' },
             { title: c.state, dataIndex: 'state', render: (value: string) => <Tag>{deliveryStateLabel(value)}</Tag> },
@@ -673,11 +674,12 @@ function OperationDetail({
   const requestId = changes && typeof changes.requestId === 'string' ? changes.requestId : null;
   // 只有 before/after 才算变更载荷；仅含 requestId / note 的对象不算，避免成功单里出现「变化字段 未记录」。
   const changePayload = changes && ('before' in changes || 'after' in changes) ? changes : null;
-  // 成功且无原因时不渲染「失败」区块，避免误读。
+  // 成功且无原因时不渲染原因区块；成功但带 reason 时标题用「原因」，真正失败才写「失败」。
   const failureRows =
     record.result === 'failure' || record.reason
-      ? [{ key: 'reason', label: c.reason, children: shown(record.reason) }]
+      ? [{ key: 'reason', label: c.reason, children: reasonCell(record.reason) }]
       : null;
+  const failureTitle = record.result === 'failure' ? c.failure : c.reason;
   const technical: AuditDetailRow[] = [
     // 这里是审计序号（cursor），不是请求标识；只有失败行 payload 的 requestId 才叫操作标识。
     { key: 'cursor', label: c.recordIndex, children: shown(record.cursor) },
@@ -699,6 +701,7 @@ function OperationDetail({
       ]}
       changes={changePayload}
       failure={failureRows}
+      failureTitle={failureTitle}
       technical={technical}
     />
   );
@@ -806,7 +809,7 @@ function OperationLog({ client, directory }: TabProps) {
   const appliedFilters = [
     filters.actorUserId ? `${c.user}: ${userLabel(directory.users, filters.actorUserId)}` : '',
     filters.resourceId ? `${c.resourceId}: ${filters.resourceId}` : '',
-    filters.action ? `${c.type}: ${auditCodeLabel(filters.action)}` : '',
+    filters.action ? `${c.type}: ${auditCodeLabel(filters.action) ?? filters.action}` : '',
     filters.result ? `${c.result}: ${resultLabel(filters.result)}` : '',
     filters.range ? `${c.range}: ${rangeLabel ?? ''}` : '',
   ].filter((item) => item);
@@ -832,8 +835,8 @@ function OperationLog({ client, directory }: TabProps) {
         <Form.Item name="resourceId" label={c.resourceId} extra={c.objectIdHint}>
           <Input allowClear />
         </Form.Item>
-        <Form.Item name="action" label={c.type}>
-          <Input allowClear />
+        <Form.Item name="action" label={c.type} extra={c.typeHint}>
+          <Input allowClear placeholder={c.typePlaceholder} />
         </Form.Item>
         <Form.Item name="result" label={c.result}>
           <Select
@@ -905,7 +908,9 @@ function OperationLog({ client, directory }: TabProps) {
             c.failed
           ) : (
             <Space orientation="vertical" size={4}>
-              <Typography.Text type="secondary">{c.empty}</Typography.Text>
+              <Typography.Text type="secondary">
+                {filters.action ? c.typeExactEmpty.replace('{type}', filters.action) : c.empty}
+              </Typography.Text>
               {appliedFilters.length > 0 && (
                 <Typography.Text type="secondary">
                   {`${c.currentFilters}: ${appliedFilters.join(' · ')}`}

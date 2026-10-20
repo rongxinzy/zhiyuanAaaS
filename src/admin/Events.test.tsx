@@ -124,9 +124,12 @@ describe('audit terminology', () => {
     expect(deliveryStateLabel('active')).toBe('生效中');
     expect(auditCodeLabel('skill.updated')).toBe('技能更新');
     expect(auditCodeLabel('model.catalog.changed')).toBe('模型目录变更');
-    expect(auditCodeLabel('skill.version.published')).toBe('技能发布');
-    expect(auditCodeLabel('skill.version.uploaded')).toBe('技能上传');
+    expect(auditCodeLabel('skill.version.published')).toBe('技能版本发布');
+    expect(auditCodeLabel('skill.version.uploaded')).toBe('技能版本上传');
+    // 中间段未登记时不猜首尾：quota 不是资源键，gateway_quota 才是。
+    expect(auditCodeLabel('gateway.quota.updated')).toBeNull();
     expect(reasonLabel('invalid_credentials')).toBe('凭证无效');
+    expect(reasonLabel('unknown_reason_code')).toBe('unknown_reason_code');
     expect(reasonLabel('failure_limit_reached')).toBe('失败次数达上限');
     expect(reasonLabel('backoff_active')).toBe('登录冷却中');
     expect(auditCodeLabel('update')).toBe('更新');

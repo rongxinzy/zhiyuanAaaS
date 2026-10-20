@@ -245,6 +245,31 @@ describe('read-only operations audit', () => {
     expect(screen.queryByText('失败')).not.toBeInTheDocument();
   });
 
+  test('titles the reason block as 原因 on successful operations that carry a reason', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockResolvedValue(
+      auditPage({
+        items: [
+          auditRow({
+            action: 'skill_assignment.create',
+            result: 'success',
+            resourceType: 'skill_assignment',
+            reason: 'invalid_credentials',
+          }),
+        ],
+      }),
+    );
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+    expect(await screen.findByText('概览')).toBeInTheDocument();
+    // 成功但带 reason：块标题是「原因」，不是「失败」；文案走 reasonLabel。
+    expect(screen.queryByText('失败')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '原因' })).toBeInTheDocument();
+    expect(screen.getByText('凭证无效')).toBeInTheDocument();
+    expect(screen.queryByText('invalid_credentials')).not.toBeInTheDocument();
+  });
+
   test('states honestly when a record carries no change payload', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={administratorIdentity} />);

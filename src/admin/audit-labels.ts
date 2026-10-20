@@ -43,6 +43,7 @@ const resourceTypes: Bilingual = {
   zh: {
     model: '模型',
     skill: '技能',
+    'skill.version': '技能版本',
     plugin: '插件',
     user: '用户',
     role: '角色',
@@ -81,6 +82,7 @@ const resourceTypes: Bilingual = {
   en: {
     model: 'Model',
     skill: 'Skill',
+    'skill.version': 'Skill version',
     plugin: 'Plugin',
     user: 'User',
     role: 'Role',
@@ -122,8 +124,8 @@ const resourceTypes: Bilingual = {
  * 动作：整段动作码 +「资源.动作」里的动作尾段。
  *
  * 两种形态都查这张表：整段蛇形码（知识审计的 `upload_file`、`create_tag`…）直接命中；
- * 点分隔的事件码（`skill.updated`、`model.catalog.changed`）先按第一个 `.` 拆成
- * 「资源 + 动作」再拼中文。查不到就交给调用方原样显示英文码。
+ * 点分隔的事件码（`skill.updated`、`model.catalog.changed`）由 `auditCodeLabel`
+ * 按每个 `.` 试「已登记资源前缀 + 已登记动作后缀」再拼中文。查不到就交给调用方原样显示英文码。
  */
 const actions: Bilingual = {
   zh: {
@@ -413,10 +415,10 @@ function resourceTypeLabel(value?: string | null, language: AdminLanguage = ADMI
 }
 
 /**
- * 事件码 / 动作文案：先整段查表，再按每个 `.` 分隔点组合「资源前缀 + 动作后缀」，
- * 最后回退到「首段资源 + 末段动作」。`skill.updated` → 技能更新；
- * `model.catalog.changed` → 模型目录变更；`skill.version.published` → 技能发布；
- * `upload_file` → 上传文件（整段蛇形码）。未登记的码返回 null，
+ * 事件码 / 动作文案：先整段查表，再按每个 `.` 分隔点组合「已登记资源前缀 + 已登记动作后缀」。
+ * `skill.updated` → 技能更新；`model.catalog.changed` → 模型目录变更；
+ * `skill.version.published` → 技能版本发布（依赖登记 `skill.version`）。
+ * 中间段未登记时不猜首尾回退，例如 `gateway.quota.updated` 返回 null，
  * 由调用方（`codeCell`）原样显示英文码 —— 这里不猜、也不写「未知类型」。
  */
 export function auditCodeLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
@@ -427,19 +429,12 @@ export function auditCodeLabel(value?: string | null, language: AdminLanguage = 
   if (parts.length < 2) return null;
   const join = (resource: string, action: string) =>
     language === 'zh' ? `${resource}${action}` : `${resource} ${action}`;
-  // 每个分隔点都试：「资源前缀 + 动作后缀」。`model.catalog.changed` 在 catalog.changed
-  // 整段命中；`skill.version.published` 则靠末段 published。
+  // 每个分隔点都试：「资源前缀 + 动作后缀」。两侧都必须已登记，避免丢掉中间段。
   for (let i = 1; i < parts.length; i += 1) {
     const resource = resourceTypes[language][parts.slice(0, i).join('.')];
     const action = actions[language][parts.slice(i).join('.')];
     if (resource && action) return join(resource, action);
   }
-  const head = parts[0];
-  const tail = parts[parts.length - 1];
-  if (!head || !tail) return null;
-  const resource = resourceTypes[language][head];
-  const action = actions[language][tail];
-  if (resource && action) return join(resource, action);
   return null;
 }
 

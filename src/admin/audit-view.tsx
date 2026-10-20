@@ -85,11 +85,14 @@ export function AuditDetail({
   overview,
   changes,
   failure,
+  failureTitle,
   technical,
 }: {
   readonly overview: readonly AuditDetailRow[];
   readonly changes?: Record<string, unknown> | null;
   readonly failure?: readonly AuditDetailRow[] | null;
+  /** 成功但带原因时用「原因」，真正失败时用「失败」。 */
+  readonly failureTitle?: string;
   readonly technical: readonly AuditDetailRow[];
 }) {
   const hasBefore = changes != null && 'before' in changes;
@@ -123,7 +126,7 @@ export function AuditDetail({
           <Typography.Text type="secondary">{c.noChanges}</Typography.Text>
         </>
       )}
-      {failure && <Block title={c.failure} rows={failure} />}
+      {failure && <Block title={failureTitle ?? c.failure} rows={failure} />}
       <Block title={c.technical} rows={technical} />
     </>
   );
