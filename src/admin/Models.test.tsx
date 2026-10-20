@@ -204,6 +204,35 @@ describe('admin models', () => {
   );
 
   test(
+    'renders capability tags in the catalog list with friendly labels',
+    async () => {
+      const client = {
+        ...makeBaseClient(),
+        models: vi.fn().mockResolvedValue({
+          models: [
+            {
+              id: 'qwen3-embedding-0-6b',
+              displayName: 'Qwen3 Embedding 0.6B',
+              sourceType: 'gateway',
+              protocol: 'openai-compatible',
+              endpoint: 'http://172.18.6.119:8100/v1',
+              upstreamModel: 'qwen3-embedding-0-6b',
+              capabilities: ['embedding'],
+              isDefault: false,
+              enabled: true,
+            },
+          ],
+          assignments: [],
+        }),
+      };
+      render(<Models client={client as never} identity={administratorIdentity} />);
+      expect(await screen.findByText('Qwen3 Embedding 0.6B')).toBeInTheDocument();
+      expect(screen.getByText('向量化（Embedding）')).toBeInTheDocument();
+    },
+    TIMEOUT,
+  );
+
+  test(
     'create defaults to the text capability and sends selected capabilities',
     async () => {
       const client = makeBaseClient();

@@ -76,6 +76,11 @@ const MODEL_CAPABILITY_OPTIONS = [
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof modelsT>[0]): string => modelsT(key, language);
 
+const capabilityLabel = (value: string): string => {
+  const option = MODEL_CAPABILITY_OPTIONS.find((entry) => entry.value === value);
+  return option ? t(option.copyKey) : value;
+};
+
 type ModelGrantTarget = {
   readonly model: AdminModel;
   readonly assignments: readonly ModelAssignment[];
@@ -277,13 +282,16 @@ export function Models({
     {
       title: t('colModel'),
       key: 'model',
+      width: 230,
       render: (_: unknown, model: AdminModel) => (
         <Space orientation="vertical" size={0}>
-          <Space size={6}>
-            <Typography.Text strong>{model.displayName}</Typography.Text>
+          <Space size={6} wrap>
+            <Typography.Text strong style={{ wordBreak: 'break-word' }}>
+              {model.displayName}
+            </Typography.Text>
             {model.isDefault ? <Tag color="blue">{translate(language, 'defaultModel')}</Tag> : null}
           </Space>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12, wordBreak: 'break-all' }}>
             {model.id}
           </Typography.Text>
         </Space>
@@ -293,6 +301,21 @@ export function Models({
       title: t('colUpstream'),
       key: 'upstream',
       render: (_: unknown, model: AdminModel) => model.upstreamModel || model.localModelRef || t('notProvided'),
+    },
+    {
+      title: t('labelCapabilities'),
+      key: 'capabilities',
+      width: 150,
+      render: (_: unknown, model: AdminModel) =>
+        model.capabilities && model.capabilities.length > 0 ? (
+          <Space size={4} wrap>
+            {model.capabilities.map((capability) => (
+              <Tag key={capability}>{capabilityLabel(capability)}</Tag>
+            ))}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">{t('notProvided')}</Typography.Text>
+        ),
     },
     {
       title: t('colManageState'),
@@ -762,7 +785,7 @@ function ModelCreateModal({
           label={translate(language, 'upstreamModel')}
           rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
         >
-          <Input disabled={pending} />
+          <Input placeholder={t('upstreamModelPlaceholder')} disabled={pending} />
         </Form.Item>
         <Form.Item
           name="capabilities"
@@ -887,7 +910,7 @@ function ModelEditorModal({
           label={translate(language, 'upstreamModel')}
           rules={[{ required: true, message: translate(language, 'fieldRequired') }]}
         >
-          <Input disabled={pending} />
+          <Input placeholder={t('upstreamModelPlaceholder')} disabled={pending} />
         </Form.Item>
         <Form.Item name="capabilities" label={t('labelCapabilities')} extra={t('labelCapabilitiesHint')}>
           <Select
@@ -1149,7 +1172,7 @@ function ModelDetailDrawer({
                       label: t('labelCapabilities'),
                       children:
                         model.capabilities && model.capabilities.length > 0
-                          ? model.capabilities.join('、')
+                          ? model.capabilities.map(capabilityLabel).join('、')
                           : t('notProvided'),
                     },
                   ]}
