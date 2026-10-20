@@ -1,5 +1,11 @@
 # Admin Console CRUD Matrix
 
+This is a snapshot of the existing lifecycle, including legacy direct User/Team
+assignments; it does not authorize new direct grants. The target policy is
+[role-only grants](../AGENTS.md#authorization-role-only-grants). Known defects,
+verification limits, and cross-service migration dependencies are recorded in
+the [2026-10-20 CRUD assessment](admin-console-crud-audit-2026-10-20.md).
+
 This matrix records the lifecycle exposed by the Admin Console and the
 corresponding AEP operation. A resource is considered complete when its
 supported lifecycle is available in the UI and covered by a component or wire
@@ -32,8 +38,8 @@ npm run verify:admin:e2e
 
 The verifier runs the built console against a stateful HTTP mock and asserts
 both the request path and the resulting resource state. It intentionally does
-not claim mutation coverage for sessions or audit records because those are
-read-only contracts.
+not claim writes to immutable audit records. Sessions have no create/update
+editor; revoking an active session is a supported and verified terminal action.
 
 For a running AEP Control Service, the same lifecycle can be exercised through
 the real browser and database-backed API:
