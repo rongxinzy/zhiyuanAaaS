@@ -1,11 +1,12 @@
 import { SearchOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, List, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { knowledgeErrorText } from './knowledge-error.js';
-import type { ManagedKnowledgeBase, ManagedKnowledgeGrant, PortalClient, PortalEmployee } from './portal.js';
+import type { ManagedKnowledgeBase, ManagedKnowledgeGrant, PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -38,6 +39,8 @@ type GrantSubjects = {
   readonly error: string | null;
 };
 
+const grantsKey = (baseId: string) => ['portal', 'knowledge-grants', baseId] as const;
+
 export function KnowledgeGrants({
   portal,
   baseId,
@@ -55,141 +58,118 @@ export function KnowledgeGrants({
 }) {
   const { message } = App.useApp();
   const [modal, modalContext] = Modal.useModal();
-  const [grants, setGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
-  const [savedGrants, setSavedGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
-  const [subjects, setSubjects] = useState<GrantSubjects | null>(null);
-  const [subjectsLoading, setSubjectsLoading] = useState(false);
-  const [userDrafts, setUserDrafts] = useState<string[]>([]);
-  const [teamDrafts, setTeamDrafts] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState(false);
-  const [loadedBaseId, setLoadedBaseId] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
-  const [employeeError, setEmployeeError] = useState<string | null>(null);
-  const [employeeRevision, refreshEmployees] = useState(0);
-  const baseGeneration = useRef(0);
-  const requestGeneration = useRef(0);
-  const subjectsGeneration = useRef(0);
-  const savingGeneration = useRef<number | null>(null);
-  const revokeDialog = useRef<{ destroy(): void } | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    setEmployees(null);
-    setEmployeeError(null);
-    void portal
-      .listEmployees(controller.signal)
-      .then((items) => {
-        if (!controller.signal.aborted)
-          setEmployees(items.filter((item) => item.knowledgeBases?.some((base) => base.id === baseId)));
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setEmployeeError(knowledgeErrorText(cause));
-      });
-    return () => controller.abort();
-  }, [portal, baseId, employeeRevision]);
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      const base = baseId;
-      const baseVersion = baseGeneration.current;
-      const requestVersion = ++requestGeneration.current;
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await portal.listManagedKnowledgeGrants(base, signal);
-        if (
-          !signal?.aborted &&
-          baseVersion === baseGeneration.current &&
-          requestVersion === requestGeneration.current
-        ) {
-          setGrants(result.grants);
-          setSavedGrants(result.grants);
-          setBlocked(false);
-          setLoadedBaseId(base);
-        }
-      } catch (cause) {
-        if (signal?.aborted || baseVersion !== baseGeneration.current || requestVersion !== requestGeneration.current)
-          return;
-        setError(knowledgeErrorText(cause));
-        setLoadedBaseId(null);
-        if (!(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500)
-          setBlocked(true);
-      } finally {
-        if (!signal?.aborted && baseVersion === baseGeneration.current && requestVersion === requestGeneration.current)
-          setLoading(false);
-      }
-    },
-    [baseId, portal],
-  );
-
+  const queryClient = useQueryClient();
+  const grantsQuery = useQuery({
+    queryKey: grantsKey(baseId),
+    queryFn: ({ signal }) => portal.listManagedKnowledgeGrants(baseId, signal),
+  });
   // 候选主体的两个来源各漏一处：通讯录（AEP 用户目录的唯一枚举出口）的团队
   // 由成员带出，没有成员的团队不会出现；部门列表只取 AEP teams 首页
   // （limit=100，不翻页）。这里取并集（通讯录里的名字优先），任一来源失败就
   // 把清单标记为不完整——不完整的清单不参与「不在候选中」的标注，免得把合法
   // 主体误报成历史脏数据。
-  const loadSubjects = useCallback(async () => {
-    const version = ++subjectsGeneration.current;
-    setSubjectsLoading(true);
-    const [contacts, departments] = await Promise.allSettled([portal.listContacts(), portal.listDepartments()]);
-    if (version !== subjectsGeneration.current) return;
-    const teams = new Map<string, GrantSubject>();
-    if (contacts.status === 'fulfilled')
-      for (const contact of contacts.value)
-        for (const team of contact.teams) if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
-    if (departments.status === 'fulfilled')
-      for (const team of departments.value)
-        if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
-    const failures = [contacts, departments].filter(
-      (result): result is PromiseRejectedResult => result.status === 'rejected',
-    );
-    setSubjects({
-      users:
-        contacts.status === 'fulfilled'
-          ? contacts.value.map((contact) => ({ id: contact.userId, name: contact.displayName || contact.username }))
-          : [],
-      teams: [...teams.values()],
-      complete: failures.length === 0,
-      error: failures.length
-        ? failures
-            .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)))
-            .join('；')
-        : null,
-    });
-    setSubjectsLoading(false);
-  }, [portal]);
+  const subjectsQuery = useQuery({
+    queryKey: ['portal', 'knowledge-grant-subjects'],
+    queryFn: async (): Promise<GrantSubjects> => {
+      const [contacts, departments] = await Promise.allSettled([portal.listContacts(), portal.listDepartments()]);
+      const teams = new Map<string, GrantSubject>();
+      if (contacts.status === 'fulfilled')
+        for (const contact of contacts.value)
+          for (const team of contact.teams)
+            if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
+      if (departments.status === 'fulfilled')
+        for (const team of departments.value)
+          if (!teams.has(team.id)) teams.set(team.id, { id: team.id, name: team.name });
+      const failures = [contacts, departments].filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      return {
+        users:
+          contacts.status === 'fulfilled'
+            ? contacts.value.map((contact) => ({ id: contact.userId, name: contact.displayName || contact.username }))
+            : [],
+        teams: [...teams.values()],
+        complete: failures.length === 0,
+        error: failures.length
+          ? failures
+              .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)))
+              .join('；')
+          : null,
+      };
+    },
+  });
+  const employeesQuery = useQuery({
+    queryKey: ['portal', 'knowledge-employees', baseId],
+    queryFn: async ({ signal }) => {
+      const items = await portal.listEmployees(signal);
+      return items.filter((item) => item.knowledgeBases?.some((base) => base.id === baseId));
+    },
+  });
+  const [grants, setGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
+  const [savedGrants, setSavedGrants] = useState<readonly ManagedKnowledgeGrant[]>([]);
+  const [userDrafts, setUserDrafts] = useState<string[]>([]);
+  const [teamDrafts, setTeamDrafts] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveBlocked, setSaveBlocked] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const baseGeneration = useRef(0);
+  const saveSequence = useRef(0);
+  const savingGeneration = useRef<number | null>(null);
+  const revokeDialog = useRef<{ destroy(): void } | null>(null);
+  const subjects = subjectsQuery.data ?? null;
+  const subjectsLoading = subjectsQuery.isFetching;
+  const employees = employeesQuery.data ?? null;
+  const employeeError = employeesQuery.error ? knowledgeErrorText(employeesQuery.error) : null;
+  const loading = grantsQuery.isFetching;
+  const loadFailure = grantsQuery.error;
+  const error = saveError ?? (loadFailure ? knowledgeErrorText(loadFailure) : null);
+  const blocked =
+    saveBlocked ||
+    (loadFailure !== null &&
+      (!(loadFailure instanceof PortalError) ||
+        loadFailure.status === 401 ||
+        loadFailure.status === 403 ||
+        loadFailure.status >= 500));
+  const loadedBaseId = grantsQuery.isSuccess ? baseId : null;
 
+  // 切换知识库：草稿、保存标记与错误都属于上一个库，全部清零；上个库的在途
+  // 保存只允许静默落地，不许写回这个库的状态。
   useEffect(() => {
-    const controller = new AbortController();
     baseGeneration.current += 1;
-    requestGeneration.current += 1;
-    setLoadedBaseId(null);
-    setLoading(true);
-    setSaving(false);
     savingGeneration.current = null;
     setGrants([]);
     setSavedGrants([]);
     setUserDrafts([]);
     setTeamDrafts([]);
-    setError(null);
-    setBlocked(false);
-    void load(controller.signal);
-    void loadSubjects();
+    setSaving(false);
+    setSaveError(null);
+    setSaveBlocked(false);
     return () => {
-      controller.abort();
       baseGeneration.current += 1;
-      requestGeneration.current += 1;
-      subjectsGeneration.current += 1;
       revokeDialog.current?.destroy();
     };
-  }, [load, loadSubjects]);
+  }, [baseId]);
+
+  // 服务端授权集同步进草稿；读取成功同时证明上游可达，顺手解开写锁与错误。
+  useEffect(() => {
+    if (!grantsQuery.data) return;
+    setGrants(grantsQuery.data.grants);
+    setSavedGrants(grantsQuery.data.grants);
+    setSaveError(null);
+    setSaveBlocked(false);
+  }, [grantsQuery.data]);
 
   // 编辑门禁：读取/保存还没就绪、或上次写结果未知时，只允许看。
   const editLocked = disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId;
   const editLockedRef = useRef(editLocked);
   editLockedRef.current = editLocked;
+
+  const retryLoad = () => {
+    setSaveError(null);
+    setSaveBlocked(false);
+    void grantsQuery.refetch();
+  };
 
   // 与技能授权一致：一次可以挑多个主体再加。挑中的 id 全部并入待保存列表，
   // 已经在列表里的直接跳过，避免出现重复行；同一个 id 只会有一行。
@@ -245,24 +225,27 @@ export function KnowledgeGrants({
     return grants.filter((grant) => !known.has(`${grant.type}:${grant.id}`));
   }, [grants, subjects]);
 
-  const save = async (next = grants) => {
+  const save = async (next = grants): Promise<boolean> => {
     if (editLockedRef.current || savingGeneration.current !== null) return false;
     const base = baseId;
     const baseVersion = baseGeneration.current;
-    const requestVersion = ++requestGeneration.current;
-    savingGeneration.current = requestVersion;
+    const version = ++saveSequence.current;
+    savingGeneration.current = version;
     setSaving(true);
     try {
+      // 在途读取若晚于写入落地，会把缓存覆盖回写前的授权集；先取消再写。
+      await queryClient.cancelQueries({ queryKey: grantsKey(base) });
       const result = await portal.replaceManagedKnowledgeGrants(
         base,
         next.map(({ type, id }) => ({ type, id })),
       );
-      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
+      if (baseVersion === baseGeneration.current) {
+        queryClient.setQueryData(grantsKey(base), result);
         setGrants(result.grants);
         setSavedGrants(result.grants);
         setUserDrafts([]);
         setTeamDrafts([]);
-        setError(null);
+        setSaveError(null);
         setEditorOpen(false);
         onGrantsChanged?.(base, {
           users: result.grants.filter((grant) => grant.type === 'user').length,
@@ -272,16 +255,16 @@ export function KnowledgeGrants({
         return true;
       }
     } catch (cause) {
-      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
-        setError(knowledgeErrorText(cause));
+      if (baseVersion === baseGeneration.current) {
+        setSaveError(knowledgeErrorText(cause));
         if (!(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500)
-          setBlocked(true);
+          setSaveBlocked(true);
         message.error(tr('knowledgeGrantsSaveFailed'), 5);
       }
       return false;
     } finally {
-      if (savingGeneration.current === requestVersion) savingGeneration.current = null;
-      if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) setSaving(false);
+      if (savingGeneration.current === version) savingGeneration.current = null;
+      if (baseVersion === baseGeneration.current) setSaving(false);
     }
     return false;
   };
@@ -400,7 +383,7 @@ export function KnowledgeGrants({
               title={tr('knowledgeGrantsReadFailed')}
               description={error}
               action={
-                <Button size="small" onClick={() => void load()}>
+                <Button size="small" onClick={retryLoad}>
                   {tr('knowledgeRetryRead')}
                 </Button>
               }
@@ -429,7 +412,7 @@ export function KnowledgeGrants({
               description={subjects.error}
               style={{ marginTop: 12 }}
               action={
-                <Button size="small" onClick={() => void loadSubjects()}>
+                <Button size="small" onClick={() => void subjectsQuery.refetch()}>
                   {tr('knowledgeRetryRead')}
                 </Button>
               }
@@ -454,9 +437,7 @@ export function KnowledgeGrants({
               type="error"
               showIcon
               title={employeeError}
-              action={
-                <Button onClick={() => refreshEmployees((value) => value + 1)}>{tr('knowledgeRetryRead')}</Button>
-              }
+              action={<Button onClick={() => void employeesQuery.refetch()}>{tr('knowledgeRetryRead')}</Button>}
             />
           ) : (
             <List
@@ -495,7 +476,7 @@ export function KnowledgeGrants({
               title={tr('knowledgeGrantsReadFailed')}
               description={error}
               action={
-                <Button size="small" onClick={() => void load()}>
+                <Button size="small" onClick={retryLoad}>
                   {tr('knowledgeRetryRead')}
                 </Button>
               }

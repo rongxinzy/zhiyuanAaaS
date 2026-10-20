@@ -2,10 +2,11 @@
 import type { Dispatch, SetStateAction } from 'react';
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App, ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { renderWithQueryClient, withQueryClient } from '../../tests/helpers/query-client.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeGrants, updateKnowledgeGrantScope } from './KnowledgeGrants.js';
 import type { ManagedKnowledgeBase, PortalClient } from './portal.js';
@@ -65,7 +66,7 @@ async function pickSubject(combobox: HTMLElement, label: string) {
 }
 
 function renderGrants(portal: PortalClient) {
-  return render(
+  return renderWithQueryClient(
     <ConfigProvider theme={{ token: { motion: false } }}>
       <App>
         <KnowledgeGrants portal={portal} baseId="kb-1" />
@@ -108,7 +109,7 @@ describe('KnowledgeGrants', () => {
   test('saves pending selections without requiring a separate add click and clears them on reopen', async () => {
     const changed = vi.fn();
     const portal = makePortal();
-    render(
+    renderWithQueryClient(
       <ConfigProvider theme={{ token: { motion: false } }}>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
@@ -151,7 +152,7 @@ describe('KnowledgeGrants', () => {
   test('does not restore selected subjects after revoke all and reports the empty committed scope', async () => {
     const changed = vi.fn();
     const portal = makePortal();
-    render(
+    renderWithQueryClient(
       <ConfigProvider theme={{ token: { motion: false } }}>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
@@ -180,7 +181,7 @@ describe('KnowledgeGrants', () => {
         { name: 'other', displayName: 'Other employee', knowledgeBases: [{ id: 'kb-2' }] },
       ]),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" onManageAgents={navigate} />
@@ -199,7 +200,7 @@ describe('KnowledgeGrants', () => {
     const portal = makePortal({
       replaceManagedKnowledgeGrants: vi.fn().mockRejectedValue(new PortalError(503, 'Storage unavailable')),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider theme={{ token: { motion: false } }}>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
@@ -236,7 +237,7 @@ describe('KnowledgeGrants', () => {
   test('disables empty save so wiping grants cannot toast success without revoke', async () => {
     const changed = vi.fn();
     const portal = makePortal();
-    render(
+    renderWithQueryClient(
       <ConfigProvider theme={{ token: { motion: false } }}>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
@@ -305,7 +306,7 @@ describe('KnowledgeGrants', () => {
         .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
         .mockResolvedValueOnce({ knowledge_base_id: 'kb-2', tenant_id: 'tenant-1', grants: [] }),
     });
-    const view = render(
+    const view = renderWithQueryClient(
       <ConfigProvider>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" />
@@ -313,11 +314,14 @@ describe('KnowledgeGrants', () => {
       </ConfigProvider>,
     );
     view.rerender(
-      <ConfigProvider>
-        <App>
-          <KnowledgeGrants portal={portal} baseId="kb-2" />
-        </App>
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider>
+          <App>
+            <KnowledgeGrants portal={portal} baseId="kb-2" />
+          </App>
+        </ConfigProvider>,
+        view.queryClient,
+      ),
     );
     await waitFor(() => expect(screen.queryByText('user-1')).not.toBeInTheDocument());
     resolveFirst({
@@ -358,7 +362,7 @@ describe('KnowledgeGrants', () => {
           grants,
         })),
     });
-    const view = render(
+    const view = renderWithQueryClient(
       <ConfigProvider>
         <App>
           <KnowledgeGrants portal={portal} baseId="kb-1" />
@@ -370,11 +374,14 @@ describe('KnowledgeGrants', () => {
     fireEvent.click(screen.getByRole('button', { name: translate(ADMIN_LANGUAGE, 'knowledgeGrantsSave') }));
     await waitFor(() => expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledTimes(1));
     view.rerender(
-      <ConfigProvider>
-        <App>
-          <KnowledgeGrants portal={portal} baseId="kb-2" />
-        </App>
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider>
+          <App>
+            <KnowledgeGrants portal={portal} baseId="kb-2" />
+          </App>
+        </ConfigProvider>,
+        view.queryClient,
+      ),
     );
     expect((await screen.findAllByText('user-new')).length).toBeGreaterThan(0);
     const saveButton = screen.getByRole('button', { name: /保存授权/ });

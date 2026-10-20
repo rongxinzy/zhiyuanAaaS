@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles). The wrapper below mirrors the production
 // ConfigProvider (stable two-CJK button names) and disables wave/motion so
@@ -9,14 +9,15 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import type { AdminIdentity } from './client.js';
 import { Models } from './Models.js';
 import { administratorIdentity } from './test-fixtures.js';
 
 const TIMEOUT = 15000;
 
-function render(ui: ReactElement): ReturnType<typeof rtlRender> {
-  return rtlRender(
+function render(ui: ReactElement) {
+  return renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
       {ui}
     </ConfigProvider>,
@@ -191,7 +192,9 @@ describe('admin models', () => {
 
       const modal = await screen.findByRole('dialog');
       // The credential connection select is the third combobox (after
-      // protocol and capabilities).
+      // protocol and capabilities); it stays disabled while the credential
+      // metadata query is in flight.
+      await waitFor(() => expect(within(modal).getAllByRole('combobox')[2]!).toBeEnabled());
       fireEvent.mouseDown(within(modal).getAllByRole('combobox')[2]!);
       fireEvent.click(await screen.findByText('在线接入 · openai'));
 
@@ -801,6 +804,8 @@ describe('admin models', () => {
         createDataPlanePublication: vi.fn().mockRejectedValue(new Error('Network unavailable')),
       };
       render(<Models client={client as never} identity={administratorIdentity} />);
+      // The publish action is disabled until the catalog query settles.
+      await screen.findByText('deepseek-chat');
 
       fireEvent.click(await screen.findByRole('button', { name: /发布路由/ }));
       const confirm = await screen.findByText('从模型目录发布网关路由');
@@ -829,6 +834,8 @@ describe('admin models', () => {
         createDataPlanePublication: vi.fn().mockRejectedValue(new Error('AEP 503 UNAVAILABLE')),
       };
       render(<Models client={client as never} identity={administratorIdentity} />);
+      // The publish action is disabled until the catalog query settles.
+      await screen.findByText('草稿模型');
 
       fireEvent.click(await screen.findByRole('button', { name: /发布路由/ }));
       const popover = await screen.findByText('从模型目录发布网关路由');

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles); nothing extra is needed here.
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { DigitalEmployees } from './DigitalEmployees.js';
 import type { PortalApplyResult, PortalClient, PortalEmployee, PortalMemoryStatus, PortalRequest } from './portal.js';
 
@@ -16,8 +17,8 @@ import type { PortalApplyResult, PortalClient, PortalEmployee, PortalMemoryStatu
 // stay stable for role queries.
 const TIMEOUT = 45000;
 
-function render(ui: ReactElement): ReturnType<typeof rtlRender> {
-  return rtlRender(
+function render(ui: ReactElement): ReturnType<typeof renderWithQueryClient> {
+  return renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
       {ui}
     </ConfigProvider>,

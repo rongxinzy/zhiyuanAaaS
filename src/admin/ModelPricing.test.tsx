@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { type AdminConsoleClient, AdminRequestError } from './client.js';
 import { ModelPricingDrawer } from './ModelPricing.js';
 import { Models } from './Models.js';
@@ -24,7 +25,7 @@ function setup(readOnly = false) {
     putModelPricing: vi.fn().mockResolvedValue({ ...initial, version: 2 }),
   };
   const onClose = vi.fn();
-  const ui = render(
+  const ui = renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
       <ModelPricingDrawer
         client={client as unknown as AdminConsoleClient}
@@ -138,7 +139,7 @@ test('disables save for a missing backend and offers recovery from load failure'
       .mockResolvedValue(initial),
     putModelPricing: vi.fn(),
   };
-  render(
+  renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }}>
       <ModelPricingDrawer client={client as unknown as AdminConsoleClient} model={model} canWrite onClose={vi.fn()} />
     </ConfigProvider>,
@@ -157,7 +158,7 @@ test('opens model-specific prices from the model list without data-plane permiss
     getModelPricing: vi.fn().mockResolvedValue(initial),
     dataPlane: vi.fn(),
   };
-  render(
+  renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }}>
       <Models
         client={client as unknown as AdminConsoleClient}

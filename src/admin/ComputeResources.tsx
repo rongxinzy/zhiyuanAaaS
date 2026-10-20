@@ -1,4 +1,5 @@
 import { ReloadOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -17,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   type AdminComputeAssignment,
   type AdminComputeTier,
@@ -34,6 +35,7 @@ import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
 const t = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
+const computeResourcesKey = ['admin', 'compute-resources'] as const;
 
 type LoadState = {
   readonly settings: AdminDeploymentSettings;
@@ -50,39 +52,32 @@ export function ComputeResources({
 }) {
   const canRead = hasAdminPermission(identity, AdminPermission.DeploymentRead);
   const canWrite = hasAdminPermission(identity, AdminPermission.AgentsComputeWrite);
-  const [state, setState] = useState<LoadState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [forbidden, setForbidden] = useState(false);
+  const queryClient = useQueryClient();
+  const resourcesQuery = useQuery({
+    queryKey: computeResourcesKey,
+    queryFn: async (): Promise<LoadState> => {
+      const [settings, tiers, assignments] = await Promise.all([
+        client.deploymentSettings(),
+        client.computeTierCatalog(),
+        client.computeAssignments(),
+      ]);
+      return { settings, tiers, assignments };
+    },
+    enabled: canRead,
+  });
+  const loadError = resourcesQuery.error;
+  // A 403 here means the role check passed locally but the server denied
+  // the read; surface the same no-permission state instead of a generic
+  // load failure.
+  const forbidden = loadError instanceof AdminRequestError && loadError.status === 403;
+  const failed = loadError !== null && !forbidden;
+  // The old effect cleared the loaded state on any failure; keep the same
+  // behaviour instead of showing stale data next to the error alert.
+  const state = loadError ? null : (resourcesQuery.data ?? null);
+  const loading = resourcesQuery.isFetching;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: computeResourcesKey });
   const [policyEditing, setPolicyEditing] = useState(false);
   const [adjusting, setAdjusting] = useState<AdminComputeAssignment | null>(null);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    if (!canRead) return;
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    setForbidden(false);
-    void Promise.all([client.deploymentSettings(), client.computeTierCatalog(), client.computeAssignments()])
-      .then(([settings, tiers, assignments]) => {
-        if (live) setState({ settings, tiers, assignments });
-      })
-      .catch((error: unknown) => {
-        if (!live) return;
-        // A 403 here means the role check passed locally but the server denied
-        // the read; surface the same no-permission state instead of a generic
-        // load failure.
-        if (error instanceof AdminRequestError && error.status === 403) setForbidden(true);
-        else setFailed(true);
-        setState(null);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, canRead, revision]);
 
   if (!canRead || forbidden) {
     return <Result status="403" title={t('computeNoPermission')} />;
@@ -101,7 +96,7 @@ export function ComputeResources({
           <Typography.Text type="secondary">{t('computeResourcesDescription')}</Typography.Text>
         </div>
         <Space wrap>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((current) => current + 1)}>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void resourcesQuery.refetch()}>
             {t('refresh')}
           </Button>
         </Space>
@@ -115,7 +110,7 @@ export function ComputeResources({
           showIcon
           title={t('computeLoadFailed')}
           action={
-            <Button size="small" onClick={() => refresh((current) => current + 1)}>
+            <Button size="small" onClick={() => void resourcesQuery.refetch()}>
               {t('retry')}
             </Button>
           }
@@ -220,7 +215,7 @@ export function ComputeResources({
           onClose={() => setPolicyEditing(false)}
           onSaved={() => {
             setPolicyEditing(false);
-            refresh((current) => current + 1);
+            reload();
           }}
         />
       ) : null}
@@ -231,7 +226,7 @@ export function ComputeResources({
         onClose={() => setAdjusting(null)}
         onSaved={() => {
           setAdjusting(null);
-          refresh((current) => current + 1);
+          reload();
         }}
       />
     </div>

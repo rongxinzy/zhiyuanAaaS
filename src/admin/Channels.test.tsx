@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App, ConfigProvider } from 'antd';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { Channels, EmployeeChannelsPanel } from './Channels.js';
 import type { AdminConsoleClient } from './client.js';
 import { type EmployeeChannels, type PortalClient, PortalError } from './portal.js';
@@ -40,7 +41,7 @@ function mockPortal(data: EmployeeChannels = initial) {
 }
 
 function panel(portal: ReturnType<typeof mockPortal>) {
-  return render(
+  return renderWithQueryClient(
     <ConfigProvider>
       <App>
         <EmployeeChannelsPanel employeeName="hr-bot" portal={portal as unknown as PortalClient} />
@@ -63,7 +64,7 @@ afterEach(async () => {
 
 test('English channel page passes its language into the employee panel and credential form', async () => {
   const portal = mockPortal();
-  render(
+  renderWithQueryClient(
     <ConfigProvider>
       <App>
         <Channels client={{} as AdminConsoleClient} portal={portal as unknown as PortalClient} language="en" />
@@ -79,7 +80,7 @@ test('English channel page passes its language into the employee panel and crede
 
 test('shows Feishu, WeCom and WeChat with actual configuration actions', async () => {
   const portal = mockPortal();
-  render(
+  renderWithQueryClient(
     <ConfigProvider>
       <App>
         <Channels client={{} as AdminConsoleClient} portal={portal as unknown as PortalClient} />
@@ -100,7 +101,7 @@ test('selects a Ready employee initially instead of the first deployment failure
     { name: 'broken', displayName: '部署失败员工', phase: 'Error' },
     { name: 'hr-bot', displayName: '人事助理', phase: 'Ready' },
   ]);
-  render(
+  renderWithQueryClient(
     <ConfigProvider>
       <App>
         <Channels client={{} as AdminConsoleClient} portal={portal as unknown as PortalClient} />

@@ -16,6 +16,7 @@ import {
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MenuProps, TreeDataNode, UploadFile } from 'antd';
 import {
   Alert,
@@ -41,7 +42,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeDocumentInspector } from './KnowledgeDocumentInspector.js';
-import { KnowledgeGrants, updateKnowledgeGrantScope } from './KnowledgeGrants.js';
+import { KnowledgeGrants } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { knowledgeBaseColumns } from './knowledge-base-columns.js';
 import { useKnowledgeDetailRetrieval } from './knowledge-detail-retrieval.js';
@@ -78,15 +79,27 @@ import {
   type ManagedKnowledgeChunk,
   type ManagedKnowledgeDocument,
   type ManagedKnowledgeFolder,
-  type ManagedKnowledgeFolderTree,
   type ManagedKnowledgePage,
-  type ManagedKnowledgeReadiness,
   type ManagedKnowledgeSpans,
   type PortalClient,
   PortalError,
 } from './portal.js';
 import { useDebouncedDocumentKeyword } from './use-debounced-document-keyword.js';
 import { useKnowledgeDeletionSync } from './use-knowledge-deletion-sync.js';
+
+const knowledgeBasesKey = ['portal', 'knowledge-bases'] as const;
+const knowledgeReadinessKey = ['portal', 'knowledge-readiness'] as const;
+const knowledgeBaseKey = (id: string | null) => ['portal', 'knowledge-base', id] as const;
+const knowledgeDocumentsKey = (
+  id: string | null,
+  page: number,
+  search: string,
+  status: string,
+  folder: string | null,
+) => ['portal', 'knowledge-documents', id, page, search, status, folder] as const;
+const knowledgeFoldersKey = (id: string | null) => ['portal', 'knowledge-folders', id] as const;
+const knowledgeSummaryFailedKey = (id: string | null) => ['portal', 'knowledge-summary-failed', id] as const;
+const knowledgeSummaryAgentsKey = (id: string | null) => ['portal', 'knowledge-summary-agents', id] as const;
 
 export function KnowledgeManagement({
   portal,
@@ -100,17 +113,11 @@ export function KnowledgeManagement({
   readonly onNavigate?: ((route: string) => void) | undefined;
 }) {
   const { token } = theme.useToken();
-  const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
-  const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(baseId);
   const retrieval = useKnowledgeDetailRetrieval(portal, selectedId);
   const [docHintVisible, setDocHintVisible] = useState(() => localStorage.getItem(DOC_HINT_DISMISSED_KEY) !== '1');
-  const [docs, setDocs] = useState<ManagedKnowledgePage | null>(null);
-  const [docsContext, setDocsContext] = useState('');
-  const [detail, setDetail] = useState<ManagedKnowledgeBase | null>(null);
   const [page, setPage] = useState(1);
   const { keyword, search, setKeyword, applySearch, clearSearch } = useDebouncedDocumentKeyword();
-  const [folderTree, setFolderTree] = useState<ManagedKnowledgeFolderTree | null>(null);
   const [folderManagerOpen, setFolderManagerOpen] = useState(false);
   // null = 全部资料（不带 folder_path 过滤）；上游把「folder_path 存在但为空」当作根目录，
   // 所以「全部」必须是不传该参数，而不是传空串。
@@ -122,20 +129,9 @@ export function KnowledgeManagement({
   const [moveTarget, setMoveTarget] = useState('');
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchFailures, setBatchFailures] = useState<readonly string[]>([]);
-  // 详情摘要：失败数用上游按 parse_status 过滤后的真实 total；关联 Agent 数按员工绑定统计；
-  // 「可检索数」上游没有按启用状态统计的接口，保持 null → 界面显示暂未统计，不推断。
-  const [summaryFailed, setSummaryFailed] = useState<number | null>(null);
-  const [summaryAgents, setSummaryAgents] = useState<number | null>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [folderQueue, setFolderQueue] = useState<readonly FolderUploadItem[]>([]);
   const [folderUploading, setFolderUploading] = useState(false);
-  const [docsRefresh, setDocsRefresh] = useState(0);
-  const [detailRefresh, setDetailRefresh] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [docsLoading, setDocsLoading] = useState(false);
-  const [baseError, setBaseError] = useState<string | null>(null);
-  const [docsError, setDocsError] = useState<string | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
   const { setWriteNotice, writeNoticeFromCause, writeNoticeAlert } = useWriteNotice();
   const [uncertainWrite, setUncertainWrite] = useState(false);
   const [accessBlocked, setAccessBlocked] = useState(false);
@@ -175,12 +171,111 @@ export function KnowledgeManagement({
   const [form] = Form.useForm<{ name: string; description: string }>();
   const [importForm] = Form.useForm<{ url: string; title: string; content: string }>();
   const [modal, modalContext] = Modal.useModal();
-  const listGeneration = useRef(0);
-  const docGeneration = useRef(0);
   const observeDeletedDocuments = useRef<((context: string, ids: readonly string[]) => void) | null>(null);
+  // refetchInterval（声明在删除同步之前）借这个镜像排除删除中的行。
+  const deletionEntriesRef = useRef<readonly { readonly id: string }[]>([]);
   const pollRounds = useRef(0);
   const chunkRequestGeneration = useRef(0);
   const chunkSaveGeneration = useRef(0);
+  const queryClient = useQueryClient();
+  const basesQuery = useQuery({
+    queryKey: knowledgeBasesKey,
+    queryFn: ({ signal }) => portal.listManagedKnowledgeBases(signal),
+  });
+  // readiness 用于新建权限和模型信息；读取失败不影响知识库列表和详情。
+  const readinessQuery = useQuery({
+    queryKey: knowledgeReadinessKey,
+    queryFn: ({ signal }) => portal.managedKnowledgeReadiness(signal).catch(() => null),
+  });
+  const detailQuery = useQuery({
+    queryKey: knowledgeBaseKey(selectedId),
+    queryFn: ({ signal }) => portal.getManagedKnowledgeBase(selectedId ?? '', signal),
+    enabled: selectedId !== null,
+    gcTime: 0,
+  });
+  const documentsQuery = useQuery({
+    queryKey: knowledgeDocumentsKey(selectedId, page, search, statusFilter, folderPath),
+    queryFn: async ({ signal }) => {
+      const result = await portal.listManagedKnowledgeDocuments(
+        selectedId ?? '',
+        {
+          page,
+          pageSize: 10,
+          ...(search ? { keyword: search } : {}),
+          ...(statusFilter === 'all' ? {} : { parseStatus: statusFilter }),
+          ...(folderPath === null ? {} : { folderPath, folderRecursive: true }),
+        },
+        signal,
+      );
+      // 计数落在真实请求上（旧口径）：读到解析中的资料才计一次，切库与上传清零重开。
+      if (result.data.some((item) => pollable.has(item.parse_status))) pollRounds.current += 1;
+      return result;
+    },
+    enabled: selectedId !== null,
+    // 与旧轮询同口径：解析中的资料 8 秒一轮、读满 6 次即停；删除中的资料由 useKnowledgeDeletionSync 的 1 秒轮询跟踪。
+    refetchInterval: (query) => {
+      const active =
+        query.state.data?.data.some(
+          (item) =>
+            pollable.has(item.parse_status) && !deletionEntriesRef.current.some((pending) => pending.id === item.id),
+        ) ?? false;
+      if (!active || pollRounds.current >= 6) return false;
+      return 8000;
+    },
+    refetchIntervalInBackground: true,
+    gcTime: 0,
+  });
+  // 目录树按选中库读取；读取失败（或客户端没有这个方法）只是没有树，不挡住资料列表。
+  const foldersQuery = useQuery({
+    queryKey: knowledgeFoldersKey(selectedId),
+    queryFn: async ({ signal }) => {
+      try {
+        return await portal.getManagedKnowledgeFolders(selectedId ?? '', signal);
+      } catch {
+        return null;
+      }
+    },
+    enabled: selectedId !== null,
+    gcTime: 0,
+  });
+  // 摘要里两个派生数字：失败数（过滤后的真实 total）与关联员工数（员工绑定）。
+  // 任一项读不到就留 null，界面显示「暂未统计」，不用分页长度或本地推断凑数。
+  const summaryFailedQuery = useQuery({
+    queryKey: knowledgeSummaryFailedKey(selectedId),
+    queryFn: ({ signal }) =>
+      portal
+        .listManagedKnowledgeDocuments(selectedId ?? '', { page: 1, pageSize: 1, parseStatus: 'failed' }, signal)
+        .then((failedPage) => failedPage.total)
+        .catch(() => null),
+    enabled: selectedId !== null,
+    gcTime: 0,
+  });
+  const summaryAgentsQuery = useQuery({
+    queryKey: knowledgeSummaryAgentsKey(selectedId),
+    queryFn: ({ signal }) =>
+      portal
+        .listEmployees(signal)
+        .then(
+          (employees) =>
+            employees.filter((employee) => (employee.knowledgeBases ?? []).some((bound) => bound.id === selectedId))
+              .length,
+        )
+        .catch(() => null),
+    enabled: selectedId !== null,
+    gcTime: 0,
+  });
+  const readiness = readinessQuery.data ?? null;
+  const bases: readonly ManagedKnowledgeBase[] = basesQuery.data ?? [];
+  const detail = selectedId === null ? null : (detailQuery.data ?? null);
+  const loading = basesQuery.isFetching || readinessQuery.isFetching;
+  const docsLoading = documentsQuery.isFetching;
+  const baseError = basesQuery.error ? knowledgeErrorText(basesQuery.error) : null;
+  const detailError = selectedId !== null && detailQuery.error ? knowledgeErrorText(detailQuery.error) : null;
+  const docsError = selectedId !== null && documentsQuery.error ? knowledgeErrorText(documentsQuery.error) : null;
+  const visibleDocs = selectedId === null ? null : (documentsQuery.data ?? null);
+  const folderTree = selectedId === null ? null : (foldersQuery.data ?? null);
+  const summaryFailed = selectedId === null ? null : (summaryFailedQuery.data ?? null);
+  const summaryAgents = selectedId === null ? null : (summaryAgentsQuery.data ?? null);
   // 预览 blob URL 的生命周期交给预览缓存（淘汰与卸载时回收），这里不再逐个 revoke。
   useEffect(
     () => () => {
@@ -213,7 +308,6 @@ export function KnowledgeManagement({
     setFolderManagerOpen(false);
     setMaterialModal(null);
     setFolderPath(null);
-    setFolderTree(null);
     setDocumentActions([]);
     setInspector(null);
     setChunksLoading(false);
@@ -229,12 +323,11 @@ export function KnowledgeManagement({
   );
   // 详情页把当前知识库名报给外壳，面包屑渲染成 企业管理后台 / 知识库 / <名称>。
   usePageCrumb(selectedId ? (selected?.name ?? null) : null);
-  // 查询上下文必须与加载时写入 docsContext 的格式一致（含状态与目录筛选），
-  // 否则旧响应会被当成「不是当前查询」而永远显示空表。
+  // 删除同步按列表查询上下文记账：读取落地时把同一上下文里的 id 清单交给
+  // observe 对齐，所以上下文必须包含全部筛选维度（库、页、关键字、状态、目录）。
   const queryContext = JSON.stringify([selectedId, page, search, statusFilter, folderPath]);
   const queryContextRef = useRef(queryContext);
   queryContextRef.current = queryContext;
-  const visibleDocs = docsContext === queryContext ? docs : null;
   const error = baseError ?? detailError ?? docsError;
   const canCreate = readiness?.embeddingModel.state === 'configured';
   const writeBlocked = accessBlocked || !!baseError || !!detailError || uncertainWrite;
@@ -257,78 +350,46 @@ export function KnowledgeManagement({
   const endDocumentAction = (id: string) => setDocumentActions((current) => current.filter((item) => item !== id));
   const chunkEditorOverLimit = byteLength(chunkEditorText) > CONTENT_MAX_BYTES;
 
-  const loadBases = useCallback(
-    async (signal?: AbortSignal) => {
-      const generation = ++listGeneration.current;
-      setLoading(true);
-      setBaseError(null);
-      const loadList = async () => {
-        try {
-          const items = await portal.listManagedKnowledgeBases(signal);
-          if (generation !== listGeneration.current || signal?.aborted) return;
-          setBases(items);
-          setAccessBlocked(false);
-          clearUncertainWrite();
-          setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
-        } catch (cause) {
-          if (signal?.aborted || generation !== listGeneration.current) return;
-          if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-          setBaseError(knowledgeErrorText(cause));
-        } finally {
-          if (generation === listGeneration.current && !signal?.aborted) setLoading(false);
-        }
-      };
-      // readiness 用于新建权限和模型信息；读取失败不影响知识库列表和详情。
-      const loadReadiness = async () => {
-        try {
-          const ready = await portal.managedKnowledgeReadiness(signal);
-          if (generation === listGeneration.current && !signal?.aborted) setReadiness(ready);
-        } catch {
-          if (generation === listGeneration.current && !signal?.aborted) setReadiness(null);
-        }
-      };
-      await Promise.all([loadList(), loadReadiness()]);
-    },
-    [clearUncertainWrite, portal],
-  );
-
+  // 一次成功的读取（列表/详情/文档）说明上游重新可达：就地解开「结果不确定」写锁并告知管理员。
   useEffect(() => {
-    const controller = new AbortController();
-    void loadBases(controller.signal);
-    return () => {
-      controller.abort();
-      listGeneration.current += 1;
-    };
-  }, [loadBases]);
-
-  const loadDetail = useCallback(
-    async (id: string, signal?: AbortSignal) => {
-      setDetailError(null);
-      try {
-        const base = await portal.getManagedKnowledgeBase(id, signal);
-        if (signal?.aborted) return;
-        setDetail(base);
-        clearUncertainWrite();
-      } catch (cause) {
-        if (signal?.aborted) return;
-        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setDetailError(knowledgeErrorText(cause));
-      }
-    },
-    [clearUncertainWrite, portal],
-  );
-
+    const items = basesQuery.data;
+    if (!items || basesQuery.dataUpdatedAt === 0) return;
+    setAccessBlocked(false);
+    clearUncertainWrite();
+    setSelectedId((current) => (current && items.some((item) => item.id === current) ? current : null));
+  }, [basesQuery.data, basesQuery.dataUpdatedAt, clearUncertainWrite]);
   useEffect(() => {
-    if (!selectedId) {
-      setDetail(null);
-      setDetailError(null);
-      return undefined;
-    }
-    const controller = new AbortController();
-    setDetail(null);
-    void loadDetail(selectedId, controller.signal);
-    return () => controller.abort();
-  }, [detailRefresh, loadDetail, selectedId]);
+    if (detailQuery.dataUpdatedAt === 0) return;
+    clearUncertainWrite();
+  }, [detailQuery.dataUpdatedAt, clearUncertainWrite]);
+  useEffect(() => {
+    if (documentsQuery.dataUpdatedAt === 0) return;
+    clearUncertainWrite();
+  }, [documentsQuery.dataUpdatedAt, clearUncertainWrite]);
+  useEffect(() => {
+    const cause = basesQuery.error;
+    if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+  }, [basesQuery.error]);
+  useEffect(() => {
+    const cause = detailQuery.error;
+    if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+  }, [detailQuery.error]);
+  useEffect(() => {
+    const cause = documentsQuery.error;
+    if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
+  }, [documentsQuery.error]);
+
+  const refreshBases = () => {
+    void basesQuery.refetch();
+    void readinessQuery.refetch();
+  };
+  // 资料变化后重读文档列表、目录树与两个摘要数字；库列表与详情不受影响。
+  const refreshDocs = () => {
+    void queryClient.invalidateQueries({ queryKey: ['portal', 'knowledge-documents'] });
+    void queryClient.invalidateQueries({ queryKey: ['portal', 'knowledge-folders'] });
+    void queryClient.invalidateQueries({ queryKey: ['portal', 'knowledge-summary-failed'] });
+    void queryClient.invalidateQueries({ queryKey: ['portal', 'knowledge-summary-agents'] });
+  };
 
   useEffect(() => {
     chunkRequestGeneration.current += 1;
@@ -347,7 +408,6 @@ export function KnowledgeManagement({
     setFolderManagerOpen(false);
     setMaterialModal(null);
     setFolderPath(null);
-    setFolderTree(null);
     setPage(1);
   }, [selectedId]);
 
@@ -358,123 +418,39 @@ export function KnowledgeManagement({
     }
   }, [inspector, chunkEditor?.id]);
 
-  const loadDocuments = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!selectedId) {
-        setDocs(null);
-        setDocsContext('');
-        return;
-      }
-      const generation = ++docGeneration.current;
-      setDocsLoading(true);
-      setDocsError(null);
-      try {
-        const result = await portal.listManagedKnowledgeDocuments(
-          selectedId,
-          {
-            page,
-            pageSize: 10,
-            ...(search ? { keyword: search } : {}),
-            ...(statusFilter === 'all' ? {} : { parseStatus: statusFilter }),
-            ...(folderPath === null ? {} : { folderPath, folderRecursive: true }),
-          },
-          signal,
-        );
-        if (generation !== docGeneration.current || signal?.aborted) return;
-        setDocs(result);
-        const readContext = JSON.stringify([selectedId, page, search, statusFilter, folderPath]);
-        setDocsContext(readContext);
-        observeDeletedDocuments.current?.(
-          readContext,
-          result.data.map((item) => item.id),
-        );
-        clearUncertainWrite();
-        if (result.data.some((item) => pollable.has(item.parse_status))) {
-          pollRounds.current += 1;
-          setPollTick(pollRounds.current);
-        }
-      } catch (cause) {
-        if (signal?.aborted || generation !== docGeneration.current) return;
-        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setDocsError(knowledgeErrorText(cause));
-      } finally {
-        if (generation === docGeneration.current) setDocsLoading(false);
-      }
-    },
-    [clearUncertainWrite, docsRefresh, folderPath, page, portal, search, selectedId, statusFilter],
-  );
+  // 删除同步的 1 秒轮询就是重读当前文档列表：作废旧 key 触发 refetch，
+  // 读取落地后由下面的 effect 把 id 清单交给 observe 对齐。
+  const readDocuments = useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: knowledgeDocumentsKey(selectedId, page, search, statusFilter, folderPath),
+    });
+  }, [queryClient, selectedId, page, search, statusFilter, folderPath]);
 
-  const deletionSync = useKnowledgeDeletionSync(selectedId, queryContext, loadDocuments, (operationIds) => {
+  const deletionSync = useKnowledgeDeletionSync(selectedId, queryContext, readDocuments, (operationIds) => {
     setWriteNotice(
       `${translate(ADMIN_LANGUAGE, 'knowledgeDeleteConfirmed')} · ${t('operation')}: ${operationIds.join(', ')}`,
     );
-    setDocsRefresh((current) => current + 1);
-    setDetailRefresh((current) => current + 1);
+    refreshDocs();
+    void queryClient.invalidateQueries({ queryKey: knowledgeBaseKey(selectedId) });
   });
   observeDeletedDocuments.current = deletionSync.observe;
+  deletionEntriesRef.current = deletionSync.entries;
+
+  // 列表读取落地：已接受删除的资料从同一上下文的 id 清单里消失，说明异步
+  // 删除任务完成（observe 内部按上下文精确匹配，别页的缺失不算数）。
+  useEffect(() => {
+    const documents = documentsQuery.data;
+    if (!documents) return;
+    observeDeletedDocuments.current?.(
+      queryContext,
+      documents.data.map((item) => item.id),
+    );
+  }, [documentsQuery.data, queryContext]);
 
   const documentActionBusy = (id: string) =>
     documentActions.includes(id) ||
     deletionSync.entries.some((item) => item.id === id) ||
     visibleDocs?.data.some((item) => item.id === id && item.parse_status === 'deleting') === true;
-
-  const [pollTick, setPollTick] = useState(0);
-
-  // 目录树按选中库读取；读取失败只是没有树，不挡住资料列表（列表自己会报错）。
-  useEffect(() => {
-    if (!selectedId) {
-      setFolderTree(null);
-      return undefined;
-    }
-    const controller = new AbortController();
-    // 目录树是展示用读取：拿到就渲染，读不到（或客户端没有这个方法）只当没有树，
-    // 不能因此让整个详情页渲染失败。
-    const loadFolders = async () => {
-      try {
-        const tree = await portal.getManagedKnowledgeFolders(selectedId, controller.signal);
-        if (!controller.signal.aborted) setFolderTree(tree);
-      } catch {
-        if (!controller.signal.aborted) setFolderTree(null);
-      }
-    };
-    void loadFolders();
-    return () => controller.abort();
-  }, [docsRefresh, portal, selectedId]);
-
-  // 摘要里两个派生数字：失败数（过滤后的真实 total）与关联员工数（员工绑定）。
-  // 任一项读不到就留 null，界面显示「暂未统计」，不用分页长度或本地推断凑数。
-  useEffect(() => {
-    if (!selectedId) {
-      setSummaryFailed(null);
-      setSummaryAgents(null);
-      return undefined;
-    }
-    const controller = new AbortController();
-    const loadSummary = async () => {
-      try {
-        const failedPage = await portal.listManagedKnowledgeDocuments(
-          selectedId,
-          { page: 1, pageSize: 1, parseStatus: 'failed' },
-          controller.signal,
-        );
-        if (!controller.signal.aborted) setSummaryFailed(failedPage.total);
-      } catch {
-        if (!controller.signal.aborted) setSummaryFailed(null);
-      }
-      try {
-        const employees = await portal.listEmployees(controller.signal);
-        if (!controller.signal.aborted)
-          setSummaryAgents(
-            employees.filter((employee) => (employee.knowledgeBases ?? []).some((bound) => bound.id === selectedId))
-              .length,
-          );
-      } catch {
-        if (!controller.signal.aborted) setSummaryAgents(null);
-      }
-    };
-    void loadSummary();
-    return () => controller.abort();
-  }, [docsRefresh, portal, selectedId]);
 
   // 「添加资料」下拉与状态筛选：与原型一致的四个入口 / 上游 parse_status 真正支持的状态。
   const addMaterialItems: MenuProps['items'] = [
@@ -584,49 +560,19 @@ export function KnowledgeManagement({
 
   useEffect(() => {
     pollRounds.current = 0;
-    setPollTick(0);
   }, [selectedId]);
 
   useEffect(() => {
     setPage(1);
   }, [search]);
 
-  useEffect(() => {
-    setDocs(null);
-    setDocsContext('');
-    setDocsError(null);
-  }, [queryContext]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadDocuments(controller.signal);
-    return () => {
-      controller.abort();
-      docGeneration.current += 1;
-    };
-  }, [loadDocuments]);
-
-  const hasActiveDocs =
-    visibleDocs?.data.some(
-      (item) => pollable.has(item.parse_status) && !deletionSync.entries.some((pending) => pending.id === item.id),
-    ) ?? false;
-  useEffect(() => {
-    if (!selectedId || !hasActiveDocs || pollTick >= 6) return undefined;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => void loadDocuments(controller.signal), 8000);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [hasActiveDocs, loadDocuments, pollTick, selectedId]);
-
   // 详情页那条横幅合并了列表/详情/文档三种读取错误，重试必须重放**失败的那一个**请求：
   // 旧实现一律调 loadBases()，详情读取失败时既没重试、detailError 也永不清除，整页一直只读。
   const retryFailed = () => {
-    if (baseError) return void loadBases();
-    if (detailError && selectedId) return void loadDetail(selectedId);
-    if (docsError) return void loadDocuments();
-    return void loadBases();
+    if (baseError) return void refreshBases();
+    if (detailError) return void detailQuery.refetch();
+    if (docsError) return void documentsQuery.refetch();
+    return void refreshBases();
   };
 
   const openCreate = () => {
@@ -654,10 +600,13 @@ export function KnowledgeManagement({
       const result = editing
         ? await portal.updateManagedKnowledgeBase(editing.id, values)
         : await portal.createManagedKnowledgeBase(values);
-      if (editing) setDetail(result.data);
+      if (editing) queryClient.setQueryData(knowledgeBaseKey(editing.id), result.data);
       setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`, 'success');
       setEditorOpen(false);
-      await loadBases();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: knowledgeBasesKey }),
+        queryClient.invalidateQueries({ queryKey: knowledgeReadinessKey }),
+      ]);
       if (!editing) setSelectedId(result.data.id);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
@@ -676,8 +625,10 @@ export function KnowledgeManagement({
       const result = await portal.deleteManagedKnowledgeBase(selected.id);
       setWriteNotice(`${t('deleted')} ${t('operation')}: ${result.operationId}`, 'success');
       setSelectedId(null);
-      setDocs(null);
-      await loadBases();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: knowledgeBasesKey }),
+        queryClient.invalidateQueries({ queryKey: knowledgeReadinessKey }),
+      ]);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
@@ -704,9 +655,8 @@ export function KnowledgeManagement({
       setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`, 'success');
       setFiles([]);
       pollRounds.current = 0;
-      setPollTick(0);
       setPage(1);
-      setDocsRefresh((current) => current + 1);
+      refreshDocs();
       return true;
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
@@ -808,9 +758,8 @@ export function KnowledgeManagement({
       'info',
     );
     pollRounds.current = 0;
-    setPollTick(0);
     setPage(1);
-    setDocsRefresh((current) => current + 1);
+    refreshDocs();
     return failed === 0;
   };
 
@@ -839,7 +788,7 @@ export function KnowledgeManagement({
       setImportKind(null);
       importForm.resetFields();
       setPage(1);
-      setDocsRefresh((current) => current + 1);
+      refreshDocs();
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
@@ -873,7 +822,7 @@ export function KnowledgeManagement({
         `${action === 'delete' ? translate(ADMIN_LANGUAGE, 'knowledgeDeleteAccepted') : action === 'reparse' ? t('knowledgeRetryParse') : t('knowledgeCancelParse')} · ${t('operation')}: ${result.operationId}`,
         'success',
       );
-      setDocsRefresh((current) => current + 1);
+      refreshDocs();
     } catch (cause) {
       if (action === 'delete' && requestBase && isUncertain(cause)) {
         deletionSync.acceptUncertain({
@@ -896,16 +845,14 @@ export function KnowledgeManagement({
     if (writeBlocked || uploading || importing || documentActionBusy(document.id)) return;
     beginDocumentAction(document.id);
     setWriteNotice(null);
-    const requestContext = queryContext;
+    const requestKey = knowledgeDocumentsKey(selectedId, page, search, statusFilter, folderPath);
     try {
       const result = await portal.setManagedKnowledgeDocumentEnabled(document.id, enabled);
-      if (queryContextRef.current === requestContext) {
-        setDocs((current) =>
-          current
-            ? { ...current, data: current.data.map((item) => (item.id === document.id ? result.data : item)) }
-            : current,
-        );
-      }
+      queryClient.setQueryData(requestKey, (current: ManagedKnowledgePage | undefined) =>
+        current
+          ? { ...current, data: current.data.map((item) => (item.id === document.id ? result.data : item)) }
+          : current,
+      );
       setWriteNotice(
         `${enabled ? t('enableDocument') : t('disableDocument')} · ${t('operation')}: ${result.operationId}`,
         'success',
@@ -1218,7 +1165,7 @@ export function KnowledgeManagement({
     setBatchFailures(failedNames);
     setPickedDocs(failedIds);
     setBatchBusy(false);
-    setDocsRefresh((current) => current + 1);
+    refreshDocs();
   };
 
   // 移动是服务端一次性操作（不是逐项），所以只按服务端结果反馈。
@@ -1232,7 +1179,7 @@ export function KnowledgeManagement({
       setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`, 'success');
       setPickedDocs([]);
       setMoveDialog(false);
-      setDocsRefresh((current) => current + 1);
+      refreshDocs();
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
@@ -1265,7 +1212,7 @@ export function KnowledgeManagement({
               <Typography.Text type="secondary">{t('description')}</Typography.Text>
             </div>
             <Space wrap>
-              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadBases()}>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refreshBases()}>
                 {t('refresh')}
               </Button>
               <Button type="primary" icon={<PlusOutlined />} disabled={!canCreate || writeBlocked} onClick={openCreate}>
@@ -1280,7 +1227,7 @@ export function KnowledgeManagement({
               showIcon
               title={error}
               action={
-                <Button size="small" onClick={() => void loadBases()}>
+                <Button size="small" onClick={() => refreshBases()}>
                   {t('retry')}
                 </Button>
               }
@@ -1334,7 +1281,7 @@ export function KnowledgeManagement({
                     .map((item) => `${item.id} · ${t('operation')}: ${item.operationId}`)
                     .join('; ')}
                   action={
-                    <Button size="small" onClick={() => setDocsRefresh((current) => current + 1)}>
+                    <Button size="small" onClick={() => refreshDocs()}>
                       {t('refresh')}
                     </Button>
                   }
@@ -1499,7 +1446,7 @@ export function KnowledgeManagement({
                                   icon={<ReloadOutlined />}
                                   aria-label={t('refresh')}
                                   loading={docsLoading}
-                                  onClick={() => void loadDocuments()}
+                                  onClick={() => void documentsQuery.refetch()}
                                 />
                               </Space>
                             </div>
@@ -1681,7 +1628,7 @@ export function KnowledgeManagement({
                                 onFoldersChanged={() => {
                                   setFolderPath(null);
                                   setPage(1);
-                                  setDocsRefresh((current) => current + 1);
+                                  refreshDocs();
                                 }}
                               />
                             ) : null}
@@ -1704,7 +1651,16 @@ export function KnowledgeManagement({
                         portal={portal}
                         baseId={selected.id}
                         disabled={writeBlocked || uploading}
-                        onGrantsChanged={(id, scope) => updateKnowledgeGrantScope(id, scope, setDetail, setBases)}
+                        onGrantsChanged={(id, scope) => {
+                          queryClient.setQueryData(knowledgeBaseKey(id), (current: ManagedKnowledgeBase | undefined) =>
+                            current ? { ...current, scope } : current,
+                          );
+                          queryClient.setQueryData(
+                            knowledgeBasesKey,
+                            (current: readonly ManagedKnowledgeBase[] | undefined) =>
+                              current?.map((base) => (base.id === id ? { ...base, scope } : base)),
+                          );
+                        }}
                         onOpenRetrieval={retrieval.openAgentCheck}
                         onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
                       />
@@ -1909,7 +1865,7 @@ export function KnowledgeManagement({
             onFoldersChanged={() => {
               setFolderPath(null);
               setPage(1);
-              setDocsRefresh((current) => current + 1);
+              refreshDocs();
             }}
           />
         )}

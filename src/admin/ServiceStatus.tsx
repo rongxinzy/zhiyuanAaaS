@@ -1,4 +1,5 @@
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -14,17 +15,12 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 
 import type { AdminConsoleClient } from './client.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { KnowledgeManagement } from './KnowledgeManagement.js';
-import {
-  PortalClient,
-  type PortalKnowledgeStatus,
-  type PortalMemorySearchResult,
-  type PortalMemoryStatus,
-} from './portal.js';
+import { PortalClient, type PortalMemorySearchResult } from './portal.js';
 import { servicesT } from './services-copy.js';
 
 const language: AdminLanguage = 'zh';
@@ -77,7 +73,18 @@ interface ProbeState<T> {
   readonly checkedAt: Date | null;
 }
 
-const initialProbe = { loading: true, error: null, result: null, checkedAt: null } as const;
+// Mirrors the old hand-rolled probe: a recheck clears the previous result
+// and timestamp until the probe settles again.
+function toProbeState<T>(query: UseQueryResult<T>): ProbeState<T> {
+  const error = query.error ? (query.error instanceof Error ? query.error.message : String(query.error)) : null;
+  const updatedAt = Math.max(query.dataUpdatedAt, query.errorUpdatedAt);
+  return {
+    loading: query.isFetching,
+    error,
+    result: query.isFetching || error !== null ? null : (query.data ?? null),
+    checkedAt: query.isFetching || updatedAt === 0 ? null : new Date(updatedAt),
+  };
+}
 
 export function ServicesView({
   client,
@@ -88,44 +95,19 @@ export function ServicesView({
   readonly portal?: PortalClient | undefined;
 }) {
   const resolvedPortal = useResolvedPortal(client, portal);
-  const [memory, setMemory] = useState<ProbeState<PortalMemoryStatus>>(initialProbe);
-  const [knowledge, setKnowledge] = useState<ProbeState<PortalKnowledgeStatus>>(initialProbe);
+  const memoryQuery = useQuery({
+    queryKey: ['portal', 'serviceStatus', 'memory'],
+    queryFn: () => resolvedPortal.memoryStatus(),
+  });
+  const knowledgeQuery = useQuery({
+    queryKey: ['portal', 'serviceStatus', 'knowledge'],
+    queryFn: () => resolvedPortal.knowledgeStatus(),
+  });
+  const memory = toProbeState(memoryQuery);
+  const knowledge = toProbeState(knowledgeQuery);
+  const checkMemory = () => memoryQuery.refetch();
+  const checkKnowledge = () => knowledgeQuery.refetch();
   const [detailKey, setDetailKey] = useState<'memory' | 'knowledge' | null>(null);
-
-  const checkMemory = useCallback(async () => {
-    setMemory({ ...initialProbe, loading: true });
-    try {
-      const result = await resolvedPortal.memoryStatus();
-      setMemory({ loading: false, error: null, result, checkedAt: new Date() });
-    } catch (cause) {
-      setMemory({
-        loading: false,
-        error: cause instanceof Error ? cause.message : String(cause),
-        result: null,
-        checkedAt: new Date(),
-      });
-    }
-  }, [resolvedPortal]);
-
-  const checkKnowledge = useCallback(async () => {
-    setKnowledge({ ...initialProbe, loading: true });
-    try {
-      const result = await resolvedPortal.knowledgeStatus();
-      setKnowledge({ loading: false, error: null, result, checkedAt: new Date() });
-    } catch (cause) {
-      setKnowledge({
-        loading: false,
-        error: cause instanceof Error ? cause.message : String(cause),
-        result: null,
-        checkedAt: new Date(),
-      });
-    }
-  }, [resolvedPortal]);
-
-  useEffect(() => {
-    void checkMemory();
-    void checkKnowledge();
-  }, [checkMemory, checkKnowledge]);
 
   interface ServiceRow {
     readonly key: 'memory' | 'knowledge' | 'runtime' | 'gateway';
@@ -380,26 +362,15 @@ export function MemoryView({
   readonly employee?: { readonly name: string; readonly memoryUser: string } | undefined;
 }) {
   const resolvedPortal = useResolvedPortal(client, portal);
-  const [status, setStatus] = useState<PortalMemoryStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setStatus(await resolvedPortal.memoryStatus());
-    } catch (cause) {
-      setStatus(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [resolvedPortal]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const statusQuery = useQuery({
+    queryKey: ['portal', 'memoryStatus'],
+    queryFn: () => resolvedPortal.memoryStatus(),
+  });
+  const status = statusQuery.data ?? null;
+  const loadError = statusQuery.error;
+  const error = loadError ? (loadError instanceof Error ? loadError.message : String(loadError)) : null;
+  const loading = statusQuery.isFetching;
+  const load = () => statusQuery.refetch();
 
   const scoped = employee
     ? (status?.employees ?? []).find(

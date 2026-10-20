@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { ModelConnectionSelect } from './ModelConnectionSelect.js';
 import { administratorIdentity } from './test-fixtures.js';
 
@@ -33,7 +34,9 @@ const credentials = [
 test('selects enabled server credentials by metadata without exposing values', async () => {
   const client = { credentials: vi.fn().mockResolvedValue({ credentials }) };
   const change = vi.fn();
-  render(<ModelConnectionSelect client={client as never} identity={administratorIdentity} onChange={change} />);
+  renderWithQueryClient(
+    <ModelConnectionSelect client={client as never} identity={administratorIdentity} onChange={change} />,
+  );
   await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled());
   fireEvent.mouseDown(screen.getByRole('combobox'));
   fireEvent.click(await screen.findByText('Gateway · openai'));
@@ -44,7 +47,7 @@ test('selects enabled server credentials by metadata without exposing values', a
 });
 test('does not request credential metadata without read permission', () => {
   const client = { credentials: vi.fn() };
-  render(
+  renderWithQueryClient(
     <ModelConnectionSelect
       client={client as never}
       identity={{
@@ -64,7 +67,7 @@ test('retains current reference on lookup failure and supports retry', async () 
     credentials: vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ credentials }),
   };
   const change = vi.fn();
-  render(
+  renderWithQueryClient(
     <ModelConnectionSelect
       client={client as never}
       identity={administratorIdentity}

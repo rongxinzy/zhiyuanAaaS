@@ -7,6 +7,9 @@ import { ConfigProvider } from 'antd';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
 import { vi } from 'vitest';
 
+import { createAdminQueryClient } from '../../src/admin/query-client.js';
+import { withQueryClient } from './query-client.js';
+
 vi.mock('antd', async (importOriginal) => {
   const actual = await importOriginal<typeof import('antd')>();
   function UploadForStateTest({
@@ -115,16 +118,23 @@ async function openAddMaterial(kind: 'file' | 'folder' | 'url' | 'manual') {
 }
 
 function render(ui: ReactElement): ReturnType<typeof rtlRender> {
-  return rtlRender(
+  const queryClient = createAdminQueryClient();
+  const wrap = (next: ReactNode) => (
     <ConfigProvider wave={{ disabled: true }} theme={{ token: { motion: false } }}>
-      {ui}
-    </ConfigProvider>,
+      {withQueryClient(next, queryClient)}
+    </ConfigProvider>
   );
+  const view = rtlRender(wrap(ui));
+  // rtl rerender swaps the whole tree, so re-apply the providers (same client)
+  // or the migrated pages lose their QueryClient mid-test.
+  return { ...view, rerender: (next: ReactNode) => view.rerender(wrap(next)) };
 }
 
 // Bound asynchronous document operations; preview controls are located by their
 // explicit accessible label to avoid jsdom's expensive CSS visibility traversal.
-const TIMEOUT = 10000;
+// The ceiling only bounds hangs — under full-suite parallel load antd renders
+// of this page can run several times slower than a standalone file run.
+const TIMEOUT = 20000;
 
 const base: ManagedKnowledgeBase = {
   id: 'kb-test-1',

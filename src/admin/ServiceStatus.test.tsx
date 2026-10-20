@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 // Browser API stubs for antd live in src/admin/test-setup.ts (wired via
 // vitest.config setupFiles). The wrapper mirrors the production shell
 // (stable button names) and disables wave/motion for jsdom speed.
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import {
   type ManagedKnowledgeBase,
   type ManagedKnowledgeDocument,
@@ -20,8 +21,8 @@ import { KnowledgeView, MemoryView, ServicesView } from './ServiceStatus.js';
 
 const TIMEOUT = 15000;
 
-function render(ui: ReactElement): ReturnType<typeof rtlRender> {
-  return rtlRender(
+function render(ui: ReactElement) {
+  return renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
       {ui}
     </ConfigProvider>,
@@ -233,7 +234,7 @@ describe('admin service status views', () => {
       expect(await screen.findByText('长期记忆')).toBeInTheDocument();
       expect(screen.getByText('知识检索')).toBeInTheDocument();
       // Real probes report healthy.
-      expect(screen.getAllByText('正常').length).toBe(2);
+      await waitFor(() => expect(screen.getAllByText('正常').length).toBe(2));
       // No probe API exists for these — no invented green checks.
       expect(screen.getAllByText('暂无检测接口').length).toBe(2);
       expect(screen.getAllByText('数字员工运行服务').length).toBeGreaterThan(0);

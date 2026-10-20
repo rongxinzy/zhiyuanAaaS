@@ -1,6 +1,5 @@
-import type { CredentialMetadata } from '@aep/sdk-node';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Select, Space, Typography } from 'antd';
-import { useEffect, useState } from 'react';
 import { type AdminConsoleClient, type AdminIdentity, AdminPermission, hasAdminPermission } from './client.js';
 import { connectionCopy as c } from './model-connection-copy.js';
 
@@ -21,33 +20,16 @@ export function ModelConnectionSelect({
   readonly id?: string | undefined;
 }) {
   const allowed = hasAdminPermission(identity, AdminPermission.CredentialsRead);
-  const [rows, setRows] = useState<readonly CredentialMetadata[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    if (!allowed) return;
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    void client
-      .credentials(identity)
-      .then((result) => {
-        if (live) setRows(result.credentials.filter((row) => row.enabled && row.deliveryMode === 'server_only'));
-      })
-      .catch(() => {
-        if (live) {
-          setRows([]);
-          setFailed(true);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, identity, allowed, revision]);
+  const credentialsQuery = useQuery({
+    queryKey: ['admin', 'credentials', identity],
+    queryFn: () => client.credentials(identity),
+    enabled: allowed,
+  });
+  const rows = (credentialsQuery.data?.credentials ?? []).filter(
+    (row) => row.enabled && row.deliveryMode === 'server_only',
+  );
+  const loading = credentialsQuery.isFetching;
+  const failed = credentialsQuery.isError && !credentialsQuery.isFetching;
   if (!allowed)
     return (
       <Space orientation="vertical">
@@ -82,7 +64,7 @@ export function ModelConnectionSelect({
           type="error"
           title={c.failed}
           action={
-            <Button size="small" onClick={() => refresh((n) => n + 1)}>
+            <Button size="small" onClick={() => void credentialsQuery.refetch()}>
               {c.retry}
             </Button>
           }

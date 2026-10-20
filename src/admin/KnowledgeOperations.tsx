@@ -1,10 +1,11 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { knowledgeErrorText } from './knowledge-error.js';
-import type { ManagedKnowledgeFAQEntry, ManagedKnowledgeFolder, ManagedKnowledgeTag, PortalClient } from './portal.js';
+import type { ManagedKnowledgeFAQEntry, ManagedKnowledgeFolder, PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -16,6 +17,10 @@ function operationError(cause: unknown): string {
   if (cause instanceof PortalError && cause.resourceId) parts.push(`${tr('knowledgeResourceId')}: ${cause.resourceId}`);
   if (!(cause instanceof PortalError) || cause.status >= 500) parts.push(tr('knowledgeUncertain'));
   return parts.join(' · ');
+}
+
+function blocksWrites(cause: unknown): boolean {
+  return !(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500;
 }
 
 export function KnowledgeOperations({
@@ -34,72 +39,55 @@ export function KnowledgeOperations({
   readonly onFoldersChanged?: () => void;
 }) {
   const { message } = App.useApp();
-  const [tags, setTags] = useState<readonly ManagedKnowledgeTag[]>([]);
-  const [folders, setFolders] = useState<readonly ManagedKnowledgeFolder[]>([]);
-  const [faq, setFaq] = useState<readonly ManagedKnowledgeFAQEntry[]>([]);
+  const queryClient = useQueryClient();
   const [faqPage, setFaqPage] = useState(1);
-  const [faqTotal, setFaqTotal] = useState(0);
   const [selectedDocs, setSelectedDocs] = useState<readonly string[]>([]);
   const [selectedFAQ, setSelectedFAQ] = useState<readonly number[]>([]);
   const [selectedFAQTag, setSelectedFAQTag] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<{ readonly message: string; readonly blocked: boolean } | null>(
+    null,
+  );
   const [folderFrom, setFolderFrom] = useState('');
   const [folderTo, setFolderTo] = useState('');
   const [folderEditor, setFolderEditor] = useState(false);
   const [faqEditor, setFaqEditor] = useState<ManagedKnowledgeFAQEntry | null | undefined>(undefined);
   const [faqAnswers, setFaqAnswers] = useState<readonly string[]>(['']);
   const [faqForm] = Form.useForm<{ question: string; tagId?: number | undefined }>();
-  const loadGeneration = useRef(0);
+  const operationsKey = ['portal', 'knowledge-operations', baseId, baseType, faqPage] as const;
+  const operationsQuery = useQuery({
+    queryKey: operationsKey,
+    queryFn: async ({ signal }) => {
+      const [tagRows, folderTree, faqResult] = await Promise.all([
+        baseType === 'faq' ? portal.listManagedKnowledgeTags(baseId, '', signal) : Promise.resolve([]),
+        portal.getManagedKnowledgeFolders(baseId, signal),
+        baseType === 'faq'
+          ? portal.listManagedKnowledgeFAQ(baseId, { page: faqPage, pageSize: 20 }, signal)
+          : Promise.resolve({ data: [], total: 0, page: 1, page_size: 20 }),
+      ]);
+      return { tagRows, folders: folderTree.folders, faq: faqResult.data, faqTotal: faqResult.total };
+    },
+  });
+  const tags = operationsQuery.data?.tagRows ?? [];
+  const folders = operationsQuery.data?.folders ?? [];
+  const faq = operationsQuery.data?.faq ?? [];
+  const faqTotal = operationsQuery.data?.faqTotal ?? 0;
+  const loading = operationsQuery.isFetching;
+  const queryFailure = operationsQuery.error
+    ? { message: operationError(operationsQuery.error), blocked: blocksWrites(operationsQuery.error) }
+    : null;
+  const error = (mutationError ?? queryFailure)?.message ?? null;
+  const blocked = (mutationError ?? queryFailure)?.blocked ?? false;
+  const retryRead = () => {
+    setMutationError(null);
+    void operationsQuery.refetch();
+  };
   const tagOptions = useMemo(() => tags.map((tag) => ({ value: tag.seq_id, label: tag.name })), [tags]);
 
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      const generation = ++loadGeneration.current;
-      setLoading(true);
-      setError(null);
-      try {
-        const [tagRows, folderTree, faqResult] = await Promise.all([
-          baseType === 'faq' ? portal.listManagedKnowledgeTags(baseId, '', signal) : Promise.resolve([]),
-          portal.getManagedKnowledgeFolders(baseId, signal),
-          baseType === 'faq'
-            ? portal.listManagedKnowledgeFAQ(baseId, { page: faqPage, pageSize: 20 }, signal)
-            : Promise.resolve({ data: [], total: 0, page: 1, page_size: 20 }),
-        ]);
-        if (!signal?.aborted && generation === loadGeneration.current) {
-          setTags(tagRows);
-          setFolders(folderTree.folders);
-          setFaq(faqResult.data);
-          setFaqTotal(faqResult.total);
-          setBlocked(false);
-        }
-      } catch (cause) {
-        if (signal?.aborted || generation !== loadGeneration.current) return;
-        setError(operationError(cause));
-        if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setBlocked(true);
-        if (!(cause instanceof PortalError) || cause.status >= 500) setBlocked(true);
-      } finally {
-        if (!signal?.aborted && generation === loadGeneration.current) setLoading(false);
-      }
-    },
-    [baseId, baseType, faqPage, portal],
-  );
-
   useEffect(() => {
-    const controller = new AbortController();
-    setTags([]);
-    setFolders([]);
-    setFaq([]);
     setSelectedDocs([]);
     setSelectedFAQ([]);
-    void load(controller.signal);
-    return () => {
-      controller.abort();
-      loadGeneration.current += 1;
-    };
-  }, [load]);
+  }, [baseId, baseType, faqPage, portal]);
 
   useEffect(() => {
     setFaqPage(1);
@@ -119,13 +107,11 @@ export function KnowledgeOperations({
         `${tr('knowledgeOperationDone')}${operationId ? ` · ${tr('knowledgeOperation')}: ${operationId}` : ''}`,
         3,
       );
-      await load();
-      setBlocked(false);
+      setMutationError(null);
+      await queryClient.invalidateQueries({ queryKey: operationsKey });
       return true;
     } catch (cause) {
-      if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setBlocked(true);
-      setError(operationError(cause));
-      if (!(cause instanceof PortalError) || cause.status >= 500) setBlocked(true);
+      setMutationError({ message: operationError(cause), blocked: blocksWrites(cause) });
       message.error(tr('knowledgeOperationFailed'), 5);
       return false;
     } finally {
@@ -223,7 +209,7 @@ export function KnowledgeOperations({
   return (
     <section aria-label={tr('knowledgeOperations')}>
       <Typography.Title level={5}>{tr('knowledgeOperations')}</Typography.Title>
-      {error && <AlertBox text={error} retry={() => void load()} />}
+      {error && <AlertBox text={error} retry={retryRead} />}
       {!error && (
         <Tabs
           items={[

@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { ComputeResources } from './ComputeResources.js';
 import { type AdminConsoleClient, type AdminIdentity, AdminRequestError } from './client.js';
 import { administratorIdentity } from './test-fixtures.js';
@@ -55,7 +56,7 @@ function setup(overrides: Record<string, unknown> = {}, identity: AdminIdentity 
     updateComputeAssignment: vi.fn().mockResolvedValue(assignments[1]),
     ...overrides,
   };
-  render(
+  renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
       <ComputeResources client={client as unknown as AdminConsoleClient} identity={identity} />
     </ConfigProvider>,
@@ -260,5 +261,5 @@ test('renders empty catalog and assignment states and non-divisible hibernate se
   });
   expect(await screen.findByText('部署未提供档位。')).toBeInTheDocument();
   expect(screen.getByText('暂无员工。')).toBeInTheDocument();
-  expect(screen.getByText('90 秒')).toBeInTheDocument();
+  expect(await screen.findByText('90 秒')).toBeInTheDocument();
 });

@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
+import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   App as AntApp,
@@ -35,14 +36,12 @@ import {
 } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { Network } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 import {
   AdminConsoleClient,
   AdminConsoleStatus,
-  type AdminEventRecord,
   type AdminIdentity,
   AdminMetadataError,
-  type AdminOverview,
   type AdminSession,
   hasAdminPermission,
   AdminPermission as P,
@@ -51,6 +50,7 @@ import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { AdminNotificationViewport } from './notifications.js';
 import { PageCrumbContext } from './page-crumb.js';
 import { botUIBaseURL, PortalClient } from './portal.js';
+import { createAdminQueryClient } from './query-client.js';
 import { shellCopy as c } from './shell-copy.js';
 import {
   type AdminThemeMode,
@@ -185,6 +185,7 @@ const edgeWhitespaceRule = {
 };
 
 export function AdminApp() {
+  const [queryClient] = useState(createAdminQueryClient);
   const [mode, setMode] = useState<AdminThemeMode>(initialAdminTheme);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   useEffect(() => {
@@ -206,24 +207,26 @@ export function AdminApp() {
       }}
     >
       <AntApp message={{ duration: 3, maxCount: 1 }}>
-        <ConsoleRoot
-          themeControl={
-            <Select
-              aria-label={c.theme}
-              value={mode}
-              style={{ width: 110 }}
-              options={[
-                { value: 'system', label: c.systemTheme },
-                { value: 'light', label: c.light },
-                { value: 'dark', label: c.dark },
-              ]}
-              onChange={(value) => {
-                persistAdminTheme(value);
-                setMode(value);
-              }}
-            />
-          }
-        />
+        <QueryClientProvider client={queryClient}>
+          <ConsoleRoot
+            themeControl={
+              <Select
+                aria-label={c.theme}
+                value={mode}
+                style={{ width: 110 }}
+                options={[
+                  { value: 'system', label: c.systemTheme },
+                  { value: 'light', label: c.light },
+                  { value: 'dark', label: c.dark },
+                ]}
+                onChange={(value) => {
+                  persistAdminTheme(value);
+                  setMode(value);
+                }}
+              />
+            }
+          />
+        </QueryClientProvider>
         <AdminNotificationViewport />
       </AntApp>
     </ConfigProvider>
@@ -231,6 +234,7 @@ export function AdminApp() {
 }
 
 function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
+  const queryClient = useQueryClient();
   const [client] = useState(() => new AdminConsoleClient());
   const [session, setSession] = useState<AdminSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,6 +265,16 @@ function ConsoleRoot({ themeControl }: { themeControl: ReactNode }) {
     window.addEventListener('hashchange', change);
     return () => window.removeEventListener('hashchange', change);
   }, []);
+  // 查询缓存按会话隔离：登录身份的任何变化（退出、换账号、强制改密后换号）
+  // 都先取消在途请求再清空缓存，新会话从空缓存开始，看不到上一账号的数据。
+  const sessionKey = session?.identity?.user.id ?? session?.status ?? null;
+  const previousSessionKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousSessionKey.current !== null && previousSessionKey.current !== sessionKey) {
+      void queryClient.cancelQueries().then(() => queryClient.clear());
+    }
+    previousSessionKey.current = sessionKey;
+  }, [queryClient, sessionKey]);
   const signOut = async () => {
     setPending(true);
     try {
@@ -706,77 +720,43 @@ function Overview({
   identity: AdminIdentity | undefined;
   onNavigate: (route: string) => void;
 }) {
-  const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [records, setRecords] = useState<readonly AdminEventRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [auditFailed, setAuditFailed] = useState(false);
-  const [revision, refresh] = useState(0);
+  const [portal] = useState(() => new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)));
   const canReadTelemetry = hasAdminPermission(identity, P.EventsRead);
-  const [employeeCounts, setEmployeeCounts] = useState<{
-    total: number;
-    ready: number;
-  } | null>(null);
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    setAuditFailed(false);
-    const portal = new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken));
-    void portal
-      .listEmployees()
-      .then((items) => {
-        if (live)
-          setEmployeeCounts({
-            total: items.length,
-            ready: items.filter((item) => item.phase === 'Ready').length,
-          });
-      })
-      .catch(() => {
-        if (live) setEmployeeCounts(null);
-      });
-    void portal
-      .listRequests('pending')
-      .then((items) => {
-        if (live) setPendingCount(items.filter((item) => item.state === 'pending').length);
-      })
-      .catch(() => {
-        if (live) setPendingCount(null);
-      });
-    void client
-      .overview(identity)
-      .then((value) => {
-        if (live) {
-          setOverview(value);
-          setFailed(Boolean(value.failed?.length));
-        }
-      })
-      .catch(() => {
-        if (live) {
-          setOverview(null);
-          setFailed(true);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    if (canReadTelemetry)
-      void client
-        .searchAudit({ limit: 5 })
-        .then((value) => {
-          if (live) setRecords(value.items);
-        })
-        .catch(() => {
-          if (live) {
-            setRecords([]);
-            setAuditFailed(true);
-          }
-        });
-    return () => {
-      live = false;
-    };
-  }, [client, identity, canReadTelemetry, revision]);
+  const employeesQuery = useQuery({
+    queryKey: ['portal', 'employees'],
+    queryFn: () => portal.listEmployees().catch(() => null),
+  });
+  const pendingQuery = useQuery({
+    queryKey: ['portal', 'requests', 'pending'],
+    queryFn: () => portal.listRequests('pending').catch(() => null),
+  });
+  const overviewQuery = useQuery({
+    queryKey: ['admin', 'overview'],
+    queryFn: () => client.overview(identity).catch(() => null),
+  });
+  const auditQuery = useQuery({
+    queryKey: ['admin', 'audit', 'recent'],
+    queryFn: () => client.searchAudit({ limit: 5 }).catch(() => null),
+    enabled: canReadTelemetry,
+  });
+  const employeeCounts = employeesQuery.data
+    ? {
+        total: employeesQuery.data.length,
+        ready: employeesQuery.data.filter((item) => item.phase === 'Ready').length,
+      }
+    : null;
+  const pendingCount = pendingQuery.data ? pendingQuery.data.filter((item) => item.state === 'pending').length : null;
+  const overview = overviewQuery.data ?? null;
+  const failed = overviewQuery.data === null || Boolean(overview?.failed?.length);
+  const records = auditQuery.data?.items ?? [];
+  const auditFailed = auditQuery.data === null;
+  const loading = overviewQuery.isFetching;
+  const refresh = () => {
+    void employeesQuery.refetch();
+    void pendingQuery.refetch();
+    void overviewQuery.refetch();
+    if (canReadTelemetry) void auditQuery.refetch();
+  };
   const metrics = [
     {
       key: 'users',
@@ -810,7 +790,7 @@ function Overview({
           <Typography.Title level={2}>{c.overview}</Typography.Title>
           <Typography.Paragraph type="secondary">{c.overviewHint}</Typography.Paragraph>
         </div>
-        <Button loading={loading} onClick={() => refresh((n) => n + 1)}>
+        <Button loading={loading} onClick={refresh}>
           {t('refresh')}
         </Button>
       </div>

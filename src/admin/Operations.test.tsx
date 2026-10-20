@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { AdminRequestError } from './client.js';
 import {
   ConfigurationStatusView,
@@ -20,7 +21,7 @@ import { administratorIdentity } from './test-fixtures.js';
 // icon-bearing buttons are matched with regexes throughout this file.
 function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
   const withIdentity = cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity });
-  return rtlRender(
+  return renderWithQueryClient(
     <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
       {withIdentity}
     </ConfigProvider>,
@@ -294,7 +295,11 @@ describe('admin operations: login sessions', () => {
     };
     render(<SessionsView client={client as never} />);
     fireEvent.change(await screen.findByPlaceholderText('按用户 ID 筛选'), { target: { value: 'user-1' } });
-    fireEvent.click(screen.getByRole('button', { name: /查询/ }));
+    // antd Button keeps intercepting clicks while its delayed loading spinner
+    // is detaching; wait for the loading class to leave before clicking.
+    const search = screen.getByRole('button', { name: /查询/ });
+    await waitFor(() => expect(search).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(search);
     await waitFor(() => expect(client.sessions).toHaveBeenLastCalledWith('user-1'));
   });
 
@@ -667,7 +672,7 @@ describe('admin operations: deployment settings', () => {
     render(<DeploymentSettingsView client={client as never} />);
 
     expect(await screen.findByText('部署运行时设置')).toBeInTheDocument();
-    expect(screen.getAllByText('https://gateway.example.test/v1').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('https://gateway.example.test/v1')).length).toBeGreaterThan(0);
     expect(screen.getByText('环境默认')).toBeInTheDocument();
     expect(screen.getByText(/约 30 秒内自动生效/)).toBeInTheDocument();
 

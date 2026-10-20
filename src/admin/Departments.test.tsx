@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { Departments } from './Departments.js';
 import type { PortalDepartment } from './portal.js';
 
@@ -34,7 +35,7 @@ function makePortal(overrides: Record<string, unknown> = {}) {
 describe('departments management', () => {
   test('lists departments and opens the members drawer', async () => {
     const portal = makePortal();
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
 
     expect(await screen.findByText('研发部')).toBeInTheDocument();
     expect(screen.getByText('sales-dept')).toBeInTheDocument();
@@ -49,7 +50,7 @@ describe('departments management', () => {
 
   test('creates a department through the modal and reloads', async () => {
     const portal = makePortal();
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
     await screen.findByText('研发部');
 
     fireEvent.click(screen.getByRole('button', { name: /创建部门/ }));
@@ -64,7 +65,7 @@ describe('departments management', () => {
 
   test('renames a department through the modal', async () => {
     const portal = makePortal();
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
     await screen.findByText('研发部');
 
     const row = screen.getByRole('row', { name: /研发部/ });
@@ -79,7 +80,7 @@ describe('departments management', () => {
 
   test('deletes a department after confirmation and reloads', async () => {
     const portal = makePortal();
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
     await screen.findByText('研发部');
 
     const row = screen.getByRole('row', { name: /研发部/ });
@@ -95,7 +96,7 @@ describe('departments management', () => {
     const portal = makePortal({
       listDepartments: vi.fn().mockRejectedValue(new Error('HTTP 503')),
     });
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
     expect(await screen.findByText('HTTP 503')).toBeInTheDocument();
   });
 
@@ -103,7 +104,7 @@ describe('departments management', () => {
     const portal = makePortal({
       createDepartment: vi.fn().mockResolvedValue({ kind: 'rejected', message: 'weknora: down' }),
     });
-    render(<Departments client={{} as never} portal={portal as never} />);
+    renderWithQueryClient(<Departments client={{} as never} portal={portal as never} />);
     await screen.findByText('研发部');
 
     fireEvent.click(screen.getByRole('button', { name: /创建部门/ }));
