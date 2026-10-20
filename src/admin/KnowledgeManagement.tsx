@@ -90,6 +90,7 @@ import {
   type PortalClient,
   PortalError,
 } from './portal.js';
+import { useDebouncedDocumentKeyword } from './use-debounced-document-keyword.js';
 
 export function KnowledgeManagement({
   portal,
@@ -112,8 +113,7 @@ export function KnowledgeManagement({
   const [docsContext, setDocsContext] = useState('');
   const [detail, setDetail] = useState<ManagedKnowledgeBase | null>(null);
   const [page, setPage] = useState(1);
-  const [keyword, setKeyword] = useState('');
-  const [search, setSearch] = useState('');
+  const { keyword, search, setKeyword, applySearch, clearSearch } = useDebouncedDocumentKeyword();
   const [folderTree, setFolderTree] = useState<ManagedKnowledgeFolderTree | null>(null);
   const [folderManagerOpen, setFolderManagerOpen] = useState(false);
   // null = 全部资料（不带 folder_path 过滤）；上游把「folder_path 存在但为空」当作根目录，
@@ -570,6 +570,10 @@ export function KnowledgeManagement({
     pollRounds.current = 0;
     setPollTick(0);
   }, [selectedId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   useEffect(() => {
     setDocs(null);
@@ -1535,13 +1539,10 @@ export function KnowledgeManagement({
                                     aria-label={t('search')}
                                     onChange={(event) => setKeyword(event.target.value)}
                                     onPressEnter={() => {
-                                      setPage(1);
-                                      setSearch(keyword.trim());
+                                      applySearch();
                                     }}
                                     onClear={() => {
-                                      setKeyword('');
-                                      setSearch('');
-                                      setPage(1);
+                                      clearSearch();
                                     }}
                                     style={{ width: 200 }}
                                   />
@@ -1549,8 +1550,7 @@ export function KnowledgeManagement({
                                     icon={<SearchOutlined />}
                                     aria-label={t('search')}
                                     onClick={() => {
-                                      setPage(1);
-                                      setSearch(keyword.trim());
+                                      applySearch();
                                     }}
                                   />
                                   <Select
