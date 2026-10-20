@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { renderWithQueryClient, withQueryClient } from '../../tests/helpers/query-client.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
 import type { PortalClient } from './portal.js';
@@ -59,7 +60,7 @@ describe('KnowledgeRetrieval', () => {
         .fn()
         .mockImplementation((_base, _document, page) => Promise.resolve({ ...sourceFixture, total: 40, page })),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" />
       </ConfigProvider>,
@@ -103,7 +104,7 @@ describe('KnowledgeRetrieval', () => {
         });
       }),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" />
       </ConfigProvider>,
@@ -132,7 +133,7 @@ describe('KnowledgeRetrieval', () => {
         });
       }),
     });
-    const view = render(
+    const view = renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" />
       </ConfigProvider>,
@@ -144,9 +145,12 @@ describe('KnowledgeRetrieval', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refund policy' }));
     await waitFor(() => expect(portal.getManagedKnowledgeSource).toHaveBeenCalled());
     view.rerender(
-      <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-2" />
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider>
+          <KnowledgeRetrieval portal={portal} baseId="kb-2" />
+        </ConfigProvider>,
+        view.queryClient,
+      ),
     );
     expect(signal.aborted).toBe(true);
     resolveSource({ document: { file_name: 'stale.pdf' }, chunks: [], page: 1, page_size: 20, total: 0 });
@@ -157,7 +161,7 @@ describe('KnowledgeRetrieval', () => {
     const portal = makePortal({
       searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(503, 'Search unavailable')),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" />
       </ConfigProvider>,
@@ -182,7 +186,7 @@ describe('KnowledgeRetrieval', () => {
         .mockImplementationOnce(() => new Promise((resolve) => (resolveSearch = resolve)))
         .mockResolvedValueOnce({ query: 'current', mode: 'hybrid', results: [] }),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
@@ -222,7 +226,7 @@ describe('KnowledgeRetrieval', () => {
     const portal = makePortal({
       getEmployeeKnowledgeSource: vi.fn().mockImplementation(() => new Promise((resolve) => (resolveSource = resolve))),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
@@ -258,7 +262,7 @@ describe('KnowledgeRetrieval', () => {
 
   test('searches only the selected employee/base and opens verified source chunks', async () => {
     const portal = makePortal();
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
@@ -300,7 +304,7 @@ describe('KnowledgeRetrieval', () => {
         page_size: 20,
       }),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
@@ -324,7 +328,7 @@ describe('KnowledgeRetrieval', () => {
         .fn()
         .mockRejectedValue(new PortalError(403, 'knowledge access denied', 'KNOWLEDGE_NOT_GRANTED')),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
@@ -344,7 +348,7 @@ describe('KnowledgeRetrieval', () => {
     const portal = makePortal({
       searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'base denied', 'KNOWLEDGE_ACCESS_DENIED')),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="library" />
       </ConfigProvider>,
@@ -361,7 +365,7 @@ describe('KnowledgeRetrieval', () => {
     const portal = makePortal({
       searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'admin only', 'ADMIN_REQUIRED')),
     });
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="library" />
       </ConfigProvider>,

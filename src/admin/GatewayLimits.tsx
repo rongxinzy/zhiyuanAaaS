@@ -18,7 +18,7 @@ import {
   Typography,
   theme,
 } from 'antd';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { GatewayPublication } from './GatewayPublication.js';
 import { GatewayUserSelect } from './GatewayUserSelect.js';
 import type { GatewayDimension, GatewayLimit, GatewayLimitWrite } from './gateway-api.js';
@@ -38,9 +38,9 @@ import { notify } from './notifications.js';
 type RuleForm = GatewayLimitWrite & { id: string };
 export function GatewayLimits({ client, identity }: GatewayProps) {
   const { token } = theme.useToken();
-  const capabilities = useGatewayRemote(useCallback(() => client.getGatewayCapabilities(), [client]));
-  const subjects = useGatewayRemote(useCallback(() => client.gatewaySubjects(identity), [client, identity]));
-  const rules = useGatewayRemote(useCallback(() => client.listGatewayLimits(), [client]));
+  const capabilities = useGatewayRemote(['admin', 'gateway-capabilities'], () => client.getGatewayCapabilities());
+  const subjects = useGatewayRemote(['admin', 'gateway-subjects', identity], () => client.gatewaySubjects(identity));
+  const rules = useGatewayRemote(['admin', 'gateway-limits'], () => client.listGatewayLimits());
   const [mode, setMode] = useState('limits');
   const [form] = Form.useForm<RuleForm>();
   const [editing, setEditing] = useState<GatewayLimit>();
@@ -50,11 +50,11 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
   const scope = Form.useWatch('scopeType', form) ?? 'user';
   const [quotaUser, setQuotaUser] = useState('');
   const [amount, setAmount] = useState<number | null>(1000);
+  // 未选用户时不发配额请求（disabled 即 idle）：空选择不是加载错误。
   const quota = useGatewayRemote(
-    useCallback(
-      () => (quotaUser ? client.getGatewayQuota(quotaUser) : Promise.resolve(undefined)),
-      [client, quotaUser],
-    ),
+    ['admin', 'gateway-quota', quotaUser],
+    () => client.getGatewayQuota(quotaUser),
+    quotaUser !== '',
   );
   const options = (dimension: GatewayDimension) => {
     const items =
@@ -127,7 +127,7 @@ export function GatewayLimits({ client, identity }: GatewayProps) {
     rules.retry();
     capabilities.retry();
     subjects.retry();
-    quota.retry();
+    if (quotaUser) quota.retry();
   }
   const canWrite =
     !busy && !rules.loading && !capabilities.error && !rules.error && Boolean(rules.value && capabilities.value);

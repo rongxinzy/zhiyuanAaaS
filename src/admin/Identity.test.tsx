@@ -7,14 +7,17 @@ import zhCN from 'antd/locale/zh_CN';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import { Identity } from './Identity.js';
 import { administratorIdentity } from './test-fixtures.js';
 
 function render(ui: ReactElement) {
   return rtlRender(
-    <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
-      {ui}
-    </ConfigProvider>,
+    withQueryClient(
+      <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
+        {ui}
+      </ConfigProvider>,
+    ),
   );
 }
 

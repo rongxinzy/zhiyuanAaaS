@@ -1,5 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Col, Form, Row, Select, Typography, theme } from 'antd';
-import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
+import { type ReactNode, useId } from 'react';
 import type { AdminConsoleClient, AdminIdentity } from './client.js';
 import { ADMIN_LANGUAGE, type AdminTranslationKey, translate } from './i18n.js';
 
@@ -87,32 +88,16 @@ export function GatewayField({
     </Form>
   );
 }
-export function useGatewayRemote<T>(load: () => Promise<T>) {
-  const [value, setValue] = useState<T>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [revision, setRevision] = useState(0);
-  const retry = useCallback(() => setRevision((old) => old + 1), []);
-  useEffect(() => {
-    let current = true;
-    setValue(undefined);
-    setError(false);
-    setLoading(true);
-    void load()
-      .then((next) => {
-        if (current) setValue(next);
-      })
-      .catch(() => {
-        if (current) setError(true);
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [load, revision]);
-  return { value, loading, error, retry };
+export function useGatewayRemote<T>(queryKey: readonly unknown[], load: () => Promise<T>, enabled = true) {
+  const query = useQuery({ queryKey, queryFn: load, enabled });
+  const loading = query.isFetching;
+  const error = query.isError && !loading;
+  return {
+    value: loading || query.isError ? undefined : query.data,
+    loading,
+    error,
+    retry: () => void query.refetch(),
+  };
 }
 export function GatewayLoadError({ retry }: { retry: () => void }) {
   return (

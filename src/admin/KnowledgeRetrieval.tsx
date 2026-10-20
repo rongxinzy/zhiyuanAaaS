@@ -1,10 +1,11 @@
 import { SearchOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Empty, Input, Pagination, Segmented, Select, Space, Tag, Typography, theme } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { knowledgeErrorText } from './knowledge-error.js';
-import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient, PortalEmployee } from './portal.js';
+import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
@@ -24,137 +25,117 @@ export function KnowledgeRetrieval({
   const { token } = theme.useToken();
   const [localMode, setLocalMode] = useState<KnowledgeSearchMode>('library');
   const mode = controlledMode ?? localMode;
-  const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
+  const employeesQuery = useQuery({
+    // Scoped away from App.tsx's ['portal', 'employees'], which caches
+    // `.catch(() => null)` successes; this page must surface load errors.
+    queryKey: ['portal', 'knowledge-retrieval', 'employees'],
+    queryFn: ({ signal }) => portal.listEmployees(signal),
+    enabled: mode === 'agent',
+  });
+  const employees = employeesQuery.data ?? [];
+  const employeeLoading = employeesQuery.isPending;
+  const employeeError = employeesQuery.error ? knowledgeErrorText(employeesQuery.error) : null;
   const [employee, setEmployee] = useState<string>();
-  const [employeeLoading, setEmployeeLoading] = useState(false);
-  const [employeeError, setEmployeeError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<readonly EmployeeKnowledgeSearchHit[] | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchingHint, setSearchingHint] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<{
+    readonly mode: KnowledgeSearchMode;
+    readonly employee: string | undefined;
+    readonly query: string;
+    readonly attempt: number;
+  } | null>(null);
   const [sourceHit, setSourceHit] = useState<EmployeeKnowledgeSearchHit | null>(null);
-  const [source, setSource] = useState<EmployeeKnowledgeSource | null>(null);
   const [sourcePage, setSourcePage] = useState(1);
-  const [sourceLoading, setSourceLoading] = useState(false);
-  const [sourceError, setSourceError] = useState<string | null>(null);
-  const searchController = useRef<AbortController | null>(null);
-  const sourceController = useRef<AbortController | null>(null);
-  const searchGeneration = useRef(0);
-  const sourceGeneration = useRef(0);
 
-  useEffect(() => {
-    if (mode !== 'agent') return;
-    const controller = new AbortController();
-    setEmployeeLoading(true);
-    setEmployeeError(null);
-    setEmployees([]);
-    void portal
-      .listEmployees(controller.signal)
-      .then((items) => {
-        if (!controller.signal.aborted) setEmployees(items);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setEmployeeError(knowledgeErrorText(cause));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setEmployeeLoading(false);
-      });
-    return () => controller.abort();
-  }, [portal, mode]);
-
-  useEffect(() => {
-    searchController.current?.abort();
-    sourceController.current?.abort();
-    searchGeneration.current += 1;
-    sourceGeneration.current += 1;
-    setSearching(false);
-    setSearchingHint(false);
-    setSourceLoading(false);
-    setResults(null);
-    setSearchError(null);
+  // Reset everything derived from the employee/base/mode when any changes,
+  // during render so no stale search/source request can fire in between.
+  const selectionKey = `${baseId} ${mode} ${employee ?? ''}`;
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  if (selectionKey !== prevSelectionKey) {
+    setPrevSelectionKey(selectionKey);
+    setSubmitted(null);
     setSourceHit(null);
-    setSource(null);
-    setSourceError(null);
     setSourcePage(1);
-  }, [baseId, employee, mode, portal]);
+  }
 
-  useEffect(
-    () => () => {
-      searchController.current?.abort();
-      sourceController.current?.abort();
+  const searchQuery = useQuery({
+    queryKey: [
+      'portal',
+      'knowledge-retrieval',
+      'search',
+      baseId,
+      submitted?.mode ?? null,
+      submitted?.employee ?? null,
+      submitted?.query ?? null,
+      submitted?.attempt ?? 0,
+    ],
+    queryFn: ({ signal }) => {
+      const input = { query: submitted?.query ?? '', mode: 'hybrid' as const, limit: 10 };
+      return submitted?.mode === 'library'
+        ? portal.searchManagedKnowledge(baseId, input, signal)
+        : portal.searchEmployeeKnowledge(submitted?.employee ?? '', { ...input, knowledge_base_ids: [baseId] }, signal);
     },
-    [],
-  );
+    enabled: submitted !== null,
+  });
+  const results = searchQuery.data?.results ?? null;
+  const searching = searchQuery.isFetching;
+  const searchError = searchQuery.error && !searchQuery.isFetching ? knowledgeErrorText(searchQuery.error) : null;
 
-  const runSearch = async () => {
-    if ((mode === 'agent' && !employee) || !query.trim() || searching) return;
-    searchController.current?.abort();
-    sourceController.current?.abort();
-    sourceGeneration.current += 1;
-    setSourceLoading(false);
-    setSourceHit(null);
-    setSource(null);
-    setSourceError(null);
-    const controller = new AbortController();
-    searchController.current = controller;
-    const generation = ++searchGeneration.current;
-    setSearching(true);
-    setSearchingHint(false);
-    setSearchError(null);
-    setResults(null);
-    const slowTimer = window.setTimeout(() => {
-      if (!controller.signal.aborted && generation === searchGeneration.current) setSearchingHint(true);
-    }, 2000);
-    setSourceHit(null);
-    setSource(null);
-    setSourceError(null);
-    try {
-      const input = { query: query.trim(), mode: 'hybrid' as const, limit: 10 };
-      const response =
-        mode === 'library'
-          ? await portal.searchManagedKnowledge(baseId, input, controller.signal)
-          : await portal.searchEmployeeKnowledge(
-              employee!,
-              { ...input, knowledge_base_ids: [baseId] },
-              controller.signal,
-            );
-      if (!controller.signal.aborted && generation === searchGeneration.current) setResults(response.results);
-    } catch (cause) {
-      if (!controller.signal.aborted && generation === searchGeneration.current)
-        setSearchError(knowledgeErrorText(cause));
-    } finally {
-      window.clearTimeout(slowTimer);
-      if (!controller.signal.aborted && generation === searchGeneration.current) {
-        setSearching(false);
-        setSearchingHint(false);
-      }
+  const sourceQuery = useQuery({
+    queryKey: [
+      'portal',
+      'knowledge-retrieval',
+      'source',
+      mode,
+      baseId,
+      employee ?? null,
+      sourceHit?.source.document_id ?? null,
+      sourcePage,
+    ],
+    queryFn: ({ signal }) =>
+      mode === 'library'
+        ? portal.getManagedKnowledgeSource(baseId, sourceHit?.source.document_id ?? '', sourcePage, 20, signal)
+        : portal.getEmployeeKnowledgeSource(
+            employee ?? '',
+            sourceHit?.source.document_id ?? '',
+            sourcePage,
+            20,
+            signal,
+          ),
+    enabled: sourceHit !== null && (mode === 'library' || employee !== undefined),
+  });
+  const source: EmployeeKnowledgeSource | null = sourceQuery.data ?? null;
+  const sourceLoading = sourceQuery.isFetching;
+  const sourceError = sourceQuery.error && !sourceQuery.isFetching ? knowledgeErrorText(sourceQuery.error) : null;
+
+  // A search that takes more than 2s shows a hint; it clears as soon as the
+  // request settles (success or failure).
+  const [searchingHint, setSearchingHint] = useState(false);
+  useEffect(() => {
+    if (!searching) {
+      setSearchingHint(false);
+      return;
     }
+    const slowTimer = window.setTimeout(() => setSearchingHint(true), 2000);
+    return () => window.clearTimeout(slowTimer);
+  }, [searching]);
+
+  const runSearch = () => {
+    if ((mode === 'agent' && !employee) || !query.trim() || searching) return;
+    setSourceHit(null);
+    setSourcePage(1);
+    // A fresh attempt forces a new query key (and cleared results) even when
+    // the employee/query pair is unchanged, matching the old re-search.
+    setSubmitted({ mode, employee, query: query.trim(), attempt: (submitted?.attempt ?? 0) + 1 });
   };
 
-  const loadSource = async (hit: EmployeeKnowledgeSearchHit, page: number) => {
+  const loadSource = (hit: EmployeeKnowledgeSearchHit, page: number) => {
     if (mode === 'agent' && !employee) return;
-    sourceController.current?.abort();
-    const controller = new AbortController();
-    sourceController.current = controller;
-    const generation = ++sourceGeneration.current;
-    setSourceLoading(true);
-    setSourceError(null);
-    setSourceHit(hit);
-    setSource(null);
-    setSourcePage(page);
-    try {
-      const response =
-        mode === 'library'
-          ? await portal.getManagedKnowledgeSource(baseId, hit.source.document_id, page, 20, controller.signal)
-          : await portal.getEmployeeKnowledgeSource(employee!, hit.source.document_id, page, 20, controller.signal);
-      if (!controller.signal.aborted && generation === sourceGeneration.current) setSource(response);
-    } catch (cause) {
-      if (!controller.signal.aborted && generation === sourceGeneration.current)
-        setSourceError(knowledgeErrorText(cause));
-    } finally {
-      if (!controller.signal.aborted && generation === sourceGeneration.current) setSourceLoading(false);
+    if (sourceHit === hit && sourcePage === page) {
+      void sourceQuery.refetch();
+      return;
     }
+    setSourceHit(hit);
+    setSourcePage(page);
   };
 
   const examples = [tr('knowledgeExampleTravel'), tr('knowledgeExampleLeave'), tr('knowledgeExampleOnboarding')];

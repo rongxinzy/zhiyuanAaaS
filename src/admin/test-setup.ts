@@ -1,4 +1,11 @@
+import { configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+
+// TanStack Query settles data a few microtasks later than the hand-rolled
+// effects it replaced; under full-suite parallel load antd renders can then
+// exceed testing-library's 1s default async timeout. The repo already raises
+// vitest's testTimeout for the same antd slowness (vitest.config.ts).
+configure({ asyncUtilTimeout: 5000 });
 
 // Ant Design's Button drives its loading state through useDelayState with a
 // zero-delay timeout. A test that ends right after a render leaves that timer

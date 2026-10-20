@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient, withQueryClient } from '../../tests/helpers/query-client.js';
 import type { AuditDirectory } from './audit-user.js';
 import type { AdminConsoleClient } from './client.js';
 import { KnowledgeAudit } from './KnowledgeAudit.js';
@@ -30,14 +31,21 @@ test('keeps the route-selected base scope through filtering, pagination and rese
     .mockResolvedValueOnce({ items: [row], nextCursor: '12' })
     .mockResolvedValue({ items: [], nextCursor: null });
   const portal = { knowledgeAudit: request } as unknown as PortalClient;
-  const view = render(<KnowledgeAudit client={client} portal={portal} directory={directory} knowledgeBaseId="kb-1" />);
+  const view = renderWithQueryClient(
+    <KnowledgeAudit client={client} portal={portal} directory={directory} knowledgeBaseId="kb-1" />,
+  );
   await screen.findByText('知识库 / kb-1');
   expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1' }, expect.any(AbortSignal));
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1', cursor: '12' }));
   fireEvent.click(screen.getByRole('button', { name: /重\s*置/ }));
   await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-1' }, expect.any(AbortSignal)));
-  view.rerender(<KnowledgeAudit client={client} portal={portal} directory={directory} knowledgeBaseId="kb-2" />);
+  view.rerender(
+    withQueryClient(
+      <KnowledgeAudit client={client} portal={portal} directory={directory} knowledgeBaseId="kb-2" />,
+      view.queryClient,
+    ),
+  );
   await waitFor(() => expect(request).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-2' }, expect.any(AbortSignal)));
 });
 
@@ -50,7 +58,7 @@ test('shows the Chinese action and result, filters and pages within Portal', asy
       nextCursor: null,
     })
     .mockResolvedValue({ items: [], nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -77,7 +85,7 @@ test('shows the Chinese action and result, filters and pages within Portal', asy
 
 test('refuses a username it cannot verify instead of querying it as an ID', async () => {
   const request = vi.fn().mockResolvedValue({ items: [row], nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -94,7 +102,7 @@ test('refuses a username it cannot verify instead of querying it as an ID', asyn
 
 test('keeps the raw codes in the technical details of the drawer', async () => {
   const request = vi.fn().mockResolvedValue({ items: [row], nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -139,7 +147,7 @@ test('renders real knowledge codes in Chinese and keeps the raw codes in the tec
     },
   ];
   const request = vi.fn().mockResolvedValue({ items: rows, nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -170,7 +178,7 @@ test('reports read failure and supports explicit retry', async () => {
     .fn()
     .mockRejectedValueOnce(new Error('Audit unavailable'))
     .mockResolvedValue({ items: [row], nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -187,7 +195,7 @@ test('retains existing audit rows when pagination fails and reports unknown erro
     .fn()
     .mockResolvedValueOnce({ items: [row], nextCursor: '12' })
     .mockRejectedValue('unavailable');
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}
@@ -201,6 +209,32 @@ test('retains existing audit rows when pagination fails and reports unknown erro
   await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
 });
 
+test('refresh with unchanged filters drops appended rows even when the first page is shared', async () => {
+  // 条件不变点查询即显式刷新：刷新响应与第一页深相等（同一 mock 数据，结构共享
+  // 保持同一引用）时，已追加的页与游标也必须作废。
+  const firstPage = { items: [row], nextCursor: '12' };
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(firstPage)
+    .mockResolvedValueOnce({ items: [{ ...row, cursor: '11', resourceId: 'kb-2' }], nextCursor: null })
+    .mockResolvedValue(firstPage);
+  renderWithQueryClient(
+    <KnowledgeAudit
+      client={client}
+      portal={{ knowledgeAudit: request } as unknown as PortalClient}
+      directory={directory}
+    />,
+  );
+  expect(await screen.findByText('知识库 / kb-1')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(await screen.findByText('知识库 / kb-2')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /查\s*询/ }));
+  await waitFor(() => expect(screen.queryByText('知识库 / kb-2')).not.toBeInTheDocument());
+  expect(screen.getByText('知识库 / kb-1')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  await waitFor(() => expect(request).toHaveBeenLastCalledWith({ cursor: '12' }));
+});
+
 test('ignores a stale pagination response after resetting the filter', async () => {
   const pending = Promise.withResolvers<{ items: (typeof row)[]; nextCursor: null }>();
   const request = vi
@@ -208,7 +242,7 @@ test('ignores a stale pagination response after resetting the filter', async () 
     .mockResolvedValueOnce({ items: [row], nextCursor: '12' })
     .mockReturnValueOnce(pending.promise)
     .mockResolvedValue({ items: [], nextCursor: null });
-  render(
+  renderWithQueryClient(
     <KnowledgeAudit
       client={client}
       portal={{ knowledgeAudit: request } as unknown as PortalClient}

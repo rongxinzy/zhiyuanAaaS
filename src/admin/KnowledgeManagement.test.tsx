@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   base,
@@ -494,6 +494,33 @@ describe('KnowledgeManagement component state', () => {
     const _rowUi = within(screen.getByText('Lifecycle guide').closest('tr')!);
     fireEvent.click(screen.getByRole('menuitem', { name: /取消解析/ }));
     await waitFor(() => expect(portal.runManagedKnowledgeDocumentAction).toHaveBeenCalledWith(doc.id, 'cancel-parse'));
+  });
+
+  test('polls a parsing document by real request count and stops after six reads', async () => {
+    // 与迁移前同口径：首载算第 1 次，8 秒一轮再读 5 次，读满 6 次真实请求后停止；
+    // refetchInterval 的求值不计数（求值 ≠ 发请求）。
+    const doc = lifecycleDocument('pending');
+    const list = vi.fn().mockResolvedValue({ data: [doc], total: 1, page: 1, pageSize: 10 });
+    const portal = makePortal({ listManagedKnowledgeDocuments: list });
+    vi.useFakeTimers();
+    try {
+      render(<KnowledgeManagement portal={portal} baseId={base.id} />);
+      // 摘要接口也调 listManagedKnowledgeDocuments（pageSize 1），只数文档列表的读取。
+      const documentReads = () =>
+        list.mock.calls.filter((call) => (call[1] as { pageSize?: number } | undefined)?.pageSize === 10).length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(documentReads()).toBe(1);
+      for (let round = 0; round < 10; round += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(8000);
+        });
+      }
+      expect(documentReads()).toBe(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // 设计确定三页签：文档管理 / 检索测试 / 访问与关联；文件夹与 FAQ 归入文档管理，不再有独立运营页签。

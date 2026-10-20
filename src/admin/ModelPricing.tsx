@@ -1,5 +1,6 @@
 import type { AdminModel } from '@aep/sdk-node';
 import { ReloadOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -43,15 +44,17 @@ export function ModelPricingDrawer({
   const { token } = theme.useToken();
   const [form] = Form.useForm<PriceFields>();
   const [modal, contextHolder] = Modal.useModal();
+  const queryClient = useQueryClient();
+  const pricingKey = ['admin', 'model-pricing', model.id] as const;
+  const pricingQuery = useQuery({
+    queryKey: pricingKey,
+    queryFn: () => client.getModelPricing(model.id),
+  });
   const [value, setValue] = useState<ModelPricing>();
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [unsupported, setUnsupported] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [reload, setReload] = useState(0);
   const apply = useCallback(
     (next: ModelPricing) => {
       setValue(next);
@@ -64,31 +67,16 @@ export function ModelPricingDrawer({
     [form],
   );
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setLoadError(false);
-    setUnsupported(false);
-    void client
-      .getModelPricing(model.id)
-      .then((next) => {
-        if (active) apply(next);
-      })
-      .catch((error) => {
-        if (active) {
-          setLoadError(true);
-          setValue(undefined);
-          setUnsupported(
-            error instanceof AdminRequestError && error.status === 404 && error.code !== 'RESOURCE_NOT_FOUND',
-          );
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [client, model.id, apply, reload]);
+    if (pricingQuery.data) apply(pricingQuery.data);
+    else if (pricingQuery.isError) setValue(undefined);
+  }, [pricingQuery.data, pricingQuery.isError, apply]);
+  const loading = pricingQuery.isFetching;
+  const loadError = pricingQuery.isError && !pricingQuery.isFetching;
+  const unsupported =
+    loadError &&
+    pricingQuery.error instanceof AdminRequestError &&
+    pricingQuery.error.status === 404 &&
+    pricingQuery.error.code !== 'RESOURCE_NOT_FOUND';
 
   const editable = canWrite && Boolean(value) && !loading && !saving && !conflict;
   function withDiscardConfirmation(action: () => void) {
@@ -110,7 +98,9 @@ export function ModelPricingDrawer({
     setSaving(true);
     setSaveError(false);
     try {
-      apply(await client.putModelPricing(model.id, { pricing, expectedVersion: value.version }));
+      const next = await client.putModelPricing(model.id, { pricing, expectedVersion: value.version });
+      apply(next);
+      queryClient.setQueryData(pricingKey, next);
       notify(AdminNotificationKind.Success, t(pricing ? 'modelPricingSaved' : 'modelPricingCleared'));
     } catch (error) {
       if (error instanceof AdminRequestError && error.status === 409) setConflict(true);
@@ -193,7 +183,7 @@ export function ModelPricingDrawer({
               showIcon
               title={t('modelPricingLoadFailed')}
               description={unsupported ? t('modelPricingUnavailable') : undefined}
-              action={<Button onClick={() => setReload((n) => n + 1)}>{t('retry')}</Button>}
+              action={<Button onClick={() => void pricingQuery.refetch()}>{t('retry')}</Button>}
             />
           ) : null}
           {value && !loading ? (
@@ -230,7 +220,7 @@ export function ModelPricingDrawer({
                   action={
                     <Button
                       icon={<ReloadOutlined aria-hidden />}
-                      onClick={() => withDiscardConfirmation(() => setReload((n) => n + 1))}
+                      onClick={() => withDiscardConfirmation(() => void pricingQuery.refetch())}
                     >
                       {t('modelPricingReload')}
                     </Button>

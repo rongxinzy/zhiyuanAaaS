@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Form, Input, Space, Table, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { auditCopy as c } from './audit-copy.js';
@@ -9,6 +10,11 @@ import { knowledgeErrorText } from './knowledge-error.js';
 import { type KnowledgeAuditRecord, PortalClient } from './portal.js';
 
 type Filters = { operationId?: string; actorUserId?: string };
+
+type Page = {
+  readonly items: readonly KnowledgeAuditRecord[];
+  readonly nextCursor: string | null;
+};
 
 /** 知识审计：服务端持久化的知识操作与读取记录，只读。 */
 export function KnowledgeAudit({
@@ -28,44 +34,51 @@ export function KnowledgeAudit({
   const [form] = Form.useForm<{ operationId?: string; actor?: string }>();
   const [filters, setFilters] = useState<Filters>({});
   const [actorProblem, setActorProblem] = useState<string | null>(null);
-  const [rows, setRows] = useState<readonly KnowledgeAuditRecord[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<KnowledgeAuditRecord | null>(null);
-  const [revision, refresh] = useState(0);
+  const [paged, setPaged] = useState<{
+    readonly base: Page;
+    readonly fetchedAt: number;
+    readonly rows: readonly KnowledgeAuditRecord[];
+    readonly cursor: string | null;
+    readonly error: string | null;
+    readonly loading: boolean;
+  } | null>(null);
+  const query = useQuery({
+    queryKey: ['portal', 'knowledge-audit', knowledgeBaseId ?? null, filters],
+    queryFn: ({ signal }) =>
+      portal.knowledgeAudit({ ...filters, ...(knowledgeBaseId ? { knowledgeBaseId } : {}) }, signal),
+  });
+  // 翻页累积绑定当次首页数据：筛选、重置或重试换了首页，累积与翻页报错一并作废。
+  // dataUpdatedAt 在每次成功读取后都变（即使响应与上一份深相等、被结构共享保持
+  // 同一引用），刷新返回等价首页时累积同样作废。
+  const base = query.isError ? null : (query.data ?? null);
+  const fetchedAt = query.dataUpdatedAt;
+  const more = paged && paged.base === base && paged.fetchedAt === fetchedAt ? paged : null;
+  const rows: readonly KnowledgeAuditRecord[] = base ? [...base.items, ...(more?.rows ?? [])] : [];
+  const cursor = more ? more.cursor : (base?.nextCursor ?? null);
   const version = useRef(0);
   useEffect(() => {
-    const generation = ++version.current;
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    setRows([]);
-    setCursor(null);
-    void portal
-      .knowledgeAudit({ ...filters, ...(knowledgeBaseId ? { knowledgeBaseId } : {}) }, controller.signal)
-      .then((page) => {
-        if (controller.signal.aborted || generation !== version.current) return;
-        setRows(page.items);
-        setCursor(page.nextCursor);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted && generation === version.current)
-          setError(cause instanceof Error ? knowledgeErrorText(cause) : c.knowledgeFailed);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted && generation === version.current) setLoading(false);
-      });
-    return () => {
-      controller.abort();
-      ++version.current;
-    };
-  }, [portal, filters, revision, knowledgeBaseId]);
-  const more = async () => {
-    if (!cursor || loading) return;
+    ++version.current;
+  }, [base, fetchedAt]);
+  const loading = query.isFetching || (more?.loading ?? false);
+  const listError =
+    query.isError && !query.isFetching
+      ? query.error instanceof Error
+        ? knowledgeErrorText(query.error)
+        : c.knowledgeFailed
+      : null;
+  const error = more?.error ?? listError;
+  const loadMore = async () => {
+    if (!base || !cursor || loading) return;
     const generation = version.current;
-    setLoading(true);
-    setError(null);
+    setPaged((current) => ({
+      base,
+      fetchedAt,
+      rows: current && current.base === base && current.fetchedAt === fetchedAt ? current.rows : [],
+      cursor,
+      error: null,
+      loading: true,
+    }));
     try {
       const page = await portal.knowledgeAudit({
         ...filters,
@@ -73,13 +86,22 @@ export function KnowledgeAudit({
         cursor,
       });
       if (generation !== version.current) return;
-      setRows((current) => [...current, ...page.items]);
-      setCursor(page.nextCursor);
+      setPaged((current) =>
+        current
+          ? { ...current, rows: [...current.rows, ...page.items], cursor: page.nextCursor, loading: false }
+          : current,
+      );
     } catch (cause) {
-      if (generation === version.current)
-        setError(cause instanceof Error ? knowledgeErrorText(cause) : c.knowledgeFailed);
-    } finally {
-      if (generation === version.current) setLoading(false);
+      if (generation !== version.current) return;
+      setPaged((current) =>
+        current
+          ? {
+              ...current,
+              error: cause instanceof Error ? knowledgeErrorText(cause) : c.knowledgeFailed,
+              loading: false,
+            }
+          : current,
+      );
     }
   };
   const technical: AuditDetailRow[] = selected
@@ -116,10 +138,14 @@ export function KnowledgeAudit({
             return;
           }
           setActorProblem(null);
-          setFilters({
+          const next: Filters = {
             ...(values.operationId ? { operationId: values.operationId } : {}),
             ...(actor ? { actorUserId: actor.userId } : {}),
-          });
+          };
+          setFilters(next);
+          // 条件没变时查询键不变，显式刷新保持「查询必发一次」。
+          if (next.operationId === filters.operationId && next.actorUserId === filters.actorUserId)
+            void query.refetch();
         }}
       >
         <Form.Item name="operationId" label={c.operationCode}>
@@ -136,6 +162,7 @@ export function KnowledgeAudit({
             form.resetFields();
             setActorProblem(null);
             setFilters({});
+            if (!filters.operationId && !filters.actorUserId) void query.refetch();
           }}
         >
           {c.reset}
@@ -147,7 +174,16 @@ export function KnowledgeAudit({
           type="error"
           showIcon
           title={error}
-          action={<Button onClick={() => refresh((value) => value + 1)}>{c.retry}</Button>}
+          action={
+            <Button
+              onClick={() => {
+                setPaged(null);
+                void query.refetch();
+              }}
+            >
+              {c.retry}
+            </Button>
+          }
         />
       )}
       <Table<KnowledgeAuditRecord>
@@ -178,7 +214,7 @@ export function KnowledgeAudit({
         ]}
       />
       {cursor && (
-        <Button loading={loading} onClick={() => void more()}>
+        <Button loading={loading} onClick={() => void loadMore()}>
           {c.more}
         </Button>
       )}

@@ -1,4 +1,3 @@
-import type { AdminModel, PlatformUser } from '@aep/sdk-node';
 import {
   ArrowLeftOutlined,
   CheckOutlined,
@@ -8,6 +7,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -33,6 +33,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { EmployeeChannelsDrawer } from './Channels.js';
 import { ChatHandoffModal, useChatHandoff } from './chat-handoff.js';
 import type { AdminConsoleClient, AdminIdentity, AdminSkill } from './client.js';
+import { CapabilitiesView, EmptyDetails, VisibilityView } from './employee-detail-views.js';
 import { PhaseTag } from './employee-phase.js';
 import { employeesT } from './employees-copy.js';
 import { type AdminLanguage, translate } from './i18n.js';
@@ -42,7 +43,6 @@ import {
   EMPLOYEE_NAME_PATTERN,
   type PortalApplyInput,
   PortalClient,
-  type PortalDepartment,
   type PortalEmployee,
   type PortalEmployeeUpdateInput,
   type PortalRequest,
@@ -51,6 +51,18 @@ import { MemoryView } from './ServiceStatus.js';
 
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof employeesT>[0]): string => employeesT(key, language);
+
+const employeesKey = ['portal', 'employees'] as const;
+const requestsKey = ['portal', 'requests'] as const;
+// Form option queries swallow failures into empty lists (the pickers just
+// render nothing), so they stay out of the shared resource keys whose pages
+// surface the same calls as error alerts.
+const formDepartmentsKey = ['portal', 'employee-form', 'departments'] as const;
+const formKnowledgeBasesKey = ['portal', 'employee-form', 'knowledge-bases'] as const;
+const formGatewayModelsKey = ['admin', 'employee-form', 'gateway-models'] as const;
+const formActiveUsersKey = ['admin', 'employee-form', 'active-users'] as const;
+const formSkillsKey = ['admin', 'employee-form', 'skills'] as const;
+const formTeamsKey = ['admin', 'employee-form', 'teams'] as const;
 
 const DigitalEmployeesTab = {
   Employees: 'employees',
@@ -156,28 +168,18 @@ function EmployeeList({
   readonly onSelected: (employee: PortalEmployee) => void;
   readonly onChat: (employee: PortalEmployee) => void;
 }) {
-  const [employees, setEmployees] = useState<readonly PortalEmployee[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const employeesQuery = useQuery({
+    queryKey: employeesKey,
+    queryFn: () => portal.listEmployees(),
+  });
+  const employees = employeesQuery.data ?? null;
+  const loading = employeesQuery.isFetching;
+  const loadError = employeesQuery.error;
+  const error = loadError ? (loadError instanceof Error ? loadError.message : String(loadError)) : null;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: employeesKey });
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<PortalEmployee | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setEmployees(await portal.listEmployees());
-    } catch (err) {
-      setEmployees(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portal]);
 
   const columns = useMemo(
     () => [
@@ -269,7 +271,7 @@ function EmployeeList({
       <div className="flex items-center justify-between gap-3">
         <Typography.Text strong>{translate(language, 'digitalEmployeesList')}</Typography.Text>
         <Space>
-          <Button icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>
+          <Button icon={<ReloadOutlined />} disabled={loading} onClick={() => void employeesQuery.refetch()}>
             {translate(language, 'refresh')}
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
@@ -310,7 +312,7 @@ function EmployeeList({
         onClose={() => setCreating(false)}
         onApplied={() => {
           setCreating(false);
-          void load();
+          reload();
         }}
       />
       <DeleteBlockedModal employee={deleting} onClose={() => setDeleting(null)} />
@@ -371,13 +373,53 @@ function CreateEmployeeModal({
   const [form] = Form.useForm<WizardValues>();
   const [step, setStep] = useState(0);
   const [pending, setPending] = useState(false);
-  const [departments, setDepartments] = useState<readonly PortalDepartment[]>([]);
-  const [models, setModels] = useState<readonly AdminModel[]>([]);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
-  const [skills, setSkills] = useState<readonly AdminSkill[]>([]);
-  const [knowledgeBases, setKnowledgeBases] = useState<readonly { id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [violations, setViolations] = useState<readonly { field: string; message: string }[]>([]);
+
+  const departmentsQuery = useQuery({
+    queryKey: formDepartmentsKey,
+    queryFn: () => portal.listDepartments().catch(() => []),
+    enabled: open,
+  });
+  const departments = departmentsQuery.data ?? [];
+  const modelsQuery = useQuery({
+    queryKey: formGatewayModelsKey,
+    queryFn: () =>
+      client
+        .models()
+        .then((page) => page.models.filter((model) => model.enabled && model.sourceType === 'gateway'))
+        .catch(() => []),
+    enabled: open,
+  });
+  const models = modelsQuery.data ?? [];
+  const usersQuery = useQuery({
+    queryKey: formActiveUsersKey,
+    queryFn: () =>
+      client
+        .users()
+        // Active accounts only; the platform listing returns human users
+        // and the portal re-validates that the owner is a human on apply.
+        .then((all) => all.filter((user) => user.status === 'active'))
+        .catch(() => []),
+    enabled: open,
+  });
+  const users = usersQuery.data ?? [];
+  const skillsQuery = useQuery({
+    queryKey: formSkillsKey,
+    queryFn: () => client.skills().catch(() => []),
+    enabled: open,
+  });
+  const skills = skillsQuery.data ?? [];
+  const knowledgeBasesQuery = useQuery({
+    queryKey: formKnowledgeBasesKey,
+    queryFn: () =>
+      portal
+        .knowledgeStatus()
+        .then((status) => status.knowledgeBases ?? [])
+        .catch(() => []),
+    enabled: open,
+  });
+  const knowledgeBases = knowledgeBasesQuery.data ?? [];
 
   const usableSkills = useMemo(
     () => skills.filter((skill) => skill.state === 'active' && skill.versions.some((v) => v.state === 'published')),
@@ -390,30 +432,8 @@ function CreateEmployeeModal({
       setStep(0);
       setError(null);
       setViolations([]);
-      portal
-        .listDepartments()
-        .then(setDepartments)
-        .catch(() => setDepartments([]));
-      client
-        .models()
-        .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
-        .catch(() => setModels([]));
-      client
-        .users()
-        // Active accounts only; the platform listing returns human users
-        // and the portal re-validates that the owner is a human on apply.
-        .then((all) => setUsers(all.filter((user) => user.status === 'active')))
-        .catch(() => setUsers([]));
-      client
-        .skills()
-        .then(setSkills)
-        .catch(() => setSkills([]));
-      portal
-        .knowledgeStatus()
-        .then((status) => setKnowledgeBases(status.knowledgeBases ?? []))
-        .catch(() => setKnowledgeBases([]));
     }
-  }, [open, form, portal, client]);
+  }, [open, form]);
 
   const userById = (id: string) => users.find((user) => user.id === id);
   const departmentName = (id: string) => departments.find((d) => d.id === id)?.name ?? id;
@@ -905,17 +925,55 @@ function EditEmployeeModal({
 }) {
   const [form] = Form.useForm<EditValues>();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [violations, setViolations] = useState<readonly { field: string; message: string }[]>([]);
+
   // Team pickers use the full AEP team list, not portal departments: the
   // portal validates employee teams against AEP, and employees created with
   // directly-managed AEP teams (rd-dept, load teams) would otherwise show
   // an empty team field and fail the required check on save.
-  const [teams, setTeams] = useState<readonly { id: string; name: string }[]>([]);
-  const [models, setModels] = useState<readonly AdminModel[]>([]);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
-  const [skills, setSkills] = useState<readonly AdminSkill[]>([]);
-  const [knowledgeBases, setKnowledgeBases] = useState<readonly { id: string; name: string }[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [violations, setViolations] = useState<readonly { field: string; message: string }[]>([]);
+  const teamsQuery = useQuery({
+    queryKey: formTeamsKey,
+    queryFn: () => client.teams().catch(() => []),
+    enabled: open,
+  });
+  const teams = teamsQuery.data ?? [];
+  const modelsQuery = useQuery({
+    queryKey: formGatewayModelsKey,
+    queryFn: () =>
+      client
+        .models()
+        .then((page) => page.models.filter((model) => model.enabled && model.sourceType === 'gateway'))
+        .catch(() => []),
+    enabled: open,
+  });
+  const models = modelsQuery.data ?? [];
+  const usersQuery = useQuery({
+    queryKey: formActiveUsersKey,
+    queryFn: () =>
+      client
+        .users()
+        .then((all) => all.filter((user) => user.status === 'active'))
+        .catch(() => []),
+    enabled: open,
+  });
+  const users = usersQuery.data ?? [];
+  const skillsQuery = useQuery({
+    queryKey: formSkillsKey,
+    queryFn: () => client.skills().catch(() => []),
+    enabled: open,
+  });
+  const skills = skillsQuery.data ?? [];
+  const knowledgeBasesQuery = useQuery({
+    queryKey: formKnowledgeBasesKey,
+    queryFn: () =>
+      portal
+        .knowledgeStatus()
+        .then((status) => status.knowledgeBases ?? [])
+        .catch(() => []),
+    enabled: open,
+  });
+  const knowledgeBases = knowledgeBasesQuery.data ?? [];
 
   const usableSkills = useMemo(
     () => skills.filter((skill) => skill.state === 'active' && skill.versions.some((v) => v.state === 'published')),
@@ -976,28 +1034,8 @@ function EditEmployeeModal({
       form.resetFields();
       setError(null);
       setViolations([]);
-      client
-        .teams()
-        .then(setTeams)
-        .catch(() => setTeams([]));
-      client
-        .models()
-        .then((page) => setModels(page.models.filter((model) => model.enabled && model.sourceType === 'gateway')))
-        .catch(() => setModels([]));
-      client
-        .users()
-        .then((all) => setUsers(all.filter((user) => user.status === 'active')))
-        .catch(() => setUsers([]));
-      client
-        .skills()
-        .then(setSkills)
-        .catch(() => setSkills([]));
-      portal
-        .knowledgeStatus()
-        .then((status) => setKnowledgeBases(status.knowledgeBases ?? []))
-        .catch(() => setKnowledgeBases([]));
     }
-  }, [open, form, portal, client]);
+  }, [open, form]);
 
   const latestFor = (id: string) => {
     const skill = usableSkills.find((entry) => entry.id === id);
@@ -1549,129 +1587,28 @@ function EmployeeDetail({
   );
 }
 
-function EmptyDetails({ title, description }: { readonly title: string; readonly description: string }) {
-  return (
-    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={title}>
-      <Typography.Paragraph type="secondary" style={{ maxWidth: 480, margin: '0 auto' }}>
-        {description}
-      </Typography.Paragraph>
-    </Empty>
-  );
-}
-
-// Knowledge bases and skills registered at creation. null/undefined means
-// the legacy policy (nothing was configured when the employee was made);
-// an empty list is an explicit deny-all knowledge policy.
-function CapabilitiesView({ employee }: { readonly employee: PortalEmployee }) {
-  const bases = employee.knowledgeBases ?? null;
-  const skills = employee.skills ?? null;
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <Typography.Text strong>{t('capabilitiesKnowledgeTitle')}</Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          {bases === null ? (
-            <Typography.Text type="secondary">{t('capabilitiesKnowledgeLegacy')}</Typography.Text>
-          ) : bases.length === 0 ? (
-            <Typography.Text type="secondary">{t('capabilitiesKnowledgeNone')}</Typography.Text>
-          ) : (
-            <Space wrap size={6}>
-              {bases.map((kb) => (
-                <Tag key={kb.id}>{kb.name || kb.id}</Tag>
-              ))}
-            </Space>
-          )}
-        </div>
-      </div>
-      <div>
-        <Typography.Text strong>{t('capabilitiesSkillsTitle')}</Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          {skills === null || skills.length === 0 ? (
-            <Typography.Text type="secondary">{t('capabilitiesSkillsNone')}</Typography.Text>
-          ) : (
-            <Space wrap size={6}>
-              {skills.map((skill) => (
-                <Tag key={skill.id}>
-                  {skill.name || skill.id} · {skill.version}
-                </Tag>
-              ))}
-            </Space>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// The explicit open scope from creation; null keeps the legacy
-// owner/team rule text instead of pretending an audience was configured.
-function VisibilityView({ employee }: { readonly employee: PortalEmployee }) {
-  const visibility = employee.visibility ?? null;
-  if (visibility === null) {
-    return <Typography.Text type="secondary">{t('scopeLegacy')}</Typography.Text>;
-  }
-  if (visibility.mode === 'all') {
-    return <Tag color="warning">{t('scopeModeAllTag')}</Tag>;
-  }
-  const teams = visibility.teams ?? [];
-  const users = visibility.users ?? [];
-  if (teams.length + users.length === 0) {
-    return (
-      <span>
-        <Tag>{t('scopeModeRestrictedTag')}</Tag>
-        <Typography.Text type="secondary">{t('scopeOwnerOnly')}</Typography.Text>
-      </span>
-    );
-  }
-  return (
-    <span>
-      <Tag>{t('scopeModeRestrictedTag')}</Tag>
-      <Space wrap size={6} style={{ marginLeft: 4 }}>
-        {teams.map((team) => (
-          <Tag key={`team-${team.id}`} color="blue">
-            {team.name || team.id}
-          </Tag>
-        ))}
-        {users.map((user) => (
-          <Tag key={`user-${user.id}`}>{user.name || user.id}</Tag>
-        ))}
-      </Space>
-    </span>
-  );
-}
-
 type RequestFilter = 'all' | 'pending' | 'decided';
 
 // Everyone sees this tab: the portal returns the caller's visible requests
 // and admin-only actions fail with a clear 403 (portal admin config is not
 // knowable client-side).
 function RequestPanel({ portal }: { readonly portal: PortalClient }) {
-  const [requests, setRequests] = useState<readonly PortalRequest[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const requestsQuery = useQuery({
+    queryKey: requestsKey,
+    queryFn: () => portal.listRequests(),
+  });
+  const requests = requestsQuery.data ?? null;
+  const loading = requestsQuery.isFetching;
+  const loadError = requestsQuery.error;
+  const error = loadError ? (loadError instanceof Error ? loadError.message : String(loadError)) : null;
+  const reload = () => queryClient.invalidateQueries({ queryKey: requestsKey });
   const [filter, setFilter] = useState<RequestFilter>('all');
   const [query, setQuery] = useState('');
   const [rejecting, setRejecting] = useState<PortalRequest | null>(null);
   const [viewing, setViewing] = useState<PortalRequest | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setRequests(await portal.listRequests());
-    } catch (err) {
-      setRequests(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portal]);
 
   const filtered = useMemo(() => {
     const items = requests ?? [];
@@ -1691,7 +1628,7 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
     try {
       await portal.decideRequest(request.id, decision, reason);
       notify(AdminNotificationKind.Success, t('requestsDecided'));
-      await load();
+      await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1799,7 +1736,7 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
             onChange={(event) => setQuery(event.target.value)}
             style={{ width: 220 }}
           />
-          <Button icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>
+          <Button icon={<ReloadOutlined />} disabled={loading} onClick={() => void requestsQuery.refetch()}>
             {translate(language, 'refresh')}
           </Button>
         </Space>
@@ -1835,7 +1772,7 @@ function RequestPanel({ portal }: { readonly portal: PortalClient }) {
         onClose={() => setRejecting(null)}
         onDecided={async () => {
           setRejecting(null);
-          await load();
+          await reload();
         }}
       />
 

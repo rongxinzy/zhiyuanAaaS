@@ -15,7 +15,7 @@ import {
   Typography,
   theme,
 } from 'antd';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type GatewayCallResult, runGatewayCall } from './gateway-test.js';
 import {
   GatewayField,
@@ -30,8 +30,8 @@ import { notify } from './notifications.js';
 
 export function GatewayCall({ client, identity, onObserve }: GatewayProps & { onObserve: () => void }) {
   const { token } = theme.useToken();
-  const catalog = useGatewayRemote(useCallback(() => client.models(identity), [client, identity]));
-  const capabilities = useGatewayRemote(useCallback(() => client.getGatewayCapabilities(), [client]));
+  const catalog = useGatewayRemote(['admin', 'gateway-models', identity], () => client.models(identity));
+  const capabilities = useGatewayRemote(['admin', 'gateway-capabilities'], () => client.getGatewayCapabilities());
   const models = catalog.value?.models.filter((model) => model.enabled && model.sourceType === 'gateway') ?? [];
   const [selected, setSelected] = useState('');
   const model: AdminModel | undefined = models.find((item) => item.id === selected) ?? models[0];

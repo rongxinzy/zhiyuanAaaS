@@ -211,6 +211,51 @@ describe('Ant Design admin shell', () => {
     for (const name of ['知识审计', '登录日志', '操作日志'])
       expect(screen.queryByRole('tab', { name })).not.toBeInTheDocument();
   });
+  test('clears the cached user directory when signing out and into another account', async () => {
+    // A（管理员）加载过用户目录后退出；B（只有 events.read）登录时缓存必须清空：
+    // 目录请求不再发起，属主姓名回落为原始用户 ID，看不到 A 读到的缓存。
+    vi.spyOn(AdminConsoleClient.prototype, 'users').mockResolvedValue([
+      {
+        id: 'u-1',
+        deploymentId: 'demo',
+        username: 'zhangsan',
+        displayName: '张三',
+        status: 'active',
+        roleIds: [],
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+      },
+    ]);
+    vi.mocked(AdminConsoleClient.prototype.searchAudit).mockResolvedValue({
+      items: [{ eventId: 'e-1', type: 'skill.changed', userId: 'u-1', result: 'success' }],
+      nextCursor: null,
+    });
+    authenticated();
+    render(<AdminApp />);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '日志审计' }));
+    expect(await screen.findByText('zhangsan')).toBeInTheDocument();
+    expect(AdminConsoleClient.prototype.users).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
+    await screen.findByLabelText('用户名');
+    vi.mocked(AdminConsoleClient.prototype.login).mockResolvedValue({
+      status: 'authenticated',
+      identity: {
+        ...administratorIdentity,
+        user: { id: 'admin-2', displayName: '运维乙' },
+        roles: [],
+        permissions: ['events.read'],
+      },
+    });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'bob' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'test-password' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await screen.findByRole('heading', { name: '概览' });
+    fireEvent.click(screen.getByRole('menuitem', { name: '日志审计' }));
+    expect(await screen.findByRole('tab', { name: '业务事件' })).toBeInTheDocument();
+    expect(await screen.findByText('u-1')).toBeInTheDocument();
+    expect(screen.queryByText('zhangsan')).not.toBeInTheDocument();
+    expect(AdminConsoleClient.prototype.users).toHaveBeenCalledTimes(1);
+  });
   test('preserves legacy links and supports browser route changes', async () => {
     authenticated();
     window.location.hash = 'identity';

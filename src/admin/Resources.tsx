@@ -28,6 +28,7 @@ import {
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Badge,
@@ -55,19 +56,17 @@ import {
   theme,
   Upload,
 } from 'antd';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { runBatch } from './batch.js';
 import {
   type AdminConsoleClient,
   type AdminIdentity,
-  type AdminIdentitySource,
   AdminPermission,
   AdminRequestError,
   type AdminResources,
   type AdminSkill,
   type AdminSkillAssignment,
   type AdminSkillInstallation,
-  type AdminSkillInstallations,
   type AdminSkillVersion,
   AdminSubjectType,
   type AdminUserSession,
@@ -142,42 +141,41 @@ const EMPTY_RESOURCES: AdminResources = {
 export function Resources({ client, tab, identity, portal }: ResourcesProps) {
   const createPortal = () => portal ?? new PortalClient((token) => client.getAccessToken(token));
   const [resolvedPortal] = useState(createPortal);
-  const [resources, setResources] = useState<AdminResources | null>(null);
-  const [modelResources, setModelResources] = useState<ModelResources>({
-    models: [],
-    assignments: [],
-    available: false,
-    skillsAvailable: false,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const canQueryModels =
-        hasAdminPermission(identity, AdminPermission.ModelsRead) && typeof client.models === 'function';
+  const canQueryModels =
+    hasAdminPermission(identity, AdminPermission.ModelsRead) && typeof client.models === 'function';
+  const resourcesKey = ['admin', 'resources', identity?.user.id ?? null, canQueryModels] as const;
+  const queryClient = useQueryClient();
+  const resourcesQuery = useQuery({
+    queryKey: resourcesKey,
+    queryFn: async () => {
       const [next, models] = await Promise.all([
         client.resources(identity),
         canQueryModels ? client.models(identity) : Promise.resolve({ models: [], assignments: [] }),
       ]);
-      setResources(next);
-      setModelResources({
-        ...models,
-        available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign),
-        skillsAvailable:
-          hasAdminPermission(identity, AdminPermission.SkillsRead) &&
-          hasAdminPermission(identity, AdminPermission.SkillsAssign),
-      });
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [client, identity]);
-  useEffect(() => {
-    void load();
-  }, [load]);
+      return {
+        resources: next,
+        modelResources: {
+          ...models,
+          available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign),
+          skillsAvailable:
+            hasAdminPermission(identity, AdminPermission.SkillsRead) &&
+            hasAdminPermission(identity, AdminPermission.SkillsAssign),
+        } satisfies ModelResources,
+      };
+    },
+  });
+  const resources = resourcesQuery.data?.resources ?? null;
+  const modelResources: ModelResources = resourcesQuery.data?.modelResources ?? {
+    models: [],
+    assignments: [],
+    available: false,
+    skillsAvailable: false,
+  };
+  const loading = resourcesQuery.isFetching;
+  const error = resourcesQuery.isError;
+  const load = async () => {
+    await queryClient.invalidateQueries({ queryKey: resourcesKey });
+  };
   const reportError = useCallback(() => {
     notify(AdminNotificationKind.Error, t('operationUnavailable'));
   }, []);
@@ -1241,44 +1239,31 @@ function UserAccountLinks({
 }) {
   const canRead = hasAdminPermission(identity, AdminPermission.IdentityRead);
   const canWrite = hasAdminPermission(identity, AdminPermission.IdentityWrite);
-  const [rows, setRows] = useState<
-    | readonly {
-        readonly key: string;
-        readonly source: AdminIdentitySource;
-        readonly externalId: string;
-        readonly status: string;
-      }[]
-    | null
-  >(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
+  const linksQuery = useQuery({
+    queryKey: ['admin', 'identity-links', userId],
+    enabled: canRead,
+    gcTime: 0,
+    queryFn: async () => {
       const sources = (await client.identitySources()).items;
       const mappings = await Promise.all(sources.map((source) => client.identityMappings(source.id)));
-      setRows(
-        sources.flatMap((source, index) =>
-          (mappings[index]?.items ?? [])
-            .filter((mapping) => mapping.localSubjectId === userId)
-            .map((mapping) => ({
-              key: `${source.id}:${mapping.externalId}`,
-              source,
-              externalId: mapping.externalId,
-              status: mapping.status,
-            })),
-        ),
+      return sources.flatMap((source, index) =>
+        (mappings[index]?.items ?? [])
+          .filter((mapping) => mapping.localSubjectId === userId)
+          .map((mapping) => ({
+            key: `${source.id}:${mapping.externalId}`,
+            source,
+            externalId: mapping.externalId,
+            status: mapping.status,
+          })),
       );
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [client, userId]);
-  useEffect(() => {
-    if (canRead) void load();
-  }, [canRead, load]);
+    },
+  });
+  const rows = linksQuery.data ?? null;
+  const loading = linksQuery.isFetching;
+  const error = linksQuery.isError;
+  const load = async () => {
+    await linksQuery.refetch();
+  };
   if (!canRead) return <Alert type="warning" showIcon title={rc.linksNoPermission} />;
   if (error)
     return (
@@ -1364,24 +1349,18 @@ function UserLoginSessions({
   readonly onError: () => void;
 }) {
   const canRevoke = hasAdminPermission(identity, AdminPermission.SessionsWrite);
-  const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const sessionsQuery = useQuery({
+    queryKey: ['admin', 'user-sessions', userId],
+    gcTime: 0,
+    queryFn: () => client.sessions(userId),
+  });
+  const sessions = sessionsQuery.data ?? null;
+  const loading = sessionsQuery.isFetching;
+  const error = sessionsQuery.isError;
   const [detail, setDetail] = useState<AdminUserSession | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      setSessions(await client.sessions(userId));
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [client, userId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = async () => {
+    await sessionsQuery.refetch();
+  };
   const { pending, run } = useMutationRunner(load, onError);
   if (error)
     return (
@@ -1542,20 +1521,23 @@ function DisableUserModal({
   // Disabling the account that backs this console session signs the operator
   // out together with the target, so the confirmation must say so explicitly.
   const isSelf = identity?.user.id === user.id;
-  const [activeSessions, setActiveSessions] = useState<number | null>(null);
-  const [sessionsUnknown, setSessionsUnknown] = useState(false);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ readonly revoked: number; readonly failed: number } | null>(null);
   useEffect(() => {
-    if (!open) return;
-    setResult(null);
-    setActiveSessions(null);
-    setSessionsUnknown(false);
-    void client
-      .sessions(user.id)
-      .then((sessions) => setActiveSessions(sessions.filter((session) => !session.revokedAt).length))
-      .catch(() => setSessionsUnknown(true));
-  }, [open, client, user.id]);
+    if (open) setResult(null);
+  }, [open, user.id]);
+  const activeSessionsQuery = useQuery({
+    queryKey: ['admin', 'user-active-session-count', user.id],
+    enabled: open,
+    gcTime: 0,
+    queryFn: () =>
+      client
+        .sessions(user.id)
+        .then((sessions) => sessions.filter((session) => !session.revokedAt).length)
+        .catch(() => null),
+  });
+  const activeSessions = activeSessionsQuery.data ?? null;
+  const sessionsUnknown = activeSessionsQuery.data === null;
   const disable = async () => {
     setPending(true);
     try {
@@ -3318,48 +3300,41 @@ type SkillEmployeesState =
 // groups them by Skill locally. A failed or forbidden read is never rendered as
 // "nobody uses it".
 function useSkillEmployees(portal: PortalClient): SkillEmployeesState {
-  const [state, setState] = useState<SkillEmployeesState>({ status: 'loading' });
-  const ticket = useRef(0);
-  useEffect(() => {
-    ticket.current += 1;
-    const current = ticket.current;
-    setState({ status: 'loading' });
-    portal
-      .listEmployees()
-      .then((employees) => {
-        if (current !== ticket.current) return;
-        const bySkill = new Map<string, SkillEmployeeRef[]>();
-        let unconfigured = 0;
-        for (const employee of employees) {
-          // null/undefined = no explicit skill policy yet; [] = an explicit
-          // "no skills". Only a listed Skill counts as enabled.
-          if (employee.skills === null || employee.skills === undefined) {
-            unconfigured += 1;
-            continue;
-          }
-          for (const skill of employee.skills) {
-            const refs = bySkill.get(skill.id) ?? [];
-            refs.push({
-              key: employee.name,
-              name: employee.name,
-              displayName: employee.displayName,
-              version: skill.version ?? '',
-            });
-            bySkill.set(skill.id, refs);
-          }
-        }
-        setState({ status: 'ready', bySkill, unconfigured });
-      })
-      .catch((error: unknown) => {
-        if (current !== ticket.current) return;
-        setState({ status: 'unavailable', forbidden: error instanceof PortalError && error.status === 403 });
-      });
-    return () => {
-      // A later load (or unmount) invalidates this response.
-      ticket.current += 1;
-    };
-  }, [portal]);
-  return state;
+  const employeesQuery = useQuery({
+    queryKey: ['portal', 'employees'],
+    gcTime: 0,
+    queryFn: () => portal.listEmployees(),
+  });
+  return useMemo<SkillEmployeesState>(() => {
+    if (employeesQuery.isPending) return { status: 'loading' };
+    if (employeesQuery.error) {
+      return {
+        status: 'unavailable',
+        forbidden: employeesQuery.error instanceof PortalError && employeesQuery.error.status === 403,
+      };
+    }
+    const bySkill = new Map<string, SkillEmployeeRef[]>();
+    let unconfigured = 0;
+    for (const employee of employeesQuery.data ?? []) {
+      // null/undefined = no explicit skill policy yet; [] = an explicit
+      // "no skills". Only a listed Skill counts as enabled.
+      if (employee.skills === null || employee.skills === undefined) {
+        unconfigured += 1;
+        continue;
+      }
+      for (const skill of employee.skills) {
+        const refs = bySkill.get(skill.id) ?? [];
+        refs.push({
+          key: employee.name,
+          name: employee.name,
+          displayName: employee.displayName,
+          version: skill.version ?? '',
+        });
+        bySkill.set(skill.id, refs);
+      }
+    }
+    return { status: 'ready', bySkill, unconfigured };
+  }, [employeesQuery.data, employeesQuery.error, employeesQuery.isPending]);
 }
 
 // Presentational: one Skill's employee bindings for the shared read state.
@@ -3945,29 +3920,14 @@ function SkillDetailDrawer({
 // users the Skill is granted to, so the list only holds people it actually
 // reaches - not every user that ever synced another Skill.
 function SkillInstallations({ client, skillId }: { readonly client: AdminConsoleClient; readonly skillId: string }) {
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [page, setPage] = useState<AdminSkillInstallations | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setFailed(false);
-    void client
-      .skillInstallations(skillId)
-      .then((result) => {
-        if (!cancelled) setPage(result);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [client, skillId]);
+  const installationsQuery = useQuery({
+    queryKey: ['admin', 'skill-installations', skillId],
+    gcTime: 0,
+    queryFn: () => client.skillInstallations(skillId),
+  });
+  const loading = installationsQuery.isPending;
+  const failed = installationsQuery.isError;
+  const page = installationsQuery.data ?? null;
 
   if (loading) return <Typography.Text type="secondary">{rc.installLoading}</Typography.Text>;
   if (failed || !page) return <Typography.Text type="secondary">{rc.installUnavailable}</Typography.Text>;

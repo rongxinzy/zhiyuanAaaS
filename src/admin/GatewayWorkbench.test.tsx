@@ -15,6 +15,7 @@ import zhCN from 'antd/locale/zh_CN';
 import dayjs from 'dayjs';
 import type { ReactElement } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import type { AdminConsoleClient } from './client.js';
 import { GatewayCall, GatewayLimits, GatewayObservation } from './GatewayWorkbench.js';
 import type { GatewayLimit, GatewayMetricQuery, GatewayMetricResult } from './gateway-api.js';
@@ -26,9 +27,11 @@ vi.mock('@ant-design/plots', () => ({ Line: () => null }));
 configure({ asyncUtilTimeout: 5000 });
 function render(ui: ReactElement) {
   return renderReact(
-    <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
-      {ui}
-    </ConfigProvider>,
+    withQueryClient(
+      <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
+        {ui}
+      </ConfigProvider>,
+    ),
   );
 }
 
@@ -561,6 +564,7 @@ test('custom time inputs reach AEP, survive refresh and return to preset windows
     ),
   );
   const count = client.queryGatewayMetrics.mock.calls.length;
+  await waitFor(() => expect(screen.getByRole('button', { name: '刷新查询' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '刷新查询' }));
   await waitFor(() => expect(client.queryGatewayMetrics.mock.calls.length).toBeGreaterThan(count));
   expect(client.queryGatewayMetrics).toHaveBeenLastCalledWith(
@@ -690,6 +694,16 @@ test('user filters clear excluded quota targets and rule subjects without changi
   await confirm('调整余额', '按输入的正数或负数调整此用户余额？');
   expect(client.changeGatewayQuota).toHaveBeenCalledWith('u2', 1000);
   expect(client.refreshGatewayQuota).not.toHaveBeenCalled();
+});
+test('token quota without a selected user stays idle instead of showing a load error', async () => {
+  // 空选择不是加载错误：配额查询保持 idle，不发 getGatewayQuota，也不出错误 Alert。
+  const client = stub();
+  render(<GatewayLimits client={typed(client)} />);
+  await screen.findByText('rule-a');
+  fireEvent.click(screen.getByText('Token 余额配额', { exact: true }));
+  expect(screen.getByRole('button', { name: /读取余额/ })).toBeDisabled();
+  expect(client.getGatewayQuota).not.toHaveBeenCalled();
+  expect(screen.queryByText('数据加载失败')).not.toBeInTheDocument();
 });
 test('quota actions are per-user, confirmed, accept signed delta and reject negative resets', async () => {
   const client = stub();
