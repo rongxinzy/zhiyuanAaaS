@@ -153,3 +153,8 @@ AEP control service and disposable credentials through environment variables.
 ## 跨仓协作规范
 
 提交、PR 标题与说明、review、bug fix 验证遵循 [DEVOPS.md](DEVOPS.md)。本仓已有专项安全与 CI 门继续执行。
+
+## File Size
+
+- New files must not exceed 5000 tokens (estimated as ceil(characters / 4)). If you modify an existing file over that limit, you are responsible for splitting it. Markdown (`*.md`, `*.mdx`) is exempt.
+- `.githooks/pre-commit` blocks newly added files over 5000 tokens. It is the only git hook; lint and tests run in CI. Enable it once per clone: `git config core.hooksPath .githooks`.
