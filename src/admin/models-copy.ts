@@ -8,6 +8,7 @@ import type { AdminLanguage } from './i18n.js';
 const zh = {
   modelsListTitle: '模型列表',
   labelCapabilitiesHint: '声明模型能做什么：供消费端按能力选择模型；不改变网关路由。',
+  upstreamModelPlaceholder: '服务端 /v1/models 返回的模型 ID，须与服务端一致',
   capabilityText: '文本对话',
   capabilityVision: '视觉理解',
   capabilityVisionOcr: '图文识别（OCR）',
@@ -118,6 +119,7 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   labelCapabilitiesHint: 'Declare what the model can do; consumers select models by capability. Does not change gateway routing.',
+  upstreamModelPlaceholder: 'The model ID reported by the service /v1/models; must match exactly',
   capabilityText: 'Chat',
   capabilityVision: 'Vision',
   capabilityVisionOcr: 'OCR',
