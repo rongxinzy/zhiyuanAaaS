@@ -10,6 +10,7 @@ import {
   changeValueText,
   deliveryStateLabel,
   objectText,
+  reasonLabel,
   resultLabel,
 } from './audit-labels.js';
 import { type AdminAuditPage, type AdminAuditRecord, type AdminEventRecord, AdminRequestError } from './client.js';
@@ -123,6 +124,11 @@ describe('audit terminology', () => {
     expect(deliveryStateLabel('active')).toBe('生效中');
     expect(auditCodeLabel('skill.updated')).toBe('技能更新');
     expect(auditCodeLabel('model.catalog.changed')).toBe('模型目录变更');
+    expect(auditCodeLabel('skill.version.published')).toBe('技能发布');
+    expect(auditCodeLabel('skill.version.uploaded')).toBe('技能上传');
+    expect(reasonLabel('invalid_credentials')).toBe('凭证无效');
+    expect(reasonLabel('failure_limit_reached')).toBe('失败次数达上限');
+    expect(reasonLabel('backoff_active')).toBe('登录冷却中');
     expect(auditCodeLabel('update')).toBe('更新');
     expect(auditCodeLabel('reset_password')).toBe('重置密码');
     expect(objectText('skill', 'test2')).toBe('技能 / test2');
@@ -322,7 +328,7 @@ describe('read-only audit', () => {
     // 用户列两层：主行用户名，次行用户 ID。
     expect(screen.getByText('zhangsan')).toBeInTheDocument();
     expect(screen.getByText('user-a')).toBeInTheDocument();
-    expect(screen.getByText('invalid_credentials')).toBeInTheDocument();
+    expect(screen.getByText('凭证无效')).toBeInTheDocument();
     expect(screen.getByText('abcdef012345')).toBeInTheDocument();
     expect(screen.queryByText('登录历史查询尚未接入')).not.toBeInTheDocument();
   });
@@ -348,7 +354,7 @@ describe('read-only audit', () => {
     fireEvent.click(screen.getByRole('tab', { name: '登录日志' }));
     expect(await screen.findByText('登录成功')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-    expect(await screen.findByText('invalid_credentials')).toBeInTheDocument();
+    expect(await screen.findByText('凭证无效')).toBeInTheDocument();
     expect(client.searchAuthenticationAudit).toHaveBeenLastCalledWith({ cursor: '2', limit: 50 });
   });
   test('applies the login filter through the query button', async () => {
@@ -518,7 +524,7 @@ describe('read-only audit', () => {
     fireEvent.click(screen.getByRole('tab', { name: '配置执行记录' }));
     expect(await screen.findByText('已投递 2 · 失败 1')).toBeInTheDocument();
     // 尝试次数只在投递记录上，控制事件本身没有这个字段。
-    expect(screen.getAllByText('未记录').length).toBeGreaterThan(0);
+    expect(screen.getByText('见投递详情')).toBeInTheDocument();
     expect(screen.getByText('模型 / m1')).toBeInTheDocument();
     expect(screen.getByText('zhangsan')).toBeInTheDocument();
     expect(screen.getByText(formatTimestampSeconds('2026-10-12T00:00:00Z'))).toBeInTheDocument();

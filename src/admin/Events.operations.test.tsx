@@ -231,6 +231,20 @@ describe('read-only operations audit', () => {
     expect(screen.getByText('model')).toBeInTheDocument();
   });
 
+  test('hides the failure block on successful operations without a reason', async () => {
+    const client = fixture();
+    client.searchAdminAudit.mockResolvedValue(
+      auditPage({
+        items: [auditRow({ action: 'skill_assignment.create', result: 'success', resourceType: 'skill_assignment' })],
+      }),
+    );
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
+    fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+    expect(await screen.findByText('概览')).toBeInTheDocument();
+    expect(screen.queryByText('失败')).not.toBeInTheDocument();
+  });
+
   test('states honestly when a record carries no change payload', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={administratorIdentity} />);
@@ -245,12 +259,12 @@ describe('read-only operations audit', () => {
     render(<Events client={client as never} identity={administratorIdentity} />);
     fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
     fireEvent.click(await screen.findByRole('button', { name: '详情' }));
-    expect(await screen.findByText('变化字段')).toBeInTheDocument();
+    // 没有 before/after 时按「无变更记录」处理，避免成功单里出现空的变更/失败结构。
+    expect(await screen.findByText('无变更记录')).toBeInTheDocument();
     expect(screen.queryByText('变更前')).not.toBeInTheDocument();
     expect(screen.queryByText('变更后')).not.toBeInTheDocument();
-    // 整份 JSON 不再重复渲染。
     expect(screen.queryByText(/only-a-note/)).not.toBeInTheDocument();
-    expect(screen.getAllByText('未记录').length).toBeGreaterThan(0);
+    expect(screen.queryByText('失败')).not.toBeInTheDocument();
   });
 
   test('renders a non-object change payload exactly as it came', async () => {

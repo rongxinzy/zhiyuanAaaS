@@ -26,7 +26,7 @@ import {
   userLabel,
   useUserDirectory,
 } from './audit-user.js';
-import { AuditDetail, type AuditDetailRow, codeCell, resultCell, shown, timeCell } from './audit-view.js';
+import { AuditDetail, type AuditDetailRow, codeCell, reasonCell, resultCell, shown, timeCell } from './audit-view.js';
 import {
   type AdminAuditFilters,
   type AdminAuditRecord,
@@ -69,7 +69,7 @@ function deliveryRollup(summary?: AdminControlEvent['deliverySummary']) {
         .filter(([, count]) => count > 0)
         .map(([state, count]) => `${deliveryStateLabel(state) ?? state} ${count}`)
     : [];
-  return parts.length > 0 ? parts.join(' · ') : c.unknown;
+  return parts.length > 0 ? parts.join(' · ') : c.deliveryUnknown;
 }
 
 export function Events({ client, identity, initialTab = 'operations', knowledgeBaseId }: EventsProps) {
@@ -191,8 +191,8 @@ function TelemetryRecords({ client, directory }: TabProps) {
   return (
     <>
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
-        <Form.Item name="type" label={c.type}>
-          <Input allowClear />
+        <Form.Item name="type" label={c.type} extra={c.typeHint}>
+          <Input allowClear placeholder={c.typePlaceholder} />
         </Form.Item>
         <Form.Item name="actor" label={c.user}>
           <Input allowClear placeholder={c.userPlaceholder} />
@@ -244,7 +244,9 @@ function TelemetryRecords({ client, directory }: TabProps) {
         rowKey="key"
         pagination={false}
         scroll={{ x: 800 }}
-        locale={{ emptyText: error ? c.failed : c.empty }}
+        locale={{
+          emptyText: error ? c.failed : filters.type ? c.typeExactEmpty.replace('{type}', filters.type) : c.empty,
+        }}
         columns={[
           { title: c.user, render: (_, row) => <UserCell userId={row.userId} users={directory.users} /> },
           { title: c.eventTime, render: (_, row) => timeCell(row.receivedAt ?? row.createdAt) },
@@ -381,8 +383,8 @@ function ExecutionRecords({ client, directory }: TabProps) {
           { title: c.eventType, dataIndex: 'type', render: (value: string) => codeCell(value) },
           { title: c.object, render: (_, row) => shown(objectText(row.resource?.type, row.resource?.id)) },
           { title: c.deliveryState, render: (_, row) => deliveryRollup(row.deliverySummary) },
-          // 控制面只在投递记录上给尝试次数，控制事件本身没有这个字段；如实写未记录。
-          { title: c.attempts, render: () => c.unknown },
+          // 控制面只在投递记录上给尝试次数，控制事件本身没有这个字段。
+          { title: c.attempts, render: () => c.attemptsUnavailable },
           {
             title: c.details,
             render: (_, row) => (
@@ -421,11 +423,21 @@ function ExecutionRecords({ client, directory }: TabProps) {
             action={<Button onClick={() => retry((n) => n + 1)}>{c.refresh}</Button>}
           />
         )}
+        {!deliveryError && !deliveryLoading && deliveries.length === 0 && (
+          <Alert
+            type="info"
+            showIcon
+            title={c.deliveryEmpty}
+            description={c.deliveryEmptyHint}
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Table
           loading={deliveryLoading}
           dataSource={[...deliveries]}
           rowKey="deliveryId"
           pagination={false}
+          locale={{ emptyText: deliveryError ? c.deliveryError : c.deliveryEmpty }}
           columns={[
             { title: c.eventId, dataIndex: 'deliveryId' },
             { title: c.state, dataIndex: 'state', render: (value: string) => <Tag>{deliveryStateLabel(value)}</Tag> },
@@ -583,7 +595,7 @@ function LoginRecords({ client, directory }: TabProps) {
           // 事件码走共用映射：登记过的给中文，未登记的码原样显示。
           { title: c.loginEvent, dataIndex: 'eventType', render: (value: string) => codeCell(value) },
           { title: c.result, dataIndex: 'outcome', render: (value: string) => resultCell(value) },
-          { title: c.reason, dataIndex: 'reason', render: shown },
+          { title: c.reason, dataIndex: 'reason', render: (value?: string) => reasonCell(value) },
           {
             title: c.source,
             dataIndex: 'sourceHash',
@@ -659,6 +671,13 @@ function OperationDetail({
 }) {
   const changes = record.changes ?? null;
   const requestId = changes && typeof changes.requestId === 'string' ? changes.requestId : null;
+  // 只有 before/after 才算变更载荷；仅含 requestId / note 的对象不算，避免成功单里出现「变化字段 未记录」。
+  const changePayload = changes && ('before' in changes || 'after' in changes) ? changes : null;
+  // 成功且无原因时不渲染「失败」区块，避免误读。
+  const failureRows =
+    record.result === 'failure' || record.reason
+      ? [{ key: 'reason', label: c.reason, children: shown(record.reason) }]
+      : null;
   const technical: AuditDetailRow[] = [
     // 这里是审计序号（cursor），不是请求标识；只有失败行 payload 的 requestId 才叫操作标识。
     { key: 'cursor', label: c.recordIndex, children: shown(record.cursor) },
@@ -678,8 +697,8 @@ function OperationDetail({
         { key: 'object', label: c.object, children: shown(objectText(record.resourceType, record.resourceId)) },
         { key: 'result', label: c.result, children: resultCell(record.result) },
       ]}
-      changes={changes}
-      failure={[{ key: 'reason', label: c.reason, children: shown(record.reason) }]}
+      changes={changePayload}
+      failure={failureRows}
       technical={technical}
     />
   );
