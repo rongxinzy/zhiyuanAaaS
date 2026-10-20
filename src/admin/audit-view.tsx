@@ -6,7 +6,7 @@
 import { Descriptions, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { auditCopy as c } from './audit-copy.js';
-import { auditCodeLabel, changeFieldLabel, changeValueText, resultLabel } from './audit-labels.js';
+import { auditCodeLabel, changeFieldLabel, changeValueText, reasonLabel, resultLabel } from './audit-labels.js';
 import { formatTimestampSeconds } from './format.js';
 
 export type AuditDetailRow = { readonly key: string; readonly label: ReactNode; readonly children: ReactNode };
@@ -20,6 +20,11 @@ export const timeCell = (value?: string | null) => formatTimestampSeconds(value)
 /** 事件码 / 动作列：登记过给中文，未登记原样显示英文码，缺值写未记录。 */
 export function codeCell(value?: string | null) {
   return auditCodeLabel(value) ?? shown(value);
+}
+
+/** 登录等原因列：登记过给中文，未登记原样，缺值写未记录。 */
+export function reasonCell(value?: string | null) {
+  return reasonLabel(value) ?? shown(value);
 }
 
 /** 结果标签：颜色按原始取值判定，文案走共用中文映射，未登记取值原样显示。 */
@@ -80,11 +85,14 @@ export function AuditDetail({
   overview,
   changes,
   failure,
+  failureTitle,
   technical,
 }: {
   readonly overview: readonly AuditDetailRow[];
   readonly changes?: Record<string, unknown> | null;
   readonly failure?: readonly AuditDetailRow[] | null;
+  /** 成功但带原因时用「原因」，真正失败时用「失败」。 */
+  readonly failureTitle?: string;
   readonly technical: readonly AuditDetailRow[];
 }) {
   const hasBefore = changes != null && 'before' in changes;
@@ -118,7 +126,7 @@ export function AuditDetail({
           <Typography.Text type="secondary">{c.noChanges}</Typography.Text>
         </>
       )}
-      {failure && <Block title={c.failure} rows={failure} />}
+      {failure && <Block title={failureTitle ?? c.failure} rows={failure} />}
       <Block title={c.technical} rows={technical} />
     </>
   );

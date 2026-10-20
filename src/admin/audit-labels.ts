@@ -43,6 +43,7 @@ const resourceTypes: Bilingual = {
   zh: {
     model: '模型',
     skill: '技能',
+    'skill.version': '技能版本',
     plugin: '插件',
     user: '用户',
     role: '角色',
@@ -81,6 +82,7 @@ const resourceTypes: Bilingual = {
   en: {
     model: 'Model',
     skill: 'Skill',
+    'skill.version': 'Skill version',
     plugin: 'Plugin',
     user: 'User',
     role: 'Role',
@@ -122,8 +124,8 @@ const resourceTypes: Bilingual = {
  * 动作：整段动作码 +「资源.动作」里的动作尾段。
  *
  * 两种形态都查这张表：整段蛇形码（知识审计的 `upload_file`、`create_tag`…）直接命中；
- * 点分隔的事件码（`skill.updated`、`model.catalog.changed`）先按第一个 `.` 拆成
- * 「资源 + 动作」再拼中文。查不到就交给调用方原样显示英文码。
+ * 点分隔的事件码（`skill.updated`、`model.catalog.changed`）由 `auditCodeLabel`
+ * 按每个 `.` 试「已登记资源前缀 + 已登记动作后缀」再拼中文。查不到就交给调用方原样显示英文码。
  */
 const actions: Bilingual = {
   zh: {
@@ -139,6 +141,8 @@ const actions: Bilingual = {
     'password.reset': '密码重置',
     publish: '发布',
     published: '发布',
+    upload: '上传',
+    uploaded: '上传',
     import: '导入',
     imported: '导入',
     revoke: '吊销',
@@ -212,6 +216,8 @@ const actions: Bilingual = {
     'password.reset': 'password reset',
     publish: 'published',
     published: 'published',
+    upload: 'uploaded',
+    uploaded: 'uploaded',
     import: 'imported',
     imported: 'imported',
     revoke: 'revoked',
@@ -317,6 +323,20 @@ const eventCodes: Bilingual = {
   },
 };
 
+/** 登录失败等原因码：列表「原因」列中文化，技术原文仍可在别处保留。 */
+const reasons: Bilingual = {
+  zh: {
+    invalid_credentials: '凭证无效',
+    failure_limit_reached: '失败次数达上限',
+    backoff_active: '登录冷却中',
+  },
+  en: {
+    invalid_credentials: 'Invalid credentials',
+    failure_limit_reached: 'Failure limit reached',
+    backoff_active: 'Backoff active',
+  },
+};
+
 /** 变更载荷里的已知字段名。 */
 const changeFields: Bilingual = {
   zh: {
@@ -395,21 +415,32 @@ function resourceTypeLabel(value?: string | null, language: AdminLanguage = ADMI
 }
 
 /**
- * 事件码 / 动作文案：先整段查表，再按「资源.动作」组合。
+ * 事件码 / 动作文案：先整段查表，再按每个 `.` 分隔点组合「已登记资源前缀 + 已登记动作后缀」。
  * `skill.updated` → 技能更新；`model.catalog.changed` → 模型目录变更；
- * `upload_file` → 上传文件（整段蛇形码）。未登记的码返回 null，
+ * `skill.version.published` → 技能版本发布（依赖登记 `skill.version`）。
+ * 中间段未登记时不猜首尾回退，例如 `gateway.quota.updated` 返回 null，
  * 由调用方（`codeCell`）原样显示英文码 —— 这里不猜、也不写「未知类型」。
  */
 export function auditCodeLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
   if (!value) return null;
   const explicit = eventCodes[language][value] ?? actions[language][value];
   if (explicit) return explicit;
-  const separator = value.indexOf('.');
-  if (separator <= 0) return null;
-  const resource = resourceTypes[language][value.slice(0, separator)];
-  const action = actions[language][value.slice(separator + 1)];
-  if (!resource || !action) return null;
-  return language === 'zh' ? `${resource}${action}` : `${resource} ${action}`;
+  const parts = value.split('.');
+  if (parts.length < 2) return null;
+  const join = (resource: string, action: string) =>
+    language === 'zh' ? `${resource}${action}` : `${resource} ${action}`;
+  // 每个分隔点都试：「资源前缀 + 动作后缀」。两侧都必须已登记，避免丢掉中间段。
+  for (let i = 1; i < parts.length; i += 1) {
+    const resource = resourceTypes[language][parts.slice(0, i).join('.')];
+    const action = actions[language][parts.slice(i).join('.')];
+    if (resource && action) return join(resource, action);
+  }
+  return null;
+}
+
+/** 登录等原因码：登记过给中文，未登记原样返回，缺值返回 null。 */
+export function reasonLabel(value?: string | null, language: AdminLanguage = ADMIN_LANGUAGE): string | null {
+  return value ? (reasons[language][value] ?? value) : null;
 }
 
 /** 投递状态文案：规则同 `resultLabel`。 */
