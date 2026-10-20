@@ -118,7 +118,8 @@ const zh = {
 } as const;
 
 const en: Record<keyof typeof zh, string> = {
-  labelCapabilitiesHint: 'Declare what the model can do; consumers select models by capability. Does not change gateway routing.',
+  labelCapabilitiesHint:
+    'Declare what the model can do; consumers select models by capability. Does not change gateway routing.',
   upstreamModelPlaceholder: 'The model ID reported by the service /v1/models; must match exactly',
   capabilityText: 'Chat',
   capabilityVision: 'Vision',

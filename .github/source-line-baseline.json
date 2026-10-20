@@ -3,7 +3,7 @@
     "scripts/admin-browser-fixture.mjs": 1390,
     "src/admin/DigitalEmployees.tsx": 1924,
     "src/admin/KnowledgeManagement.tsx": 2007,
-    "src/admin/Models.tsx": 1565,
+    "src/admin/Models.tsx": 1623,
     "src/admin/Operations.tsx": 2264,
     "src/admin/Resources.test.tsx": 1832,
     "src/admin/Resources.tsx": 4700,
