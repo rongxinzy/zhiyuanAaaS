@@ -1,2139 +1,352 @@
-import {
-  type AdminControlEvent,
-  type AdminModel,
-  type AdminModelList,
-  AEP_PROTOCOL_VERSION,
-  AepClient,
-  type AepTokenStore,
-  type AepTokens,
-  type CredentialAssignment,
-  type CredentialAssignmentWrite,
-  type CredentialCreate,
-  type CredentialList,
-  type CredentialMetadata,
-  type CredentialPatch,
-  type CredentialRotate,
-  type CurrentIdentity,
-  type DataPlaneDesiredState,
-  type DataPlaneDesiredStateWrite,
-  type DataPlaneRoute,
-  type DataPlaneStatus,
-  FetchTransport,
-  HttpMethod,
-  type JsonObject,
-  type JsonValue,
-  type License,
-  type LicenseImportRequest,
-  MemoryTokenStore,
-  type ModelAssignment,
-  type Permission,
-  type PlatformUser,
-  type Query,
-  type Role,
-  type Team as SdkTeam,
-  type ServiceMetadata,
-} from '@aep/sdk-node';
-import type {
-  GatewayCapabilities,
-  GatewayHealth,
-  GatewayLimit,
-  GatewayLimitPage,
-  GatewayLimitPublication,
-  GatewayLimitStatus,
-  GatewayLimitWrite,
-  GatewayMetricQuery,
-  GatewayMetricResult,
-  GatewayNativeResult,
-  GatewayQuota,
-  GatewayRequestQuery,
-  GatewayTestAccess,
-} from './gateway-api.js';
-import type { ModelPricing, ModelPricingWrite } from './model-pricing-api.js';
-import { type DataPlanePublication, parsePublication, publicationId } from './publication-contract.js';
-
-// Additive AEP team-default-role contract; keep the published SDK dependency.
-export type AdminTeam = SdkTeam & { readonly defaultRoleIds?: readonly string[] };
-type Team = AdminTeam;
-type TeamDefaultsWrite = { readonly defaultRoleIds?: readonly string[] };
-
-export const AdminConsoleStatus = {
-  SignedOut: 'signed-out',
-  Authenticated: 'authenticated',
-  Forbidden: 'forbidden',
-} as const;
-export type AdminConsoleStatus = (typeof AdminConsoleStatus)[keyof typeof AdminConsoleStatus];
-
-export interface AdminOverview {
-  readonly users: number | null;
-  readonly teams: number | null;
-  readonly skills: number | null;
-  readonly models: number | null;
-  readonly pendingEvents: number | null;
-  readonly failed?: readonly AdminOverviewMetric[];
-}
-
-const AdminOverviewMetric = {
-  Users: 'users',
-  Teams: 'teams',
-  Skills: 'skills',
-  Models: 'models',
-  PendingEvents: 'pendingEvents',
-} as const;
-type AdminOverviewMetric = (typeof AdminOverviewMetric)[keyof typeof AdminOverviewMetric];
-
-export interface AdminSession {
-  readonly status: AdminConsoleStatus;
-  readonly identity?: AdminIdentity;
-}
-
-// The permissions field was added to AEP CurrentIdentity after the initial
-// Console release. Keep it optional at this boundary so an older SDK package
-// can still be type-checked while the service and SDK roll forward together.
-export type AdminIdentity = CurrentIdentity & { readonly permissions?: readonly string[] };
-
-export const AdminPermission = {
-  UsersRead: 'users.read',
-  UsersWrite: 'users.write',
-  RolesRead: 'roles.read',
-  RolesWrite: 'roles.write',
-  TeamsRead: 'teams.read',
-  TeamsWrite: 'teams.write',
-  SkillsRead: 'skills.read',
-  SkillsWrite: 'skills.write',
-  SkillsAssign: 'skills.assign',
-  ModelsRead: 'models.read',
-  ModelsWrite: 'models.write',
-  ModelsAssign: 'models.assign',
-  CredentialsRead: 'credentials.read',
-  CredentialsWrite: 'credentials.write',
-  CredentialsAssign: 'credentials.assign',
-  LicensesRead: 'licenses.read',
-  LicensesWrite: 'licenses.write',
-  LicensesRevoke: 'licenses.revoke',
-  IdentityRead: 'identity.read',
-  IdentityWrite: 'identity.write',
-  SessionsWrite: 'sessions.write',
-  EventsRead: 'events.read',
-  EventsWrite: 'events.write',
-  AuditRead: 'audit.read',
-  DataPlaneWrite: 'data_plane.write',
-  DeploymentRead: 'deployment.read',
-  DeploymentWrite: 'deployment.write',
-  AgentsComputeWrite: 'agents.compute.write',
-} as const;
-export type AdminPermission = (typeof AdminPermission)[keyof typeof AdminPermission];
-
-const ADMIN_CONSOLE_PERMISSIONS: readonly AdminPermission[] = Object.values(AdminPermission);
-
-export function hasAdminPermission(identity: AdminIdentity | undefined, permission: AdminPermission): boolean {
-  if (!identity) return false;
-  if (identity.roles.some((role) => ['admin', 'enterprise_admin', 'enterprise-admin'].includes(role.toLowerCase())))
-    return true;
-  return new Set(identity.permissions ?? []).has(permission);
-}
-
-export function hasAdminConsoleAccess(identity: AdminIdentity): boolean {
-  return ADMIN_CONSOLE_PERMISSIONS.every((permission) => hasAdminPermission(identity, permission));
-}
-
-export function hasAnyAdminConsoleAccess(identity: AdminIdentity): boolean {
-  return ADMIN_CONSOLE_PERMISSIONS.some((permission) => hasAdminPermission(identity, permission));
-}
-
-export interface AdminSkill {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly state: 'active' | 'withdrawn';
-  readonly enabled: boolean;
-  readonly versions: readonly AdminSkillVersion[];
-}
-
-export interface AdminSkillVersion {
-  readonly version: string;
-  readonly state: 'draft' | 'published' | 'withdrawn';
-  readonly sha256: string;
-  readonly size: number;
-  readonly createdAt?: string;
-}
-
-export interface AdminSkillInstallation {
-  readonly userId: string;
-  readonly state: 'missing' | 'unreported';
-  readonly revision?: string;
-  readonly reportedAt?: string;
-  readonly itemStatus?: string;
-}
-
-interface AdminSkillInstallationSummary {
-  readonly granted: number;
-  readonly reported: number;
-  readonly installed: number;
-  readonly missing: number;
-  readonly unreported: number;
-  readonly latestReportedAt: string | null;
-}
-
-/** What Agents last reported about one Skill: counts plus granted users that need attention. */
-export interface AdminSkillInstallations {
-  readonly skillId: string;
-  readonly summary: AdminSkillInstallationSummary;
-  readonly items: readonly AdminSkillInstallation[];
-  readonly truncated: boolean;
-}
-
-export interface AdminSkillAssignment {
-  readonly id: string;
-  readonly skillId: string;
-  readonly subjectType: string;
-  readonly subjectId: string;
-  /** ISO expiry. null = a perpetual grant; undefined = the server reported none. */
-  readonly expiresAt?: string | null | undefined;
-}
-
-export const AdminSubjectType = {
-  User: 'user',
-  Role: 'role',
-  Team: 'team',
-} as const;
-export type AdminSubjectType = (typeof AdminSubjectType)[keyof typeof AdminSubjectType];
-
-export interface AdminAssignmentSubject {
-  readonly type: AdminSubjectType;
-  readonly id: string;
-}
-
-export const AdminModelSubjectType = {
-  User: 'user',
-  Role: 'role',
-  Team: 'team',
-} as const;
-export type AdminModelSubjectType = (typeof AdminModelSubjectType)[keyof typeof AdminModelSubjectType];
-
-export interface AdminModelAssignmentSubject {
-  readonly type: AdminModelSubjectType;
-  readonly id: string;
-}
-
-export interface AdminResources {
-  readonly users: readonly PlatformUser[];
-  readonly teams: readonly Team[];
-  readonly roles: readonly Role[];
-  readonly permissions: readonly Permission[];
-  readonly skills: readonly AdminSkill[];
-  readonly assignments: readonly AdminSkillAssignment[];
-}
-
-export interface AdminModels {
-  readonly models: readonly AdminModel[];
-  readonly assignments: readonly ModelAssignment[];
-}
-
-export interface AdminSessionClient {
-  readonly name: string;
-  readonly version?: string;
-  readonly deviceId?: string;
-}
-
-export interface AdminUserSession {
-  readonly sessionId: string;
-  readonly userId: string;
-  readonly topic: string;
-  readonly createdAt: string;
-  readonly lastSeenAt: string;
-  readonly revokedAt?: string | null;
-  // Self-reported or User-Agent-derived client identity recorded at login;
-  // absent entirely on servers predating the field, null when unknown.
-  readonly client?: AdminSessionClient | null;
-}
-
-export interface AdminCredentials {
-  readonly credentials: readonly CredentialMetadata[];
-  readonly assignments: readonly CredentialAssignment[];
-}
-
-export interface AdminDataPlaneRouteMismatch {
-  readonly modelId: string;
-  readonly fields: readonly string[];
-}
-
-// Drift between the route set the model catalog would publish and the routes
-// currently stored as desired state.
-export interface AdminDataPlaneCatalogComparison {
-  readonly missing: readonly string[];
-  readonly extra: readonly string[];
-  readonly mismatched: readonly AdminDataPlaneRouteMismatch[];
-}
-
-// The SDK now carries catalogComparison on DataPlaneStatus; Omit keeps the
-// local readonly collection shape instead of intersecting with it. The field
-// is absent only in responses predating catalogComparison.
-type AdminDataPlaneStatus = Omit<DataPlaneStatus, 'catalogComparison'> & {
-  readonly catalogComparison?: AdminDataPlaneCatalogComparison;
-};
-
-export interface AdminDataPlane {
-  readonly desired: DataPlaneDesiredState;
-  readonly status: AdminDataPlaneStatus;
-}
-
-const AdminDeploymentSettingSource = {
-  Override: 'override',
-  Env: 'env',
-  Unset: 'unset',
-} as const;
-type AdminDeploymentSettingSource = (typeof AdminDeploymentSettingSource)[keyof typeof AdminDeploymentSettingSource];
-
-export interface AdminDeploymentSettingValue {
-  readonly override: string | null;
-  readonly effectiveValue: string | null;
-  readonly source: AdminDeploymentSettingSource;
-}
-
-interface AdminDeploymentIntegerSettingValue {
-  readonly override: number | null;
-  readonly effectiveValue: number | null;
-  readonly source: AdminDeploymentSettingSource;
-}
-
-export interface AdminDeploymentSettings {
-  readonly modelGatewayBaseUrl: AdminDeploymentSettingValue;
-  readonly computeDefaultTier: AdminDeploymentSettingValue;
-  readonly computeIdleHibernateSeconds: AdminDeploymentIntegerSettingValue;
-  readonly computeConcurrencyCap: AdminDeploymentIntegerSettingValue;
-}
-
-// Omitted fields stay unchanged; an explicit null clears the runtime override
-// so the environment-configured value applies again.
-export interface AdminDeploymentSettingsUpdate {
-  readonly modelGatewayBaseUrl?: string | null;
-  readonly computeDefaultTier?: string | null;
-  readonly computeIdleHibernateSeconds?: number | null;
-  readonly computeConcurrencyCap?: number | null;
-}
-
-export interface AdminComputeTier {
-  readonly name: string;
-  readonly description?: string;
-  readonly cpuRequest: string;
-  readonly cpuLimit: string;
-  readonly memoryRequest: string;
-  readonly memoryLimit: string;
-  readonly source: 'deployment';
-}
-
-export interface AdminComputeAssignment {
-  readonly agentId: string;
-  readonly agentName?: string;
-  readonly tier: {
-    readonly override: string | null;
-    readonly effective: string;
-    readonly source: 'override' | 'default';
-  };
-  readonly updatedAt?: string;
-  readonly updatedBy?: string;
-}
-
-export const AdminModelGatewayUrlProblem = {
-  Invalid: 'invalid',
-  ClusterInternal: 'cluster-internal',
-} as const;
-export type AdminModelGatewayUrlProblem =
-  (typeof AdminModelGatewayUrlProblem)[keyof typeof AdminModelGatewayUrlProblem];
-
-// Client-side pre-check for the model gateway override, mirroring the
-// write-time server rule family: an absolute http/https URL whose hostname is
-// neither cluster-internal nor a single-label bare hostname. Loopback depends
-// on the deployment environment and stays a server-side judgment.
-export function modelGatewayBaseUrlProblem(value: string): AdminModelGatewayUrlProblem | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 2048) return AdminModelGatewayUrlProblem.Invalid;
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return AdminModelGatewayUrlProblem.Invalid;
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return AdminModelGatewayUrlProblem.Invalid;
-  const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
-  if (!host) return AdminModelGatewayUrlProblem.Invalid;
-  // IP literals (IPv4, or bracketed IPv6 per URL hostname) skip the
-  // hostname rules, as the server does.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return null;
-  if (!host.includes('.') || host === 'svc.cluster.local' || host.endsWith('.svc.cluster.local')) {
-    return AdminModelGatewayUrlProblem.ClusterInternal;
-  }
-  return null;
-}
-
-export const AdminIdentitySourceKind = {
-  Directory: 'directory',
-  Ldap: 'ldap',
-  Oidc: 'oidc',
-} as const;
-export type AdminIdentitySourceKind = (typeof AdminIdentitySourceKind)[keyof typeof AdminIdentitySourceKind];
-
-export const AdminIdentityMappingStatus = {
-  Active: 'active',
-  Disabled: 'disabled',
-} as const;
-export type AdminIdentityMappingStatus = (typeof AdminIdentityMappingStatus)[keyof typeof AdminIdentityMappingStatus];
-
-export const AdminIdentitySubjectType = {
-  User: 'user',
-  Team: 'team',
-} as const;
-export type AdminIdentitySubjectType = (typeof AdminIdentitySubjectType)[keyof typeof AdminIdentitySubjectType];
-
-export interface AdminIdentitySource {
-  readonly id: string;
-  readonly kind: AdminIdentitySourceKind | string;
-  readonly displayName: string;
-  readonly enabled: boolean;
-}
-
-export interface AdminIdentitySourcePage {
-  readonly items: readonly AdminIdentitySource[];
-  readonly nextCursor: string | null;
-}
-
-export interface AdminIdentityMapping {
-  readonly sourceId: string;
-  readonly externalSubjectType: AdminIdentitySubjectType | string;
-  readonly externalId: string;
-  readonly localSubjectId: string;
-  readonly status: AdminIdentityMappingStatus | string;
-}
-
-export interface AdminIdentityMappingPage {
-  readonly items: readonly AdminIdentityMapping[];
-  readonly nextCursor: string | null;
-}
-
-export interface AdminIdentitySourceCreate {
-  readonly kind: AdminIdentitySourceKind;
-  readonly displayName: string;
-}
-
-export interface AdminIdentityMappingWrite {
-  readonly externalSubjectType: AdminIdentitySubjectType;
-  readonly externalId: string;
-  readonly localSubjectId: string;
-}
-
-export interface AdminEventRecord {
-  readonly eventId?: string;
-  readonly type?: string;
-  readonly userId?: string;
-  readonly resourceType?: string;
-  readonly resourceId?: string;
-  readonly result?: string;
-  readonly receivedAt?: string;
-  readonly createdAt?: string;
-}
-
-export interface AdminEventPage {
-  readonly items: readonly AdminEventRecord[];
-  readonly nextCursor: string | null;
-}
-
-export interface AdminAuthenticationAuditRecord {
-  readonly cursor: string;
-  readonly userId?: string;
-  readonly eventType: string;
-  readonly outcome: string;
-  readonly reason?: string;
-  readonly sourceHash?: string;
-  readonly createdAt?: string;
-}
-
-export interface AdminAuthenticationAuditPage {
-  readonly items: readonly AdminAuthenticationAuditRecord[];
-  readonly nextCursor: string | null;
-}
-
-export interface AuthenticationAuditFilters {
-  readonly eventType?: string;
-  readonly outcome?: string;
-  readonly userId?: string;
-  readonly createdAfter?: string;
-  readonly createdBefore?: string;
-  readonly cursor?: string;
-  readonly limit?: number;
-}
-
-export interface AdminAuditRecord {
-  readonly cursor: string;
-  readonly actorUserId?: string;
-  readonly action: string;
-  readonly resourceType: string;
-  readonly resourceId?: string;
-  readonly result: string;
-  readonly reason?: string;
-  readonly changes?: Record<string, unknown>;
-  readonly createdAt: string;
-}
-
-interface AdminAuditTimeRange {
-  readonly after: string | null;
-  readonly before: string | null;
-}
-
-export interface AdminAuditPage {
-  readonly items: readonly AdminAuditRecord[];
-  readonly nextCursor: string | null;
-  /**
-   * The window the server actually applied. `null` means the response carried
-   * no well-formed `timeRange`, i.e. a control service that predates the
-   * default window and the `result` filter — callers MUST treat `null` as an
-   * unknown capability, never as an unbounded window.
-   */
-  readonly timeRange: AdminAuditTimeRange | null;
-}
-
-export interface AdminAuditFilters {
-  readonly cursor?: string;
-  readonly limit?: number;
-  readonly action?: string;
-  readonly resourceType?: string;
-  readonly resourceId?: string;
-  readonly actorUserId?: string;
-  readonly result?: string;
-  readonly createdAfter?: string;
-  readonly createdBefore?: string;
-}
-
-export interface AdminDeliveryRecord {
-  readonly deliveryId: string;
-  readonly eventId: string;
-  readonly sessionId?: string | null;
-  readonly state: string;
-  readonly attemptCount?: number;
-  readonly createdAt?: string;
-  readonly receivedAt?: string | null;
-  readonly completedAt?: string | null;
-  readonly updatedAt?: string;
-  readonly errorCode?: string | null;
-  readonly message?: string | null;
-}
-
-export interface AdminDeliveryPage {
-  readonly items: readonly AdminDeliveryRecord[];
-  readonly nextCursor: string | null;
-}
-
-export interface AdminControlEvents {
-  readonly items: readonly AdminControlEvent[];
-  readonly nextCursor: string | null;
-}
-
-export class AdminMetadataError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'AdminMetadataError';
-  }
-}
-
-// RFC 9457 problem details carried by the handwritten endpoints so pages can
-// react to the status and show the server-provided detail instead of parsing
-// the message string.
-export class AdminRequestError extends Error {
-  readonly status: number;
-  readonly code: string | null;
-  readonly detail: string | null;
-
-  constructor(status: number, code: string | null, detail: string | null) {
-    super(code ? `AEP ${status} ${code}${detail ? `: ${detail}` : ''}` : `AEP request failed with status ${status}.`);
-    this.name = 'AdminRequestError';
-    this.status = status;
-    this.code = code;
-    this.detail = detail;
-  }
-}
-
-export class AdminConsoleClient {
-  readonly #baseUrl: string;
-  readonly #tokenStore: AepTokenStore;
-  readonly #transport: AepTransportLike;
-  #client: AepClient | null = null;
-  #deploymentId: string | null = null;
-  #sessionId: string | null = null;
-
-  constructor(baseUrl = defaultBaseUrl(), tokenStore?: AepTokenStore) {
-    this.#baseUrl = baseUrl.replace(/\/$/, '');
-    this.#tokenStore = tokenStore ?? new SessionTokenStore();
-    this.#transport = new FetchTransport({ fetch: runtimeFetch() }) as unknown as AepTransportLike;
-  }
-
-  // The session the console itself is signed in with, captured from the login
-  // or restore token response. It survives access-token refreshes unchanged,
-  // so pages can compare it against the admin session list.
-  get sessionId(): string | null {
-    return this.#sessionId;
-  }
-
-  // Used only to scope non-secret publication pointers; never includes tokens.
-  get publicationScope(): string | null {
-    return this.#deploymentId ? JSON.stringify([this.#baseUrl, this.#deploymentId]) : null;
-  }
-
-  async createDataPlanePublication(
-    idempotencyKey: string,
-    input: { readonly includeGatewayLimits?: boolean } = {},
-  ): Promise<DataPlanePublication> {
-    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) throw new TypeError('Invalid publication key.');
-    const result = parsePublication(
-      await this.#request<unknown>(this.#requireClient(), {
-        method: HttpMethod.Post,
-        path: '/aep/v1/admin/data-plane/publications',
-        body: input.includeGatewayLimits === true ? { includeGatewayLimits: true } : {},
-        idempotencyKey,
-      }),
-    );
-    if (result.deploymentId !== this.#deploymentId) throw new Error('Publication deployment mismatch.');
-    return result;
-  }
-
-  async getDataPlanePublication(operationId: string): Promise<DataPlanePublication> {
-    if (!publicationId(operationId)) throw new TypeError('Invalid publication ID.');
-    const result = parsePublication(
-      await this.#request<unknown>(this.#requireClient(), {
-        method: HttpMethod.Get,
-        path: `/aep/v1/admin/data-plane/publications/${encodeURIComponent(operationId)}`,
-      }),
-    );
-    if (result.operationId !== operationId || result.deploymentId !== this.#deploymentId)
-      throw new Error('Publication identity mismatch.');
-    return result;
-  }
-
-  async restore(): Promise<AdminSession> {
-    const client = this.#getClient();
-    const tokens = await client.restoreSession();
-    if (!tokens) return { status: AdminConsoleStatus.SignedOut };
-    this.#sessionId = tokens.sessionId ?? null;
-    return this.#identitySession(client);
-  }
-
-  async login(input: { readonly username: string; readonly password: string }): Promise<AdminSession> {
-    const client = this.#getClient();
-    const deploymentId = await this.#resolveDeploymentId(client);
-    this.#deploymentId = deploymentId;
-    const tokens = await client.loginWithPassword({ ...input, deploymentId });
-    this.#sessionId = tokens.sessionId ?? null;
-    return this.#identitySession(client);
-  }
-
-  async logout(): Promise<void> {
-    if (this.#client) await this.#client.logout().catch(() => undefined);
-    await this.#tokenStore.clear();
-    this.#client = null;
-    this.#sessionId = null;
-  }
-
-  async getAccessToken(rejectedToken?: string): Promise<string | null> {
-    const tokens = await this.#tokenStore.get();
-    if (!tokens || !rejectedToken || tokens.accessToken !== rejectedToken) return tokens?.accessToken ?? null;
-    const renewed = await this.#getClient().refreshSession();
-    this.#sessionId = renewed.sessionId ?? this.#sessionId;
-    return renewed.accessToken;
+import { type AdminApi, AdminClientSession } from './client-session.js';
+
+export {
+  AdminConsoleStatus,
+  type AdminIdentity,
+  AdminMetadataError,
+  AdminPermission,
+  AdminRequestError,
+  type AdminSession,
+  hasAdminConsoleAccess,
+  hasAdminPermission,
+  hasAnyAdminConsoleAccess,
+  SessionTokenStore,
+} from './client-auth.js';
+export {
+  type AdminComputeAssignment,
+  type AdminComputeTier,
+  type AdminDataPlane,
+  type AdminDataPlaneCatalogComparison,
+  type AdminDataPlaneRouteMismatch,
+  type AdminDeploymentSettings,
+  type AdminDeploymentSettingValue,
+  AdminModelGatewayUrlProblem,
+  modelGatewayBaseUrlProblem,
+} from './client-deployment-types.js';
+export {
+  type AdminAuditFilters,
+  type AdminAuditPage,
+  type AdminAuditRecord,
+  type AdminAuthenticationAuditRecord,
+  type AdminDeliveryRecord,
+  type AdminEventRecord,
+  type AdminIdentityMapping,
+  AdminIdentityMappingStatus,
+  type AdminIdentitySource,
+  AdminIdentitySourceKind,
+  AdminIdentitySubjectType,
+} from './client-directory-types.js';
+export {
+  AdminModelSubjectType,
+  type AdminResources,
+  type AdminSessionClient,
+  type AdminSkill,
+  type AdminSkillAssignment,
+  type AdminSkillInstallation,
+  type AdminSkillVersion,
+  AdminSubjectType,
+  type AdminTeam,
+  type AdminUserSession,
+} from './client-resource-types.js';
+
+export class AdminConsoleClient extends AdminClientSession {
+  controlEvents(...args: Parameters<AdminApi['controlEvents']>): ReturnType<AdminApi['controlEvents']> {
+    return this.api.controlEvents(...args);
+  }
+  getControlEvent(...args: Parameters<AdminApi['getControlEvent']>): ReturnType<AdminApi['getControlEvent']> {
+    return this.api.getControlEvent(...args);
+  }
+  cancelControlEvent(...args: Parameters<AdminApi['cancelControlEvent']>): ReturnType<AdminApi['cancelControlEvent']> {
+    return this.api.cancelControlEvent(...args);
+  }
+  publishControlEvent(
+    ...args: Parameters<AdminApi['publishControlEvent']>
+  ): ReturnType<AdminApi['publishControlEvent']> {
+    return this.api.publishControlEvent(...args);
+  }
+  deliverySummary(...args: Parameters<AdminApi['deliverySummary']>): ReturnType<AdminApi['deliverySummary']> {
+    return this.api.deliverySummary(...args);
+  }
+  searchAudit(...args: Parameters<AdminApi['searchAudit']>): ReturnType<AdminApi['searchAudit']> {
+    return this.api.searchAudit(...args);
+  }
+  searchAuthenticationAudit(
+    ...args: Parameters<AdminApi['searchAuthenticationAudit']>
+  ): ReturnType<AdminApi['searchAuthenticationAudit']> {
+    return this.api.searchAuthenticationAudit(...args);
+  }
+  searchAdminAudit(...args: Parameters<AdminApi['searchAdminAudit']>): ReturnType<AdminApi['searchAdminAudit']> {
+    return this.api.searchAdminAudit(...args);
+  }
+  getGatewayCapabilities(
+    ...args: Parameters<AdminApi['getGatewayCapabilities']>
+  ): ReturnType<AdminApi['getGatewayCapabilities']> {
+    return this.api.getGatewayCapabilities(...args);
+  }
+  queryGatewayMetrics(
+    ...args: Parameters<AdminApi['queryGatewayMetrics']>
+  ): ReturnType<AdminApi['queryGatewayMetrics']> {
+    return this.api.queryGatewayMetrics(...args);
+  }
+  getGatewayMonitoringHealth(
+    ...args: Parameters<AdminApi['getGatewayMonitoringHealth']>
+  ): ReturnType<AdminApi['getGatewayMonitoringHealth']> {
+    return this.api.getGatewayMonitoringHealth(...args);
+  }
+  searchGatewayRequests(
+    ...args: Parameters<AdminApi['searchGatewayRequests']>
+  ): ReturnType<AdminApi['searchGatewayRequests']> {
+    return this.api.searchGatewayRequests(...args);
+  }
+  getGatewayRequest(...args: Parameters<AdminApi['getGatewayRequest']>): ReturnType<AdminApi['getGatewayRequest']> {
+    return this.api.getGatewayRequest(...args);
   }
-
-  async overview(identity?: AdminIdentity): Promise<AdminOverview> {
-    const client = this.#requireClient();
-    const results = await Promise.all(
-      [
-        hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve(null),
-        hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve(null),
-        hasAdminPermission(identity, AdminPermission.SkillsRead) ? this.#listAllSkills(client) : Promise.resolve(null),
-        hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : Promise.resolve(null),
-        hasAdminPermission(identity, AdminPermission.EventsRead)
-          ? client.searchEvents({ limit: 100 })
-          : Promise.resolve(null),
-      ].map((request) =>
-        request.then(
-          (value) => ({ ok: true as const, value }),
-          (error) => ({ ok: false as const, error }),
-        ),
-      ),
-    );
-    const failed: AdminOverviewMetric[] = [];
-    const valueAt = <T>(index: number, metric: AdminOverviewMetric): T | null => {
-      const result = results[index]!;
-      if (!result.ok) {
-        failed.push(metric);
-        return null;
-      }
-      return result.value as T | null;
-    };
-    const users = valueAt<readonly PlatformUser[]>(0, AdminOverviewMetric.Users);
-    const teams = valueAt<readonly Team[]>(1, AdminOverviewMetric.Teams);
-    const skills = valueAt<JsonObject>(2, AdminOverviewMetric.Skills);
-    const models = valueAt<AdminModelList>(3, AdminOverviewMetric.Models);
-    const events = valueAt<JsonObject>(4, AdminOverviewMetric.PendingEvents);
-    return {
-      users: users ? users.length : null,
-      teams: teams ? teams.length : null,
-      skills: skills ? listCount(skills) : null,
-      models: models ? listCount(models) : null,
-      pendingEvents: events ? pendingEventCount(events) : null,
-      ...(failed.length ? { failed } : {}),
-    };
-  }
-
-  async resources(identity?: AdminIdentity): Promise<AdminResources> {
-    const client = this.#requireClient();
-    const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
-      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : Promise.resolve([]),
-      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : Promise.resolve([]),
-      hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : Promise.resolve([]),
-      hasAdminPermission(identity, AdminPermission.RolesRead)
-        ? client.listPermissions()
-        : Promise.resolve({ permissions: [] }),
-      hasAdminPermission(identity, AdminPermission.SkillsRead)
-        ? this.#listAllSkills(client)
-        : Promise.resolve({ skills: [] }),
-      hasAdminPermission(identity, AdminPermission.SkillsAssign)
-        ? client.listSkillAssignments()
-        : Promise.resolve({ items: [] }),
-    ]);
-    return {
-      users,
-      teams,
-      roles,
-      permissions: permissions.permissions,
-      skills: parseSkills(skills),
-      assignments: parseAssignments(assignments),
-    };
-  }
-
-  async users(): Promise<readonly PlatformUser[]> {
-    return this.#listAllUsers(this.#requireClient());
-  }
-
-  /** Full skill catalog (cursor-paged), parsed like the overview path. */
-  async skills(): Promise<readonly AdminSkill[]> {
-    return parseSkills(await this.#listAllSkills(this.#requireClient()));
-  }
-
-  // All AEP teams, cursor-paginated. The portal validates employee teams
-  // against AEP (not its own department records), so employee forms must
-  // offer this list — portal departments alone hide teams like rd-dept
-  // that were created directly in AEP.
-  async teams(): Promise<readonly Team[]> {
-    return this.#listAllTeams(this.#requireClient());
-  }
-
-  async createUser(input: {
-    readonly username: string;
-    readonly displayName: string;
-    readonly email?: string | null;
-    readonly temporaryPassword: string;
-    readonly teamIds?: readonly string[];
-    readonly roleIds?: readonly string[];
-    readonly requirePasswordChange: boolean;
-  }): Promise<PlatformUser> {
-    const deploymentId = this.#deploymentId;
-    if (!deploymentId) throw new Error('The deployment identity is unavailable.');
-    return this.#requireClient().createUser({
-      deploymentId,
-      username: input.username,
-      displayName: input.displayName,
-      ...(input.email ? { email: input.email } : {}),
-      temporaryPassword: input.temporaryPassword,
-      ...(input.teamIds ? { teamIds: [...input.teamIds] } : {}),
-      ...(input.roleIds ? { roleIds: [...input.roleIds] } : {}),
-      requirePasswordChange: input.requirePasswordChange,
-    });
-  }
-
-  async updateUser(userId: string, input: Parameters<AepClient['updateUser']>[1]): Promise<PlatformUser> {
-    return this.#requireClient().updateUser(userId, input);
+  listGatewayLimits(...args: Parameters<AdminApi['listGatewayLimits']>): ReturnType<AdminApi['listGatewayLimits']> {
+    return this.api.listGatewayLimits(...args);
   }
-
-  async resetUserPassword(
-    userId: string,
-    input: { readonly temporaryPassword: string; readonly requirePasswordChange: boolean },
-  ): Promise<void> {
-    await this.#requireClient().resetUserPassword(userId, input);
-  }
-
-  // Self-service change on a restricted (passwordChangeRequired) session. The
-  // pinned SDK release still requires a current password, so this call goes
-  // through the handwritten transport path (see #request); the rotated tokens
-  // are stored by hand before the identity is reloaded.
-  async changePassword(input: { readonly newPassword: string }): Promise<AdminSession> {
-    const client = this.#requireClient();
-    const tokens = await this.#request<AepTokens>(client, {
-      method: HttpMethod.Post,
-      path: '/aep/v1/auth/password/change',
-      body: { newPassword: input.newPassword },
-    });
-    await this.#tokenStore.set(tokens);
-    this.#sessionId = tokens.sessionId ?? null;
-    return this.#identitySession(client);
-  }
-
-  async replaceUserRBAC(
-    userId: string,
-    input: { readonly roleIds: readonly string[]; readonly teamIds: readonly string[] },
-  ): Promise<void> {
-    await this.#requireClient().replaceUserRBAC(userId, { roleIds: [...input.roleIds], teamIds: [...input.teamIds] });
-  }
-
-  async createRole(input: Parameters<AepClient['createRole']>[0]): Promise<Role> {
-    return this.#requireClient().createRole(input);
+  putGatewayLimit(...args: Parameters<AdminApi['putGatewayLimit']>): ReturnType<AdminApi['putGatewayLimit']> {
+    return this.api.putGatewayLimit(...args);
   }
-
-  async updateRole(roleId: string, input: Parameters<AepClient['updateRole']>[1]): Promise<Role> {
-    return this.#requireClient().updateRole(roleId, input);
-  }
-
-  async deleteRole(roleId: string): Promise<void> {
-    await this.#requireClient().deleteRole(roleId);
+  deleteGatewayLimit(...args: Parameters<AdminApi['deleteGatewayLimit']>): ReturnType<AdminApi['deleteGatewayLimit']> {
+    return this.api.deleteGatewayLimit(...args);
   }
-
-  async createTeam(input: Parameters<AepClient['createTeam']>[0] & TeamDefaultsWrite): Promise<Team> {
-    return this.#requireClient().createTeam(input);
-  }
-
-  async updateTeam(teamId: string, input: Parameters<AepClient['updateTeam']>[1] & TeamDefaultsWrite): Promise<Team> {
-    return this.#requireClient().updateTeam(teamId, input);
+  publishGatewayLimits(
+    ...args: Parameters<AdminApi['publishGatewayLimits']>
+  ): ReturnType<AdminApi['publishGatewayLimits']> {
+    return this.api.publishGatewayLimits(...args);
   }
-
-  async deleteTeam(teamId: string): Promise<void> {
-    await this.#requireClient().deleteTeam(teamId);
+  getGatewayLimitsStatus(
+    ...args: Parameters<AdminApi['getGatewayLimitsStatus']>
+  ): ReturnType<AdminApi['getGatewayLimitsStatus']> {
+    return this.api.getGatewayLimitsStatus(...args);
   }
-
-  async createSkill(input: {
-    readonly name: string;
-    readonly description: string;
-    readonly enabled?: boolean;
-  }): Promise<string> {
-    const { enabled, ...write } = input;
-    const created = await this.#requireClient().createSkill(write);
-    // The SDK returns the created skill as an untyped JSON object; the id is
-    // server-generated from the name.
-    const skillId = String((created as { id?: unknown }).id ?? '');
-    if (enabled === false) await this.#requireClient().updateSkill(skillId, { state: 'withdrawn' });
-    return skillId;
+  getGatewayQuota(...args: Parameters<AdminApi['getGatewayQuota']>): ReturnType<AdminApi['getGatewayQuota']> {
+    return this.api.getGatewayQuota(...args);
   }
-
-  async updateSkill(
-    skillId: string,
-    input: { readonly name?: string; readonly description?: string; readonly enabled?: boolean },
-  ): Promise<void> {
-    const { enabled, ...patch } = input;
-    await this.#requireClient().updateSkill(skillId, {
-      ...patch,
-      ...(enabled === undefined ? {} : { state: enabled ? 'active' : 'withdrawn' }),
-    });
+  refreshGatewayQuota(
+    ...args: Parameters<AdminApi['refreshGatewayQuota']>
+  ): ReturnType<AdminApi['refreshGatewayQuota']> {
+    return this.api.refreshGatewayQuota(...args);
   }
-
-  // The pinned SDK release predates the force query parameter, so the delete
-  // goes through the same handwritten transport path as the other newer admin
-  // endpoints (see #request).
-  async deleteSkill(skillId: string, force = false): Promise<void> {
-    await this.#request<null>(this.#requireClient(), {
-      method: HttpMethod.Delete,
-      path: `/aep/v1/admin/skills/${segment(skillId)}${force ? '?force=true' : ''}`,
-      responseType: 'empty',
-    });
+  changeGatewayQuota(...args: Parameters<AdminApi['changeGatewayQuota']>): ReturnType<AdminApi['changeGatewayQuota']> {
+    return this.api.changeGatewayQuota(...args);
   }
-
-  // The endpoint is newer than the pinned SDK package, so it goes through the
-  // console's own request path (same as deleteSkill).
-  async skillInstallations(skillId: string): Promise<AdminSkillInstallations> {
-    return parseSkillInstallations(
-      await this.#request<JsonObject>(this.#requireClient(), {
-        method: HttpMethod.Get,
-        path: `/aep/v1/admin/skills/${segment(skillId)}/installations`,
-      }),
-    );
+  createGatewayTestAccess(
+    ...args: Parameters<AdminApi['createGatewayTestAccess']>
+  ): ReturnType<AdminApi['createGatewayTestAccess']> {
+    return this.api.createGatewayTestAccess(...args);
   }
-
-  async uploadSkillVersion(skillId: string, version: string, archive: Uint8Array): Promise<void> {
-    await this.#requireClient().uploadSkillVersion(skillId, version, archive);
+  identitySources(...args: Parameters<AdminApi['identitySources']>): ReturnType<AdminApi['identitySources']> {
+    return this.api.identitySources(...args);
   }
-
-  async publishSkillVersion(skillId: string, version: string): Promise<void> {
-    await this.#requireClient().publishSkillVersion(skillId, version);
+  createIdentitySource(
+    ...args: Parameters<AdminApi['createIdentitySource']>
+  ): ReturnType<AdminApi['createIdentitySource']> {
+    return this.api.createIdentitySource(...args);
   }
-
-  async deleteSkillVersion(skillId: string, version: string): Promise<void> {
-    await this.#requireClient().deleteSkillVersion(skillId, version);
+  identityMappings(...args: Parameters<AdminApi['identityMappings']>): ReturnType<AdminApi['identityMappings']> {
+    return this.api.identityMappings(...args);
   }
-
-  async createSkillAssignment(input: {
-    readonly skillId: string;
-    readonly subject: AdminAssignmentSubject;
-    readonly expiresAt?: string | null;
-  }): Promise<void> {
-    await this.#requireClient().createSkillAssignment({
-      skillId: input.skillId,
-      subject: { type: input.subject.type, id: input.subject.id },
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-    });
+  upsertIdentityMapping(
+    ...args: Parameters<AdminApi['upsertIdentityMapping']>
+  ): ReturnType<AdminApi['upsertIdentityMapping']> {
+    return this.api.upsertIdentityMapping(...args);
   }
-
-  async deleteSkillAssignment(assignmentId: string): Promise<void> {
-    await this.#requireClient().deleteSkillAssignment(assignmentId);
+  deleteIdentityMapping(
+    ...args: Parameters<AdminApi['deleteIdentityMapping']>
+  ): ReturnType<AdminApi['deleteIdentityMapping']> {
+    return this.api.deleteIdentityMapping(...args);
   }
-
-  async models(identity?: AdminIdentity): Promise<AdminModels> {
-    const client = this.#requireClient();
-    const [models, assignments] = await Promise.all([
-      this.#listAllModels(client),
-      hasAdminPermission(identity, AdminPermission.ModelsAssign)
-        ? client.listModelAssignments()
-        : Promise.resolve({ assignments: [] }),
-    ]);
-    return { models: models.models, assignments: assignments.assignments };
+  importUsers(...args: Parameters<AdminApi['importUsers']>): ReturnType<AdminApi['importUsers']> {
+    return this.api.importUsers(...args);
   }
-
-  getModelPricing(modelId: string): Promise<ModelPricing> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
-    });
+  models(...args: Parameters<AdminApi['models']>): ReturnType<AdminApi['models']> {
+    return this.api.models(...args);
   }
-
-  putModelPricing(modelId: string, input: ModelPricingWrite): Promise<ModelPricing> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Put,
-      path: `/aep/v1/admin/models/${encodeURIComponent(modelId)}/pricing`,
-      body: { ...input, pricing: input.pricing ? { ...input.pricing } : null },
-    });
+  getModelPricing(...args: Parameters<AdminApi['getModelPricing']>): ReturnType<AdminApi['getModelPricing']> {
+    return this.api.getModelPricing(...args);
   }
-
-  async createModel(input: Parameters<AepClient['createModel']>[0]): Promise<void> {
-    await this.#requireClient().createModel(input);
+  putModelPricing(...args: Parameters<AdminApi['putModelPricing']>): ReturnType<AdminApi['putModelPricing']> {
+    return this.api.putModelPricing(...args);
   }
-
-  async gatewaySubjects(identity?: AdminIdentity) {
-    const client = this.#requireClient();
-    const [models, users, teams, roles] = await Promise.all([
-      hasAdminPermission(identity, AdminPermission.ModelsRead) ? this.#listAllModels(client) : { models: [] },
-      hasAdminPermission(identity, AdminPermission.UsersRead) ? this.#listAllUsers(client) : [],
-      hasAdminPermission(identity, AdminPermission.TeamsRead) ? this.#listAllTeams(client) : [],
-      hasAdminPermission(identity, AdminPermission.RolesRead) ? this.#listAllRoles(client) : [],
-    ]);
-    return { models: models.models, users, teams, roles };
+  createModel(...args: Parameters<AdminApi['createModel']>): ReturnType<AdminApi['createModel']> {
+    return this.api.createModel(...args);
   }
-
-  getGatewayCapabilities(): Promise<GatewayCapabilities> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: '/aep/v1/admin/model-gateway/capabilities',
-    });
-  }
-  queryGatewayMetrics(input: GatewayMetricQuery): Promise<GatewayMetricResult> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/model-gateway/metrics?${identityQuery({ ...input })}`,
-    });
-  }
-  getGatewayMonitoringHealth(): Promise<GatewayHealth> {
-    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/health' });
-  }
-  searchGatewayRequests(input: GatewayRequestQuery): Promise<GatewayNativeResult> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/model-gateway/requests?${identityQuery({ ...input })}`,
-    });
-  }
-  getGatewayRequest(requestId: string, input: GatewayRequestQuery): Promise<GatewayNativeResult> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/model-gateway/requests/${encodeURIComponent(requestId)}?${identityQuery({ ...input })}`,
-    });
-  }
-  listGatewayLimits(): Promise<GatewayLimitPage> {
-    return this.#request(this.#requireClient(), { method: HttpMethod.Get, path: '/aep/v1/admin/model-gateway/limits' });
-  }
-  putGatewayLimit(ruleId: string, input: GatewayLimitWrite): Promise<GatewayLimit> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Put,
-      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}`,
-      body: { ...input },
-    });
-  }
-  deleteGatewayLimit(ruleId: string, expectedVersion: number): Promise<void> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Delete,
-      path: `/aep/v1/admin/model-gateway/limits/${encodeURIComponent(ruleId)}?${identityQuery({ expectedVersion })}`,
-      responseType: 'empty',
-    });
-  }
-  publishGatewayLimits(): Promise<GatewayLimitPublication> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: '/aep/v1/admin/model-gateway/limits/publish',
-    });
-  }
-  getGatewayLimitsStatus(): Promise<GatewayLimitStatus> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: '/aep/v1/admin/model-gateway/limits/status',
-    });
-  }
-  getGatewayQuota(userId: string): Promise<GatewayQuota> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}`,
-    });
-  }
-  refreshGatewayQuota(userId: string, quota: number): Promise<GatewayQuota> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/refresh`,
-      body: { quota },
-    });
-  }
-  changeGatewayQuota(userId: string, value: number): Promise<GatewayQuota> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: `/aep/v1/admin/model-gateway/quotas/${encodeURIComponent(userId)}/delta`,
-      body: { value },
-    });
-  }
-  createGatewayTestAccess(modelId: string): Promise<GatewayTestAccess> {
-    return this.#request(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: `/aep/v1/admin/model-gateway/models/${encodeURIComponent(modelId)}/test-access`,
-    });
+  gatewaySubjects(...args: Parameters<AdminApi['gatewaySubjects']>): ReturnType<AdminApi['gatewaySubjects']> {
+    return this.api.gatewaySubjects(...args);
   }
-
-  async updateModel(modelId: string, input: Parameters<AepClient['updateModel']>[1]): Promise<void> {
-    await this.#requireClient().updateModel(modelId, input);
+  updateModel(...args: Parameters<AdminApi['updateModel']>): ReturnType<AdminApi['updateModel']> {
+    return this.api.updateModel(...args);
   }
-
-  async deleteModel(modelId: string): Promise<void> {
-    await this.#requireClient().deleteModel(modelId);
+  deleteModel(...args: Parameters<AdminApi['deleteModel']>): ReturnType<AdminApi['deleteModel']> {
+    return this.api.deleteModel(...args);
   }
-
-  async createModelAssignment(input: {
-    readonly modelId: string;
-    readonly subject: AdminModelAssignmentSubject;
-  }): Promise<void> {
-    await this.#requireClient().createModelAssignment({
-      modelId: input.modelId,
-      subject: { type: input.subject.type, id: input.subject.id },
-    });
+  createModelAssignment(
+    ...args: Parameters<AdminApi['createModelAssignment']>
+  ): ReturnType<AdminApi['createModelAssignment']> {
+    return this.api.createModelAssignment(...args);
   }
-
-  async deleteModelAssignment(assignmentId: string): Promise<void> {
-    await this.#requireClient().deleteModelAssignment(assignmentId);
+  deleteModelAssignment(
+    ...args: Parameters<AdminApi['deleteModelAssignment']>
+  ): ReturnType<AdminApi['deleteModelAssignment']> {
+    return this.api.deleteModelAssignment(...args);
   }
-
-  async licenses(): Promise<readonly License[]> {
-    const client = this.#requireClient();
-    const licenses: License[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listLicenses({ ...(cursor ? { cursor } : {}), limit: 200 });
-      licenses.push(...page.items);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return licenses;
-      cursor = nextCursor;
-    }
+  credentials(...args: Parameters<AdminApi['credentials']>): ReturnType<AdminApi['credentials']> {
+    return this.api.credentials(...args);
   }
-
-  async importLicense(input: LicenseImportRequest): Promise<License> {
-    return this.#requireClient().importLicense(input);
+  createCredential(...args: Parameters<AdminApi['createCredential']>): ReturnType<AdminApi['createCredential']> {
+    return this.api.createCredential(...args);
   }
-
-  async revokeLicense(licenseId: string): Promise<void> {
-    await this.#requireClient().revokeLicense(licenseId);
+  updateCredential(...args: Parameters<AdminApi['updateCredential']>): ReturnType<AdminApi['updateCredential']> {
+    return this.api.updateCredential(...args);
   }
-
-  async revokeUserSession(sessionId: string): Promise<void> {
-    await this.#requireClient().revokeUserSession(sessionId);
+  rotateCredential(...args: Parameters<AdminApi['rotateCredential']>): ReturnType<AdminApi['rotateCredential']> {
+    return this.api.rotateCredential(...args);
   }
-
-  async sessions(userId?: string): Promise<readonly AdminUserSession[]> {
-    const client = this.#requireClient();
-    const sessions: AdminUserSession[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const result = await client.listUserSessions({
-        ...(userId ? { userId } : {}),
-        ...(cursor ? { cursor } : {}),
-        limit: 200,
-      } satisfies Query);
-      const items = arrayFrom(result, 'items');
-      sessions.push(...parseSessions(items));
-      const nextCursor = valueString(result, 'nextCursor');
-      if (!nextCursor || nextCursor === cursor) return sessions;
-      cursor = nextCursor;
-    }
+  deleteCredential(...args: Parameters<AdminApi['deleteCredential']>): ReturnType<AdminApi['deleteCredential']> {
+    return this.api.deleteCredential(...args);
   }
-
-  async credentials(identity?: AdminIdentity): Promise<AdminCredentials> {
-    const client = this.#requireClient();
-    const [credentials, assignments] = await Promise.all([
-      this.#listAllCredentials(client),
-      hasAdminPermission(identity, AdminPermission.CredentialsAssign)
-        ? client.listCredentialAssignments()
-        : Promise.resolve({ assignments: [] }),
-    ]);
-    return {
-      credentials: credentials.credentials,
-      assignments: assignments.assignments,
-    };
+  createCredentialAssignment(
+    ...args: Parameters<AdminApi['createCredentialAssignment']>
+  ): ReturnType<AdminApi['createCredentialAssignment']> {
+    return this.api.createCredentialAssignment(...args);
   }
-
-  async createCredential(input: CredentialCreate): Promise<CredentialMetadata> {
-    return this.#requireClient().createCredential(input);
+  deleteCredentialAssignment(
+    ...args: Parameters<AdminApi['deleteCredentialAssignment']>
+  ): ReturnType<AdminApi['deleteCredentialAssignment']> {
+    return this.api.deleteCredentialAssignment(...args);
   }
-
-  async updateCredential(credentialId: string, input: CredentialPatch): Promise<CredentialMetadata> {
-    return this.#requireClient().updateCredential(credentialId, input);
+  createDataPlanePublication(
+    ...args: Parameters<AdminApi['createDataPlanePublication']>
+  ): ReturnType<AdminApi['createDataPlanePublication']> {
+    return this.api.createDataPlanePublication(...args);
   }
-
-  async rotateCredential(credentialId: string, input: CredentialRotate): Promise<CredentialMetadata> {
-    return this.#requireClient().rotateCredential(credentialId, input);
+  getDataPlanePublication(
+    ...args: Parameters<AdminApi['getDataPlanePublication']>
+  ): ReturnType<AdminApi['getDataPlanePublication']> {
+    return this.api.getDataPlanePublication(...args);
   }
-
-  async deleteCredential(credentialId: string): Promise<void> {
-    await this.#requireClient().deleteCredential(credentialId);
+  licenses(...args: Parameters<AdminApi['licenses']>): ReturnType<AdminApi['licenses']> {
+    return this.api.licenses(...args);
   }
-
-  async createCredentialAssignment(input: CredentialAssignmentWrite): Promise<CredentialAssignment> {
-    return this.#requireClient().createCredentialAssignment(input);
+  importLicense(...args: Parameters<AdminApi['importLicense']>): ReturnType<AdminApi['importLicense']> {
+    return this.api.importLicense(...args);
   }
-
-  async deleteCredentialAssignment(assignmentId: string): Promise<void> {
-    await this.#requireClient().deleteCredentialAssignment(assignmentId);
+  revokeLicense(...args: Parameters<AdminApi['revokeLicense']>): ReturnType<AdminApi['revokeLicense']> {
+    return this.api.revokeLicense(...args);
   }
-
-  async dataPlane(): Promise<AdminDataPlane> {
-    const client = this.#requireClient();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const desired = await client.getDataPlaneDesiredState();
-      // The pinned SDK release predates the catalogComparison field on the
-      // data-plane status, so the status read goes through the same
-      // handwritten transport path as the publish endpoint (see #request).
-      const status = await this.#request<JsonObject>(client, {
-        method: HttpMethod.Get,
-        path: '/aep/v1/admin/data-plane/status',
-      }).then(parseDataPlaneStatus);
-      const confirmed = await client.getDataPlaneDesiredState();
-      const stable = desired.revision === confirmed.revision && desired.contentHash === confirmed.contentHash;
-      const wrongReadyHash =
-        status.state === 'ready' &&
-        status.observedRevision === desired.revision &&
-        Boolean(status.contentHash && desired.contentHash && status.contentHash !== desired.contentHash);
-      if (stable && !wrongReadyHash) return { desired, status };
-    }
-    throw new AdminRequestError(503, 'GATEWAY_OBSERVATION_CHANGED', null);
+  revokeUserSession(...args: Parameters<AdminApi['revokeUserSession']>): ReturnType<AdminApi['revokeUserSession']> {
+    return this.api.revokeUserSession(...args);
   }
-
-  // The pinned SDK release predates the catalog-derived publish endpoint:
-  // the server derives gateway routes from the model catalog and atomically
-  // replaces the desired state (see #request for the handwritten precedent).
-  async publishDataPlaneRoutes(input?: { readonly revision?: string }): Promise<DataPlaneDesiredState> {
-    const revision = input?.revision?.trim();
-    const desired = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: '/aep/v1/admin/data-plane/publish',
-      body: revision ? { revision } : {},
-    });
-    return parseDataPlaneDesiredState(desired);
+  sessions(...args: Parameters<AdminApi['sessions']>): ReturnType<AdminApi['sessions']> {
+    return this.api.sessions(...args);
   }
-
-  async putDataPlane(input: DataPlaneDesiredStateWrite): Promise<DataPlaneDesiredState> {
-    return this.#requireClient().putDataPlaneDesiredState(input);
+  dataPlane(...args: Parameters<AdminApi['dataPlane']>): ReturnType<AdminApi['dataPlane']> {
+    return this.api.dataPlane(...args);
   }
-
-  // The pinned SDK release predates the deployment-settings admin endpoints,
-  // so these calls go through the same handwritten transport path as the
-  // identity-sources endpoints above (see #request).
-  async deploymentSettings(): Promise<AdminDeploymentSettings> {
-    const settings = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: '/aep/v1/admin/deployment/settings',
-    });
-    return parseDeploymentSettings(settings);
+  publishDataPlaneRoutes(
+    ...args: Parameters<AdminApi['publishDataPlaneRoutes']>
+  ): ReturnType<AdminApi['publishDataPlaneRoutes']> {
+    return this.api.publishDataPlaneRoutes(...args);
   }
-
-  async updateDeploymentSettings(input: AdminDeploymentSettingsUpdate): Promise<AdminDeploymentSettings> {
-    const body: JsonObject = {};
-    if ('modelGatewayBaseUrl' in input) body.modelGatewayBaseUrl = input.modelGatewayBaseUrl ?? null;
-    if ('computeDefaultTier' in input) body.computeDefaultTier = input.computeDefaultTier ?? null;
-    if ('computeIdleHibernateSeconds' in input)
-      body.computeIdleHibernateSeconds = input.computeIdleHibernateSeconds ?? null;
-    if ('computeConcurrencyCap' in input) body.computeConcurrencyCap = input.computeConcurrencyCap ?? null;
-    const settings = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Put,
-      path: '/aep/v1/admin/deployment/settings',
-      body,
-    });
-    return parseDeploymentSettings(settings);
+  putDataPlane(...args: Parameters<AdminApi['putDataPlane']>): ReturnType<AdminApi['putDataPlane']> {
+    return this.api.putDataPlane(...args);
   }
-
-  // Compute governance endpoints (AEP compute governance contract): like the
-  // deployment settings they predate the pinned SDK release, so they use the
-  // same handwritten transport path.
-  async computeTierCatalog(): Promise<AdminComputeTier[]> {
-    const catalog = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: '/aep/v1/admin/compute/tiers',
-    });
-    return parseComputeTierCatalog(catalog);
+  deploymentSettings(...args: Parameters<AdminApi['deploymentSettings']>): ReturnType<AdminApi['deploymentSettings']> {
+    return this.api.deploymentSettings(...args);
   }
-
-  async computeAssignments(): Promise<AdminComputeAssignment[]> {
-    const list = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: '/aep/v1/admin/compute/assignments',
-    });
-    return parseComputeAssignmentList(list);
+  updateDeploymentSettings(
+    ...args: Parameters<AdminApi['updateDeploymentSettings']>
+  ): ReturnType<AdminApi['updateDeploymentSettings']> {
+    return this.api.updateDeploymentSettings(...args);
   }
-
-  async updateComputeAssignment(agentId: string, tier: string | null): Promise<AdminComputeAssignment> {
-    const assignment = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Put,
-      path: `/aep/v1/admin/compute/assignments/${encodeURIComponent(agentId)}`,
-      body: { tier },
-    });
-    return parseComputeAssignment(assignment);
+  computeTierCatalog(...args: Parameters<AdminApi['computeTierCatalog']>): ReturnType<AdminApi['computeTierCatalog']> {
+    return this.api.computeTierCatalog(...args);
   }
-
-  async identitySources(): Promise<AdminIdentitySourcePage> {
-    const client = this.#requireClient();
-    const items: AdminIdentitySource[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await this.#request<JsonObject>(client, {
-        method: HttpMethod.Get,
-        path: `/aep/v1/admin/identity-sources?${identityQuery({ cursor, limit: 200 })}`,
-      });
-      items.push(...parseIdentitySources(page));
-      const nextCursor = valueString(page, 'nextCursor');
-      if (!nextCursor || nextCursor === cursor) return { items, nextCursor: null };
-      cursor = nextCursor;
-    }
+  computeAssignments(...args: Parameters<AdminApi['computeAssignments']>): ReturnType<AdminApi['computeAssignments']> {
+    return this.api.computeAssignments(...args);
   }
-
-  async createIdentitySource(input: AdminIdentitySourceCreate): Promise<AdminIdentitySource> {
-    const source = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Post,
-      path: '/aep/v1/admin/identity-sources',
-      body: { kind: input.kind, displayName: input.displayName, config: {} },
-    });
-    return parseIdentitySource(source);
+  updateComputeAssignment(
+    ...args: Parameters<AdminApi['updateComputeAssignment']>
+  ): ReturnType<AdminApi['updateComputeAssignment']> {
+    return this.api.updateComputeAssignment(...args);
   }
-
-  async identityMappings(sourceId: string): Promise<AdminIdentityMappingPage> {
-    const client = this.#requireClient();
-    const items: AdminIdentityMapping[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await this.#request<JsonObject>(client, {
-        method: HttpMethod.Get,
-        path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings?${identityQuery({ subjectType: AdminIdentitySubjectType.User, cursor, limit: 200 })}`,
-      });
-      items.push(...parseIdentityMappings(page, sourceId));
-      const nextCursor = valueString(page, 'nextCursor');
-      if (!nextCursor || nextCursor === cursor) return { items, nextCursor: null };
-      cursor = nextCursor;
-    }
+  overview(...args: Parameters<AdminApi['overview']>): ReturnType<AdminApi['overview']> {
+    return this.api.overview(...args);
   }
-
-  async upsertIdentityMapping(sourceId: string, input: AdminIdentityMappingWrite): Promise<void> {
-    await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Put,
-      path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings`,
-      body: {
-        externalSubjectType: input.externalSubjectType,
-        externalId: input.externalId,
-        localSubjectId: input.localSubjectId,
-      },
-    });
+  resources(...args: Parameters<AdminApi['resources']>): ReturnType<AdminApi['resources']> {
+    return this.api.resources(...args);
   }
-
-  async deleteIdentityMapping(sourceId: string, externalId: string): Promise<void> {
-    await this.#request<null>(this.#requireClient(), {
-      method: HttpMethod.Delete,
-      responseType: 'empty',
-      path: `/aep/v1/admin/identity-sources/${segment(sourceId)}/mappings/${AdminIdentitySubjectType.User}/${segment(externalId)}`,
-    });
+  users(...args: Parameters<AdminApi['users']>): ReturnType<AdminApi['users']> {
+    return this.api.users(...args);
   }
-
-  async importUsers(input: JsonObject): Promise<Record<string, unknown>> {
-    const deploymentId = this.#deploymentId;
-    if (!deploymentId) throw new Error('The deployment identity is unavailable.');
-    return this.#requireClient().importUsers({ ...input, deploymentId }) as Promise<Record<string, unknown>>;
+  skills(...args: Parameters<AdminApi['skills']>): ReturnType<AdminApi['skills']> {
+    return this.api.skills(...args);
   }
-
-  async controlEvents(filters?: Query): Promise<AdminControlEvents> {
-    const result = await this.#requireClient().listAdminControlEvents(filters);
-    return { items: result.items, nextCursor: result.nextCursor };
+  teams(...args: Parameters<AdminApi['teams']>): ReturnType<AdminApi['teams']> {
+    return this.api.teams(...args);
   }
-
-  async getControlEvent(eventId: string): Promise<AdminControlEvent> {
-    return this.#requireClient().getAdminControlEvent(eventId);
+  createUser(...args: Parameters<AdminApi['createUser']>): ReturnType<AdminApi['createUser']> {
+    return this.api.createUser(...args);
   }
-
-  async cancelControlEvent(eventId: string): Promise<AdminControlEvent> {
-    return this.#requireClient().cancelControlEvent(eventId);
+  updateUser(...args: Parameters<AdminApi['updateUser']>): ReturnType<AdminApi['updateUser']> {
+    return this.api.updateUser(...args);
   }
-
-  async publishControlEvent(input: JsonObject): Promise<Record<string, unknown>> {
-    return this.#requireClient().createControlEvent(input) as Promise<Record<string, unknown>>;
+  resetUserPassword(...args: Parameters<AdminApi['resetUserPassword']>): ReturnType<AdminApi['resetUserPassword']> {
+    return this.api.resetUserPassword(...args);
   }
-
-  async deliverySummary(eventId: string, filters?: Query): Promise<AdminDeliveryPage> {
-    const result = await this.#requireClient().listControlEventDeliveries(eventId, filters);
-    const items = Array.isArray(result.items)
-      ? result.items.flatMap((item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-          const record = item as Record<string, unknown>;
-          if (
-            typeof record.deliveryId !== 'string' ||
-            typeof record.eventId !== 'string' ||
-            typeof record.state !== 'string'
-          )
-            return [];
-          return [record as unknown as AdminDeliveryRecord];
-        })
-      : [];
-    return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
+  replaceUserRBAC(...args: Parameters<AdminApi['replaceUserRBAC']>): ReturnType<AdminApi['replaceUserRBAC']> {
+    return this.api.replaceUserRBAC(...args);
   }
-
-  async searchAudit(filters?: Query): Promise<AdminEventPage> {
-    const result = await this.#requireClient().searchEvents(filters);
-    const items = arrayFrom(result, 'items').flatMap((item) => {
-      if (!item || typeof item !== 'object') return [];
-      const record = item as Record<string, unknown>;
-      return [
-        {
-          ...(typeof record.eventId === 'string' ? { eventId: record.eventId } : {}),
-          ...(typeof record.type === 'string' ? { type: record.type } : {}),
-          ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
-          ...(typeof record.resourceType === 'string' ? { resourceType: record.resourceType } : {}),
-          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
-          ...(typeof record.result === 'string' ? { result: record.result } : {}),
-          ...(typeof record.receivedAt === 'string' ? { receivedAt: record.receivedAt } : {}),
-          ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
-        },
-      ];
-    });
-    return { items, nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null };
+  createRole(...args: Parameters<AdminApi['createRole']>): ReturnType<AdminApi['createRole']> {
+    return this.api.createRole(...args);
   }
-
-  async searchAuthenticationAudit(filters?: AuthenticationAuditFilters): Promise<AdminAuthenticationAuditPage> {
-    const result = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/audit/authentication?${identityQuery({ ...filters })}`,
-    });
-    const items = arrayFrom(result, 'items').flatMap((item) => {
-      if (!isRecord(item)) return [];
-      const record = item as Record<string, unknown>;
-      if (
-        typeof record.cursor !== 'string' ||
-        typeof record.eventType !== 'string' ||
-        typeof record.outcome !== 'string'
-      ) {
-        return [];
-      }
-      return [
-        {
-          cursor: record.cursor,
-          eventType: record.eventType,
-          outcome: record.outcome,
-          ...(typeof record.userId === 'string' ? { userId: record.userId } : {}),
-          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
-          ...(typeof record.sourceHash === 'string' ? { sourceHash: record.sourceHash } : {}),
-          ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
-        },
-      ];
-    });
-    return { items, nextCursor: valueString(result, 'nextCursor') };
+  updateRole(...args: Parameters<AdminApi['updateRole']>): ReturnType<AdminApi['updateRole']> {
+    return this.api.updateRole(...args);
   }
-
-  async searchAdminAudit(filters?: AdminAuditFilters): Promise<AdminAuditPage> {
-    const result = await this.#request<JsonObject>(this.#requireClient(), {
-      method: HttpMethod.Get,
-      path: `/aep/v1/admin/audit/operations?${identityQuery({ ...filters })}`,
-    });
-    const items = arrayFrom(result, 'items').flatMap((item) => {
-      if (!isRecord(item)) return [];
-      const record = item as Record<string, unknown>;
-      if (
-        typeof record.cursor !== 'string' ||
-        typeof record.action !== 'string' ||
-        typeof record.resourceType !== 'string' ||
-        typeof record.result !== 'string' ||
-        typeof record.createdAt !== 'string'
-      ) {
-        return [];
-      }
-      return [
-        {
-          cursor: record.cursor,
-          action: record.action,
-          resourceType: record.resourceType,
-          result: record.result,
-          createdAt: record.createdAt,
-          ...(typeof record.actorUserId === 'string' ? { actorUserId: record.actorUserId } : {}),
-          ...(typeof record.resourceId === 'string' ? { resourceId: record.resourceId } : {}),
-          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
-          ...(isRecord(record.changes) ? { changes: record.changes } : {}),
-        },
-      ];
-    });
-    const range = isRecord(result) ? result.timeRange : null;
-    return {
-      items,
-      nextCursor: valueString(result, 'nextCursor'),
-      timeRange: parseAuditTimeRange(range),
-    };
+  deleteRole(...args: Parameters<AdminApi['deleteRole']>): ReturnType<AdminApi['deleteRole']> {
+    return this.api.deleteRole(...args);
   }
-
-  #getClient(): AepClient {
-    if (!this.#client) {
-      this.#client = new AepClient({
-        baseUrl: this.#baseUrl,
-        tokenStore: this.#tokenStore,
-        transport: this.#transport as never,
-      });
-    }
-    return this.#client;
+  createTeam(...args: Parameters<AdminApi['createTeam']>): ReturnType<AdminApi['createTeam']> {
+    return this.api.createTeam(...args);
   }
-
-  #requireClient(): AepClient {
-    if (!this.#client) throw new Error('Admin console is not authenticated.');
-    return this.#client;
+  updateTeam(...args: Parameters<AdminApi['updateTeam']>): ReturnType<AdminApi['updateTeam']> {
+    return this.api.updateTeam(...args);
   }
-
-  // The console is deployed against a single AEP deployment, so the login
-  // form never asks for a deployment ID; the server metadata names it.
-  async #resolveDeploymentId(client: AepClient): Promise<string> {
-    let metadata: ServiceMetadata;
-    try {
-      metadata = await client.getMetadata();
-    } catch (error) {
-      throw new AdminMetadataError('AEP server metadata could not be retrieved.', { cause: error });
-    }
-    const deploymentId = metadata.deploymentId ?? metadata.deployment?.id;
-    if (!deploymentId) {
-      throw new AdminMetadataError('AEP server metadata did not include a deployment ID.');
-    }
-    return deploymentId;
+  deleteTeam(...args: Parameters<AdminApi['deleteTeam']>): ReturnType<AdminApi['deleteTeam']> {
+    return this.api.deleteTeam(...args);
   }
-
-  // The pinned SDK release predates the identity-sources admin endpoints, so
-  // these calls go through the SDK transport directly. This keeps the session
-  // headers, bearer auth, 401 refresh retry, and RFC 9457 problem parsing
-  // identical to every other request the console makes.
-  async #request<T>(
-    client: AepClient,
-    request: {
-      readonly method: (typeof HttpMethod)[keyof typeof HttpMethod];
-      readonly path: string;
-      readonly body?: JsonObject;
-      readonly responseType?: 'json' | 'empty';
-      readonly idempotencyKey?: string;
-    },
-  ): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-AEP-Protocol-Version': AEP_PROTOCOL_VERSION,
-      ...(request.idempotencyKey ? { 'Idempotency-Key': request.idempotencyKey } : {}),
-    };
-    const tokens = await this.#tokenStore.get();
-    if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
-    let response = await this.#transport.request<T>(this.#baseUrl, {
-      method: request.method,
-      path: request.path,
-      headers,
-      ...(request.body ? { body: request.body } : {}),
-      ...(request.responseType === 'empty' ? { responseType: 'empty' as const } : {}),
-    });
-    if (response.status === 401 && tokens) {
-      const refreshed = await client.refreshSession();
-      headers.Authorization = `Bearer ${refreshed.accessToken}`;
-      response = await this.#transport.request<T>(this.#baseUrl, {
-        method: request.method,
-        path: request.path,
-        headers,
-        ...(request.body ? { body: request.body } : {}),
-        ...(request.responseType === 'empty' ? { responseType: 'empty' as const } : {}),
-      });
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw problemFromResponse(response.status, response.data);
-    }
-    return response.data;
+  createSkill(...args: Parameters<AdminApi['createSkill']>): ReturnType<AdminApi['createSkill']> {
+    return this.api.createSkill(...args);
   }
-
-  async #listAllRoles(client: AepClient): Promise<readonly Role[]> {
-    const roles: Role[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listRoles({ ...(cursor ? { cursor } : {}), limit: 200 });
-      roles.push(...page.roles);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return roles;
-      cursor = nextCursor;
-    }
+  updateSkill(...args: Parameters<AdminApi['updateSkill']>): ReturnType<AdminApi['updateSkill']> {
+    return this.api.updateSkill(...args);
   }
-
-  async #listAllTeams(client: AepClient): Promise<readonly Team[]> {
-    const teams: Team[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listTeams({ ...(cursor ? { cursor } : {}), limit: 200 });
-      teams.push(...page.teams);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return teams;
-      cursor = nextCursor;
-    }
+  deleteSkill(...args: Parameters<AdminApi['deleteSkill']>): ReturnType<AdminApi['deleteSkill']> {
+    return this.api.deleteSkill(...args);
   }
-
-  async #listAllSkills(client: AepClient): Promise<JsonObject> {
-    const skills: JsonValue[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listSkills({ ...(cursor ? { cursor } : {}), limit: 200 });
-      skills.push(...(arrayFrom(page, 'skills') as JsonValue[]));
-      const nextCursor = valueString(page, 'nextCursor');
-      if (!nextCursor || nextCursor === cursor) return { skills };
-      cursor = nextCursor;
-    }
+  skillInstallations(...args: Parameters<AdminApi['skillInstallations']>): ReturnType<AdminApi['skillInstallations']> {
+    return this.api.skillInstallations(...args);
   }
-
-  async #listAllCredentials(client: AepClient): Promise<CredentialList> {
-    const credentials: CredentialMetadata[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listCredentials({ ...(cursor ? { cursor } : {}), limit: 200 });
-      credentials.push(...page.credentials);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return { credentials, nextCursor: null };
-      cursor = nextCursor;
-    }
+  uploadSkillVersion(...args: Parameters<AdminApi['uploadSkillVersion']>): ReturnType<AdminApi['uploadSkillVersion']> {
+    return this.api.uploadSkillVersion(...args);
   }
-
-  async #listAllModels(client: AepClient): Promise<AdminModelList> {
-    const models: AdminModel[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listAdminModels({ ...(cursor ? { cursor } : {}), limit: 200 });
-      models.push(...page.models);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return { models, nextCursor: null };
-      cursor = nextCursor;
-    }
+  publishSkillVersion(
+    ...args: Parameters<AdminApi['publishSkillVersion']>
+  ): ReturnType<AdminApi['publishSkillVersion']> {
+    return this.api.publishSkillVersion(...args);
   }
-
-  async #listAllUsers(client: AepClient): Promise<readonly PlatformUser[]> {
-    const users: PlatformUser[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await client.listUsers(cursor, 200);
-      users.push(...page.items);
-      const nextCursor = page.nextCursor ?? null;
-      if (!nextCursor || nextCursor === cursor) return users;
-      cursor = nextCursor;
-    }
+  deleteSkillVersion(...args: Parameters<AdminApi['deleteSkillVersion']>): ReturnType<AdminApi['deleteSkillVersion']> {
+    return this.api.deleteSkillVersion(...args);
   }
-
-  async #identitySession(client: AepClient): Promise<AdminSession> {
-    const identity = parseAdminIdentity(await client.getCurrentIdentity());
-    if (!identity) {
-      await this.#tokenStore.clear();
-      this.#client = null;
-      this.#deploymentId = null;
-      this.#sessionId = null;
-      throw new Error('The AEP current identity response is invalid.');
-    }
-    this.#deploymentId =
-      identity.deploymentId ?? identity.deployment?.id ?? identity.enterprise?.id ?? this.#deploymentId;
-    return hasAnyAdminConsoleAccess(identity)
-      ? { status: AdminConsoleStatus.Authenticated, identity }
-      : { status: AdminConsoleStatus.Forbidden, identity };
-  }
-}
-
-function runtimeFetch(): typeof globalThis.fetch {
-  const root = globalThis as typeof globalThis & { fetch?: typeof globalThis.fetch };
-  const candidate = root.fetch ?? (typeof window !== 'undefined' ? window.fetch : undefined);
-  if (typeof candidate !== 'function') {
-    throw new Error('The enterprise console runtime does not provide fetch.');
-  }
-  return candidate.bind(typeof window !== 'undefined' ? window : root);
-}
-
-function segment(value: string): string {
-  return encodeURIComponent(value);
-}
-
-interface AepTransportLike {
-  request<T>(
-    baseUrl: string,
-    request: {
-      readonly method: string;
-      readonly path: string;
-      readonly headers?: Record<string, string>;
-      readonly body?: unknown;
-      readonly responseType?: 'json' | 'bytes' | 'empty';
-    },
-  ): Promise<{ status: number; headers: Headers; data: T }>;
-}
-
-function identityQuery(values: { readonly [key: string]: string | number | undefined }): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
-  }
-  return search.toString();
-}
-
-function parseIdentitySource(value: unknown): AdminIdentitySource {
-  const record = isRecord(value) ? value : {};
-  if (typeof record.id !== 'string' || typeof record.displayName !== 'string') {
-    throw new Error('The AEP identity source response is invalid.');
-  }
-  return {
-    id: record.id,
-    displayName: record.displayName,
-    kind: typeof record.kind === 'string' ? record.kind : AdminIdentitySourceKind.Directory,
-    enabled: record.enabled !== false,
-  };
-}
-
-function parseIdentitySources(value: unknown): AdminIdentitySource[] {
-  return arrayFrom(value, 'identitySources').flatMap((item) =>
-    item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string'
-      ? [safeIdentitySource(item)]
-      : [],
-  );
-}
-
-function safeIdentitySource(item: unknown): AdminIdentitySource {
-  const record = item as Record<string, unknown>;
-  return {
-    id: record.id as string,
-    displayName: typeof record.displayName === 'string' ? record.displayName : (record.id as string),
-    kind: typeof record.kind === 'string' ? record.kind : AdminIdentitySourceKind.Directory,
-    enabled: record.enabled !== false,
-  };
-}
-
-function parseIdentityMappings(value: unknown, sourceId: string): AdminIdentityMapping[] {
-  return arrayFrom(value, 'mappings').flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
-    if (typeof record.externalId !== 'string' || typeof record.localSubjectId !== 'string') return [];
-    return [
-      {
-        sourceId: typeof record.sourceId === 'string' ? record.sourceId : sourceId,
-        externalSubjectType:
-          typeof record.externalSubjectType === 'string' ? record.externalSubjectType : AdminIdentitySubjectType.User,
-        externalId: record.externalId,
-        localSubjectId: record.localSubjectId,
-        status: typeof record.status === 'string' ? record.status : AdminIdentityMappingStatus.Active,
-      },
-    ];
-  });
-}
-
-function parseDeploymentSettingValue(value: unknown): AdminDeploymentSettingValue {
-  const record = isRecord(value) ? value : {};
-  const source = record.source;
-  if (
-    source !== AdminDeploymentSettingSource.Override &&
-    source !== AdminDeploymentSettingSource.Env &&
-    source !== AdminDeploymentSettingSource.Unset
-  ) {
-    throw new Error('The AEP deployment settings response is invalid.');
-  }
-  const override = record.override;
-  const effectiveValue = record.effectiveValue;
-  if (
-    (override !== null && override !== undefined && typeof override !== 'string') ||
-    (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'string')
-  ) {
-    throw new Error('The AEP deployment settings response is invalid.');
-  }
-  return {
-    override: typeof override === 'string' ? override : null,
-    effectiveValue: typeof effectiveValue === 'string' ? effectiveValue : null,
-    source,
-  };
-}
-
-function parseDeploymentIntegerSettingValue(value: unknown): AdminDeploymentIntegerSettingValue {
-  const record = isRecord(value) ? value : {};
-  const source = record.source;
-  if (
-    source !== AdminDeploymentSettingSource.Override &&
-    source !== AdminDeploymentSettingSource.Env &&
-    source !== AdminDeploymentSettingSource.Unset
-  ) {
-    throw new Error('The AEP deployment settings response is invalid.');
-  }
-  const override = record.override;
-  const effectiveValue = record.effectiveValue;
-  if (
-    (override !== null && override !== undefined && typeof override !== 'number') ||
-    (effectiveValue !== null && effectiveValue !== undefined && typeof effectiveValue !== 'number')
-  ) {
-    throw new Error('The AEP deployment settings response is invalid.');
-  }
-  return {
-    override: typeof override === 'number' ? override : null,
-    effectiveValue: typeof effectiveValue === 'number' ? effectiveValue : null,
-    source,
-  };
-}
-
-// Older control services do not return the compute keys at all; absent keys
-// parse as unset so panels keep working against both generations.
-function parseOptionalDeploymentSettingValue(value: unknown): AdminDeploymentSettingValue {
-  if (value === undefined) return { override: null, effectiveValue: null, source: 'unset' };
-  return parseDeploymentSettingValue(value);
-}
-
-function parseOptionalDeploymentIntegerSettingValue(value: unknown): AdminDeploymentIntegerSettingValue {
-  if (value === undefined) return { override: null, effectiveValue: null, source: 'unset' };
-  return parseDeploymentIntegerSettingValue(value);
-}
-
-function parseDeploymentSettings(value: unknown): AdminDeploymentSettings {
-  const record = isRecord(value) ? value : {};
-  return {
-    modelGatewayBaseUrl: parseDeploymentSettingValue(record.modelGatewayBaseUrl),
-    computeDefaultTier: parseOptionalDeploymentSettingValue(record.computeDefaultTier),
-    computeIdleHibernateSeconds: parseOptionalDeploymentIntegerSettingValue(record.computeIdleHibernateSeconds),
-    computeConcurrencyCap: parseOptionalDeploymentIntegerSettingValue(record.computeConcurrencyCap),
-  };
-}
-
-function parseComputeTierCatalog(value: unknown): AdminComputeTier[] {
-  const record = isRecord(value) ? value : {};
-  const items = Array.isArray(record.items) ? record.items : [];
-  return items.map((item) => {
-    const tier = isRecord(item) ? item : {};
-    return {
-      name: typeof tier.name === 'string' ? tier.name : '',
-      ...(typeof tier.description === 'string' ? { description: tier.description } : {}),
-      cpuRequest: typeof tier.cpuRequest === 'string' ? tier.cpuRequest : '',
-      cpuLimit: typeof tier.cpuLimit === 'string' ? tier.cpuLimit : '',
-      memoryRequest: typeof tier.memoryRequest === 'string' ? tier.memoryRequest : '',
-      memoryLimit: typeof tier.memoryLimit === 'string' ? tier.memoryLimit : '',
-      source: 'deployment' as const,
-    };
-  });
-}
-
-function parseComputeAssignment(value: unknown): AdminComputeAssignment {
-  const record = isRecord(value) ? value : {};
-  const tier = isRecord(record.tier) ? record.tier : {};
-  const override = tier.override;
-  const source = tier.source;
-  if (source !== 'override' && source !== 'default') {
-    throw new Error('The AEP compute assignment response is invalid.');
-  }
-  return {
-    agentId: typeof record.agentId === 'string' ? record.agentId : '',
-    ...(typeof record.agentName === 'string' ? { agentName: record.agentName } : {}),
-    tier: {
-      override: typeof override === 'string' ? override : null,
-      effective: typeof tier.effective === 'string' ? tier.effective : '',
-      source,
-    },
-    ...(typeof record.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}),
-    ...(typeof record.updatedBy === 'string' ? { updatedBy: record.updatedBy } : {}),
-  };
-}
-
-function parseComputeAssignmentList(value: unknown): AdminComputeAssignment[] {
-  const record = isRecord(value) ? value : {};
-  const items = Array.isArray(record.items) ? record.items : [];
-  return items.map((item) => parseComputeAssignment(item));
-}
-
-const DATA_PLANE_STATES: readonly string[] = ['pending', 'applying', 'ready', 'degraded', 'error'];
-
-function parseDataPlaneStatus(value: unknown): AdminDataPlaneStatus {
-  const record = isRecord(value) ? value : {};
-  const state =
-    typeof record.state === 'string' && DATA_PLANE_STATES.includes(record.state)
-      ? (record.state as DataPlaneStatus['state'])
-      : 'pending';
-  return {
-    state,
-    observedRevision: typeof record.observedRevision === 'string' ? record.observedRevision : null,
-    contentHash: typeof record.contentHash === 'string' ? record.contentHash : null,
-    ...(typeof record.lastAppliedAt === 'string' || record.lastAppliedAt === null
-      ? { lastAppliedAt: record.lastAppliedAt }
-      : {}),
-    ...(typeof record.errorCode === 'string' || record.errorCode === null ? { errorCode: record.errorCode } : {}),
-    ...(typeof record.message === 'string' || record.message === null ? { message: record.message } : {}),
-    ...(typeof record.resourceCount === 'number' ? { resourceCount: record.resourceCount } : {}),
-    ...(record.catalogComparison !== undefined
-      ? { catalogComparison: parseCatalogComparison(record.catalogComparison) }
-      : {}),
-  };
-}
-
-function parseCatalogComparison(value: unknown): AdminDataPlaneCatalogComparison {
-  const record = isRecord(value) ? value : {};
-  const mismatched = Array.isArray(record.mismatched) ? record.mismatched : [];
-  return {
-    missing: stringList(record.missing),
-    extra: stringList(record.extra),
-    mismatched: mismatched.flatMap((item) => {
-      if (!isRecord(item) || typeof item.modelId !== 'string') return [];
-      return [{ modelId: item.modelId, fields: stringList(item.fields) }];
-    }),
-  };
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : [];
-}
-
-function parseDataPlaneDesiredState(value: unknown): DataPlaneDesiredState {
-  const record = isRecord(value) ? value : {};
-  if (typeof record.revision !== 'string' || !Array.isArray(record.routes)) {
-    throw new Error('The AEP data-plane publish response is invalid.');
-  }
-  return {
-    revision: record.revision,
-    routes: record.routes as DataPlaneRoute[],
-    deploymentId: typeof record.deploymentId === 'string' ? record.deploymentId : '',
-    publishedAt: typeof record.publishedAt === 'string' ? record.publishedAt : '',
-    contentHash: typeof record.contentHash === 'string' ? record.contentHash : '',
-  };
-}
-
-function problemFromResponse(status: number, data: unknown): Error {
-  if (isRecord(data) && typeof data.code === 'string') {
-    const detail = typeof data.detail === 'string' ? data.detail : null;
-    return new AdminRequestError(status, data.code, detail);
-  }
-  return new AdminRequestError(status, null, null);
-}
-
-function parseAdminIdentity(value: unknown): AdminIdentity | null {
-  if (!isRecord(value) || !isRecord(value.user)) return null;
-  const userId = nonEmptyString(value.user.id);
-  const displayName = nonEmptyString(value.user.displayName);
-  if (!userId || !displayName || !stringArray(value.roles)) return null;
-  if (value.permissions !== undefined && !stringArray(value.permissions)) return null;
-  if (typeof value.sessionExpiresAt !== 'string' || !Number.isFinite(Date.parse(value.sessionExpiresAt))) return null;
-  if (typeof value.passwordChangeRequired !== 'boolean') return null;
-
-  const deployment = namedIdentity(value.deployment);
-  const enterprise = namedIdentity(value.enterprise);
-  const deploymentId = nonEmptyString(value.deploymentId) ?? deployment?.id ?? enterprise?.id;
-  const legacyEnterprise = enterprise ?? deployment;
-  if (!deploymentId || !legacyEnterprise) return null;
-  if (deployment && deployment.id !== deploymentId) return null;
-  if (enterprise && enterprise.id !== deploymentId) return null;
-  if (value.user.email !== undefined && value.user.email !== null && typeof value.user.email !== 'string') return null;
-
-  return {
-    user: {
-      id: userId,
-      displayName,
-      ...(value.user.email === undefined ? {} : { email: value.user.email }),
-    },
-    ...(deployment ? { deployment } : {}),
-    deploymentId,
-    enterprise: legacyEnterprise,
-    roles: [...value.roles],
-    permissions: [...(value.permissions ?? [])],
-    sessionExpiresAt: value.sessionExpiresAt,
-    passwordChangeRequired: value.passwordChangeRequired,
-  };
-}
-
-function namedIdentity(value: unknown): { id: string; name: string } | null {
-  if (!isRecord(value)) return null;
-  const id = nonEmptyString(value.id);
-  const name = nonEmptyString(value.name);
-  return id && name ? { id, name } : null;
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-function stringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export class SessionTokenStore implements AepTokenStore {
-  // localStorage-backed so a page refresh restores the session instead of
-  // bouncing the admin to the login form (App boots via client.restore(),
-  // and the SDK's 401 path renews the access token through the stored
-  // refresh token). Memory stays the fast path; storage failures (full,
-  // blocked, private mode) degrade to the previous memory-only behaviour.
-  readonly #memory = new MemoryTokenStore();
-  readonly #storageKey = 'zhiyuan.admin.tokens';
-
-  async get() {
-    const memory = await this.#memory.get();
-    if (memory) return memory;
-    try {
-      const raw = window.localStorage.getItem(this.#storageKey);
-      if (!raw) return null;
-      await this.#memory.set(JSON.parse(raw) as Parameters<AepTokenStore['set']>[0]);
-      return this.#memory.get();
-    } catch {
-      return null;
-    }
+  createSkillAssignment(
+    ...args: Parameters<AdminApi['createSkillAssignment']>
+  ): ReturnType<AdminApi['createSkillAssignment']> {
+    return this.api.createSkillAssignment(...args);
   }
-
-  async set(tokens: Parameters<AepTokenStore['set']>[0]): Promise<void> {
-    await this.#memory.set(tokens);
-    try {
-      window.localStorage.setItem(this.#storageKey, JSON.stringify(tokens));
-    } catch {
-      // storage unavailable — memory-only session
-    }
+  deleteSkillAssignment(
+    ...args: Parameters<AdminApi['deleteSkillAssignment']>
+  ): ReturnType<AdminApi['deleteSkillAssignment']> {
+    return this.api.deleteSkillAssignment(...args);
   }
-
-  async clear(): Promise<void> {
-    await this.#memory.clear();
-    try {
-      window.localStorage.removeItem(this.#storageKey);
-    } catch {
-      // storage unavailable
-    }
-  }
-}
-
-function defaultBaseUrl(): string {
-  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env;
-  if (env?.VITE_AEP_BASE_URL) return env.VITE_AEP_BASE_URL;
-  // The admin server proxies /aep to the control service. Keeping the client
-  // same-origin avoids browser CORS failures and also works behind a reverse
-  // proxy in production.
-  if (typeof window !== 'undefined' && window.location.origin !== 'null') {
-    return window.location.origin;
-  }
-  return 'http://localhost:8080';
-}
-
-function listCount(value: unknown): number {
-  if (Array.isArray(value)) return value.length;
-  if (value && typeof value === 'object' && Array.isArray((value as { items?: unknown[] }).items)) {
-    return (value as { items: unknown[] }).items.length;
-  }
-  if (value && typeof value === 'object' && Array.isArray((value as { models?: unknown[] }).models)) {
-    return (value as { models: unknown[] }).models.length;
-  }
-  if (value && typeof value === 'object' && Array.isArray((value as { skills?: unknown[] }).skills)) {
-    return (value as { skills: unknown[] }).skills.length;
-  }
-  return 0;
-}
-
-function parseSkillInstallations(value: unknown): AdminSkillInstallations {
-  const record = isRecord(value) ? value : {};
-  const summary = isRecord(record.summary) ? record.summary : {};
-  const count = (key: string): number => (typeof summary[key] === 'number' ? (summary[key] as number) : 0);
-  const items = Array.isArray(record.items)
-    ? record.items.flatMap((item) => {
-        if (!isRecord(item)) return [];
-        const userId = nonEmptyString(item.userId);
-        const state =
-          item.state === 'missing' || item.state === 'unreported' ? (item.state as 'missing' | 'unreported') : null;
-        if (!userId || !state) return [];
-        const revision = nonEmptyString(item.revision);
-        const reportedAt = nonEmptyString(item.reportedAt);
-        const itemStatus = nonEmptyString(item.itemStatus);
-        return [
-          {
-            userId,
-            state,
-            ...(revision ? { revision } : {}),
-            ...(reportedAt ? { reportedAt } : {}),
-            ...(itemStatus ? { itemStatus } : {}),
-          },
-        ];
-      })
-    : [];
-  return {
-    skillId: nonEmptyString(record.skillId) ?? '',
-    summary: {
-      granted: count('granted'),
-      reported: count('reported'),
-      installed: count('installed'),
-      missing: count('missing'),
-      unreported: count('unreported'),
-      latestReportedAt: nonEmptyString(summary.latestReportedAt) ?? null,
-    },
-    items,
-    truncated: record.truncated === true,
-  };
-}
-
-function parseSkills(value: unknown): AdminSkill[] {
-  const items = arrayFrom(value, 'skills');
-  return items.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
-    if (typeof record.id !== 'string' || typeof record.name !== 'string') return [];
-    const versions = Array.isArray(record.versions)
-      ? record.versions.flatMap((version) => {
-          if (!version || typeof version !== 'object') return [];
-          const item = version as Record<string, unknown>;
-          if (
-            typeof item.version !== 'string' ||
-            typeof item.state !== 'string' ||
-            typeof item.sha256 !== 'string' ||
-            typeof item.size !== 'number'
-          )
-            return [];
-          return [
-            {
-              version: item.version,
-              state: item.state as AdminSkillVersion['state'],
-              sha256: item.sha256,
-              size: item.size,
-              ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}),
-            },
-          ];
-        })
-      : [];
-    const state =
-      record.state === 'withdrawn' || record.state === 'active'
-        ? record.state
-        : record.enabled === false
-          ? 'withdrawn'
-          : 'active';
-    return [
-      {
-        id: record.id,
-        name: record.name,
-        ...(typeof record.description === 'string' ? { description: record.description } : {}),
-        state,
-        enabled: state === 'active',
-        versions,
-      },
-    ];
-  });
-}
-
-function parseAssignments(value: unknown): AdminSkillAssignment[] {
-  return arrayFrom(value, 'items').flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
-    const subject = record.subject;
-    if (
-      typeof record.id !== 'string' ||
-      typeof record.skillId !== 'string' ||
-      !subject ||
-      typeof subject !== 'object' ||
-      typeof (subject as Record<string, unknown>).type !== 'string' ||
-      typeof (subject as Record<string, unknown>).id !== 'string'
-    )
-      return [];
-    const subjectType = (subject as Record<string, unknown>).type;
-    const subjectId = (subject as Record<string, unknown>).id;
-    if (typeof subjectType !== 'string' || typeof subjectId !== 'string') return [];
-    return [
-      {
-        id: record.id,
-        skillId: record.skillId,
-        subjectType,
-        subjectId,
-        // Distinguish "the server said null (perpetual)" from "the server did
-        // not report an expiry at all" (an older API).
-        expiresAt:
-          record.expiresAt === null ? null : typeof record.expiresAt === 'string' ? record.expiresAt : undefined,
-      },
-    ];
-  });
-}
-
-function arrayFrom(value: unknown, key: string): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (!value || typeof value !== 'object') return [];
-  const items = (value as Record<string, unknown>)[key];
-  return Array.isArray(items) ? items : [];
-}
-
-function valueString(value: unknown, key: string): string | null {
-  if (!value || typeof value !== 'object') return null;
-  const candidate = (value as Record<string, unknown>)[key];
-  return typeof candidate === 'string' && candidate ? candidate : null;
-}
-
-/**
- * A page only proves the newer operations protocol when it carries a
- * well-formed `timeRange`. Missing, partial or wrong-typed data means the
- * control service predates the echoed window and the `result` filter, so the
- * console must not report either of them as supported.
- */
-function parseAuditTimeRange(value: unknown): AdminAuditTimeRange | null {
-  if (!isRecord(value) || !('after' in value) || !('before' in value)) return null;
-  const bounds = [value.after, value.before];
-  if (!bounds.every((bound) => bound === null || (typeof bound === 'string' && bound.length > 0))) return null;
-  return { after: valueString(value, 'after'), before: valueString(value, 'before') };
-}
-
-function parseSessions(items: unknown[]): AdminUserSession[] {
-  return items.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
-    if (
-      typeof record.sessionId !== 'string' ||
-      typeof record.userId !== 'string' ||
-      typeof record.topic !== 'string' ||
-      typeof record.createdAt !== 'string' ||
-      typeof record.lastSeenAt !== 'string'
-    )
-      return [];
-    return [
-      {
-        sessionId: record.sessionId,
-        userId: record.userId,
-        topic: record.topic,
-        createdAt: record.createdAt,
-        lastSeenAt: record.lastSeenAt,
-        ...(typeof record.revokedAt === 'string' || record.revokedAt === null ? { revokedAt: record.revokedAt } : {}),
-        ...('client' in record ? { client: parseSessionClient(record.client) } : {}),
-      },
-    ];
-  });
-}
-
-function parseSessionClient(value: unknown): AdminSessionClient | null {
-  if (value === null || value === undefined) return null;
-  if (!isRecord(value)) return null;
-  const name = nonEmptyString(value.name);
-  if (!name) return null;
-  const version = nonEmptyString(value.version);
-  const deviceId = nonEmptyString(value.deviceId);
-  return {
-    name,
-    ...(version ? { version } : {}),
-    ...(deviceId ? { deviceId } : {}),
-  };
-}
-
-function pendingEventCount(value: unknown): number {
-  if (!value || typeof value !== 'object') return 0;
-  const record = value as { items?: unknown[]; pending?: unknown };
-  if (typeof record.pending === 'number') return record.pending;
-  return Array.isArray(record.items)
-    ? record.items.filter((item) => {
-        if (!item || typeof item !== 'object') return false;
-        const state = (item as { state?: unknown }).state;
-        return state === 'pending' || state === 'delivered';
-      }).length
-    : 0;
 }
