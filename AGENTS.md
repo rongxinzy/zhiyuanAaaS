@@ -126,6 +126,33 @@ Electron IPC, Node modules, or `process`.
   current source, Markdown links, `git diff --check`, and the PR file scope.
   Report that runtime checks were not run when no runtime files changed.
 
+## Data Fetching
+
+Server state goes through TanStack Query (`@tanstack/react-query`); do not
+hand-roll data loading.
+
+- Read with `useQuery`; after writes use `invalidateQueries` (or `refetch`).
+  Do not add `useState` + `useEffect` fetch blocks, `let live` /
+  `AbortController` race guards, `revision` refresh counters, or
+  `setTimeout` / `setInterval` polling — use `refetchInterval` with explicit
+  stop conditions instead. UI timing (debounce, auto-dismiss notices) and
+  one-shot job orchestration (`useKnowledgeDeletionSync`) are exempt.
+- Query keys follow `['admin' | 'portal', resource, ...params]`; include every
+  parameter that changes the result (filters, cursor, ids). Shared defaults
+  live in `src/admin/query-client.ts` (`retry: false`, no focus refetch).
+- Use `isPending` for first-load states and `isFetching` for refresh
+  spinners; keep mutations as plain handlers with their existing local
+  pending/error state.
+- Reset derived or accumulated state (appended pages, cursors) on
+  `dataUpdatedAt`, not on data object identity — structural sharing preserves
+  references across equal responses.
+- Clear the cache on authentication transitions (the shell already calls
+  `queryClient.clear()` when the identity key changes); never let cached data
+  cross account boundaries.
+- Tests rendering components that use `useQuery` must wrap them with
+  `renderWithQueryClient` / `withQueryClient` from
+  `tests/helpers/query-client.tsx`.
+
 ## Tests and Acceptance
 
 Use the narrowest relevant test first, then the full gate for release changes:
