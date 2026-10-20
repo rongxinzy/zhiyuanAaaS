@@ -301,7 +301,8 @@ try {
   await page.getByText(/E2E 销售助理 \(sales-helper\)/).click();
   await retrieval.getByRole('textbox').fill('退款期限');
   const searchButton = retrieval.getByRole('button', { name: '开始检索', exact: true });
-  await waitForValue(async () => !(await searchButton.getAttribute('class') || '').includes('ant-btn-loading'), true);
+  // fill() can race an Enter-triggered search; wait until the primary button is idle.
+  await searchButton.and(page.locator('button:not(.ant-btn-loading)')).waitFor({ state: 'visible' });
   assert.match(await retrieval.ariaSnapshot(), /- button "开始检索"$/m);
   await searchButton.click();
   await retrieval.getByRole('button', { name: '退款政策', exact: true }).waitFor();
