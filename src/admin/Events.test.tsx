@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testi
 import { ConfigProvider } from 'antd';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import {
   auditCodeLabel,
   changeFieldLabel,
@@ -19,7 +20,7 @@ import { administratorIdentity } from './test-fixtures.js';
 
 afterEach(cleanup);
 function render(ui: ReactNode) {
-  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{ui}</ConfigProvider>);
+  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{withQueryClient(ui)}</ConfigProvider>);
 }
 
 const auditRow = (overrides: Partial<AdminAuditRecord> = {}): AdminAuditRecord => ({
@@ -286,6 +287,25 @@ describe('read-only audit', () => {
       limit: 50,
     });
   });
+  test('refresh after paging drops appended rows and resets the exhausted cursor', async () => {
+    // 加载更多到尽头后刷新：刷新响应与第一页深相等（同一 mock 数据，结构共享保持
+    // 同一引用）时，追加页与已耗尽的游标也必须丢弃。
+    const client = fixture();
+    const firstPage = { items: [{ eventId: 'e2', type: 'model.changed' }], nextCursor: 'next' };
+    client.searchAudit
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({ items: [{ eventId: 'e3', type: 'model.failed' }], nextCursor: null })
+      .mockResolvedValue(firstPage);
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    expect(await screen.findByText('模型变更')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText('模型失败')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(screen.queryByText('模型失败')).not.toBeInTheDocument());
+    expect(screen.getByText('模型变更')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    await waitFor(() => expect(client.searchAudit).toHaveBeenLastCalledWith({ cursor: 'next', limit: 50 }));
+  });
   test('rejects unauthorized read without requesting data', async () => {
     const client = fixture();
     render(<Events client={client as never} identity={{ ...administratorIdentity, roles: [], permissions: [] }} />);
@@ -312,6 +332,41 @@ describe('read-only audit', () => {
     // 投递状态按共用映射中文化。
     expect(await screen.findByText('失败')).toBeInTheDocument();
     expect(client.cancelControlEvent).not.toHaveBeenCalled();
+  });
+  test('refreshing a failed delivery page clears appended rows, the error and the cursor', async () => {
+    // 抽屉内：追加第二页后翻页失败 → 点失败 Alert 的刷新 → 第一页重试成功且内容不变
+    // （同一 mock 数据，结构共享保持同一引用）→ 追加行、错误与旧游标也必须清空。
+    const client = fixture();
+    const firstPage = {
+      items: [{ deliveryId: 'd1', eventId: 'control-1', state: 'failed', attemptCount: 2 }],
+      nextCursor: 'c2',
+    };
+    client.deliverySummary
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({
+        items: [{ deliveryId: 'd2', eventId: 'control-1', state: 'succeeded', attemptCount: 1 }],
+        nextCursor: 'c3',
+      })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(firstPage);
+    render(<Events client={client as never} identity={administratorIdentity} />);
+    fireEvent.click(screen.getByRole('tab', { name: '配置执行记录' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看执行结果' }));
+    expect(await screen.findByText('d1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /加载更多/ }));
+    expect(await screen.findByText('d2')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(screen.getByRole('button', { name: /加载更多/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('执行结果暂无法获取');
+    fireEvent.click(screen.getAllByRole('button', { name: '刷新' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.queryByText('d2')).not.toBeInTheDocument();
+    expect(screen.getByText('d1')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /加载更多/ })).not.toHaveClass('ant-btn-loading'));
+    fireEvent.click(screen.getByRole('button', { name: /加载更多/ }));
+    await waitFor(() =>
+      expect(client.deliverySummary).toHaveBeenLastCalledWith('control-1', { cursor: 'c2', limit: 50 }),
+    );
   });
   test('loads persisted login history with actor, reason and source', async () => {
     const client = fixture();

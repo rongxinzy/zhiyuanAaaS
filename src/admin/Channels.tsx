@@ -1,4 +1,5 @@
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   App,
@@ -18,15 +19,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { AdminConsoleClient } from './client.js';
 import { ADMIN_LANGUAGE, type AdminLanguage, type AdminTranslationKey, translate } from './i18n.js';
-import {
-  type ChannelProvider,
-  type ChannelQR,
-  type EmployeeChannel,
-  type EmployeeChannels,
-  PortalClient,
-  type PortalEmployee,
-  PortalError,
-} from './portal.js';
+import { type ChannelProvider, type ChannelQR, type EmployeeChannel, PortalClient, PortalError } from './portal.js';
 
 const names: Record<ChannelProvider, AdminTranslationKey> = {
   feishu: 'channelFeishu',
@@ -66,34 +59,23 @@ export function Channels({
   const [portal] = useState(
     () => supplied ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
   );
-  const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
+  const employeesQuery = useQuery({
+    queryKey: ['portal', 'employees'],
+    queryFn: ({ signal }) => portal.listEmployees(signal),
+  });
+  const employees = employeesQuery.data ?? [];
+  const loading = employeesQuery.isFetching;
+  const error = employeesQuery.error ? errorText(employeesQuery.error, language) : '';
   const [selected, setSelected] = useState<string>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [revision, refresh] = useState(0);
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    portal
-      .listEmployees(controller.signal)
-      .then((items) => {
-        if (controller.signal.aborted) return;
-        setEmployees(items);
-        setSelected((current) =>
-          items.some((item) => item.name === current)
-            ? current
-            : (items.find((item) => item.phase === 'Ready') ?? items[0])?.name,
-        );
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(errorText(cause, language));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [portal, revision, language]);
+    const items = employeesQuery.data;
+    if (!items) return;
+    setSelected((current) =>
+      items.some((item) => item.name === current)
+        ? current
+        : (items.find((item) => item.phase === 'Ready') ?? items[0])?.name,
+    );
+  }, [employeesQuery.data]);
   return (
     <section className="admin-table-section">
       <div className="admin-page-heading">
@@ -118,7 +100,7 @@ export function Channels({
             label: `${employee.displayName || employee.name} · ${employee.phase}`,
           }))}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => refresh((n) => n + 1)} loading={loading}>
+        <Button icon={<ReloadOutlined />} onClick={() => void employeesQuery.refetch()} loading={loading}>
           {t('channelEmployeeRefresh')}
         </Button>
       </Space>
@@ -164,13 +146,27 @@ export function EmployeeChannelsPanel({
 }) {
   const t = (key: AdminTranslationKey) => translate(language, key);
   const { modal } = App.useApp();
-  const [data, setData] = useState<EmployeeChannels>();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const channelsKey = ['portal', 'employee-channels', employeeName] as const;
+  const channelsQuery = useQuery({
+    queryKey: channelsKey,
+    queryFn: ({ signal }) => portal.employeeChannels(employeeName, signal),
+    refetchInterval: (query) => {
+      const current = query.state.data;
+      if (!current) return false;
+      if (current.phase === 'Error' || current.phase === 'Sleeping') return false;
+      if (current.phase === 'Ready' && current.runtimeAvailable) return false;
+      return CHANNEL_POLL_INTERVAL_MS;
+    },
+  });
+  const data = channelsQuery.data;
+  const loading = channelsQuery.isFetching;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: channelsKey });
   const [busy, setBusy] = useState(false);
   const [busyProvider, setBusyProvider] = useState<ChannelProvider>();
-  const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const error = actionError || (channelsQuery.error ? errorText(channelsQuery.error, language) : '');
   const [notice, setNotice] = useState('');
-  const [revision, refresh] = useState(0);
   const [editing, setEditing] = useState<EmployeeChannel>();
   const [qr, setQR] = useState<ChannelQR>();
   const [qrOpen, setQROpen] = useState(false);
@@ -188,26 +184,6 @@ export function EmployeeChannelsPanel({
       if (qrID.current) void portal.channelQR(employeeName, 'qr-cancel', qrID.current).catch(() => undefined);
     };
   }, [portal, employeeName]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    portal
-      .employeeChannels(employeeName, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setData(result);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setData(undefined);
-          setError(errorText(cause, language));
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [portal, employeeName, revision, language]);
   const readyRuntimeUnavailable = data?.phase === 'Ready' && data.runtimeAvailable === false;
   const runtimeUnavailableSince = useRef<number | undefined>(undefined);
   const [runtimeGraceElapsed, setRuntimeGraceElapsed] = useState(false);
@@ -226,12 +202,6 @@ export function EmployeeChannelsPanel({
     );
     return () => clearTimeout(timer);
   }, [readyRuntimeUnavailable]);
-  useEffect(() => {
-    if (!data || data.phase === 'Error' || data.phase === 'Sleeping') return;
-    if (data.phase === 'Ready' && data.runtimeAvailable) return;
-    const timer = setTimeout(() => refresh((n) => n + 1), CHANNEL_POLL_INTERVAL_MS);
-    return () => clearTimeout(timer);
-  }, [data]);
 
   async function run(
     action: () => Promise<void>,
@@ -240,17 +210,17 @@ export function EmployeeChannelsPanel({
   ): Promise<boolean> {
     setBusy(true);
     setBusyProvider(provider);
-    setError('');
+    setActionError('');
     setNotice('');
     try {
       await action();
       if (live.current) {
         setNotice(t(success));
-        refresh((n) => n + 1);
+        reload();
       }
       return true;
     } catch (cause) {
-      if (live.current) setError(errorText(cause, language));
+      if (live.current) setActionError(errorText(cause, language));
       return false;
     } finally {
       if (live.current) {
@@ -263,19 +233,19 @@ export function EmployeeChannelsPanel({
   async function connect(item: EmployeeChannel, values: Record<string, string>): Promise<boolean> {
     setBusy(true);
     setBusyProvider(item.provider);
-    setError('');
+    setActionError('');
     setNotice('');
     try {
       await portal.configureChannel(employeeName, item.provider, values);
       const fresh = await portal.employeeChannels(employeeName);
       if (live.current) {
-        setData(fresh);
+        queryClient.setQueryData(channelsKey, fresh);
         const state = fresh.providers.find((provider) => provider.provider === item.provider)?.workerState;
         setNotice(t(state === 'connected' ? 'channelSaved' : 'channelSavedNotConnected'));
       }
       return true;
     } catch (cause) {
-      if (live.current) setError(errorText(cause, language));
+      if (live.current) setActionError(errorText(cause, language));
       return false;
     } finally {
       if (live.current) {
@@ -287,7 +257,7 @@ export function EmployeeChannelsPanel({
 
   async function startQR() {
     setQRBusy(true);
-    setError('');
+    setActionError('');
     setQR(undefined);
     setVerifyCode('');
     setQROpen(true);
@@ -300,7 +270,7 @@ export function EmployeeChannelsPanel({
         setQR(result);
       }
     } catch (cause) {
-      if (live.current && !controller.signal.aborted) setError(errorText(cause, language));
+      if (live.current && !controller.signal.aborted) setActionError(errorText(cause, language));
     } finally {
       if (live.current) setQRBusy(false);
     }
@@ -309,7 +279,7 @@ export function EmployeeChannelsPanel({
   async function pollQR(code?: string) {
     if (!qr || qrBusy) return;
     setQRBusy(true);
-    setError('');
+    setActionError('');
     const controller = new AbortController();
     qrRequest.current = controller;
     try {
@@ -319,11 +289,11 @@ export function EmployeeChannelsPanel({
         if (result.status === 'confirmed') {
           qrID.current = undefined;
           setNotice(t('channelQRConfirmed'));
-          refresh((n) => n + 1);
+          reload();
         }
       }
     } catch (cause) {
-      if (live.current && !controller.signal.aborted) setError(errorText(cause, language));
+      if (live.current && !controller.signal.aborted) setActionError(errorText(cause, language));
     } finally {
       if (live.current) setQRBusy(false);
     }
@@ -340,7 +310,7 @@ export function EmployeeChannelsPanel({
       try {
         await portal.channelQR(employeeName, 'qr-cancel', id);
       } catch (cause) {
-        if (live.current) setError(errorText(cause, language));
+        if (live.current) setActionError(errorText(cause, language));
       }
     }
   }
@@ -360,7 +330,7 @@ export function EmployeeChannelsPanel({
   return (
     <div className="admin-table-section">
       <Space wrap>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((n) => n + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void channelsQuery.refetch()}>
           {t('channelRefresh')}
         </Button>
         {data?.checkedAt && (

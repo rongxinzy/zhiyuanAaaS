@@ -20,6 +20,7 @@ import {
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -45,10 +46,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { runBatch } from './batch.js';
 import {
   type AdminConsoleClient,
-  type AdminCredentials,
-  type AdminDataPlane,
   type AdminDataPlaneCatalogComparison,
-  type AdminDeploymentSettings,
   type AdminDeploymentSettingValue,
   type AdminIdentity,
   AdminModelGatewayUrlProblem,
@@ -79,6 +77,12 @@ interface SessionListFilters {
 const NO_USERS: readonly PlatformUser[] = [];
 const NO_ROLES: readonly Role[] = [];
 const NO_TEAMS: readonly Team[] = [];
+
+const licensesKey = ['admin', 'licenses'] as const;
+const sessionsKey = ['admin', 'sessions'] as const;
+const credentialsKey = ['admin', 'credentials'] as const;
+const dataPlaneKey = ['admin', 'data-plane'] as const;
+const deploymentSettingsKey = ['admin', 'deployment-settings'] as const;
 
 type CredentialGrantTarget = {
   readonly credential: CredentialMetadata;
@@ -183,35 +187,18 @@ function LicensePanel({
 }) {
   const canImport = hasAdminPermission(identity, AdminPermission.LicensesWrite);
   const canRevoke = hasAdminPermission(identity, AdminPermission.LicensesRevoke);
-  const [licenses, setLicenses] = useState<readonly License[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const queryClient = useQueryClient();
+  const licensesQuery = useQuery({
+    queryKey: licensesKey,
+    queryFn: () => client.licenses(),
+  });
+  const licenses = licensesQuery.data ?? null;
+  const loading = licensesQuery.isFetching;
+  const failed = licensesQuery.isError;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: licensesKey });
   const [importOpen, setImportOpen] = useState(false);
   const [revoking, setRevoking] = useState<License | null>(null);
   const [detail, setDetail] = useState<License | null>(null);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    void client
-      .licenses()
-      .then((items) => {
-        if (live) setLicenses(items);
-      })
-      .catch(() => {
-        if (live) {
-          setFailed(true);
-          setLicenses(null);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, revision]);
 
   const columns = useMemo(
     () => [
@@ -280,7 +267,7 @@ function LicensePanel({
             {copy.importLicenseAction}
           </Button>
         ) : null}
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void licensesQuery.refetch()}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -291,7 +278,7 @@ function LicensePanel({
           showIcon
           title={translate(language, 'licensesLoadFailed')}
           action={
-            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+            <Button size="small" onClick={() => void licensesQuery.refetch()}>
               {copy.retry}
             </Button>
           }
@@ -352,20 +339,10 @@ function LicensePanel({
       </Drawer>
 
       {canImport ? (
-        <LicenseImportModal
-          client={client}
-          open={importOpen}
-          onClose={() => setImportOpen(false)}
-          onChanged={() => refresh((value) => value + 1)}
-        />
+        <LicenseImportModal client={client} open={importOpen} onClose={() => setImportOpen(false)} onChanged={reload} />
       ) : null}
       {canRevoke && revoking ? (
-        <RevokeLicenseModal
-          client={client}
-          license={revoking}
-          onClose={() => setRevoking(null)}
-          onChanged={() => refresh((value) => value + 1)}
-        />
+        <RevokeLicenseModal client={client} license={revoking} onClose={() => setRevoking(null)} onChanged={reload} />
       ) : null}
     </div>
   );
@@ -526,42 +503,23 @@ function SessionPanel({
   const canReadUsers = hasAdminPermission(identity, AdminPermission.UsersRead);
   // The console's own session never changes while it stays signed in.
   const currentSessionId = client.sessionId;
-  const [sessions, setSessions] = useState<readonly AdminUserSession[] | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
   // 2026-09-30 LiXiang2019 登录会话筛选：点查询后才请求/过滤
   const [filterForm] = Form.useForm<SessionListFilters>();
   const [filters, setFilters] = useState<SessionListFilters>({});
   const [detail, setDetail] = useState<AdminUserSession | null>(null);
   const [revoking, setRevoking] = useState<AdminUserSession | null>(null);
-  const [revision, refresh] = useState(0);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    const userId = filters.userId?.trim() || undefined;
-    const loadUsers = canReadUsers ? client.users().catch(() => null) : Promise.resolve(null);
-    void Promise.all([client.sessions(userId), loadUsers])
-      .then(([items, knownUsers]) => {
-        if (!live) return;
-        setSessions(items);
-        setUsers(knownUsers);
-      })
-      .catch(() => {
-        if (live) {
-          setFailed(true);
-          setSessions(null);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, canReadUsers, filters.userId, revision]);
+  const queryClient = useQueryClient();
+  const userId = filters.userId?.trim() || undefined;
+  const sessionsQuery = useQuery({
+    queryKey: [...sessionsKey, userId ?? null, canReadUsers],
+    queryFn: () =>
+      Promise.all([client.sessions(userId), canReadUsers ? client.users().catch(() => null) : Promise.resolve(null)]),
+  });
+  const sessions = sessionsQuery.data?.[0] ?? null;
+  const users = sessionsQuery.data?.[1] ?? null;
+  const loading = sessionsQuery.isFetching;
+  const failed = sessionsQuery.isError;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: sessionsKey });
 
   const usersById = useMemo(() => new Map((users ?? NO_USERS).map((user) => [user.id, user])), [users]);
 
@@ -653,7 +611,7 @@ function SessionPanel({
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.sessionsTitle} description={copy.sessionsDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void sessionsQuery.refetch()}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -698,7 +656,7 @@ function SessionPanel({
           showIcon
           title={copy.sessionsLoadFailed}
           action={
-            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+            <Button size="small" onClick={() => void sessionsQuery.refetch()}>
               {copy.retry}
             </Button>
           }
@@ -781,7 +739,7 @@ function SessionPanel({
           session={revoking}
           userLabel={usersById.get(revoking.userId)?.displayName ?? revoking.userId}
           onClose={() => setRevoking(null)}
-          onChanged={() => refresh((value) => value + 1)}
+          onChanged={reload}
         />
       ) : null}
     </div>
@@ -858,18 +816,43 @@ function CredentialPanel({
   const canWrite = hasAdminPermission(identity, AdminPermission.CredentialsWrite);
   const canAssign = hasAdminPermission(identity, AdminPermission.CredentialsAssign);
   const canReadModels = hasAdminPermission(identity, AdminPermission.ModelsRead);
-  const [state, setState] = useState<AdminCredentials | null>(null);
+  const queryClient = useQueryClient();
+  // Subject names only enrich the grant picker; a resources failure must
+  // not fake an empty connection list as success.
+  // Model references are read through the model list (model.credentialId).
+  // Without models.read or on failure the references stay "unknown", never 0.
+  const credentialsQuery = useQuery({
+    queryKey: [...credentialsKey, canReadModels, identity ?? null],
+    queryFn: async () => {
+      const [credentials, resources, models] = await Promise.all([
+        client.credentials(identity),
+        client.resources(identity).catch(() => null),
+        canReadModels ? client.models(identity).catch(() => null) : Promise.resolve(null),
+      ]);
+      return { credentials, resources, models };
+    },
+  });
+  const state = credentialsQuery.data?.credentials ?? null;
+  const users = credentialsQuery.data?.resources?.users ?? NO_USERS;
+  const roles = credentialsQuery.data?.resources?.roles ?? NO_ROLES;
+  const teams = credentialsQuery.data?.resources?.teams ?? NO_TEAMS;
   // null = references unknown (no models.read permission or the model list
   // failed); an empty map = known to have no references.
-  const [references, setReferences] = useState<{
-    readonly known: boolean;
-    readonly byCredential: ReadonlyMap<string, readonly AdminModel[]>;
-  } | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[]>(NO_USERS);
-  const [roles, setRoles] = useState<readonly Role[]>(NO_ROLES);
-  const [teams, setTeams] = useState<readonly Team[]>(NO_TEAMS);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const references = useMemo(() => {
+    const models = credentialsQuery.data?.models;
+    if (models === undefined) return null;
+    if (models === null) return { known: false, byCredential: new Map<string, readonly AdminModel[]>() };
+    const map = new Map<string, AdminModel[]>();
+    for (const model of models.models) {
+      if (!model.credentialId) continue;
+      const list = map.get(model.credentialId) ?? [];
+      map.set(model.credentialId, [...list, model]);
+    }
+    return { known: true, byCredential: map };
+  }, [credentialsQuery.data]);
+  const loading = credentialsQuery.isFetching;
+  const failed = credentialsQuery.isError;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: credentialsKey });
   const [savedNotice, setSavedNotice] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<CredentialMetadata | null>(null);
@@ -878,64 +861,18 @@ function CredentialPanel({
   const [detail, setDetail] = useState<CredentialMetadata | null>(null);
   const [granting, setGranting] = useState<CredentialGrantTarget | null>(null);
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
-  const [revision, refresh] = useState(0);
 
   const toggleEnabled = async (credential: CredentialMetadata) => {
     setPendingToggleId(credential.id);
     try {
       await client.updateCredential(credential.id, { enabled: !credential.enabled });
-      refresh((value) => value + 1);
+      reload();
     } catch {
       notify(AdminNotificationKind.Error, copy.connectionsSaveFailed);
     } finally {
       setPendingToggleId(null);
     }
   };
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    // Subject names only enrich the grant picker; a resources failure must
-    // not fake an empty connection list as success.
-    const loadResources = client.resources(identity).catch(() => null);
-    // Model references are read through the model list (model.credentialId).
-    // Without models.read or on failure the references stay "unknown", never 0.
-    const loadModels = canReadModels ? client.models(identity).catch(() => null) : Promise.resolve(null);
-    void Promise.all([client.credentials(identity), loadResources, loadModels])
-      .then(([credentials, resources, models]) => {
-        if (!live) return;
-        setState(credentials);
-        if (resources) {
-          setUsers(resources.users);
-          setRoles(resources.roles);
-          setTeams(resources.teams);
-        }
-        if (models) {
-          const map = new Map<string, AdminModel[]>();
-          for (const model of models.models) {
-            if (!model.credentialId) continue;
-            const list = map.get(model.credentialId) ?? [];
-            map.set(model.credentialId, [...list, model]);
-          }
-          setReferences({ known: true, byCredential: map });
-        } else {
-          setReferences({ known: false, byCredential: new Map() });
-        }
-      })
-      .catch(() => {
-        if (live) {
-          setFailed(true);
-          setState(null);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, identity, canReadModels, revision]);
 
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const assignmentsByCredential = useMemo(() => {
@@ -1085,7 +1022,7 @@ function CredentialPanel({
             {copy.addConnection}
           </Button>
         ) : null}
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void credentialsQuery.refetch()}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -1105,7 +1042,7 @@ function CredentialPanel({
           showIcon
           title={copy.connectionsLoadFailed}
           action={
-            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+            <Button size="small" onClick={() => void credentialsQuery.refetch()}>
               {copy.retry}
             </Button>
           }
@@ -1137,7 +1074,7 @@ function CredentialPanel({
                       label={subjectLabel(assignment)}
                       canAssign={canAssign}
                       client={client}
-                      onChanged={() => refresh((value) => value + 1)}
+                      onChanged={reload}
                     />
                   ))}
                 </Space>
@@ -1193,7 +1130,7 @@ function CredentialPanel({
           onClose={() => setCreating(false)}
           onChanged={() => {
             setSavedNotice(true);
-            refresh((value) => value + 1);
+            reload();
           }}
         />
       ) : null}
@@ -1205,7 +1142,7 @@ function CredentialPanel({
           onClose={() => setEditing(null)}
           onChanged={() => {
             setSavedNotice(true);
-            refresh((value) => value + 1);
+            reload();
           }}
         />
       ) : null}
@@ -1218,7 +1155,7 @@ function CredentialPanel({
           onClose={() => setRotating(null)}
           onChanged={() => {
             setSavedNotice(true);
-            refresh((value) => value + 1);
+            reload();
           }}
         />
       ) : null}
@@ -1229,7 +1166,7 @@ function CredentialPanel({
           references={referencesOf(deleting)}
           open
           onClose={() => setDeleting(null)}
-          onChanged={() => refresh((value) => value + 1)}
+          onChanged={reload}
         />
       ) : null}
       {canAssign && granting ? (
@@ -1241,7 +1178,7 @@ function CredentialPanel({
           teams={teams}
           open
           onClose={() => setGranting(null)}
-          onChanged={() => refresh((value) => value + 1)}
+          onChanged={reload}
         />
       ) : null}
     </div>
@@ -1822,33 +1759,14 @@ function ConfigurationStatusPanel({
   readonly identity?: AdminIdentity | undefined;
 }) {
   const allowed = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
-  const [state, setState] = useState<AdminDataPlane | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    if (!allowed) return;
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    void client
-      .dataPlane()
-      .then((next) => {
-        if (live) setState(next);
-      })
-      .catch(() => {
-        if (live) {
-          setFailed(true);
-          setState(null);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, allowed, revision]);
+  const dataPlaneQuery = useQuery({
+    queryKey: dataPlaneKey,
+    enabled: allowed,
+    queryFn: () => client.dataPlane(),
+  });
+  const state = dataPlaneQuery.data ?? null;
+  const loading = dataPlaneQuery.isFetching;
+  const failed = dataPlaneQuery.isError;
 
   if (!allowed) {
     return <Result status="403" title={copy.statusNoPermission} />;
@@ -1906,7 +1824,7 @@ function ConfigurationStatusPanel({
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.statusTitle} description={copy.statusDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void dataPlaneQuery.refetch()}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -1921,7 +1839,7 @@ function ConfigurationStatusPanel({
           showIcon
           title={translate(language, 'dataPlaneLoadFailed')}
           action={
-            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+            <Button size="small" onClick={() => void dataPlaneQuery.refetch()}>
               {copy.retry}
             </Button>
           }
@@ -2016,41 +1934,24 @@ function DeploymentSettingsPanel({
 }) {
   const canRead = hasAdminPermission(identity, AdminPermission.DeploymentRead);
   const canWrite = hasAdminPermission(identity, AdminPermission.DeploymentWrite);
-  const [settings, setSettings] = useState<AdminDeploymentSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [forbidden, setForbidden] = useState(false);
+  const queryClient = useQueryClient();
+  const deploymentQuery = useQuery({
+    queryKey: deploymentSettingsKey,
+    enabled: canRead,
+    queryFn: () => client.deploymentSettings(),
+  });
+  const settings = deploymentQuery.data ?? null;
+  const loading = deploymentQuery.isFetching;
+  // A 403 here means the role check passed locally but the server denied the
+  // read; surface the same no-permission state instead of a generic load
+  // failure.
+  const loadError = deploymentQuery.error;
+  const forbidden = loadError instanceof AdminRequestError && loadError.status === 403;
+  const failed = deploymentQuery.isError && !forbidden;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: deploymentSettingsKey });
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [saveError, setSaveError] = useState<{ readonly title: string; readonly detail: string | null } | null>(null);
-  const [revision, refresh] = useState(0);
-  useEffect(() => {
-    if (!canRead) return;
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    setForbidden(false);
-    void client
-      .deploymentSettings()
-      .then((next) => {
-        if (live) setSettings(next);
-      })
-      .catch((error: unknown) => {
-        if (!live) return;
-        // A 403 here means the role check passed locally but the server
-        // denied the read; surface the same no-permission state instead of a
-        // generic load failure.
-        if (error instanceof AdminRequestError && error.status === 403) setForbidden(true);
-        else setFailed(true);
-        setSettings(null);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, canRead, revision]);
 
   const save = async (value: string) => {
     setPending(true);
@@ -2059,7 +1960,7 @@ function DeploymentSettingsPanel({
       await client.updateDeploymentSettings({ modelGatewayBaseUrl: value.trim() });
       notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
       setEditing(false);
-      refresh((current) => current + 1);
+      reload();
     } catch (error) {
       // A 422 carries the server-side validation detail; keep the draft open
       // so the operator can fix the value instead of retyping it.
@@ -2081,7 +1982,7 @@ function DeploymentSettingsPanel({
     try {
       await client.updateDeploymentSettings({ modelGatewayBaseUrl: null });
       notify(AdminNotificationKind.Success, translate(language, 'changesSaved'));
-      refresh((current) => current + 1);
+      reload();
     } catch (error) {
       setSaveError({
         title: copy.deploymentSettingsSaveFailed,
@@ -2100,7 +2001,7 @@ function DeploymentSettingsPanel({
   return (
     <div className="flex w-full flex-col gap-4">
       <ModuleHeading title={copy.deploymentSettingsTitle} description={copy.deploymentSettingsDescription}>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((current) => current + 1)}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void deploymentQuery.refetch()}>
           {translate(language, 'refresh')}
         </Button>
       </ModuleHeading>
@@ -2113,7 +2014,7 @@ function DeploymentSettingsPanel({
           showIcon
           title={copy.deploymentSettingsLoadFailed}
           action={
-            <Button size="small" onClick={() => refresh((current) => current + 1)}>
+            <Button size="small" onClick={() => void deploymentQuery.refetch()}>
               {copy.retry}
             </Button>
           }

@@ -5,6 +5,7 @@ import { ConfigProvider } from 'antd';
 import dayjs from 'dayjs';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import { type AdminAuditPage, type AdminAuditRecord, AdminPermission, AdminRequestError } from './client.js';
 import { Events } from './Events.js';
 import { formatTimestampSeconds } from './format.js';
@@ -12,7 +13,7 @@ import { administratorIdentity } from './test-fixtures.js';
 
 afterEach(cleanup);
 function render(ui: ReactNode) {
-  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{ui}</ConfigProvider>);
+  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{withQueryClient(ui)}</ConfigProvider>);
 }
 
 const auditRow = (overrides: Partial<AdminAuditRecord> = {}): AdminAuditRecord => ({
@@ -304,6 +305,7 @@ describe('read-only operations audit', () => {
     fireEvent.click(screen.getByRole('tab', { name: '操作日志' }));
     expect(await screen.findByText('当前条件下暂无记录')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /查询/ })).not.toHaveClass('ant-btn-loading'));
     fireEvent.change(screen.getByLabelText('用户'), { target: { value: '张三' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /查询/ }));
@@ -345,7 +347,7 @@ describe('read-only operations audit', () => {
     fireEvent.change(screen.getByLabelText('用户'), { target: { value: '张三' } });
     fireEvent.click(screen.getByRole('button', { name: /查询/ }));
     await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ actorUserId: 'user-a', limit: 50 }));
-    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多' }));
     await waitFor(() =>
       expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ actorUserId: 'user-a', cursor: '51', limit: 50 }),
     );
@@ -464,7 +466,7 @@ describe('read-only operations audit', () => {
       createdBefore: dayjs('2026-10-05 00:00').toISOString(),
     };
     await waitFor(() => expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ ...expected, limit: 50 }));
-    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多' }));
     await waitFor(() =>
       expect(client.searchAdminAudit).toHaveBeenLastCalledWith({ ...expected, cursor: '51', limit: 50 }),
     );

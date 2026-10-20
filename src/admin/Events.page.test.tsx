@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testi
 import { ConfigProvider } from 'antd';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import { type AdminAuditPage, type AdminAuditRecord, type AdminIdentity, AdminPermission } from './client.js';
 import { Events } from './Events.js';
 import { PortalClient } from './portal.js';
@@ -11,7 +12,7 @@ import { administratorIdentity } from './test-fixtures.js';
 
 afterEach(cleanup);
 function render(ui: ReactNode) {
-  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{ui}</ConfigProvider>);
+  return rtlRender(<ConfigProvider button={{ autoInsertSpace: false }}>{withQueryClient(ui)}</ConfigProvider>);
 }
 
 const auditRow = (overrides: Partial<AdminAuditRecord> = {}): AdminAuditRecord => ({

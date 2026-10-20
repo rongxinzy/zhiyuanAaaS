@@ -1,4 +1,5 @@
 import type { AdminControlEvent } from '@aep/sdk-node';
+import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -30,7 +31,6 @@ import { AuditDetail, type AuditDetailRow, codeCell, resultCell, shown, timeCell
 import {
   type AdminAuditFilters,
   type AdminAuditRecord,
-  type AdminAuditTimeRange,
   type AdminAuthenticationAuditRecord,
   type AdminConsoleClient,
   type AdminDeliveryRecord,
@@ -140,54 +140,47 @@ function TelemetryRecords({ client, directory }: TabProps) {
   const [form] = Form.useForm<{ type?: string; actor?: string; result?: string }>();
   const [filters, setFilters] = useState<TelemetryFilters>({});
   const [actorProblem, setActorProblem] = useState<string | null>(null);
-  const [rows, setRows] = useState<readonly AdminEventRecord[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [selected, setSelected] = useState<AdminEventRecord | null>(null);
-  const [revision, refresh] = useState(0);
+  const query = useQuery({
+    queryKey: ['admin', 'telemetry-events', filters],
+    queryFn: () => client.searchAudit({ ...filters, limit: 50 }),
+  });
+  const firstPage = query.data;
+  // dataUpdatedAt 在每次成功读取后都变（即使响应与上一份深相等、被结构共享保持
+  // 同一引用）：用它驱动重置，加载更多到尽头后刷新也能丢弃追加页与耗尽的游标。
+  const firstFetchedAt = query.dataUpdatedAt;
+  // 后续分页手动追加；新查询（筛选变化或刷新）的第一页到达时，丢弃已追加的页与在途分页。
+  const [extraRows, setExtraRows] = useState<readonly AdminEventRecord[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [morePending, setMorePending] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const requestVersion = useRef(0);
   useEffect(() => {
     requestVersion.current += 1;
-    let live = true;
-    setLoading(true);
-    setError(false);
-    setRows([]);
-    setCursor(null);
-    void client
-      .searchAudit({ ...filters, limit: 50 })
-      .then((page) => {
-        if (live) {
-          setRows(page.items);
-          setCursor(page.nextCursor);
-        }
-      })
-      .catch(() => {
-        if (live) setError(true);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, filters, revision]);
+    setExtraRows([]);
+    setMorePending(false);
+    setMoreError(false);
+    setCursor(firstPage?.nextCursor ?? null);
+  }, [firstPage, firstFetchedAt]);
   const more = async () => {
-    if (!cursor || loading) return;
+    if (!cursor || morePending || query.isFetching) return;
     const version = requestVersion.current;
-    setLoading(true);
-    setError(false);
+    setMorePending(true);
+    setMoreError(false);
     try {
       const page = await client.searchAudit({ ...filters, cursor, limit: 50 });
       if (version !== requestVersion.current) return;
-      setRows((current) => [...current, ...page.items]);
+      setExtraRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
-      if (version === requestVersion.current) setError(true);
+      if (version === requestVersion.current) setMoreError(true);
     } finally {
-      if (version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current) setMorePending(false);
     }
   };
+  const rows = [...(firstPage?.items ?? []), ...extraRows];
+  const loading = query.isPending || morePending;
+  const error = query.isError || moreError;
   return (
     <>
       <Form form={form} layout="inline" style={{ gap: 12, marginBottom: 20 }}>
@@ -231,7 +224,7 @@ function TelemetryRecords({ client, directory }: TabProps) {
             setFilters({});
           }}
         />
-        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+        <Button onClick={() => void query.refetch()}>{c.refresh}</Button>
       </Form>
       {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
@@ -300,69 +293,87 @@ function TelemetryRecords({ client, directory }: TabProps) {
 type TelemetryFilters = { type?: string; userId?: string; result?: string };
 
 function ExecutionRecords({ client, directory }: TabProps) {
-  const [rows, setRows] = useState<readonly AdminControlEvent[]>([]);
+  const query = useQuery({
+    queryKey: ['admin', 'control-events'],
+    queryFn: () => client.controlEvents({ limit: 50 }),
+  });
+  const firstPage = query.data;
+  const firstFetchedAt = query.dataUpdatedAt;
+  const [extraRows, setExtraRows] = useState<readonly AdminControlEvent[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [revision, refresh] = useState(0);
+  const [morePending, setMorePending] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [deliveries, setDeliveries] = useState<readonly AdminDeliveryRecord[]>([]);
-  const [deliveryError, setDeliveryError] = useState(false);
-  const [deliveryLoading, setDeliveryLoading] = useState(false);
-  const [deliveryRevision, retry] = useState(0);
+  const requestVersion = useRef(0);
+  useEffect(() => {
+    requestVersion.current += 1;
+    setExtraRows([]);
+    setMorePending(false);
+    setMoreError(false);
+    setCursor(firstPage?.nextCursor ?? null);
+  }, [firstPage, firstFetchedAt]);
+  const deliveryQuery = useQuery({
+    queryKey: ['admin', 'control-event-deliveries', selected],
+    queryFn: () => client.deliverySummary(selected!, { limit: 50 }),
+    enabled: selected !== null,
+  });
+  const firstDeliveryPage = deliveryQuery.data;
+  const firstDeliveryFetchedAt = deliveryQuery.dataUpdatedAt;
+  const [extraDeliveries, setExtraDeliveries] = useState<readonly AdminDeliveryRecord[]>([]);
   const [deliveryCursor, setDeliveryCursor] = useState<string | null>(null);
+  const [deliveryMorePending, setDeliveryMorePending] = useState(false);
+  const [deliveryMoreError, setDeliveryMoreError] = useState(false);
+  const deliveryVersion = useRef(0);
   useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setError(false);
-    void client
-      .controlEvents({ limit: 50 })
-      .then((page) => {
-        if (live) {
-          setRows(page.items);
-          setCursor(page.nextCursor);
-        }
-      })
-      .catch(() => {
-        if (live) setError(true);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, revision]);
-  useEffect(() => {
-    if (!selected) return;
-    let live = true;
-    setDeliveries([]);
-    setDeliveryCursor(null);
-    setDeliveryLoading(true);
-    setDeliveryError(false);
-    void client
-      .deliverySummary(selected, { limit: 50 })
-      .then((page) => {
-        if (live) {
-          setDeliveries(page.items);
-          setDeliveryCursor(page.nextCursor);
-        }
-      })
-      .catch(() => {
-        if (live) setDeliveryError(true);
-      })
-      .finally(() => {
-        if (live) setDeliveryLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, selected, deliveryRevision]);
+    deliveryVersion.current += 1;
+    setExtraDeliveries([]);
+    setDeliveryMorePending(false);
+    setDeliveryMoreError(false);
+    setDeliveryCursor(firstDeliveryPage?.nextCursor ?? null);
+  }, [firstDeliveryPage, firstDeliveryFetchedAt]);
+  const more = async () => {
+    if (!cursor || morePending || query.isFetching) return;
+    const version = requestVersion.current;
+    setMorePending(true);
+    setMoreError(false);
+    try {
+      const next = await client.controlEvents({ cursor, limit: 50 });
+      if (version !== requestVersion.current) return;
+      setExtraRows((current) => [...current, ...next.items]);
+      setCursor(next.nextCursor);
+    } catch {
+      if (version === requestVersion.current) setMoreError(true);
+    } finally {
+      if (version === requestVersion.current) setMorePending(false);
+    }
+  };
+  const moreDeliveries = async () => {
+    if (!selected || !deliveryCursor || deliveryMorePending || deliveryQuery.isFetching) return;
+    const version = deliveryVersion.current;
+    setDeliveryMorePending(true);
+    setDeliveryMoreError(false);
+    try {
+      const page = await client.deliverySummary(selected, { cursor: deliveryCursor, limit: 50 });
+      if (version !== deliveryVersion.current) return;
+      setExtraDeliveries((current) => [...current, ...page.items]);
+      setDeliveryCursor(page.nextCursor);
+    } catch {
+      if (version === deliveryVersion.current) setDeliveryMoreError(true);
+    } finally {
+      if (version === deliveryVersion.current) setDeliveryMorePending(false);
+    }
+  };
+  const rows = [...(firstPage?.items ?? []), ...extraRows];
+  const loading = query.isPending || morePending;
+  const error = query.isError || moreError;
+  const deliveries = [...(firstDeliveryPage?.items ?? []), ...extraDeliveries];
+  const deliveryLoading = deliveryQuery.isPending || deliveryMorePending;
+  const deliveryError = deliveryQuery.isError || deliveryMoreError;
   return (
     <>
       <Space style={{ marginBottom: 16 }}>
         <Typography.Text type="secondary">{c.executionHint}</Typography.Text>
-        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+        <Button onClick={() => void query.refetch()}>{c.refresh}</Button>
       </Space>
       {error && <Alert type="error" title={c.failed} />}
       <Table
@@ -394,22 +405,7 @@ function ExecutionRecords({ client, directory }: TabProps) {
         ]}
       />
       {cursor && (
-        <Button
-          loading={loading}
-          onClick={async () => {
-            setLoading(true);
-            setError(false);
-            try {
-              const next = await client.controlEvents({ cursor, limit: 50 });
-              setRows((current) => [...current, ...next.items]);
-              setCursor(next.nextCursor);
-            } catch {
-              setError(true);
-            } finally {
-              setLoading(false);
-            }
-          }}
-        >
+        <Button loading={loading} onClick={() => void more()}>
           {c.more}
         </Button>
       )}
@@ -418,7 +414,7 @@ function ExecutionRecords({ client, directory }: TabProps) {
           <Alert
             type="error"
             title={c.deliveryError}
-            action={<Button onClick={() => retry((n) => n + 1)}>{c.refresh}</Button>}
+            action={<Button onClick={() => void deliveryQuery.refetch()}>{c.refresh}</Button>}
           />
         )}
         <Table
@@ -434,26 +430,7 @@ function ExecutionRecords({ client, directory }: TabProps) {
           ]}
         />
         {deliveryCursor && (
-          <Button
-            loading={deliveryLoading}
-            onClick={async () => {
-              if (!selected) return;
-              setDeliveryLoading(true);
-              setDeliveryError(false);
-              try {
-                const page = await client.deliverySummary(selected, {
-                  cursor: deliveryCursor,
-                  limit: 50,
-                });
-                setDeliveries((rows) => [...rows, ...page.items]);
-                setDeliveryCursor(page.nextCursor);
-              } catch {
-                setDeliveryError(true);
-              } finally {
-                setDeliveryLoading(false);
-              }
-            }}
-          >
+          <Button loading={deliveryLoading} onClick={() => void moreDeliveries()}>
             {c.more}
           </Button>
         )}
@@ -469,60 +446,46 @@ function LoginRecords({ client, directory }: TabProps) {
   const [form] = Form.useForm<{ eventType?: string; outcome?: string; actor?: string }>();
   const [filters, setFilters] = useState<LoginFilters>({});
   const [actorProblem, setActorProblem] = useState<string | null>(null);
-  const [rows, setRows] = useState<readonly AdminAuthenticationAuditRecord[]>([]);
+  const query = useQuery({
+    queryKey: ['admin', 'login-audit', filters],
+    queryFn: () => client.searchAuthenticationAudit({ ...filters, limit: 50 }),
+  });
+  const firstPage = query.data;
+  const firstFetchedAt = query.dataUpdatedAt;
+  const [extraRows, setExtraRows] = useState<readonly AdminAuthenticationAuditRecord[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
-  const [revision, refresh] = useState(0);
+  const [morePending, setMorePending] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const requestVersion = useRef(0);
   useEffect(() => {
     requestVersion.current += 1;
-    const version = requestVersion.current;
-    let live = true;
-    setLoading(true);
-    setError(false);
-    setUnavailable(false);
-    setRows([]);
-    setCursor(null);
-    void client
-      .searchAuthenticationAudit({ ...filters, limit: 50 })
-      .then((page) => {
-        if (live && version === requestVersion.current) {
-          setRows(page.items);
-          setCursor(page.nextCursor);
-        }
-      })
-      .catch((cause) => {
-        if (!live) return;
-        // An older control service has no audit endpoint yet; degrade to the
-        // honest "not connected" state instead of an error.
-        if (cause instanceof AdminRequestError && cause.status === 404) setUnavailable(true);
-        else setError(true);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, filters, revision]);
+    setExtraRows([]);
+    setMorePending(false);
+    setMoreError(false);
+    setCursor(firstPage?.nextCursor ?? null);
+  }, [firstPage, firstFetchedAt]);
   const more = async () => {
-    if (!cursor || loading) return;
+    if (!cursor || morePending || query.isFetching) return;
     const version = requestVersion.current;
-    setLoading(true);
-    setError(false);
+    setMorePending(true);
+    setMoreError(false);
     try {
       const page = await client.searchAuthenticationAudit({ ...filters, cursor, limit: 50 });
       if (version !== requestVersion.current) return;
-      setRows((current) => [...current, ...page.items]);
+      setExtraRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
-      if (version === requestVersion.current) setError(true);
+      if (version === requestVersion.current) setMoreError(true);
     } finally {
-      if (version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current) setMorePending(false);
     }
   };
+  const rows = [...(firstPage?.items ?? []), ...extraRows];
+  const loading = query.isPending || morePending;
+  // An older control service has no audit endpoint yet; degrade to the
+  // honest "not connected" state instead of an error.
+  const unavailable = query.error instanceof AdminRequestError && query.error.status === 404;
+  const error = !unavailable && (query.isError || moreError);
   if (unavailable) {
     return <Result status="info" title={c.loginUnavailable} />;
   }
@@ -562,7 +525,7 @@ function LoginRecords({ client, directory }: TabProps) {
             setFilters({});
           }}
         />
-        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+        <Button onClick={() => void query.refetch()}>{c.refresh}</Button>
       </Form>
       {actorProblem && <Alert type="warning" showIcon title={actorProblem} style={{ marginBottom: 20 }} />}
       {error && <Alert type="error" showIcon title={c.failed} style={{ marginBottom: 16 }} />}
@@ -696,92 +659,76 @@ function OperationDetail({
 function OperationLog({ client, directory }: TabProps) {
   const [form] = Form.useForm<OperationFormValues>();
   const [filters, setFilters] = useState<OperationFilters>({});
-  const [window, setWindow] = useState<OperationWindow | null>(null);
-  const [rows, setRows] = useState<readonly AdminAuditRecord[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<AdminAuditTimeRange | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
-  const [legacy, setLegacy] = useState(false);
   const [actorProblem, setActorProblem] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdminAuditRecord | null>(null);
-  const [revision, refresh] = useState(0);
-  const requestVersion = useRef(0);
   // 能力判断是后端属性，确认后一直保留：重新查询不能把被忽略的筛选重新放开。
   const legacyRef = useRef(false);
+  const query = useQuery({
+    queryKey: ['admin', 'operation-audit', filters],
+    queryFn: () => {
+      // 旧控制面缺少 timeRange：确认能力后不再发送结果与时间参数。
+      const requested = legacyRef.current ? supportedFilters(filters) : filters;
+      return client.searchAdminAudit({ ...operationQuery(requested, null), limit: 50 });
+    },
+  });
+  const firstPage = query.data;
+  const firstFetchedAt = query.dataUpdatedAt;
+  // 生效窗口固定为首屏返回值：后续分页显式携带，服务端不再每页重算默认窗口。
+  const applied = firstPage && firstPage.timeRange !== null ? firstPage.timeRange : null;
+  const legacy = firstPage === undefined ? legacyRef.current : firstPage.timeRange === null;
+  const window: OperationWindow | null = applied
+    ? {
+        ...(applied.after ? { createdAfter: applied.after } : {}),
+        ...(applied.before ? { createdBefore: applied.before } : {}),
+      }
+    : null;
+  const [extraRows, setExtraRows] = useState<readonly AdminAuditRecord[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [morePending, setMorePending] = useState(false);
+  const [moreError, setMoreError] = useState(false);
+  const requestVersion = useRef(0);
   useEffect(() => {
     requestVersion.current += 1;
-    const version = requestVersion.current;
-    let live = true;
-    setLoading(true);
-    setError(false);
-    setUnavailable(false);
-    setRows([]);
-    setCursor(null);
-    setWindow(null);
-    setTimeRange(null);
-    // 旧控制面缺少 timeRange：确认能力后不再发送结果与时间参数。
-    const requested = legacyRef.current ? supportedFilters(filters) : filters;
-    void client
-      .searchAdminAudit({ ...operationQuery(requested, null), limit: 50 })
-      .then((page) => {
-        if (!live || version !== requestVersion.current) return;
-        const applied = page.timeRange;
-        legacyRef.current = applied === null;
-        setLegacy(applied === null);
-        setRows(page.items);
-        setCursor(page.nextCursor);
-        if (applied === null) {
-          // 已应用条件里若含被忽略的筛选，连同表单一起摘掉，不假装它生效。
-          if (filters.result !== undefined || filters.range !== undefined) {
-            form.resetFields(['result', 'range']);
-            setFilters(supportedFilters(filters));
-          }
-          return;
-        }
-        setTimeRange(applied);
-        setWindow({
-          ...(applied.after ? { createdAfter: applied.after } : {}),
-          ...(applied.before ? { createdBefore: applied.before } : {}),
-        });
-      })
-      .catch((cause) => {
-        if (!live) return;
-        // An older control service has no operations endpoint yet; degrade to
-        // the honest "not connected" state instead of an error.
-        if (cause instanceof AdminRequestError && cause.status === 404) setUnavailable(true);
-        else setError(true);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, filters, form, revision]);
+    setExtraRows([]);
+    setMorePending(false);
+    setMoreError(false);
+    setCursor(firstPage?.nextCursor ?? null);
+    if (!firstPage) return;
+    legacyRef.current = firstPage.timeRange === null;
+    if (firstPage.timeRange === null && (filters.result !== undefined || filters.range !== undefined)) {
+      // 已应用条件里若含被忽略的筛选，连同表单一起摘掉，不假装它生效。
+      form.resetFields(['result', 'range']);
+      setFilters(supportedFilters(filters));
+    }
+  }, [firstPage, firstFetchedAt, filters, form]);
   const more = async () => {
-    if (!cursor || loading) return;
+    if (!cursor || morePending || query.isFetching) return;
     const version = requestVersion.current;
-    setLoading(true);
-    setError(false);
+    setMorePending(true);
+    setMoreError(false);
     try {
       // 后续页携带首屏固定的生效边界（显式范围则用用户的范围），服务端不再重算默认窗口。
       const page = await client.searchAdminAudit({ ...operationQuery(filters, window), cursor, limit: 50 });
       if (version !== requestVersion.current) return;
-      setRows((current) => [...current, ...page.items]);
+      setExtraRows((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
-      if (version === requestVersion.current) setError(true);
+      if (version === requestVersion.current) setMoreError(true);
     } finally {
-      if (version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current) setMorePending(false);
     }
   };
+  const rows = [...(firstPage?.items ?? []), ...extraRows];
+  const loading = query.isPending || morePending;
+  // An older control service has no operations endpoint yet; degrade to
+  // the honest "not connected" state instead of an error.
+  const unavailable = query.error instanceof AdminRequestError && query.error.status === 404;
+  const error = !unavailable && (query.isError || moreError);
   const rangeLabel = filters.range
     ? `${filters.range[0].format('YYYY-MM-DD HH:mm')} ~ ${filters.range[1].format('YYYY-MM-DD HH:mm')}`
-    : timeRange
-      ? `${timeRange.after ? dayjs(timeRange.after).format('YYYY-MM-DD HH:mm') : c.rangeUnbounded} ~ ${
-          timeRange.before ? dayjs(timeRange.before).format('YYYY-MM-DD HH:mm') : c.rangeNow
+    : applied
+      ? `${applied.after ? dayjs(applied.after).format('YYYY-MM-DD HH:mm') : c.rangeUnbounded} ~ ${
+          applied.before ? dayjs(applied.before).format('YYYY-MM-DD HH:mm') : c.rangeNow
         }`
       : null;
   const appliedFilters = [
@@ -855,7 +802,7 @@ function OperationLog({ client, directory }: TabProps) {
             setFilters({});
           }}
         />
-        <Button onClick={() => refresh((n) => n + 1)}>{c.refresh}</Button>
+        <Button onClick={() => void query.refetch()}>{c.refresh}</Button>
       </Form>
       {rangeLabel && (
         <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
@@ -868,7 +815,7 @@ function OperationLog({ client, directory }: TabProps) {
           showIcon
           title={c.failed}
           style={{ marginBottom: 16 }}
-          action={<Button onClick={() => refresh((n) => n + 1)}>{c.retry}</Button>}
+          action={<Button onClick={() => void query.refetch()}>{c.retry}</Button>}
         />
       )}
       <Table

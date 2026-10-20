@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App, ConfigProvider } from 'antd';
 import type { Key, ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { renderWithQueryClient, withQueryClient } from '../../tests/helpers/query-client.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { type PortalClient, PortalError } from './portal.js';
@@ -118,7 +119,7 @@ function makePortal(overrides: Partial<PortalClient> = {}) {
 }
 
 function renderOperations(portal: PortalClient) {
-  return render(
+  return renderWithQueryClient(
     <ConfigProvider>
       <App>
         <KnowledgeOperations portal={portal} baseId="kb-1" baseType="faq" documentIds={['doc-1']} />
@@ -157,7 +158,7 @@ describe('KnowledgeOperations', () => {
 
   test('does not call FAQ endpoints for a document knowledge base', async () => {
     const portal = makePortal();
-    render(
+    renderWithQueryClient(
       <ConfigProvider>
         <App>
           <KnowledgeOperations portal={portal} baseId="kb-1" baseType="document" documentIds={[]} />
@@ -192,8 +193,8 @@ describe('KnowledgeOperations', () => {
         </App>
       </ConfigProvider>
     );
-    const view = render(renderBase('kb-1'));
-    view.rerender(renderBase('kb-2'));
+    const view = renderWithQueryClient(renderBase('kb-1'));
+    view.rerender(withQueryClient(renderBase('kb-2'), view.queryClient));
     expect(await screen.findByText('new-base-folder')).toBeInTheDocument();
 
     finishOldRead({

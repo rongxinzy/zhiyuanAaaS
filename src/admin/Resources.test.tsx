@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from
 import { ConfigProvider } from 'antd';
 import { cloneElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import { AdminRequestError } from './client.js';
 import { AdminNotificationViewport } from './notifications.js';
 import { PortalError } from './portal.js';
@@ -18,9 +19,11 @@ const TIMEOUT = 15000;
 function render(ui: ReactElement<{ readonly identity?: typeof administratorIdentity }>) {
   const withIdentity = cloneElement(ui, { identity: ui.props.identity ?? administratorIdentity });
   return rtlRender(
-    <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
-      {withIdentity}
-    </ConfigProvider>,
+    withQueryClient(
+      <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }}>
+        {withIdentity}
+      </ConfigProvider>,
+    ),
   );
 }
 
@@ -49,25 +52,14 @@ function jsonFile(content: string, name = 'users.json') {
   return file;
 }
 
-async function pickSkillInGrantModal(modal: HTMLElement, optionName: string) {
-  fireEvent.mouseDown(within(modal).getByRole('combobox'));
-  const option = await waitFor(() => {
-    const node = [...document.querySelectorAll('.ant-select-item-option')].find(
-      (item) => item.textContent === optionName,
-    );
-    expect(node).toBeTruthy();
-    return node!;
-  });
-  fireEvent.click(option);
-}
-
 // AntD Select option picker: open the combobox, click the option whose label
-// contains optionName (role options render as "名称（id）").
-async function pickOption(combobox: HTMLElement, optionName: string) {
+// matches optionName (exact match for skill grants; role options render as
+// "名称（id）" and are matched by substring otherwise).
+async function pickOption(combobox: HTMLElement, optionName: string, exact = false) {
   fireEvent.mouseDown(combobox);
   const option = await waitFor(() => {
     const node = [...document.querySelectorAll('.ant-select-item-option')].find((item) =>
-      item.textContent?.includes(optionName),
+      exact ? item.textContent === optionName : item.textContent?.includes(optionName),
     );
     expect(node).toBeTruthy();
     return node!;
@@ -294,7 +286,7 @@ describe('admin resources', () => {
       expect(await screen.findByText('暂无技能授权')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: /授权技能/ })[0]!);
       const modal = await screen.findByRole('dialog');
-      await pickSkillInGrantModal(modal, '写作');
+      await pickOption(within(modal).getByRole('combobox'), '写作', true);
       fireEvent.click(screen.getByRole('checkbox', { name: /张三/ }));
       fireEvent.click(within(modal).getByRole('button', { name: '授权' }));
       await waitFor(() =>
@@ -330,7 +322,7 @@ describe('admin resources', () => {
       expect(await screen.findByText('暂无技能授权')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: /授权技能/ })[0]!);
       const modal = await screen.findByRole('dialog');
-      await pickSkillInGrantModal(modal, '写作');
+      await pickOption(within(modal).getByRole('combobox'), '写作', true);
       fireEvent.click(screen.getByRole('checkbox', { name: /张三/ }));
       fireEvent.click(screen.getByRole('checkbox', { name: /李四/ }));
       fireEvent.click(within(modal).getByRole('button', { name: '授权' }));
@@ -1458,7 +1450,7 @@ describe('admin resources', () => {
       render(<Resources client={client as never} tab={AdminResourceTab.Assignments} />);
       fireEvent.click((await screen.findAllByRole('button', { name: /授权技能/ }))[0]!);
       const modal = await screen.findByRole('dialog');
-      await pickSkillInGrantModal(modal, '写作');
+      await pickOption(within(modal).getByRole('combobox'), '写作', true);
       fireEvent.click(screen.getByRole('checkbox', { name: /编辑者/ }));
       fireEvent.click(screen.getByRole('checkbox', { name: /平台组/ }));
       fireEvent.click(within(modal).getByRole('button', { name: '授权' }));
@@ -1497,7 +1489,7 @@ describe('admin resources', () => {
       expect(await screen.findByText('暂无技能授权')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: /授权技能/ })[0]!);
       const modal = await screen.findByRole('dialog');
-      await pickSkillInGrantModal(modal, '写作');
+      await pickOption(within(modal).getByRole('combobox'), '写作', true);
       fireEvent.click(screen.getByRole('checkbox', { name: /张三/ }));
       fireEvent.click(screen.getByRole('checkbox', { name: /李四/ }));
       fireEvent.click(within(modal).getByRole('button', { name: '授权' }));

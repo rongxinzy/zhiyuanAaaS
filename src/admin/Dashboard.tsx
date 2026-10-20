@@ -5,13 +5,15 @@ import {
   ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Card, Col, Empty, Row, Statistic, Table, Tag } from 'antd';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { translate } from './i18n.js';
-import { PortalClient, type PortalUsageStats } from './portal.js';
+import { PortalClient } from './portal.js';
 
 const language = 'zh' as const;
+const usageStatsKey = ['portal', 'usage-stats'] as const;
 
 export function Dashboard({
   client,
@@ -23,19 +25,14 @@ export function Dashboard({
   const [portal] = useState(
     () => injectedPortal ?? new PortalClient((rejectedToken) => client.getAccessToken(rejectedToken)),
   );
-  const [stats, setStats] = useState<PortalUsageStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    void portal
-      .usageStats()
-      .then(setStats)
-      .catch((cause) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setLoading(false));
-  }, [portal]);
+  const statsQuery = useQuery({
+    queryKey: usageStatsKey,
+    queryFn: () => portal.usageStats(),
+  });
+  const stats = statsQuery.data ?? null;
+  const loadError = statsQuery.error;
+  const error = loadError ? (loadError instanceof Error ? loadError.message : String(loadError)) : null;
+  const loading = statsQuery.isPending;
 
   if (error) {
     return (

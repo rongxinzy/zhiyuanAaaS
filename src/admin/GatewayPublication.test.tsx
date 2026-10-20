@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { renderWithQueryClient, withQueryClient } from '../../tests/helpers/query-client.js';
 import { type AdminConsoleClient, AdminRequestError } from './client.js';
 import { GatewayPublication } from './GatewayPublication.js';
 import { translate } from './i18n.js';
@@ -35,7 +36,7 @@ const client = () => ({
   publishDataPlaneRoutes: vi.fn(),
 });
 function view(c: ReturnType<typeof client>, props: Partial<React.ComponentProps<typeof GatewayPublication>> = {}) {
-  return render(
+  return renderWithQueryClient(
     <ConfigProvider button={{ autoInsertSpace: false }} wave={{ disabled: true }} theme={{ token: { motion: false } }}>
       <GatewayPublication
         language="zh"
@@ -86,14 +87,17 @@ describe('asynchronous route publication', () => {
     fireEvent.click(confirm.getByRole('button', { name: translate('en', 'publicationAction') }));
     await screen.findByText(translate('en', 'publicationForbidden'));
     ui.rerender(
-      <ConfigProvider wave={{ disabled: true }} theme={{ token: { motion: false } }}>
-        <GatewayPublication
-          language="zh"
-          client={c as unknown as AdminConsoleClient}
-          identity={administratorIdentity}
-          allowPublish
-        />
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider wave={{ disabled: true }} theme={{ token: { motion: false } }}>
+          <GatewayPublication
+            language="zh"
+            client={c as unknown as AdminConsoleClient}
+            identity={administratorIdentity}
+            allowPublish
+          />
+        </ConfigProvider>,
+        ui.queryClient,
+      ),
     );
     expect(screen.getByText(translate('zh', 'publicationForbidden'))).toBeInTheDocument();
     expect(c.createDataPlanePublication).toHaveBeenCalledTimes(1);
@@ -193,18 +197,21 @@ describe('asynchronous route publication', () => {
     await screen.findByText('配置已投递');
     c.getDataPlanePublication.mockClear();
     ui.rerender(
-      <ConfigProvider
-        button={{ autoInsertSpace: false }}
-        wave={{ disabled: true }}
-        theme={{ token: { motion: false } }}
-      >
-        <GatewayPublication
-          language="zh"
-          client={c as unknown as AdminConsoleClient}
-          identity={{ ...administratorIdentity, user: { id: 'switched', displayName: 'Other' } }}
-          allowPublish
-        />
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider
+          button={{ autoInsertSpace: false }}
+          wave={{ disabled: true }}
+          theme={{ token: { motion: false } }}
+        >
+          <GatewayPublication
+            language="zh"
+            client={c as unknown as AdminConsoleClient}
+            identity={{ ...administratorIdentity, user: { id: 'switched', displayName: 'Other' } }}
+            allowPublish
+          />
+        </ConfigProvider>,
+        ui.queryClient,
+      ),
     );
     expect(await screen.findByText(/当前会话尚未记录/)).toBeInTheDocument();
     expect(screen.queryByText(id)).not.toBeInTheDocument();
@@ -252,18 +259,30 @@ describe('asynchronous route publication', () => {
       ...unknown,
       conditions: unknown.conditions.map((v) => ({ ...v, status: 'Unknown', observedRevision: null })),
     });
-    const schedule = vi.spyOn(globalThis, 'setTimeout');
-    view(c);
+    const ui = view(c);
     await publish();
     await screen.findByText('配置已投递');
-    const retry = schedule.mock.calls.find((args) => args[1] === 2000)?.[0];
-    expect(typeof retry).toBe('function');
-    c.getDataPlanePublication.mockResolvedValue(operation());
+    ui.unmount();
+    c.getDataPlanePublication.mockClear();
+    vi.useFakeTimers();
     await act(async () => {
-      if (typeof retry === 'function') retry();
+      view(c);
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(c.getDataPlanePublication).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
     });
     expect(c.getDataPlanePublication).toHaveBeenCalledTimes(2);
-    expect(schedule.mock.calls.filter((args) => args[1] === 2000)).toHaveLength(1);
+    c.getDataPlanePublication.mockResolvedValue(operation());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(c.getDataPlanePublication).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(c.getDataPlanePublication).toHaveBeenCalledTimes(3);
   });
   test('bounds automatic polling and offers manual refresh without resubmitting', async () => {
     const c = client();
@@ -282,7 +301,7 @@ describe('asynchronous route publication', () => {
       view(c);
       await vi.advanceTimersByTimeAsync(60000);
     });
-    // Start the effect before advancing the rest of its bounded timer chain.
+    // Start the query before advancing the rest of its bounded timer chain.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60000);
     });

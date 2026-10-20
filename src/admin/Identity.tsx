@@ -1,5 +1,6 @@
 import type { PlatformUser } from '@aep/sdk-node';
 import { InfoCircleOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SafetyOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   AutoComplete,
@@ -52,6 +53,7 @@ const IdentitySourceKindOrder = [
 const NO_SOURCES: readonly AdminIdentitySource[] = [];
 const NO_ROWS: readonly MappingRow[] = [];
 const NO_USERS: readonly PlatformUser[] = [];
+const NO_FAILURES: readonly string[] = [];
 
 /** A mapping joined with the source it belongs to, for the flat list. */
 interface MappingRow extends AdminIdentityMapping {
@@ -75,62 +77,42 @@ export function Identity({
   const canWrite = hasAdminPermission(identity, AdminPermission.IdentityWrite);
   const canReadUsers = hasAdminPermission(identity, AdminPermission.UsersRead);
 
-  const [sources, setSources] = useState<readonly AdminIdentitySource[] | null>(null);
-  const [rows, setRows] = useState<readonly MappingRow[] | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [partialFailures, setPartialFailures] = useState<readonly string[]>([]);
+  const queryClient = useQueryClient();
+  const identityQueryKey = ['admin', 'identity-mappings', canReadUsers] as const;
+  const mappingsQuery = useQuery({
+    queryKey: identityQueryKey,
+    queryFn: async () => {
+      const loadUsers = canReadUsers ? client.users().catch(() => null) : Promise.resolve(null);
+      const [page, knownUsers] = await Promise.all([client.identitySources(), loadUsers]);
+      const items = page.items;
+      const results = await Promise.allSettled(items.map((source) => client.identityMappings(source.id)));
+      const next: MappingRow[] = [];
+      const failedSources: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          for (const mapping of result.value.items) {
+            next.push({ ...mapping, sourceName: items[index]!.displayName, sourceKind: items[index]!.kind });
+          }
+        } else {
+          failedSources.push(items[index]!.displayName);
+        }
+      });
+      return { sources: items, users: knownUsers, rows: next, partialFailures: failedSources };
+    },
+  });
+  const failed = mappingsQuery.isError;
+  const sources = failed ? null : (mappingsQuery.data?.sources ?? null);
+  const rows = failed ? null : (mappingsQuery.data?.rows ?? null);
+  const users = mappingsQuery.data?.users ?? null;
+  const partialFailures = failed ? NO_FAILURES : (mappingsQuery.data?.partialFailures ?? NO_FAILURES);
+  const loading = mappingsQuery.isFetching;
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: identityQueryKey });
   const [creatingSource, setCreatingSource] = useState(false);
   const [editing, setEditing] = useState<MappingRow | 'new' | null>(null);
   const [unlinking, setUnlinking] = useState<MappingRow | null>(null);
   // 2026-09-30 LiXiang2019 账号关联筛选：点查询后才应用条件
   const [filterForm] = Form.useForm<IdentityListFilters>();
   const [filters, setFilters] = useState<IdentityListFilters>({});
-  const [revision, refresh] = useState(0);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setFailed(false);
-    setPartialFailures([]);
-    const loadUsers = canReadUsers ? client.users().catch(() => null) : Promise.resolve(null);
-    void Promise.all([client.identitySources(), loadUsers])
-      .then(([page, knownUsers]) => {
-        const items = page.items;
-        return Promise.allSettled(items.map((source) => client.identityMappings(source.id))).then((results) => {
-          if (!live) return;
-          setSources(items);
-          setUsers(knownUsers);
-          const next: MappingRow[] = [];
-          const failedSources: string[] = [];
-          results.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-              for (const mapping of result.value.items) {
-                next.push({ ...mapping, sourceName: items[index]!.displayName, sourceKind: items[index]!.kind });
-              }
-            } else {
-              failedSources.push(items[index]!.displayName);
-            }
-          });
-          setRows(next);
-          setPartialFailures(failedSources);
-        });
-      })
-      .catch(() => {
-        if (live) {
-          setFailed(true);
-          setSources(null);
-          setRows(null);
-        }
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [client, canReadUsers, revision]);
 
   const usersById = useMemo(() => new Map((users ?? []).map((user) => [user.id, user])), [users]);
 
@@ -253,7 +235,7 @@ export function Identity({
               </Button>
             </>
           ) : null}
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => refresh((value) => value + 1)}>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={refresh}>
             {translate(language, 'refresh')}
           </Button>
         </Space>
@@ -266,7 +248,7 @@ export function Identity({
           showIcon
           title={copy.sourcesLoadFailed}
           action={
-            <Button size="small" onClick={() => refresh((value) => value + 1)}>
+            <Button size="small" onClick={refresh}>
               {copy.retry}
             </Button>
           }
@@ -341,12 +323,7 @@ export function Identity({
       )}
 
       {canWrite && creatingSource ? (
-        <SourceCreateModal
-          client={client}
-          open
-          onClose={() => setCreatingSource(false)}
-          onChanged={() => refresh((value) => value + 1)}
-        />
+        <SourceCreateModal client={client} open onClose={() => setCreatingSource(false)} onChanged={refresh} />
       ) : null}
       {canWrite && editing ? (
         <MappingModal
@@ -360,16 +337,11 @@ export function Identity({
             label: `${user.displayName}${user.username ? `（${user.username}）` : `（${user.id}）`}`,
           }))}
           onClose={() => setEditing(null)}
-          onChanged={() => refresh((value) => value + 1)}
+          onChanged={refresh}
         />
       ) : null}
       {canWrite && unlinking ? (
-        <UnlinkModal
-          client={client}
-          row={unlinking}
-          onClose={() => setUnlinking(null)}
-          onChanged={() => refresh((value) => value + 1)}
-        />
+        <UnlinkModal client={client} row={unlinking} onClose={() => setUnlinking(null)} onChanged={refresh} />
       ) : null}
     </div>
   );

@@ -11,6 +11,7 @@ import {
   render,
   TIMEOUT,
 } from '../../tests/helpers/knowledge-management.js';
+import { withQueryClient } from '../../tests/helpers/query-client.js';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeManagement } from './KnowledgeManagement.js';
 import { type ManagedKnowledgeBase, PortalError } from './portal.js';
@@ -592,9 +593,11 @@ describe('KnowledgeManagement component state', () => {
 
     const showBase = (id: string) =>
       view.rerender(
-        <ConfigProvider wave={{ disabled: true }}>
-          <KnowledgeManagement portal={portal} baseId={id} />
-        </ConfigProvider>,
+        withQueryClient(
+          <ConfigProvider wave={{ disabled: true }}>
+            <KnowledgeManagement portal={portal} baseId={id} />
+          </ConfigProvider>,
+        ),
       );
 
     showBase(other.id);
@@ -658,9 +661,11 @@ describe('KnowledgeManagement component state', () => {
     expect(screen.getByRole('button', { name: /上传文件夹/ })).toBeInTheDocument();
 
     view.rerender(
-      <ConfigProvider wave={{ disabled: true }}>
-        <KnowledgeManagement portal={portal} baseId={other.id} />
-      </ConfigProvider>,
+      withQueryClient(
+        <ConfigProvider wave={{ disabled: true }}>
+          <KnowledgeManagement portal={portal} baseId={other.id} />
+        </ConfigProvider>,
+      ),
     );
     expect(await screen.findByRole('heading', { name: 'Second base' })).toBeInTheDocument();
 

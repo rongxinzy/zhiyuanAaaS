@@ -14,6 +14,7 @@ import {
   SearchOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -42,10 +43,8 @@ import { runBatch } from './batch.js';
 import {
   type AdminConsoleClient,
   type AdminDataPlane,
-  type AdminDataPlaneRouteMismatch,
   type AdminIdentity,
   AdminModelSubjectType,
-  type AdminModels,
   AdminPermission,
   AdminRequestError,
   hasAdminPermission,
@@ -54,6 +53,15 @@ import { GatewayPublication } from './GatewayPublication.js';
 import { type AdminLanguage, translate } from './i18n.js';
 import { ModelConnectionSelect } from './ModelConnectionSelect.js';
 import { ModelPricingDrawer } from './ModelPricing.js';
+import { ModelCapabilitiesFormItem, modelCapabilitiesColumn, modelCapabilitiesText } from './model-capabilities.js';
+import {
+  ConfigStateCell,
+  catalogMismatch,
+  catalogMissing,
+  driftFieldLabel,
+  gatewayStateLabel,
+  routeIncluded,
+} from './model-config-state.js';
 import { modelsT } from './models-copy.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 
@@ -63,23 +71,8 @@ const MODEL_PROTOCOL_OPTIONS = [
   { value: ModelProtocol.OpenAiCompatible, label: 'OpenAI-compatible' },
   { value: ModelProtocol.Anthropic, label: 'Anthropic' },
 ];
-const MODEL_CAPABILITY_OPTIONS = [
-  { value: 'text', copyKey: 'capabilityText' },
-  { value: 'vision', copyKey: 'capabilityVision' },
-  { value: 'vision-ocr', copyKey: 'capabilityVisionOcr' },
-  { value: 'embedding', copyKey: 'capabilityEmbedding' },
-  { value: 'audio-transcription', copyKey: 'capabilityAudioTranscription' },
-  { value: 'speech-synthesis', copyKey: 'capabilitySpeechSynthesis' },
-  { value: 'image-generation', copyKey: 'capabilityImageGeneration' },
-  { value: 'video-generation', copyKey: 'capabilityVideoGeneration' },
-] as const;
 const language: AdminLanguage = 'zh';
 const t = (key: Parameters<typeof modelsT>[0]): string => modelsT(key, language);
-
-const capabilityLabel = (value: string): string => {
-  const option = MODEL_CAPABILITY_OPTIONS.find((entry) => entry.value === value);
-  return option ? t(option.copyKey) : value;
-};
 
 type ModelGrantTarget = {
   readonly model: AdminModel;
@@ -100,39 +93,6 @@ function formatDateTime(value: string | null | undefined): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// The gateway reports one global sync state (revision → observedRevision).
-// "Applied" is only claimed when the gateway confirmed this exact desired
-// revision; anything else degrades to pending/failed/unknown, never a
-// blanket green.
-function gatewayStateLabel(dataPlane: AdminDataPlane): { label: string; color: string; confirmed: boolean } {
-  const { desired, status } = dataPlane;
-  if (status.observedRevision === null || status.observedRevision === undefined) {
-    return { label: t('configUnknown'), color: 'default', confirmed: false };
-  }
-  if (status.observedRevision === desired.revision && status.state === 'ready') {
-    return { label: t('configApplied'), color: 'success', confirmed: true };
-  }
-  if (status.observedRevision !== desired.revision) {
-    return { label: t('configPending'), color: 'processing', confirmed: false };
-  }
-  switch (status.state) {
-    case 'pending':
-      return { label: t('configPending'), color: 'default', confirmed: false };
-    case 'applying':
-      return { label: t('configApplying'), color: 'processing', confirmed: false };
-    case 'degraded':
-      return { label: t('configDegraded'), color: 'warning', confirmed: false };
-    case 'error':
-      return { label: t('configError'), color: 'error', confirmed: false };
-    default:
-      return { label: t('configUnknown'), color: 'default', confirmed: false };
-  }
-}
-
-function routeIncluded(dataPlane: AdminDataPlane, modelId: string): boolean {
-  return dataPlane.desired.routes.some((route) => route.modelId === modelId);
-}
-
 // A model is catalog-publishable when it is enabled and its gateway mapping
 // is complete; the publish endpoint derives routes from exactly this set.
 function catalogPublishable(model: AdminModel): boolean {
@@ -143,31 +103,6 @@ function catalogPublishable(model: AdminModel): boolean {
       model.endpoint?.trim() &&
       model.upstreamModel?.trim(),
   );
-}
-
-function catalogMismatch(dataPlane: AdminDataPlane, modelId: string): AdminDataPlaneRouteMismatch | null {
-  return dataPlane.status.catalogComparison?.mismatched.find((item) => item.modelId === modelId) ?? null;
-}
-
-function catalogMissing(dataPlane: AdminDataPlane, modelId: string): boolean {
-  return dataPlane.status.catalogComparison?.missing.includes(modelId) ?? false;
-}
-
-function driftFieldLabel(field: string): string {
-  switch (field) {
-    case 'enabled':
-      return t('fieldEnabled');
-    case 'endpoint':
-      return t('fieldEndpoint');
-    case 'upstreamModel':
-      return t('fieldUpstreamModel');
-    case 'providerType':
-      return t('fieldProviderType');
-    case 'credentialRef':
-      return t('fieldCredentialRef');
-    default:
-      return field;
-  }
 }
 
 export function Models({
@@ -182,12 +117,25 @@ export function Models({
   // Gateway sync state is ops data: without data_plane.write the console
   // neither requests it nor renders a technical verdict it cannot back.
   const canDataPlane = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
-  const [state, setState] = useState<AdminModels | null>(null);
-  const [users, setUsers] = useState<readonly PlatformUser[]>([]);
-  const [roles, setRoles] = useState<readonly Role[]>([]);
-  const [teams, setTeams] = useState<readonly Team[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const modelsQuery = useQuery({
+    queryKey: ['admin', 'models', identity],
+    queryFn: async () => {
+      const [models, resources] = await Promise.all([client.models(identity), client.resources(identity)]);
+      return { models, resources };
+    },
+  });
+  const state = modelsQuery.data?.models ?? null;
+  const users = modelsQuery.data?.resources.users ?? [];
+  const roles = modelsQuery.data?.resources.roles ?? [];
+  const teams = modelsQuery.data?.resources.teams ?? [];
+  const loading = modelsQuery.isFetching;
+  const error =
+    modelsQuery.error && !modelsQuery.isFetching
+      ? modelsQuery.error instanceof Error
+        ? modelsQuery.error.message
+        : String(modelsQuery.error)
+      : null;
   const [query, setQuery] = useState('');
   const [granting, setGranting] = useState<ModelGrantTarget | null>(null);
   const [detail, setDetail] = useState<AdminModel | null>(null);
@@ -197,54 +145,35 @@ export function Models({
   const [deleting, setDeleting] = useState<AdminModel | null>(null);
   // Gateway sync state loads independently: a data-plane failure must not
   // block the catalog, and must not be shown as "applied".
-  const [dataPlane, setDataPlane] = useState<AdminDataPlane | null>(null);
-  const [dataPlaneError, setDataPlaneError] = useState<string | null>(null);
-  const [dataPlaneLoading, setDataPlaneLoading] = useState(canDataPlane);
+  const dataPlaneQuery = useQuery({
+    queryKey: ['admin', 'data-plane'],
+    queryFn: () => client.dataPlane(),
+    enabled: canDataPlane,
+  });
+  const dataPlane = dataPlaneQuery.data ?? null;
+  const dataPlaneError =
+    dataPlaneQuery.error && !dataPlaneQuery.isFetching
+      ? dataPlaneQuery.error instanceof AdminRequestError && dataPlaneQuery.error.code === 'GATEWAY_OBSERVATION_CHANGED'
+        ? translate(language, 'gatewayObservationChanged')
+        : dataPlaneQuery.error instanceof Error
+          ? dataPlaneQuery.error.message
+          : String(dataPlaneQuery.error)
+      : null;
+  const dataPlaneLoading = dataPlaneQuery.isFetching;
 
   const reportMutationError = useCallback(() => {
     notify(AdminNotificationKind.Error, translate(language, 'modelFormFailed'));
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [models, resources] = await Promise.all([client.models(identity), client.resources(identity)]);
-      setState(models);
-      setUsers(resources.users);
-      setRoles(resources.roles);
-      setTeams(resources.teams);
-    } catch (err) {
-      setState(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [client, identity]);
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'models', identity] }),
+    [queryClient, identity],
+  );
 
-  const loadDataPlane = useCallback(async () => {
-    setDataPlaneLoading(true);
-    setDataPlaneError(null);
-    try {
-      setDataPlane(await client.dataPlane());
-    } catch (err) {
-      setDataPlane(null);
-      setDataPlaneError(
-        err instanceof AdminRequestError && err.code === 'GATEWAY_OBSERVATION_CHANGED'
-          ? translate(language, 'gatewayObservationChanged')
-          : err instanceof Error
-            ? err.message
-            : String(err),
-      );
-    } finally {
-      setDataPlaneLoading(false);
-    }
-  }, [client]);
-
-  useEffect(() => {
-    void load();
-    if (canDataPlane) void loadDataPlane();
-  }, [load, loadDataPlane, canDataPlane]);
+  const loadDataPlane = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'data-plane'] }),
+    [queryClient],
+  );
 
   // Catalog mutations change what publish would derive, so the drift badges
   // reload alongside the catalog itself.
@@ -302,21 +231,7 @@ export function Models({
       key: 'upstream',
       render: (_: unknown, model: AdminModel) => model.upstreamModel || model.localModelRef || t('notProvided'),
     },
-    {
-      title: t('labelCapabilities'),
-      key: 'capabilities',
-      width: 150,
-      render: (_: unknown, model: AdminModel) =>
-        model.capabilities && model.capabilities.length > 0 ? (
-          <Space size={4} wrap>
-            {model.capabilities.map((capability) => (
-              <Tag key={capability}>{capabilityLabel(capability)}</Tag>
-            ))}
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">{t('notProvided')}</Typography.Text>
-        ),
-    },
+    modelCapabilitiesColumn(),
     {
       title: t('colManageState'),
       dataIndex: 'enabled',
@@ -564,61 +479,6 @@ function HealthStateCell({ model }: { model: AdminModel & ModelHealthFields }) {
   );
 }
 
-function ConfigStateCell({
-  dataPlane,
-  error,
-  allowed,
-  modelId,
-}: {
-  readonly dataPlane: AdminDataPlane | null;
-  readonly error: string | null;
-  readonly allowed: boolean;
-  readonly modelId: string;
-}) {
-  if (!allowed) {
-    return (
-      <Tooltip title={t('configNoPermissionHint')}>
-        <Tag>{t('configNoPermission')}</Tag>
-      </Tooltip>
-    );
-  }
-  if (error) {
-    return (
-      <Tooltip title={`${t('configLoadFailedHint')}（${error}）`}>
-        <Tag>{t('configUnknown')}</Tag>
-      </Tooltip>
-    );
-  }
-  if (!dataPlane) {
-    return <Tag>{t('configUnknown')}</Tag>;
-  }
-  const state = gatewayStateLabel(dataPlane);
-  const included = routeIncluded(dataPlane, modelId);
-  const missing = catalogMissing(dataPlane, modelId);
-  const mismatch = catalogMismatch(dataPlane, modelId);
-  const tooltip = [
-    `${t('configTargetRevision')}：${dataPlane.desired.revision}`,
-    `${t('configAppliedRevision')}：${dataPlane.status.observedRevision ?? '—'}`,
-    included ? t('configRouteIncluded') : t('configRouteMissingHint'),
-    ...(mismatch ? [`${t('driftMismatched')}：${mismatch.fields.map(driftFieldLabel).join('、')}`] : []),
-    ...(missing ? [translate(language, 'publicationLegacyModelHint')] : []),
-  ].join('\n');
-  return (
-    <Tooltip title={<div style={{ whiteSpace: 'pre-line' }}>{tooltip}</div>}>
-      <Space orientation="vertical" size={0}>
-        <Tag color={state.color}>{state.label}</Tag>
-        {mismatch ? <Tag color="warning">{t('driftMismatched')}</Tag> : null}
-        {!mismatch && missing ? <Tag color="warning">{t('driftMissing')}</Tag> : null}
-        {included || missing ? null : (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('configRouteMissing')}
-          </Typography.Text>
-        )}
-      </Space>
-    </Tooltip>
-  );
-}
-
 function ModelRowMenu({
   client,
   model,
@@ -787,18 +647,7 @@ function ModelCreateModal({
         >
           <Input placeholder={t('upstreamModelPlaceholder')} disabled={pending} />
         </Form.Item>
-        <Form.Item
-          name="capabilities"
-          label={t('labelCapabilities')}
-          initialValue={['text']}
-          extra={t('labelCapabilitiesHint')}
-        >
-          <Select
-            disabled={pending}
-            mode="multiple"
-            options={MODEL_CAPABILITY_OPTIONS.map(({ value, copyKey }) => ({ value, label: t(copyKey) }))}
-          />
-        </Form.Item>
+        <ModelCapabilitiesFormItem pending={pending} initialValue={['text']} />
         <Form.Item name="credentialId" label={t('labelCredential')} initialValue={null}>
           <ModelConnectionSelect client={client} identity={identity} disabled={pending} />
         </Form.Item>
@@ -912,13 +761,7 @@ function ModelEditorModal({
         >
           <Input placeholder={t('upstreamModelPlaceholder')} disabled={pending} />
         </Form.Item>
-        <Form.Item name="capabilities" label={t('labelCapabilities')} extra={t('labelCapabilitiesHint')}>
-          <Select
-            disabled={pending}
-            mode="multiple"
-            options={MODEL_CAPABILITY_OPTIONS.map(({ value, copyKey }) => ({ value, label: t(copyKey) }))}
-          />
-        </Form.Item>
+        <ModelCapabilitiesFormItem pending={pending} />
         <Form.Item name="enabled" label={translate(language, 'status')} valuePropName="checked">
           <Switch checkedChildren={t('stateEnabled')} unCheckedChildren={t('stateDisabled')} disabled={pending} />
         </Form.Item>
@@ -1170,10 +1013,7 @@ function ModelDetailDrawer({
                     {
                       key: 'capabilities',
                       label: t('labelCapabilities'),
-                      children:
-                        model.capabilities && model.capabilities.length > 0
-                          ? model.capabilities.map(capabilityLabel).join('、')
-                          : t('notProvided'),
+                      children: modelCapabilitiesText(model),
                     },
                   ]}
                 />

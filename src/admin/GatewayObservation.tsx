@@ -19,7 +19,7 @@ import {
   theme,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminPermission, hasAdminPermission } from './client.js';
 import { type GatewayChartZoom, GatewayMetricNote, GatewayTokenTrend, GatewayTrend } from './GatewayTrend.js';
 import type {
@@ -95,9 +95,9 @@ function logTime(row: GatewayLogRow): string {
 export function GatewayObservation({ client, identity, onPrices }: GatewayProps & { onPrices?: () => void }) {
   const { token } = theme.useToken();
   const canReadRequests = hasAdminPermission(identity, AdminPermission.EventsRead);
-  const capabilities = useGatewayRemote(useCallback(() => client.getGatewayCapabilities(), [client]));
-  const subjects = useGatewayRemote(useCallback(() => client.gatewaySubjects(identity), [client, identity]));
-  const health = useGatewayRemote(useCallback(() => client.getGatewayMonitoringHealth(), [client]));
+  const capabilities = useGatewayRemote(['admin', 'gateway-capabilities'], () => client.getGatewayCapabilities());
+  const subjects = useGatewayRemote(['admin', 'gateway-subjects', identity], () => client.gatewaySubjects(identity));
+  const health = useGatewayRemote(['admin', 'gateway-monitoring-health'], () => client.getGatewayMonitoringHealth());
   const [filters, setFilters] = useState<Record<GatewayDimension, string>>({ model: '', user: '', team: '', role: '' });
   const [group, setGroup] = useState<GatewayDimension>('user');
   const [period, setPeriod] = useState('3600');
@@ -146,7 +146,8 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
     };
   }, []);
   const data = useGatewayRemote(
-    useCallback(async () => {
+    ['admin', 'gateway-observation', capabilities.value, window, step, group, requestQuery, canReadRequests],
+    async () => {
       const available = capabilities.value;
       if (!available)
         return {
@@ -192,7 +193,7 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
           : { value: undefined, failed: false },
       ]);
       return { summary, grouped, infrastructure, logs: logs.value, logsFailed: logs.failed };
-    }, [client, capabilities.value, window, step, group, requestQuery, canReadRequests]),
+    },
   );
   useEffect(() => {
     setMore([]);
@@ -287,8 +288,10 @@ export function GatewayObservation({ client, identity, onPrices }: GatewayProps 
     }
   }
   function refresh() {
-    if (!customRange) setEnd(Date.now());
-    data.retry();
+    // A custom range never changes key on its own, so refetch explicitly;
+    // otherwise bumping `end` changes the query key and refetches exactly once.
+    if (customRange) data.retry();
+    else setEnd((previous) => Math.max(Date.now(), previous + 1));
     health.retry();
     capabilities.retry();
     subjects.retry();

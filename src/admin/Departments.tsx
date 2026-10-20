@@ -1,12 +1,14 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Empty, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { translate } from './i18n.js';
 import { AdminNotificationKind, notify } from './notifications.js';
 import { PortalClient, type PortalDepartment } from './portal.js';
 
 const language = 'zh' as const;
+const departmentsKey = ['portal', 'departments'] as const;
 
 type DepartmentMember = {
   readonly userId: string;
@@ -28,29 +30,20 @@ export function Departments({
         (client as { getAccessToken(rejectedToken?: string): Promise<string | null> }).getAccessToken(rejectedToken),
       ),
   );
-  const [departments, setDepartments] = useState<readonly PortalDepartment[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const departmentsQuery = useQuery({
+    queryKey: departmentsKey,
+    queryFn: () => portal.listDepartments(),
+  });
+  const departments = departmentsQuery.data ?? null;
+  const loading = departmentsQuery.isFetching;
+  const loadError = departmentsQuery.error;
+  const error = loadError ? (loadError instanceof Error ? loadError.message : String(loadError)) : null;
+  const reload = () => void queryClient.invalidateQueries({ queryKey: departmentsKey });
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<PortalDepartment | null>(null);
   const [members, setMembers] = useState<DepartmentMember[] | null>(null);
   const [membersDept, setMembersDept] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setDepartments(await portal.listDepartments());
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [portal]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const loadMembers = async (deptId: string) => {
     setMembersDept(deptId);
@@ -75,7 +68,7 @@ export function Departments({
           <p className="mt-1.5 text-sm text-muted-foreground">{translate(language, 'departmentsDescription')}</p>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={() => void departmentsQuery.refetch()} loading={loading}>
             {translate(language, 'refresh')}
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
@@ -129,7 +122,7 @@ export function Departments({
                                 }
                               ).deleteDepartment(record.id);
                               notify(AdminNotificationKind.Success, translate(language, 'departmentsDeleted'));
-                              void load();
+                              reload();
                             } catch (cause) {
                               notify(
                                 AdminNotificationKind.Error,
@@ -148,17 +141,12 @@ export function Departments({
         </div>
       </div>
 
-      <CreateDepartmentModal
-        portal={portal}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={() => void load()}
-      />
+      <CreateDepartmentModal portal={portal} open={creating} onClose={() => setCreating(false)} onCreated={reload} />
       <RenameDepartmentModal
         portal={portal}
         department={renaming}
         onClose={() => setRenaming(null)}
-        onRenamed={() => void load()}
+        onRenamed={reload}
       />
       <Drawer
         title={`${translate(language, 'departmentsMembers')}: ${membersDept ?? ''}`}

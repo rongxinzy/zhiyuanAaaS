@@ -5,8 +5,9 @@
  * 目录不可用）只显示用户 ID，主行不留白、不编造。检索以用户名为准，同时接受用户 ID。
  */
 import type { PlatformUser } from '@aep/sdk-node';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Space, Typography } from 'antd';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { auditCopy as c } from './audit-copy.js';
 import type { AdminConsoleClient } from './client.js';
 
@@ -29,40 +30,25 @@ const actorProblemCopy = {
   unverified: c.actorLookupFailed,
 } as const;
 
+const userDirectoryKey = ['admin', 'audit', 'user-directory'] as const;
+
 /**
  * 用户目录只在页面级拉一次，姓名解析与用户列显示共用。
  * `enabled` 为假（没有审计权限）时一次都不发；失败后不缓存，下次查询再试。
  */
 export function useUserDirectory(client: AdminConsoleClient, enabled: boolean): AuditDirectory {
-  const [users, setUsers] = useState<readonly PlatformUser[] | null>(null);
-  const pending = useRef<Promise<readonly PlatformUser[]> | null>(null);
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: userDirectoryKey,
+    queryFn: () => client.users(),
+    enabled,
+  });
   const load = useCallback(async (): Promise<readonly PlatformUser[] | null> => {
     if (!enabled) return null;
-    const cached = pending.current;
-    if (cached) return cached;
-    const request = client.users();
-    pending.current = request;
-    try {
-      return await request;
-    } catch (cause) {
-      if (pending.current === request) pending.current = null;
-      throw cause;
-    }
-  }, [client, enabled]);
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    void load()
-      .then((items) => {
-        if (live && items) setUsers(items);
-      })
-      // 目录取不到（无权限或离线）不影响审计查询，用户列如实按 ID 显示。
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [enabled, load]);
-  return { users, load };
+    return queryClient.ensureQueryData({ queryKey: userDirectoryKey, queryFn: () => client.users() });
+  }, [client, enabled, queryClient]);
+  // 目录取不到（无权限或离线）不影响审计查询，用户列如实按 ID 显示。
+  return { users: data ?? null, load };
 }
 
 /**

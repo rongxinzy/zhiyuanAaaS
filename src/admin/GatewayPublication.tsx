@@ -1,4 +1,5 @@
 import { ReloadOutlined, RocketOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -93,6 +94,16 @@ function errorMessage(error: unknown, writing: boolean): AdminTranslationKey {
   return writing ? 'publicationRequestUncertain' : 'publicationReadFailed';
 }
 
+// Projected only confirms CR delivery. Wait for revision-specific Applied;
+// never poll indefinitely for Ready when no independent observer exists.
+function observed(next: DataPlanePublication): boolean {
+  return (
+    next.phase === 'failed' ||
+    next.phase === 'superseded' ||
+    next.conditions.some((c) => c.type === 'Applied' && c.status === 'True')
+  );
+}
+
 type PublicationProps = {
   readonly language: AdminLanguage;
   readonly client: AdminConsoleClient;
@@ -128,12 +139,8 @@ function PublicationView({
   const allowed = hasAdminPermission(identity, AdminPermission.DataPlaneWrite);
   const { token } = theme.useToken();
   const [attempt, setAttempt] = useState<Attempt | null>(() => readAttempt(scope));
-  const [operation, setOperation] = useState<DataPlanePublication | null>(null);
-  const [error, setError] = useState<AdminTranslationKey | null>(null);
+  const [writeError, setWriteError] = useState<AdminTranslationKey | null>(null);
   const [pending, setPending] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [refresh, setRefresh] = useState(0);
   const writing = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
@@ -143,50 +150,39 @@ function PublicationView({
     };
   }, []);
 
-  useEffect(() => {
-    if (!allowed || !attempt?.operationId) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let checks = 0;
-    const id = attempt.operationId;
-    setPaused(false);
-    const load = async () => {
-      setChecking(true);
-      try {
-        const next = await client.getDataPlanePublication(id);
-        if (!live) return;
-        setOperation(next);
-        setError(null);
-        // Projected only confirms CR delivery. Wait for revision-specific Applied;
-        // never poll indefinitely for Ready when no independent observer exists.
-        if (
-          next.phase === 'failed' ||
-          next.phase === 'superseded' ||
-          next.conditions.some((c) => c.type === 'Applied' && c.status === 'True')
-        )
-          return;
-        if (++checks < 30) timer = setTimeout(() => void load(), 2000);
-        else setPaused(true);
-      } catch (e) {
-        if (live) {
-          setError(errorMessage(e, false));
-          setPaused(true);
-        }
-      } finally {
-        if (live) setChecking(false);
-      }
-    };
-    void load();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [client, allowed, scope, attempt?.operationId, refresh]);
+  const operationId = attempt?.operationId;
+  const checks = useRef(0);
+  const checkedOperation = useRef<string | undefined>(undefined);
+  if (checkedOperation.current !== operationId) {
+    checkedOperation.current = operationId;
+    checks.current = 0;
+  }
+  const publicationQuery = useQuery({
+    queryKey: ['admin', 'data-plane-publication', scope, operationId],
+    queryFn: () => {
+      checks.current += 1;
+      return client.getDataPlanePublication(operationId!);
+    },
+    enabled: allowed && operationId !== undefined,
+    refetchInterval: (query) => {
+      const next = query.state.data;
+      if (next && observed(next)) return false;
+      if (query.state.status === 'error') return false;
+      return checks.current < 30 ? 2000 : false;
+    },
+  });
+  const operation = publicationQuery.data ?? null;
+  const checking = publicationQuery.isFetching;
+  const error = writeError ?? (publicationQuery.error ? errorMessage(publicationQuery.error, false) : null);
+  const paused =
+    operationId !== undefined &&
+    !checking &&
+    (publicationQuery.isError || (operation !== null && !observed(operation) && checks.current >= 30));
 
   const submit = async (retry: boolean) => {
     if (!allowed || !allowPublish || writing.current) return;
     if (retry && (!attempt || Date.now() >= attempt.expiresAt)) {
-      setError('publicationExpired');
+      setWriteError('publicationExpired');
       return;
     }
     writing.current = true;
@@ -195,8 +191,7 @@ function PublicationView({
       retry && attempt ? attempt : { key: crypto.randomUUID(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
     saveAttempt(ownScope, next);
     setAttempt(next);
-    setOperation(null);
-    setError(null);
+    setWriteError(null);
     setPending(true);
     try {
       const result = includeGatewayLimits
@@ -206,9 +201,8 @@ function PublicationView({
       saveAttempt(ownScope, saved);
       if (!mounted.current) return;
       setAttempt(saved);
-      setOperation(result);
     } catch (e) {
-      if (mounted.current) setError(errorMessage(e, true));
+      if (mounted.current) setWriteError(errorMessage(e, true));
     } finally {
       writing.current = false;
       if (mounted.current) setPending(false);
@@ -228,7 +222,10 @@ function PublicationView({
               <Button
                 icon={<ReloadOutlined aria-hidden="true" />}
                 loading={checking}
-                onClick={() => setRefresh((n) => n + 1)}
+                onClick={() => {
+                  checks.current = 0;
+                  void publicationQuery.refetch();
+                }}
               >
                 {t('publicationCheck')}
               </Button>

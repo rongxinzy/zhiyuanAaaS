@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { ConfigProvider } from 'antd';
 import { afterEach, expect, test, vi } from 'vitest';
+import { renderWithQueryClient } from '../../tests/helpers/query-client.js';
 import { GatewayUserSelect } from './GatewayUserSelect.js';
 
 afterEach(cleanup);
@@ -22,7 +23,7 @@ const roles = [
 ];
 function setup(extra = {}) {
   const onChange = vi.fn();
-  render(
+  renderWithQueryClient(
     <ConfigProvider>
       <GatewayUserSelect users={users} teams={teams} roles={roles} aria-label="用户" onChange={onChange} {...extra} />
     </ConfigProvider>,

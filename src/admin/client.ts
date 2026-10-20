@@ -474,7 +474,7 @@ export interface AdminAuditRecord {
   readonly createdAt: string;
 }
 
-export interface AdminAuditTimeRange {
+interface AdminAuditTimeRange {
   readonly after: string | null;
   readonly before: string | null;
 }
