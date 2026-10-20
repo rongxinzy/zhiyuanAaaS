@@ -349,6 +349,46 @@ try {
   await chunkInspector.waitFor({ state: 'hidden' });
   checks.push('chunk original-content no-op save and enabled switch update through managed chunk API');
 
+  // DELETE only accepts an asynchronous job. The first follow-up list still
+  // contains the old completed row; a later read observes worker completion.
+  let deletionWrites = 0;
+  let deletionReads = 0;
+  const deletingDocumentPath = '**/api/v1/knowledge/managed/documents/doc-chunk-e2e';
+  const deletingListPath = '**/api/v1/knowledge/managed/bases/kb-1/documents?*';
+  await page.route(deletingDocumentPath, async (route) => {
+    if (route.request().method() !== 'DELETE') return route.continue();
+    deletionWrites++;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ deleted: true, operationId: 'kbop-delayed-browser-delete', resourceId: 'doc-chunk-e2e' }),
+    });
+  });
+  await page.route(deletingListPath, async (route) => {
+    if (new URL(route.request().url()).searchParams.has('parse_status')) return route.continue();
+    if (deletionWrites > 0 && ++deletionReads > 1)
+      state.knowledgeDocuments = state.knowledgeDocuments.filter((item) => item.id !== 'doc-chunk-e2e');
+    await route.continue();
+  });
+  await chunkRow.getByRole('button', { name: '更多', exact: true }).click();
+  await page.getByRole('menuitem', { name: '删除资料', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true }).click();
+  await chunkRow.getByText('删除中', { exact: true }).waitFor();
+  assert.equal(await chunkRow.getByRole('switch').count(), 0, 'Deleting row must not display its old enabled switch');
+  await page.getByText(/正在确认资料删除结果/).waitFor();
+  await page.screenshot({
+    path: path.join(screenshots, 'knowledge-deletion-pending.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await chunkRow.waitFor({ state: 'hidden' });
+  await page.getByText(/资料已从当前列表移除/).waitFor();
+  assert.equal(deletionWrites, 1, 'Polling must never replay DELETE');
+  assert.ok(deletionReads >= 2, 'Must read beyond the first stale completed row');
+  await page.unroute(deletingDocumentPath);
+  await page.unroute(deletingListPath);
+  checks.push('asynchronous document deletion: pending row, automatic reconciliation, DELETE exactly once');
+
   await visit('knowledge', 'E2E 产品资料');
   await page.getByRole('button', { name: 'plus 新建知识库', exact: true }).click();
   const faqBaseDialog = page.getByRole('dialog');

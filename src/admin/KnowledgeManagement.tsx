@@ -4,12 +4,10 @@ import {
   DeleteOutlined,
   DownOutlined,
   ExclamationCircleOutlined,
-  FilePdfOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
   LinkOutlined,
-  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
@@ -30,7 +28,6 @@ import {
   Modal,
   Select,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
@@ -48,21 +45,19 @@ import { KnowledgeGrants, updateKnowledgeGrantScope } from './KnowledgeGrants.js
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { knowledgeBaseColumns } from './knowledge-base-columns.js';
 import { useKnowledgeDetailRetrieval } from './knowledge-detail-retrieval.js';
+import { knowledgeDocumentColumns } from './knowledge-document-columns.js';
 import { knowledgeErrorText } from './knowledge-error.js';
 import {
   ALL_FOLDERS_KEY,
   byteLength,
   byteLimitRule,
   CONTENT_MAX_BYTES,
-  type CopyKey,
   DESCRIPTION_MAX_BYTES,
   DOC_HINT_DISMISSED_KEY,
   FOLDER_UPLOAD_CONCURRENCY,
   FOLDER_UPLOAD_MAX_FILE_BYTES,
   FOLDER_UPLOAD_MAX_FILES,
   type FolderUploadItem,
-  formatFileSize,
-  formatTimestamp,
   isUncertain,
   type KnowledgeInspectorState,
   NAME_MAX_BYTES,
@@ -71,7 +66,6 @@ import {
   type PreviewState,
   pollable,
   previewKindOf,
-  sourceCopy,
   sourceURLRule,
   TITLE_MAX_BYTES,
   t,
@@ -92,6 +86,7 @@ import {
   PortalError,
 } from './portal.js';
 import { useDebouncedDocumentKeyword } from './use-debounced-document-keyword.js';
+import { useKnowledgeDeletionSync } from './use-knowledge-deletion-sync.js';
 
 export function KnowledgeManagement({
   portal,
@@ -135,6 +130,7 @@ export function KnowledgeManagement({
   const [folderQueue, setFolderQueue] = useState<readonly FolderUploadItem[]>([]);
   const [folderUploading, setFolderUploading] = useState(false);
   const [docsRefresh, setDocsRefresh] = useState(0);
+  const [detailRefresh, setDetailRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
   const [docsLoading, setDocsLoading] = useState(false);
   const [baseError, setBaseError] = useState<string | null>(null);
@@ -181,6 +177,7 @@ export function KnowledgeManagement({
   const [modal, modalContext] = Modal.useModal();
   const listGeneration = useRef(0);
   const docGeneration = useRef(0);
+  const observeDeletedDocuments = useRef<((context: string, ids: readonly string[]) => void) | null>(null);
   const pollRounds = useRef(0);
   const chunkRequestGeneration = useRef(0);
   const chunkSaveGeneration = useRef(0);
@@ -234,7 +231,7 @@ export function KnowledgeManagement({
   usePageCrumb(selectedId ? (selected?.name ?? null) : null);
   // 查询上下文必须与加载时写入 docsContext 的格式一致（含状态与目录筛选），
   // 否则旧响应会被当成「不是当前查询」而永远显示空表。
-  const queryContext = `${selectedId ?? ''}:${page}:${search}:${statusFilter}:${folderPath ?? ''}`;
+  const queryContext = JSON.stringify([selectedId, page, search, statusFilter, folderPath]);
   const queryContextRef = useRef(queryContext);
   queryContextRef.current = queryContext;
   const visibleDocs = docsContext === queryContext ? docs : null;
@@ -255,7 +252,6 @@ export function KnowledgeManagement({
     setWriteNotice(t('writeRecovered'), 'success');
   }, []);
 
-  const documentActionBusy = (id: string) => documentActions.includes(id);
   const beginDocumentAction = (id: string) =>
     setDocumentActions((current) => (current.includes(id) ? current : [...current, id]));
   const endDocumentAction = (id: string) => setDocumentActions((current) => current.filter((item) => item !== id));
@@ -332,7 +328,7 @@ export function KnowledgeManagement({
     setDetail(null);
     void loadDetail(selectedId, controller.signal);
     return () => controller.abort();
-  }, [loadDetail, selectedId]);
+  }, [detailRefresh, loadDetail, selectedId]);
 
   useEffect(() => {
     chunkRequestGeneration.current += 1;
@@ -386,7 +382,12 @@ export function KnowledgeManagement({
         );
         if (generation !== docGeneration.current || signal?.aborted) return;
         setDocs(result);
-        setDocsContext(`${selectedId}:${page}:${search}:${statusFilter}:${folderPath ?? ''}`);
+        const readContext = JSON.stringify([selectedId, page, search, statusFilter, folderPath]);
+        setDocsContext(readContext);
+        observeDeletedDocuments.current?.(
+          readContext,
+          result.data.map((item) => item.id),
+        );
         clearUncertainWrite();
         if (result.data.some((item) => pollable.has(item.parse_status))) {
           pollRounds.current += 1;
@@ -397,11 +398,25 @@ export function KnowledgeManagement({
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
         setDocsError(knowledgeErrorText(cause));
       } finally {
-        if (generation === docGeneration.current && !signal?.aborted) setDocsLoading(false);
+        if (generation === docGeneration.current) setDocsLoading(false);
       }
     },
     [clearUncertainWrite, docsRefresh, folderPath, page, portal, search, selectedId, statusFilter],
   );
+
+  const deletionSync = useKnowledgeDeletionSync(selectedId, queryContext, loadDocuments, (operationIds) => {
+    setWriteNotice(
+      `${translate(ADMIN_LANGUAGE, 'knowledgeDeleteConfirmed')} · ${t('operation')}: ${operationIds.join(', ')}`,
+    );
+    setDocsRefresh((current) => current + 1);
+    setDetailRefresh((current) => current + 1);
+  });
+  observeDeletedDocuments.current = deletionSync.observe;
+
+  const documentActionBusy = (id: string) =>
+    documentActions.includes(id) ||
+    deletionSync.entries.some((item) => item.id === id) ||
+    visibleDocs?.data.some((item) => item.id === id && item.parse_status === 'deleting') === true;
 
   const [pollTick, setPollTick] = useState(0);
 
@@ -591,7 +606,10 @@ export function KnowledgeManagement({
     };
   }, [loadDocuments]);
 
-  const hasActiveDocs = visibleDocs?.data.some((item) => pollable.has(item.parse_status)) ?? false;
+  const hasActiveDocs =
+    visibleDocs?.data.some(
+      (item) => pollable.has(item.parse_status) && !deletionSync.entries.some((pending) => pending.id === item.id),
+    ) ?? false;
   useEffect(() => {
     if (!selectedId || !hasActiveDocs || pollTick >= 6) return undefined;
     const controller = new AbortController();
@@ -838,16 +856,36 @@ export function KnowledgeManagement({
     if (writeBlocked || uploading || importing || documentActionBusy(document.id)) return;
     beginDocumentAction(document.id);
     setWriteNotice(null);
+    const requestBase = selectedId;
+    const requestContext = queryContext;
     try {
       const result = await portal.runManagedKnowledgeDocumentAction(document.id, action);
+      if (action === 'delete' && requestBase) {
+        deletionSync.accept({
+          baseId: requestBase,
+          context: requestContext,
+          id: document.id,
+          operationId: result.operationId,
+        });
+      }
+      if (queryContextRef.current !== requestContext) return;
       setWriteNotice(
-        `${action === 'delete' ? t('knowledgeDeleteDocument') : action === 'reparse' ? t('knowledgeRetryParse') : t('knowledgeCancelParse')} · ${t('operation')}: ${result.operationId}`,
+        `${action === 'delete' ? translate(ADMIN_LANGUAGE, 'knowledgeDeleteAccepted') : action === 'reparse' ? t('knowledgeRetryParse') : t('knowledgeCancelParse')} · ${t('operation')}: ${result.operationId}`,
         'success',
       );
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
+      if (action === 'delete' && requestBase && isUncertain(cause)) {
+        deletionSync.acceptUncertain({
+          baseId: requestBase,
+          context: requestContext,
+          id: document.id,
+          operationId: cause instanceof PortalError ? (cause.operationId ?? t('unknown')) : t('unknown'),
+        });
+      }
+      if (queryContextRef.current !== requestContext) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      if (isUncertain(cause)) markUncertainWrite();
+      if (action !== 'delete' && isUncertain(cause)) markUncertainWrite();
       setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       endDocumentAction(document.id);
@@ -1106,159 +1144,19 @@ export function KnowledgeManagement({
     }
   };
 
-  const columns = [
-    {
-      // 资料主列：名称 + 次级信息（文件名、大小、来源）；上游 DTO 暂无 folder_path，
-      // 所以路径不进副标题（补契约后再加）。
-      title: t('docName'),
-      key: 'name',
-      render: (_: unknown, row: ManagedKnowledgeDocument) => {
-        const secondary = [
-          row.file_name,
-          formatFileSize(row.file_size),
-          row.source ? (sourceCopy[row.source] ? t(sourceCopy[row.source]!) : row.source) : (row.type ?? ''),
-        ]
-          .filter((part): part is string => Boolean(part))
-          .join(' · ');
-        const isPdf = (row.file_type ?? row.file_name ?? '').toLowerCase().includes('pdf');
-        return (
-          <Space orientation="vertical" size={0}>
-            <Space size={6}>
-              {isPdf ? (
-                <FilePdfOutlined style={{ color: token.colorError }} />
-              ) : (
-                <FileTextOutlined style={{ color: token.colorPrimary }} />
-              )}
-              <Typography.Link onClick={() => void inspectDocument(row, 'spans')}>
-                {row.name || row.file_name}
-              </Typography.Link>
-            </Space>
-            {secondary ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {secondary}
-              </Typography.Text>
-            ) : null}
-          </Space>
-        );
-      },
-    },
-    {
-      // 按原型：状态只说「能不能被检索」，启停动作移入行操作菜单。
-      title: t('parse'),
-      key: 'parse_status',
-      render: (_: unknown, row: ManagedKnowledgeDocument) => {
-        const completed = row.parse_status === 'completed';
-        const disabled = completed ? row.enable_status === 'disabled' : row.manual_disabled === true;
-        return (
-          <Space orientation="vertical" size={2}>
-            <Tag color={completed ? 'success' : row.parse_status === 'failed' ? 'error' : 'processing'}>
-              {pollable.has(row.parse_status) || ['completed', 'failed', 'cancelled'].includes(row.parse_status)
-                ? t(row.parse_status as CopyKey)
-                : t('unknown')}
-            </Tag>
-            <Space size={4}>
-              <Typography.Text type="secondary">
-                {disabled
-                  ? t('enableDisabled')
-                  : row.enable_status === 'enabled'
-                    ? t('enableEnabled')
-                    : t('notStatistic')}
-              </Typography.Text>
-              <Switch
-                checked={completed ? row.enable_status === 'enabled' : row.manual_disabled === true}
-                aria-label={
-                  completed
-                    ? row.enable_status === 'enabled'
-                      ? t('disableDocument')
-                      : t('enableDocument')
-                    : t('keepDisabledAfterParse')
-                }
-                loading={documentActionBusy(row.id)}
-                disabled={
-                  writeBlocked ||
-                  uploading ||
-                  importing ||
-                  documentActionBusy(row.id) ||
-                  (!completed && (row.manual_disabled === undefined || row.manual_disabled))
-                }
-                onChange={(next) => void setDocumentEnabled(row, completed ? next : false)}
-              />
-            </Space>
-          </Space>
-        );
-      },
-    },
-    {
-      title: t('createdAt'),
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (value: string) => formatTimestamp(value),
-    },
-    {
-      title: t('knowledgeActions'),
-      key: 'actions',
-      fixed: 'right' as const,
-      render: (_: unknown, row: ManagedKnowledgeDocument) => {
-        const actionBusy = documentActionBusy(row.id);
-        const canCancel = ['pending', 'processing', 'finalizing'].includes(row.parse_status);
-        const writesDisabled = writeBlocked || actionBusy || uploading || importing;
-        const completed = row.parse_status === 'completed';
-        const enabled = completed ? row.enable_status === 'enabled' : row.manual_disabled !== true;
-        const moreItems: MenuProps['items'] = [
-          { key: 'chunks', label: t('knowledgeChunks'), disabled: actionBusy },
-          { key: 'spans', label: t('knowledgeSpans'), disabled: actionBusy },
-          { key: 'download', label: t('knowledgeDownload'), disabled: !row.file_name || actionBusy },
-          { type: 'divider' },
-          { key: 'reparse', label: t('knowledgeRetryParse'), disabled: writesDisabled },
-          ...(canCancel ? [{ key: 'cancel-parse', label: t('knowledgeCancelParse'), disabled: writesDisabled }] : []),
-          {
-            key: 'toggle',
-            label: enabled ? t('disableDocument') : t('enableDocument'),
-            disabled: writesDisabled || (!completed && (row.manual_disabled === undefined || enabled)),
-          },
-          { type: 'divider' },
-          { key: 'delete', label: t('knowledgeDeleteDocument'), danger: true, disabled: writesDisabled },
-        ];
-        return (
-          <Space size={4}>
-            <Button
-              type="link"
-              size="small"
-              aria-label={t('knowledgePreview')}
-              disabled={actionBusy}
-              onClick={() => void openDocumentFile(row, 'preview')}
-            >
-              {t('viewDocument')}
-            </Button>
-            <Dropdown
-              menu={{
-                items: moreItems,
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'download') return void openDocumentFile(row, 'download');
-                  if (key === 'chunks') return void inspectDocument(row, 'chunks');
-                  if (key === 'spans') return void inspectDocument(row, 'spans');
-                  if (key === 'toggle') return void setDocumentEnabled(row, !enabled);
-                  if (key === 'delete')
-                    return modal.confirm({
-                      title: t('knowledgeDeleteDocument'),
-                      content: t('knowledgeDeleteDocumentHint'),
-                      okText: t('knowledgeDeleteConfirm'),
-                      cancelText: t('cancel'),
-                      okButtonProps: { danger: true },
-                      onOk: () => runDocumentAction(row, 'delete'),
-                    });
-                  return void runDocumentAction(row, key === 'cancel-parse' ? 'cancel-parse' : 'reparse');
-                },
-              }}
-            >
-              <Button type="text" size="small" aria-label={t('moreActions')} icon={<MoreOutlined />} />
-            </Dropdown>
-          </Space>
-        );
-      },
-    },
-  ];
+  const columns = knowledgeDocumentColumns({
+    token,
+    modal,
+    deletionSync,
+    documentActionBusy,
+    writeBlocked,
+    uploading,
+    importing,
+    inspectDocument,
+    openDocumentFile,
+    setDocumentEnabled,
+    runDocumentAction,
+  });
 
   // 查询条件变化就清掉不可见的选择项，避免把上一屏的选择带到新结果上。
   useEffect(() => {
@@ -1268,7 +1166,12 @@ export function KnowledgeManagement({
 
   // 批量重解析/删除如实保留逐项结果：失败项留在提示里并保留选择，可重试。
   const runBatchAction = async (action: 'reparse' | 'delete') => {
-    const targets = (visibleDocs?.data ?? []).filter((document) => pickedDocs.includes(document.id));
+    if (batchBusy || writeBlocked) return;
+    const requestBase = selectedId;
+    const requestContext = queryContext;
+    const targets = (visibleDocs?.data ?? []).filter(
+      (document) => pickedDocs.includes(document.id) && !documentActionBusy(document.id),
+    );
     if (targets.length === 0) return;
     setBatchBusy(true);
     setBatchFailures([]);
@@ -1276,16 +1179,41 @@ export function KnowledgeManagement({
     const failedIds: string[] = [];
     const failedNames: string[] = [];
     for (const document of targets) {
+      if (queryContextRef.current !== requestContext) break;
+      beginDocumentAction(document.id);
       try {
-        await portal.runManagedKnowledgeDocumentAction(document.id, action);
+        const result = await portal.runManagedKnowledgeDocumentAction(document.id, action);
+        if (action === 'delete' && requestBase)
+          deletionSync.accept({
+            baseId: requestBase,
+            context: requestContext,
+            id: document.id,
+            operationId: result.operationId,
+          });
       } catch (cause) {
+        if (isUncertain(cause)) {
+          if (action === 'delete' && requestBase)
+            deletionSync.acceptUncertain({
+              baseId: requestBase,
+              context: requestContext,
+              id: document.id,
+              operationId: cause instanceof PortalError ? (cause.operationId ?? t('unknown')) : t('unknown'),
+            });
+          else markUncertainWrite();
+        }
+        if (queryContextRef.current !== requestContext) break;
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        if (isUncertain(cause)) markUncertainWrite();
         if (!isUncertain(cause)) failedIds.push(document.id);
         failedNames.push(
           `${document.name || document.file_name}: ${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
         );
+      } finally {
+        endDocumentAction(document.id);
       }
+    }
+    if (queryContextRef.current !== requestContext) {
+      setBatchBusy(false);
+      return;
     }
     setBatchFailures(failedNames);
     setPickedDocs(failedIds);
@@ -1392,6 +1320,26 @@ export function KnowledgeManagement({
                 />
               )}
               {writeNoticeAlert && materialModal === null && writeNoticeAlert}
+              {deletionSync.entries.length > 0 && (
+                <Alert
+                  type={deletionSync.entries.some((item) => item.stalled) ? 'warning' : 'info'}
+                  showIcon
+                  title={translate(
+                    ADMIN_LANGUAGE,
+                    deletionSync.entries.some((item) => item.stalled)
+                      ? 'knowledgeDeleteWaiting'
+                      : 'knowledgeDeleteChecking',
+                  )}
+                  description={deletionSync.entries
+                    .map((item) => `${item.id} · ${t('operation')}: ${item.operationId}`)
+                    .join('; ')}
+                  action={
+                    <Button size="small" onClick={() => setDocsRefresh((current) => current + 1)}>
+                      {t('refresh')}
+                    </Button>
+                  }
+                />
+              )}
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                   <div className="min-w-0">

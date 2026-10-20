@@ -1,5 +1,10 @@
 export const knowledgeTranslations = {
   zh: {
+    knowledgeDeleteAccepted: '删除任务已受理，正在确认结果',
+    knowledgeDeleteUnconfirmed: '删除结果待确认',
+    knowledgeDeleteChecking: '正在确认资料删除结果；请勿重复删除。切换查询会暂停自动确认。',
+    knowledgeDeleteWaiting: '暂未确认删除结果，已停止自动刷新。请刷新当前列表核对，不要重复提交删除。',
+    knowledgeDeleteConfirmed: '资料已从当前列表移除',
     knowledge: '知识库',
     knowledgeBases: '知识库清单',
     knowledgeColumnName: '知识库',
@@ -288,6 +293,13 @@ export const knowledgeTranslations = {
     knowledgeSave: '保存',
   },
   en: {
+    knowledgeDeleteAccepted: 'Deletion accepted; checking the result',
+    knowledgeDeleteUnconfirmed: 'Deletion outcome unknown',
+    knowledgeDeleteChecking:
+      'Checking document deletion; do not delete again. Changing the query pauses automatic checks.',
+    knowledgeDeleteWaiting:
+      'Deletion is not confirmed. Automatic checks stopped. Refresh this list to check without submitting deletion again.',
+    knowledgeDeleteConfirmed: 'Document removed from the current list',
     knowledge: 'Knowledge',
     knowledgeBases: 'Knowledge bases',
     knowledgeColumnName: 'Knowledge base',
