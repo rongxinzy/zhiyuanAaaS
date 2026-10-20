@@ -117,6 +117,7 @@ export function KnowledgeOperations({
           : '';
       message.success(
         `${tr('knowledgeOperationDone')}${operationId ? ` · ${tr('knowledgeOperation')}: ${operationId}` : ''}`,
+        3,
       );
       await load();
       setBlocked(false);
@@ -125,7 +126,7 @@ export function KnowledgeOperations({
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setBlocked(true);
       setError(operationError(cause));
       if (!(cause instanceof PortalError) || cause.status >= 500) setBlocked(true);
-      message.error(tr('knowledgeOperationFailed'));
+      message.error(tr('knowledgeOperationFailed'), 5);
       return false;
     } finally {
       setBusy(false);

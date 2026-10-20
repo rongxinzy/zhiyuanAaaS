@@ -22,17 +22,26 @@ function publish() {
   for (const listener of listeners) listener();
 }
 
-export function notify(kind: AdminNotificationKind, message: string) {
+export function clearNotification() {
+  if (timeout) clearTimeout(timeout);
+  timeout = undefined;
+  if (current === null) return;
+  current = null;
+  publish();
+}
+
+/** Success auto-dismisses in 3s; errors in 5s. New notify replaces the previous one (no stack). */
+export function notify(kind: AdminNotificationKind, message: string, durationMs?: number) {
   if (timeout) clearTimeout(timeout);
   current = { id: ++nextID, kind, message };
   publish();
-  timeout = setTimeout(
-    () => {
+  const ms = durationMs ?? (kind === AdminNotificationKind.Error ? 5000 : 3000);
+  if (ms > 0) {
+    timeout = setTimeout(() => {
       current = null;
       publish();
-    },
-    kind === AdminNotificationKind.Error ? 5000 : 3000,
-  );
+    }, ms);
+  }
 }
 
 function subscribe(listener: () => void) {
@@ -49,7 +58,12 @@ export function AdminNotificationViewport() {
   const success = notification.kind === AdminNotificationKind.Success;
   return (
     <div className="admin-notification" role="status" aria-live="polite">
-      <Alert showIcon type={success ? 'success' : 'error'} title={notification.message} />
+      <Alert
+        showIcon
+        type={success ? 'success' : 'error'}
+        title={notification.message}
+        closable={{ onClose: clearNotification }}
+      />
     </div>
   );
 }

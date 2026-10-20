@@ -77,6 +77,7 @@ import {
   t,
   URL_MAX_BYTES,
 } from './knowledge-management-support.js';
+import { useWriteNotice } from './knowledge-write-notice.js';
 import { usePageCrumb } from './page-crumb.js';
 import {
   type ManagedKnowledgeBase,
@@ -139,7 +140,7 @@ export function KnowledgeManagement({
   const [baseError, setBaseError] = useState<string | null>(null);
   const [docsError, setDocsError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [writeNotice, setWriteNotice] = useState<string | null>(null);
+  const { setWriteNotice, writeNoticeFromCause, writeNoticeAlert } = useWriteNotice();
   const [uncertainWrite, setUncertainWrite] = useState(false);
   const [accessBlocked, setAccessBlocked] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -251,7 +252,7 @@ export function KnowledgeManagement({
     if (!uncertainWriteRef.current) return;
     uncertainWriteRef.current = false;
     setUncertainWrite(false);
-    setWriteNotice(t('writeRecovered'));
+    setWriteNotice(t('writeRecovered'), 'success');
   }, []);
 
   const documentActionBusy = (id: string) => documentActions.includes(id);
@@ -636,16 +637,14 @@ export function KnowledgeManagement({
         ? await portal.updateManagedKnowledgeBase(editing.id, values)
         : await portal.createManagedKnowledgeBase(values);
       if (editing) setDetail(result.data);
-      setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`, 'success');
       setEditorOpen(false);
       await loadBases();
       if (!editing) setSelectedId(result.data.id);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setSaving(false);
     }
@@ -657,16 +656,14 @@ export function KnowledgeManagement({
     setWriteNotice(null);
     try {
       const result = await portal.deleteManagedKnowledgeBase(selected.id);
-      setWriteNotice(`${t('deleted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('deleted')} ${t('operation')}: ${result.operationId}`, 'success');
       setSelectedId(null);
       setDocs(null);
       await loadBases();
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setDeleting(false);
     }
@@ -677,7 +674,7 @@ export function KnowledgeManagement({
     const file = entry?.originFileObj ?? (entry instanceof File ? entry : undefined);
     if (!file || !selectedId || writeBlocked || uploading || fileOutcomeUncertain) return false;
     if (file.size > 63 * 1024 * 1024) {
-      setWriteNotice(t('fileLimit'));
+      setWriteNotice(t('fileLimit'), 'error');
       return false;
     }
     setUploading(true);
@@ -686,7 +683,7 @@ export function KnowledgeManagement({
       // 目录树里选中某目录时，单文件也进那个目录（原型：「目标目录：X」）。
       const uploadPath = folderPath ? `${folderPath}/${file.name}` : file.name;
       const result = await portal.uploadManagedKnowledgeDocument(selectedId, file as File, uploadPath);
-      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`, 'success');
       setFiles([]);
       pollRounds.current = 0;
       setPollTick(0);
@@ -696,9 +693,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
       if (isUncertain(cause)) setFileOutcomeUncertain(true);
       return false;
     } finally {
@@ -726,14 +721,14 @@ export function KnowledgeManagement({
       .filter((item): item is FolderUploadItem => item !== null);
     if (items.length === 0) return;
     if (items.length > FOLDER_UPLOAD_MAX_FILES) {
-      setWriteNotice(t('folderLimit'));
+      setWriteNotice(t('folderLimit'), 'error');
       return;
     }
     // Keep the single-file size rule for folder batches too: the portal caps the
     // whole multipart body, so an oversized member would only fail upstream.
     const oversized = items.filter((item) => item.file.size > FOLDER_UPLOAD_MAX_FILE_BYTES);
     const acceptedItems = items.filter((item) => item.file.size <= FOLDER_UPLOAD_MAX_FILE_BYTES);
-    if (oversized.length > 0) setWriteNotice(`${t('fileLimit')} (${oversized.length} ${t('folderFiles')})`);
+    if (oversized.length > 0) setWriteNotice(`${t('fileLimit')} (${oversized.length} ${t('folderFiles')})`, 'error');
     if (acceptedItems.length === 0) return;
     setFolderQueue((current) => {
       // Re-picking a folder must not double-queue the same file.
@@ -792,6 +787,7 @@ export function KnowledgeManagement({
     setFolderUploading(false);
     setWriteNotice(
       `${t('folderAccepted')} ${accepted} · ${t('folderFailed')} ${failed} · ${targets.length} ${t('folderFiles')}`,
+      'info',
     );
     pollRounds.current = 0;
     setPollTick(0);
@@ -821,7 +817,7 @@ export function KnowledgeManagement({
               title: values.title ?? '',
               content: values.content ?? '',
             });
-      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`, 'success');
       setImportKind(null);
       importForm.resetFields();
       setPage(1);
@@ -829,9 +825,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setImporting(false);
     }
@@ -848,14 +842,13 @@ export function KnowledgeManagement({
       const result = await portal.runManagedKnowledgeDocumentAction(document.id, action);
       setWriteNotice(
         `${action === 'delete' ? t('knowledgeDeleteDocument') : action === 'reparse' ? t('knowledgeRetryParse') : t('knowledgeCancelParse')} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -877,13 +870,12 @@ export function KnowledgeManagement({
       }
       setWriteNotice(
         `${enabled ? t('enableDocument') : t('disableDocument')} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -907,7 +899,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (controller.signal.aborted || generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       if (chunkImageRequests.current.get(key) === controller) chunkImageRequests.current.delete(key);
       if (!controller.signal.aborted && generation === chunkRequestGeneration.current) setChunkImageLoading(null);
@@ -949,7 +941,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       // 行锁必须无条件释放：旧实现只在代次相同时解锁，切库/关弹窗（代次已被推进）时
       // 会把 documentActionId 永久留在这一行上，之后所有资料动作都被真值守卫静默吞掉。
@@ -976,7 +968,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       if (generation === chunkRequestGeneration.current) setChunksLoading(false);
     }
@@ -1013,15 +1005,14 @@ export function KnowledgeManagement({
       );
       setWriteNotice(
         `${t('chunkSaved')} ${result.data.index_status === 'failed' ? t('chunkIndexFailed') : t('chunkIndexStatus')}: ${result.data.index_status} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
       setChunkEditor((current) => (current?.id === chunk.id ? null : current));
     } catch (cause) {
       if (saveGeneration !== chunkSaveGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       if (saveGeneration === chunkSaveGeneration.current) setChunkSavingId(null);
     }
@@ -1048,7 +1039,7 @@ export function KnowledgeManagement({
   const openDocumentFile = async (document: ManagedKnowledgeDocument, kind: 'preview' | 'download') => {
     const previewKind = previewKindOf(document.file_name);
     if (kind === 'preview' && !previewKind) {
-      setWriteNotice(t('knowledgeNoOriginal'));
+      setWriteNotice(t('knowledgeNoOriginal'), 'error');
       return;
     }
     const name = document.file_name || document.name;
@@ -1088,7 +1079,7 @@ export function KnowledgeManagement({
       } catch (cause) {
         if (previewGeneration.current === generation) setPreview(null);
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setWriteNotice(knowledgeErrorText(cause));
+        setWriteNotice(knowledgeErrorText(cause), 'error');
       } finally {
         endDocumentAction(document.id);
       }
@@ -1109,7 +1100,7 @@ export function KnowledgeManagement({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -1310,16 +1301,14 @@ export function KnowledgeManagement({
     setWriteNotice(null);
     try {
       const result = await portal.moveManagedKnowledgeDocuments(target, pickedDocs, moveTarget);
-      setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`, 'success');
       setPickedDocs([]);
       setMoveDialog(false);
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setBatchBusy(false);
     }
@@ -1369,9 +1358,7 @@ export function KnowledgeManagement({
               }
             />
           )}
-          {writeNotice && materialModal === null && (
-            <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
-          )}
+          {writeNoticeAlert && materialModal === null && writeNoticeAlert}
 
           <Card size="small">
             <Table<ManagedKnowledgeBase>
@@ -1387,7 +1374,6 @@ export function KnowledgeManagement({
           </Card>
         </>
       ) : (
-        <>
           <Card size="small" loading={loading && !selected}>
             {!selected ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
@@ -1405,9 +1391,7 @@ export function KnowledgeManagement({
                     }
                   />
                 )}
-                {writeNotice && materialModal === null && (
-                  <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
-                )}
+                {writeNoticeAlert && materialModal === null && writeNoticeAlert}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0">
@@ -1790,7 +1774,6 @@ export function KnowledgeManagement({
               </div>
             )}
           </Card>
-        </>
       )}
 
       {modalContext}
@@ -1846,7 +1829,7 @@ export function KnowledgeManagement({
         destroyOnHidden
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
-          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
+          {writeNoticeAlert}
           <Typography.Text type="secondary">
             {t('batchPicked').replace('{count}', String(pickedDocs.length))}
           </Typography.Text>
@@ -1894,7 +1877,7 @@ export function KnowledgeManagement({
           <Typography.Text type="secondary">
             {t('uploadTargetFolder').replace('{path}', folderPath ?? t('uncategorized'))}
           </Typography.Text>
-          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
+          {writeNoticeAlert}
           {materialModal === 'folder' && folderQueue.length > 0 && (
             <>
               {folderQueue.map((item) => (

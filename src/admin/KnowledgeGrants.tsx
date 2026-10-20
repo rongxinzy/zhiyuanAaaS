@@ -268,7 +268,7 @@ export function KnowledgeGrants({
           users: result.grants.filter((grant) => grant.type === 'user').length,
           teams: result.grants.filter((grant) => grant.type === 'team').length,
         });
-        message.success(tr('knowledgeGrantsSaved'));
+        message.success(tr('knowledgeGrantsSaved'), 3);
         return true;
       }
     } catch (cause) {
@@ -276,7 +276,7 @@ export function KnowledgeGrants({
         setError(knowledgeErrorText(cause));
         if (!(cause instanceof PortalError) || cause.status === 401 || cause.status === 403 || cause.status >= 500)
           setBlocked(true);
-        message.error(tr('knowledgeGrantsSaveFailed'));
+        message.error(tr('knowledgeGrantsSaveFailed'), 5);
       }
       return false;
     } finally {
