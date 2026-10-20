@@ -31,6 +31,7 @@ export function KnowledgeRetrieval({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<readonly EmployeeKnowledgeSearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [searchingHint, setSearchingHint] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [sourceHit, setSourceHit] = useState<EmployeeKnowledgeSearchHit | null>(null);
   const [source, setSource] = useState<EmployeeKnowledgeSource | null>(null);
@@ -68,6 +69,7 @@ export function KnowledgeRetrieval({
     searchGeneration.current += 1;
     sourceGeneration.current += 1;
     setSearching(false);
+    setSearchingHint(false);
     setSourceLoading(false);
     setResults(null);
     setSearchError(null);
@@ -98,8 +100,12 @@ export function KnowledgeRetrieval({
     searchController.current = controller;
     const generation = ++searchGeneration.current;
     setSearching(true);
+    setSearchingHint(false);
     setSearchError(null);
     setResults(null);
+    const slowTimer = window.setTimeout(() => {
+      if (!controller.signal.aborted && generation === searchGeneration.current) setSearchingHint(true);
+    }, 2000);
     setSourceHit(null);
     setSource(null);
     setSourceError(null);
@@ -118,7 +124,11 @@ export function KnowledgeRetrieval({
       if (!controller.signal.aborted && generation === searchGeneration.current)
         setSearchError(knowledgeErrorText(cause));
     } finally {
-      if (!controller.signal.aborted && generation === searchGeneration.current) setSearching(false);
+      window.clearTimeout(slowTimer);
+      if (!controller.signal.aborted && generation === searchGeneration.current) {
+        setSearching(false);
+        setSearchingHint(false);
+      }
     }
   };
 
@@ -229,6 +239,7 @@ export function KnowledgeRetrieval({
           </Space>
         </Space>
       )}
+      {searching && searchingHint ? <Alert showIcon type="info" title={tr('knowledgeSearchSlowHint')} /> : null}
       {searchError && <Alert showIcon type="error" title={tr('knowledgeSearchFailed')} description={searchError} />}
       {results === null && !searching && !searchError ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">

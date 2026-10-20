@@ -77,6 +77,7 @@ import {
   t,
   URL_MAX_BYTES,
 } from './knowledge-management-support.js';
+import { useWriteNotice } from './knowledge-write-notice.js';
 import { usePageCrumb } from './page-crumb.js';
 import {
   type ManagedKnowledgeBase,
@@ -139,7 +140,7 @@ export function KnowledgeManagement({
   const [baseError, setBaseError] = useState<string | null>(null);
   const [docsError, setDocsError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [writeNotice, setWriteNotice] = useState<string | null>(null);
+  const { setWriteNotice, writeNoticeFromCause, writeNoticeAlert } = useWriteNotice();
   const [uncertainWrite, setUncertainWrite] = useState(false);
   const [accessBlocked, setAccessBlocked] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -251,7 +252,7 @@ export function KnowledgeManagement({
     if (!uncertainWriteRef.current) return;
     uncertainWriteRef.current = false;
     setUncertainWrite(false);
-    setWriteNotice(t('writeRecovered'));
+    setWriteNotice(t('writeRecovered'), 'success');
   }, []);
 
   const documentActionBusy = (id: string) => documentActions.includes(id);
@@ -636,16 +637,14 @@ export function KnowledgeManagement({
         ? await portal.updateManagedKnowledgeBase(editing.id, values)
         : await portal.createManagedKnowledgeBase(values);
       if (editing) setDetail(result.data);
-      setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${editing ? t('saveDone') : t('created')} ${t('operation')}: ${result.operationId}`, 'success');
       setEditorOpen(false);
       await loadBases();
       if (!editing) setSelectedId(result.data.id);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setSaving(false);
     }
@@ -657,16 +656,14 @@ export function KnowledgeManagement({
     setWriteNotice(null);
     try {
       const result = await portal.deleteManagedKnowledgeBase(selected.id);
-      setWriteNotice(`${t('deleted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('deleted')} ${t('operation')}: ${result.operationId}`, 'success');
       setSelectedId(null);
       setDocs(null);
       await loadBases();
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setDeleting(false);
     }
@@ -677,7 +674,7 @@ export function KnowledgeManagement({
     const file = entry?.originFileObj ?? (entry instanceof File ? entry : undefined);
     if (!file || !selectedId || writeBlocked || uploading || fileOutcomeUncertain) return false;
     if (file.size > 63 * 1024 * 1024) {
-      setWriteNotice(t('fileLimit'));
+      setWriteNotice(t('fileLimit'), 'error');
       return false;
     }
     setUploading(true);
@@ -686,7 +683,7 @@ export function KnowledgeManagement({
       // 目录树里选中某目录时，单文件也进那个目录（原型：「目标目录：X」）。
       const uploadPath = folderPath ? `${folderPath}/${file.name}` : file.name;
       const result = await portal.uploadManagedKnowledgeDocument(selectedId, file as File, uploadPath);
-      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`, 'success');
       setFiles([]);
       pollRounds.current = 0;
       setPollTick(0);
@@ -696,9 +693,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
       if (isUncertain(cause)) setFileOutcomeUncertain(true);
       return false;
     } finally {
@@ -726,14 +721,14 @@ export function KnowledgeManagement({
       .filter((item): item is FolderUploadItem => item !== null);
     if (items.length === 0) return;
     if (items.length > FOLDER_UPLOAD_MAX_FILES) {
-      setWriteNotice(t('folderLimit'));
+      setWriteNotice(t('folderLimit'), 'error');
       return;
     }
     // Keep the single-file size rule for folder batches too: the portal caps the
     // whole multipart body, so an oversized member would only fail upstream.
     const oversized = items.filter((item) => item.file.size > FOLDER_UPLOAD_MAX_FILE_BYTES);
     const acceptedItems = items.filter((item) => item.file.size <= FOLDER_UPLOAD_MAX_FILE_BYTES);
-    if (oversized.length > 0) setWriteNotice(`${t('fileLimit')} (${oversized.length} ${t('folderFiles')})`);
+    if (oversized.length > 0) setWriteNotice(`${t('fileLimit')} (${oversized.length} ${t('folderFiles')})`, 'error');
     if (acceptedItems.length === 0) return;
     setFolderQueue((current) => {
       // Re-picking a folder must not double-queue the same file.
@@ -792,6 +787,7 @@ export function KnowledgeManagement({
     setFolderUploading(false);
     setWriteNotice(
       `${t('folderAccepted')} ${accepted} · ${t('folderFailed')} ${failed} · ${targets.length} ${t('folderFiles')}`,
+      'info',
     );
     pollRounds.current = 0;
     setPollTick(0);
@@ -821,7 +817,7 @@ export function KnowledgeManagement({
               title: values.title ?? '',
               content: values.content ?? '',
             });
-      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('uploadAccepted')} ${t('operation')}: ${result.operationId}`, 'success');
       setImportKind(null);
       importForm.resetFields();
       setPage(1);
@@ -829,9 +825,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setImporting(false);
     }
@@ -848,14 +842,13 @@ export function KnowledgeManagement({
       const result = await portal.runManagedKnowledgeDocumentAction(document.id, action);
       setWriteNotice(
         `${action === 'delete' ? t('knowledgeDeleteDocument') : action === 'reparse' ? t('knowledgeRetryParse') : t('knowledgeCancelParse')} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}${cause instanceof PortalError && cause.resourceId ? ` ${t('id')}: ${cause.resourceId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -877,13 +870,12 @@ export function KnowledgeManagement({
       }
       setWriteNotice(
         `${enabled ? t('enableDocument') : t('disableDocument')} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${cause instanceof PortalError && cause.operationId ? ` · ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -907,7 +899,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (controller.signal.aborted || generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       if (chunkImageRequests.current.get(key) === controller) chunkImageRequests.current.delete(key);
       if (!controller.signal.aborted && generation === chunkRequestGeneration.current) setChunkImageLoading(null);
@@ -949,7 +941,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       // 行锁必须无条件释放：旧实现只在代次相同时解锁，切库/关弹窗（代次已被推进）时
       // 会把 documentActionId 永久留在这一行上，之后所有资料动作都被真值守卫静默吞掉。
@@ -976,7 +968,7 @@ export function KnowledgeManagement({
     } catch (cause) {
       if (generation !== chunkRequestGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       if (generation === chunkRequestGeneration.current) setChunksLoading(false);
     }
@@ -1013,15 +1005,14 @@ export function KnowledgeManagement({
       );
       setWriteNotice(
         `${t('chunkSaved')} ${result.data.index_status === 'failed' ? t('chunkIndexFailed') : t('chunkIndexStatus')}: ${result.data.index_status} · ${t('operation')}: ${result.operationId}`,
+        'success',
       );
       setChunkEditor((current) => (current?.id === chunk.id ? null : current));
     } catch (cause) {
       if (saveGeneration !== chunkSaveGeneration.current) return;
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       if (saveGeneration === chunkSaveGeneration.current) setChunkSavingId(null);
     }
@@ -1048,7 +1039,7 @@ export function KnowledgeManagement({
   const openDocumentFile = async (document: ManagedKnowledgeDocument, kind: 'preview' | 'download') => {
     const previewKind = previewKindOf(document.file_name);
     if (kind === 'preview' && !previewKind) {
-      setWriteNotice(t('knowledgeNoOriginal'));
+      setWriteNotice(t('knowledgeNoOriginal'), 'error');
       return;
     }
     const name = document.file_name || document.name;
@@ -1088,7 +1079,7 @@ export function KnowledgeManagement({
       } catch (cause) {
         if (previewGeneration.current === generation) setPreview(null);
         if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-        setWriteNotice(knowledgeErrorText(cause));
+        setWriteNotice(knowledgeErrorText(cause), 'error');
       } finally {
         endDocumentAction(document.id);
       }
@@ -1109,7 +1100,7 @@ export function KnowledgeManagement({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
-      setWriteNotice(knowledgeErrorText(cause));
+      setWriteNotice(knowledgeErrorText(cause), 'error');
     } finally {
       endDocumentAction(document.id);
     }
@@ -1310,16 +1301,14 @@ export function KnowledgeManagement({
     setWriteNotice(null);
     try {
       const result = await portal.moveManagedKnowledgeDocuments(target, pickedDocs, moveTarget);
-      setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`);
+      setWriteNotice(`${t('batchMove')} · ${t('operation')}: ${result.operationId}`, 'success');
       setPickedDocs([]);
       setMoveDialog(false);
       setDocsRefresh((current) => current + 1);
     } catch (cause) {
       if (cause instanceof PortalError && (cause.status === 401 || cause.status === 403)) setAccessBlocked(true);
       if (isUncertain(cause)) markUncertainWrite();
-      setWriteNotice(
-        `${knowledgeErrorText(cause)}${isUncertain(cause) ? ` ${t('uncertain')}` : ''}${cause instanceof PortalError && cause.operationId ? ` ${t('operation')}: ${cause.operationId}` : ''}`,
-      );
+      setWriteNotice(writeNoticeFromCause(cause), 'error');
     } finally {
       setBatchBusy(false);
     }
@@ -1369,9 +1358,7 @@ export function KnowledgeManagement({
               }
             />
           )}
-          {writeNotice && materialModal === null && (
-            <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
-          )}
+          {writeNoticeAlert && materialModal === null && writeNoticeAlert}
 
           <Card size="small">
             <Table<ManagedKnowledgeBase>
@@ -1387,410 +1374,399 @@ export function KnowledgeManagement({
           </Card>
         </>
       ) : (
-        <>
-          <Card size="small" loading={loading && !selected}>
-            {!selected ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
-            ) : (
-              <div className="flex flex-col gap-4">
-                {error && (
-                  <Alert
-                    type="error"
-                    showIcon
-                    title={error}
-                    action={
-                      <Button size="small" onClick={retryFailed}>
-                        {t('retry')}
-                      </Button>
-                    }
-                  />
-                )}
-                {writeNotice && materialModal === null && (
-                  <Alert type="info" showIcon title={writeNotice} closable={{ onClose: () => setWriteNotice(null) }} />
-                )}
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="min-w-0">
-                      <Typography.Title level={3} style={{ margin: 0 }}>
-                        {selected.name}
-                      </Typography.Title>
-                      {selected.description ? (
-                        <Typography.Text type="secondary">{selected.description}</Typography.Text>
-                      ) : null}
-                      <div>
-                        <Typography.Text code copyable={{ text: selected.id }} style={{ fontSize: 12 }}>
-                          {selected.id}
-                        </Typography.Text>
-                      </div>
-                      <Space wrap>
-                        <Tag>{selected.type === 'faq' ? t('baseTypeFaq') : t('baseTypeDocument')}</Tag>
-                        <Typography.Text type="secondary">
-                          {readiness?.embeddingModel.name || readiness?.embeddingModel.id || t('notStatistic')}
-                        </Typography.Text>
-                      </Space>
+        <Card size="small" loading={loading && !selected}>
+          {!selected ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? t('error') : t('noSelection')} />
+          ) : (
+            <div className="flex flex-col gap-4">
+              {error && (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={error}
+                  action={
+                    <Button size="small" onClick={retryFailed}>
+                      {t('retry')}
+                    </Button>
+                  }
+                />
+              )}
+              {writeNoticeAlert && materialModal === null && writeNoticeAlert}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="min-w-0">
+                    <Typography.Title level={3} style={{ margin: 0 }}>
+                      {selected.name}
+                    </Typography.Title>
+                    {selected.description ? (
+                      <Typography.Text type="secondary">{selected.description}</Typography.Text>
+                    ) : null}
+                    <div>
+                      <Typography.Text code copyable={{ text: selected.id }} style={{ fontSize: 12 }}>
+                        {selected.id}
+                      </Typography.Text>
                     </div>
+                    <Space wrap>
+                      <Tag>{selected.type === 'faq' ? t('baseTypeFaq') : t('baseTypeDocument')}</Tag>
+                      <Typography.Text type="secondary">
+                        {readiness?.embeddingModel.name || readiness?.embeddingModel.id || t('notStatistic')}
+                      </Typography.Text>
+                    </Space>
                   </div>
-                  <Space wrap>
-                    {onNavigate && (
-                      <Button onClick={() => onNavigate(`audit/knowledge/${encodeURIComponent(selected.id)}`)}>
-                        {translate(ADMIN_LANGUAGE, 'knowledgeViewAudit')}
-                      </Button>
-                    )}
-                    <Button
-                      icon={<SettingOutlined />}
-                      disabled={writeBlocked || uploading}
-                      onClick={() => openEdit(selected)}
-                    >
-                      {t('edit')}
-                    </Button>
-                    <Button
-                      danger
-                      icon={<DeleteOutlined />}
-                      loading={deleting}
-                      disabled={writeBlocked || uploading}
-                      onClick={() =>
-                        modal.confirm({
-                          title: t('deleteTitle'),
-                          content: t('deleteHint'),
-                          okText: t('deleteConfirm'),
-                          cancelText: t('cancel'),
-                          okButtonProps: { danger: true },
-                          onOk: removeBase,
-                        })
-                      }
-                    >
-                      {t('remove')}
-                    </Button>
-                    <Dropdown trigger={['click']} menu={{ items: addMaterialItems, onClick: onAddMaterial }}>
-                      <Button type="primary" icon={<PlusOutlined />} disabled={writeBlocked}>
-                        {t('addMaterial')} <DownOutlined />
-                      </Button>
-                    </Dropdown>
-                  </Space>
                 </div>
+                <Space wrap>
+                  {onNavigate && (
+                    <Button onClick={() => onNavigate(`audit/knowledge/${encodeURIComponent(selected.id)}`)}>
+                      {translate(ADMIN_LANGUAGE, 'knowledgeViewAudit')}
+                    </Button>
+                  )}
+                  <Button
+                    icon={<SettingOutlined />}
+                    disabled={writeBlocked || uploading}
+                    onClick={() => openEdit(selected)}
+                  >
+                    {t('edit')}
+                  </Button>
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deleting}
+                    disabled={writeBlocked || uploading}
+                    onClick={() =>
+                      modal.confirm({
+                        title: t('deleteTitle'),
+                        content: t('deleteHint'),
+                        okText: t('deleteConfirm'),
+                        cancelText: t('cancel'),
+                        okButtonProps: { danger: true },
+                        onOk: removeBase,
+                      })
+                    }
+                  >
+                    {t('remove')}
+                  </Button>
+                  <Dropdown trigger={['click']} menu={{ items: addMaterialItems, onClick: onAddMaterial }}>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={writeBlocked}>
+                      {t('addMaterial')} <DownOutlined />
+                    </Button>
+                  </Dropdown>
+                </Space>
+              </div>
 
-                <section aria-label={t('summaryLabel')}>
-                  <Space size={16} wrap>
-                    {summaryItems.map((item) => (
-                      <Tooltip key={item.key} title={item.hint}>
-                        {item.onClick ? (
-                          <Button type="link" size="small" style={{ padding: 0 }} onClick={item.onClick}>
-                            {item.icon} {item.text}
-                          </Button>
-                        ) : (
-                          <Typography.Text type="secondary">
-                            {item.icon} {item.text}
-                          </Typography.Text>
-                        )}
-                      </Tooltip>
-                    ))}
-                  </Space>
-                </section>
-                <Tabs
-                  activeKey={retrieval.detailTab}
-                  onChange={retrieval.setDetailTab}
-                  items={[
-                    {
-                      key: 'documents',
-                      label: t('tabDocuments'),
-                      children: (
-                        <>
-                          <div className="flex flex-col gap-4 lg:flex-row">
-                            <div className="w-full shrink-0 lg:w-56">
-                              <Space orientation="vertical" size={4} style={{ width: '100%' }}>
-                                <Typography.Text strong>{t('foldersLabel')}</Typography.Text>
-                                {selected.type !== 'faq' && (
-                                  <Button size="small" onClick={() => setFolderManagerOpen(true)}>
-                                    {translate(ADMIN_LANGUAGE, 'knowledgeManageFolders')}
-                                  </Button>
-                                )}
-                                <Tree
-                                  blockNode
-                                  defaultExpandAll
-                                  aria-label={t('foldersLabel')}
-                                  selectedKeys={[folderPath ?? ALL_FOLDERS_KEY]}
-                                  treeData={folderNodes}
-                                  onSelect={(keys) => {
-                                    const next = keys[0];
-                                    if (typeof next !== 'string') return;
-                                    setFolderPath(next === ALL_FOLDERS_KEY ? null : next);
+              <section aria-label={t('summaryLabel')}>
+                <Space size={16} wrap>
+                  {summaryItems.map((item) => (
+                    <Tooltip key={item.key} title={item.hint}>
+                      {item.onClick ? (
+                        <Button type="link" size="small" style={{ padding: 0 }} onClick={item.onClick}>
+                          {item.icon} {item.text}
+                        </Button>
+                      ) : (
+                        <Typography.Text type="secondary">
+                          {item.icon} {item.text}
+                        </Typography.Text>
+                      )}
+                    </Tooltip>
+                  ))}
+                </Space>
+              </section>
+              <Tabs
+                activeKey={retrieval.detailTab}
+                onChange={retrieval.setDetailTab}
+                items={[
+                  {
+                    key: 'documents',
+                    label: t('tabDocuments'),
+                    children: (
+                      <>
+                        <div className="flex flex-col gap-4 lg:flex-row">
+                          <div className="w-full shrink-0 lg:w-56">
+                            <Space orientation="vertical" size={4} style={{ width: '100%' }}>
+                              <Typography.Text strong>{t('foldersLabel')}</Typography.Text>
+                              {selected.type !== 'faq' && (
+                                <Button size="small" onClick={() => setFolderManagerOpen(true)}>
+                                  {translate(ADMIN_LANGUAGE, 'knowledgeManageFolders')}
+                                </Button>
+                              )}
+                              <Tree
+                                blockNode
+                                defaultExpandAll
+                                aria-label={t('foldersLabel')}
+                                selectedKeys={[folderPath ?? ALL_FOLDERS_KEY]}
+                                treeData={folderNodes}
+                                onSelect={(keys) => {
+                                  const next = keys[0];
+                                  if (typeof next !== 'string') return;
+                                  setFolderPath(next === ALL_FOLDERS_KEY ? null : next);
+                                  setPage(1);
+                                }}
+                              />
+                            </Space>
+                          </div>
+                          <div className="flex min-w-0 flex-1 flex-col gap-3">
+                            <div className="flex flex-wrap items-end justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Typography.Text strong>
+                                  {folderPath === null
+                                    ? t('allMaterials')
+                                    : (folderPath.split('/').pop() ?? folderPath)}
+                                </Typography.Text>
+                                <Typography.Text type="secondary">
+                                  {t('documentCount').replace('{count}', String(visibleDocs?.total ?? 0))}
+                                </Typography.Text>
+                              </div>
+                              <Space wrap>
+                                <Input
+                                  allowClear
+                                  value={keyword}
+                                  placeholder={t('search')}
+                                  aria-label={t('search')}
+                                  onChange={(event) => setKeyword(event.target.value)}
+                                  onPressEnter={() => {
+                                    applySearch();
+                                  }}
+                                  onClear={() => {
+                                    clearSearch();
+                                  }}
+                                  style={{ width: 200 }}
+                                />
+                                <Button
+                                  icon={<SearchOutlined />}
+                                  aria-label={t('search')}
+                                  onClick={() => {
+                                    applySearch();
+                                  }}
+                                />
+                                <Select
+                                  aria-label={t('parse')}
+                                  value={statusFilter}
+                                  options={statusOptions}
+                                  style={{ width: 130 }}
+                                  onChange={(next: string) => {
+                                    setStatusFilter(next);
                                     setPage(1);
                                   }}
+                                />
+                                <Button
+                                  icon={<ReloadOutlined />}
+                                  aria-label={t('refresh')}
+                                  loading={docsLoading}
+                                  onClick={() => void loadDocuments()}
                                 />
                               </Space>
                             </div>
-                            <div className="flex min-w-0 flex-1 flex-col gap-3">
-                              <div className="flex flex-wrap items-end justify-between gap-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Typography.Text strong>
-                                    {folderPath === null
-                                      ? t('allMaterials')
-                                      : (folderPath.split('/').pop() ?? folderPath)}
-                                  </Typography.Text>
+                            {folderQueue.length > 0 && materialModal === null && (
+                              <div
+                                className="flex flex-col gap-2 rounded-md border border-dashed p-3"
+                                style={{ borderColor: token.colorBorder }}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                   <Typography.Text type="secondary">
-                                    {t('documentCount').replace('{count}', String(visibleDocs?.total ?? 0))}
+                                    {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
                                   </Typography.Text>
-                                </div>
-                                <Space wrap>
-                                  <Input
-                                    allowClear
-                                    value={keyword}
-                                    placeholder={t('search')}
-                                    aria-label={t('search')}
-                                    onChange={(event) => setKeyword(event.target.value)}
-                                    onPressEnter={() => {
-                                      applySearch();
-                                    }}
-                                    onClear={() => {
-                                      clearSearch();
-                                    }}
-                                    style={{ width: 200 }}
-                                  />
-                                  <Button
-                                    icon={<SearchOutlined />}
-                                    aria-label={t('search')}
-                                    onClick={() => {
-                                      applySearch();
-                                    }}
-                                  />
-                                  <Select
-                                    aria-label={t('parse')}
-                                    value={statusFilter}
-                                    options={statusOptions}
-                                    style={{ width: 130 }}
-                                    onChange={(next: string) => {
-                                      setStatusFilter(next);
-                                      setPage(1);
-                                    }}
-                                  />
-                                  <Button
-                                    icon={<ReloadOutlined />}
-                                    aria-label={t('refresh')}
-                                    loading={docsLoading}
-                                    onClick={() => void loadDocuments()}
-                                  />
-                                </Space>
-                              </div>
-                              {folderQueue.length > 0 && materialModal === null && (
-                                <div
-                                  className="flex flex-col gap-2 rounded-md border border-dashed p-3"
-                                  style={{ borderColor: token.colorBorder }}
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <Typography.Text type="secondary">
-                                      {`${t('folderHint')} ${t('folderAccepted')} ${acceptedFolderCount} / ${folderQueue.length}`}
-                                    </Typography.Text>
-                                    <Space size="small">
-                                      <Button
-                                        size="small"
-                                        disabled={folderUploading || failedFolderItems.length === 0}
-                                        onClick={() => void runFolderUpload(failedFolderItems)}
-                                      >
-                                        {t('folderRetryFailed')}
-                                      </Button>
-                                      <Button
-                                        size="small"
-                                        disabled={folderUploading}
-                                        onClick={() => setFolderQueue([])}
-                                      >
-                                        {t('folderClear')}
-                                      </Button>
-                                    </Space>
-                                  </div>
-                                  <div className="max-h-48 overflow-auto">
-                                    {folderQueue.map((item) => (
-                                      <div
-                                        key={item.key}
-                                        className="flex items-center justify-between gap-2 py-0.5 text-xs"
-                                      >
-                                        <span className="truncate" title={item.relativePath || item.file.name}>
-                                          {item.label}
-                                        </span>
-                                        <span className="flex shrink-0 items-center gap-2">
-                                          {item.detail ? (
-                                            <Typography.Text type="secondary">{item.detail}</Typography.Text>
-                                          ) : null}
-                                          <Tag
-                                            color={
-                                              item.status === 'accepted'
-                                                ? 'green'
-                                                : item.status === 'uncertain'
-                                                  ? 'warning'
-                                                  : item.status === 'failed'
-                                                    ? 'red'
-                                                    : item.status === 'uploading'
-                                                      ? 'blue'
-                                                      : 'default'
-                                            }
-                                          >
-                                            {item.status === 'accepted'
-                                              ? t('folderAccepted')
-                                              : item.status === 'uncertain'
-                                                ? translate(ADMIN_LANGUAGE, 'knowledgeOutcomeUncertain')
-                                                : item.status === 'failed'
-                                                  ? t('folderFailed')
-                                                  : item.status === 'uploading'
-                                                    ? t('folderUploading')
-                                                    : t('folderQueued')}
-                                          </Tag>
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {docHintVisible && (
-                                <Alert
-                                  showIcon
-                                  closable
-                                  type="info"
-                                  title={t('knowledgeDocumentEnableHint')}
-                                  description={t('knowledgeFileOnlyPreview')}
-                                  onClose={() => {
-                                    localStorage.setItem(DOC_HINT_DISMISSED_KEY, '1');
-                                    setDocHintVisible(false);
-                                  }}
-                                />
-                              )}
-                              {pickedDocs.length > 0 && (
-                                <section aria-label={t('batchBar')}>
-                                  <Space wrap>
-                                    <Typography.Text>
-                                      {t('batchPicked').replace('{count}', String(pickedDocs.length))}
-                                    </Typography.Text>
+                                  <Space size="small">
                                     <Button
                                       size="small"
-                                      icon={<FolderOpenOutlined />}
-                                      disabled={batchBusy || writeBlocked}
-                                      onClick={() => {
-                                        setWriteNotice(null);
-                                        setMoveTarget(folderPath ?? '');
-                                        setMoveDialog(true);
-                                      }}
+                                      disabled={folderUploading || failedFolderItems.length === 0}
+                                      onClick={() => void runFolderUpload(failedFolderItems)}
                                     >
-                                      {t('batchMove')}
+                                      {t('folderRetryFailed')}
                                     </Button>
-                                    <Button
-                                      size="small"
-                                      icon={<ReloadOutlined />}
-                                      disabled={batchBusy || writeBlocked}
-                                      onClick={() => void runBatchAction('reparse')}
-                                    >
-                                      {t('batchRetry')}
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      danger
-                                      disabled={batchBusy || writeBlocked}
-                                      onClick={() =>
-                                        modal.confirm({
-                                          title: t('batchDelete'),
-                                          content: t('knowledgeDeleteDocumentHint'),
-                                          okText: t('knowledgeDeleteConfirm'),
-                                          cancelText: t('cancel'),
-                                          okButtonProps: { danger: true },
-                                          onOk: () => runBatchAction('delete'),
-                                        })
-                                      }
-                                    >
-                                      {t('batchDelete')}
+                                    <Button size="small" disabled={folderUploading} onClick={() => setFolderQueue([])}>
+                                      {t('folderClear')}
                                     </Button>
                                   </Space>
-                                </section>
-                              )}
-                              {batchFailures.length > 0 && (
-                                <Alert
-                                  showIcon
-                                  type="warning"
-                                  closable
-                                  title={t('batchFailed')}
-                                  description={batchFailures.join('、')}
-                                  onClose={() => setBatchFailures([])}
-                                />
-                              )}
-                              <Table<ManagedKnowledgeDocument>
-                                rowKey="id"
-                                size="small"
-                                loading={docsLoading}
-                                rowSelection={{
-                                  selectedRowKeys: [...pickedDocs],
-                                  onChange: (keys) => setPickedDocs(keys.map((key) => String(key))),
-                                }}
-                                columns={columns}
-                                dataSource={visibleDocs?.data ?? []}
-                                locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
-                                pagination={{
-                                  current: visibleDocs?.page ?? page,
-                                  pageSize: visibleDocs?.pageSize ?? 10,
-                                  total: visibleDocs?.total ?? 0,
-                                  showSizeChanger: false,
-                                  onChange: (next) => setPage(next),
-                                  showTotal: (total) =>
-                                    translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace(
-                                      '{count}',
-                                      String(total),
-                                    ),
-                                  hideOnSinglePage: true,
-                                }}
-                                scroll={{ x: 800 }}
-                              />
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <Typography.Text type="secondary">
-                                  {pickedDocs.length > 0
-                                    ? t('batchPicked').replace('{count}', String(pickedDocs.length))
-                                    : translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace(
-                                        '{count}',
-                                        String(visibleDocs?.total ?? 0),
-                                      )}
-                                </Typography.Text>
-                                <Typography.Text type="secondary">{t('indexHint')}</Typography.Text>
+                                </div>
+                                <div className="max-h-48 overflow-auto">
+                                  {folderQueue.map((item) => (
+                                    <div
+                                      key={item.key}
+                                      className="flex items-center justify-between gap-2 py-0.5 text-xs"
+                                    >
+                                      <span className="truncate" title={item.relativePath || item.file.name}>
+                                        {item.label}
+                                      </span>
+                                      <span className="flex shrink-0 items-center gap-2">
+                                        {item.detail ? (
+                                          <Typography.Text type="secondary">{item.detail}</Typography.Text>
+                                        ) : null}
+                                        <Tag
+                                          color={
+                                            item.status === 'accepted'
+                                              ? 'green'
+                                              : item.status === 'uncertain'
+                                                ? 'warning'
+                                                : item.status === 'failed'
+                                                  ? 'red'
+                                                  : item.status === 'uploading'
+                                                    ? 'blue'
+                                                    : 'default'
+                                          }
+                                        >
+                                          {item.status === 'accepted'
+                                            ? t('folderAccepted')
+                                            : item.status === 'uncertain'
+                                              ? translate(ADMIN_LANGUAGE, 'knowledgeOutcomeUncertain')
+                                              : item.status === 'failed'
+                                                ? t('folderFailed')
+                                                : item.status === 'uploading'
+                                                  ? t('folderUploading')
+                                                  : t('folderQueued')}
+                                        </Tag>
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              {selected.type === 'faq' ? (
-                                <KnowledgeOperations
-                                  key={`operations:${selected.id}`}
-                                  portal={portal}
-                                  baseId={selected.id}
-                                  baseType={selected.type}
-                                  documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
-                                  disabled={writeBlocked || uploading}
-                                  onFoldersChanged={() => {
-                                    setFolderPath(null);
-                                    setPage(1);
-                                    setDocsRefresh((current) => current + 1);
-                                  }}
-                                />
-                              ) : null}
+                            )}
+                            {docHintVisible && (
+                              <Alert
+                                showIcon
+                                closable
+                                type="info"
+                                title={t('knowledgeDocumentEnableHint')}
+                                description={t('knowledgeFileOnlyPreview')}
+                                onClose={() => {
+                                  localStorage.setItem(DOC_HINT_DISMISSED_KEY, '1');
+                                  setDocHintVisible(false);
+                                }}
+                              />
+                            )}
+                            {pickedDocs.length > 0 && (
+                              <section aria-label={t('batchBar')}>
+                                <Space wrap>
+                                  <Typography.Text>
+                                    {t('batchPicked').replace('{count}', String(pickedDocs.length))}
+                                  </Typography.Text>
+                                  <Button
+                                    size="small"
+                                    icon={<FolderOpenOutlined />}
+                                    disabled={batchBusy || writeBlocked}
+                                    onClick={() => {
+                                      setWriteNotice(null);
+                                      setMoveTarget(folderPath ?? '');
+                                      setMoveDialog(true);
+                                    }}
+                                  >
+                                    {t('batchMove')}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={<ReloadOutlined />}
+                                    disabled={batchBusy || writeBlocked}
+                                    onClick={() => void runBatchAction('reparse')}
+                                  >
+                                    {t('batchRetry')}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    danger
+                                    disabled={batchBusy || writeBlocked}
+                                    onClick={() =>
+                                      modal.confirm({
+                                        title: t('batchDelete'),
+                                        content: t('knowledgeDeleteDocumentHint'),
+                                        okText: t('knowledgeDeleteConfirm'),
+                                        cancelText: t('cancel'),
+                                        okButtonProps: { danger: true },
+                                        onOk: () => runBatchAction('delete'),
+                                      })
+                                    }
+                                  >
+                                    {t('batchDelete')}
+                                  </Button>
+                                </Space>
+                              </section>
+                            )}
+                            {batchFailures.length > 0 && (
+                              <Alert
+                                showIcon
+                                type="warning"
+                                closable
+                                title={t('batchFailed')}
+                                description={batchFailures.join('、')}
+                                onClose={() => setBatchFailures([])}
+                              />
+                            )}
+                            <Table<ManagedKnowledgeDocument>
+                              rowKey="id"
+                              size="small"
+                              loading={docsLoading}
+                              rowSelection={{
+                                selectedRowKeys: [...pickedDocs],
+                                onChange: (keys) => setPickedDocs(keys.map((key) => String(key))),
+                              }}
+                              columns={columns}
+                              dataSource={visibleDocs?.data ?? []}
+                              locale={{ emptyText: docsError ? t('error') : t('emptyDocs') }}
+                              pagination={{
+                                current: visibleDocs?.page ?? page,
+                                pageSize: visibleDocs?.pageSize ?? 10,
+                                total: visibleDocs?.total ?? 0,
+                                showSizeChanger: false,
+                                onChange: (next) => setPage(next),
+                                showTotal: (total) =>
+                                  translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace('{count}', String(total)),
+                                hideOnSinglePage: true,
+                              }}
+                              scroll={{ x: 800 }}
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Typography.Text type="secondary">
+                                {pickedDocs.length > 0
+                                  ? t('batchPicked').replace('{count}', String(pickedDocs.length))
+                                  : translate(ADMIN_LANGUAGE, 'knowledgeMaterialCount').replace(
+                                      '{count}',
+                                      String(visibleDocs?.total ?? 0),
+                                    )}
+                              </Typography.Text>
+                              <Typography.Text type="secondary">{t('indexHint')}</Typography.Text>
                             </div>
+                            {selected.type === 'faq' ? (
+                              <KnowledgeOperations
+                                key={`operations:${selected.id}`}
+                                portal={portal}
+                                baseId={selected.id}
+                                baseType={selected.type}
+                                documentIds={visibleDocs?.data.map((document) => document.id) ?? []}
+                                disabled={writeBlocked || uploading}
+                                onFoldersChanged={() => {
+                                  setFolderPath(null);
+                                  setPage(1);
+                                  setDocsRefresh((current) => current + 1);
+                                }}
+                              />
+                            ) : null}
                           </div>
-                        </>
-                      ),
-                    },
-                    {
-                      key: 'retrieval',
-                      label: t('tabRetrieval'),
-                      children: retrieval.panel,
-                    },
-                    {
-                      key: 'access',
-                      label: t('tabAccess'),
-                      children: (
-                        <KnowledgeGrants
-                          key={`grants:${selected.id}`}
-                          portal={portal}
-                          baseId={selected.id}
-                          disabled={writeBlocked || uploading}
-                          onGrantsChanged={(id, scope) => updateKnowledgeGrantScope(id, scope, setDetail, setBases)}
-                          onOpenRetrieval={retrieval.openAgentCheck}
-                          onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            )}
-          </Card>
-        </>
+                        </div>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'retrieval',
+                    label: t('tabRetrieval'),
+                    children: retrieval.panel,
+                  },
+                  {
+                    key: 'access',
+                    label: t('tabAccess'),
+                    children: (
+                      <KnowledgeGrants
+                        key={`grants:${selected.id}`}
+                        portal={portal}
+                        baseId={selected.id}
+                        disabled={writeBlocked || uploading}
+                        onGrantsChanged={(id, scope) => updateKnowledgeGrantScope(id, scope, setDetail, setBases)}
+                        onOpenRetrieval={retrieval.openAgentCheck}
+                        onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
+        </Card>
       )}
 
       {modalContext}
@@ -1846,7 +1822,7 @@ export function KnowledgeManagement({
         destroyOnHidden
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
-          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
+          {writeNoticeAlert}
           <Typography.Text type="secondary">
             {t('batchPicked').replace('{count}', String(pickedDocs.length))}
           </Typography.Text>
@@ -1894,7 +1870,7 @@ export function KnowledgeManagement({
           <Typography.Text type="secondary">
             {t('uploadTargetFolder').replace('{path}', folderPath ?? t('uncategorized'))}
           </Typography.Text>
-          {writeNotice && <Alert type="info" showIcon title={writeNotice} />}
+          {writeNoticeAlert}
           {materialModal === 'folder' && folderQueue.length > 0 && (
             <>
               {folderQueue.map((item) => (

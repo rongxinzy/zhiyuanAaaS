@@ -205,7 +205,7 @@ export function AdminApp() {
         token: { colorPrimary: '#1677ff', borderRadius: 6, fontSize: 14 },
       }}
     >
-      <AntApp>
+      <AntApp message={{ duration: 3, maxCount: 1 }}>
         <ConsoleRoot
           themeControl={
             <Select
