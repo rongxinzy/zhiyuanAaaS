@@ -904,7 +904,7 @@ try {
     'knowledge audit stays in the native log page, labels raw codes in Chinese and resolves the actor filter',
   );
   await page.getByRole('tab', { name: '登录日志', exact: true }).click();
-  await page.getByText('invalid_credentials', { exact: true }).waitFor();
+  await page.getByText('凭证无效', { exact: true }).waitFor();
   assert.equal(await page.getByText('登录历史查询尚未接入', { exact: true }).count(), 0);
   checks.push('all available module routes, persisted login history');
 
