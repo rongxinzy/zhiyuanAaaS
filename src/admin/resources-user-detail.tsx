@@ -5,7 +5,14 @@ import type { AdminConsoleClient, AdminIdentity, AdminResources } from './client
 import { formatTimestamp } from './format.js';
 import { AccessTable, buildAccessRows, effectiveRoleIds, userSubjects } from './resources-access.js';
 import { resourcesCopy as rc } from './resources-copy.js';
-import { type AdminUser, EnabledBadge, type ModelResources, t, UnknownText } from './resources-shared.js';
+import {
+  type AdminUser,
+  EnabledBadge,
+  type ModelResources,
+  resourcesAvailable,
+  t,
+  UnknownText,
+} from './resources-shared.js';
 import { UserAccountLinks, UserLoginSessions } from './resources-user-identity.js';
 import { AdjustOrgModal } from './resources-user-organization.js';
 
@@ -109,7 +116,9 @@ export function UserDetailDrawer({
               <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <div>
                   <Typography.Title level={5}>{rc.belongTeams}</Typography.Title>
-                  {userTeams.length === 0 ? (
+                  {!resourcesAvailable(resources, 'teams') ? (
+                    <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+                  ) : userTeams.length === 0 ? (
                     <UnknownText>{rc.noTeams}</UnknownText>
                   ) : (
                     <Space size={4} wrap>
@@ -123,7 +132,9 @@ export function UserDetailDrawer({
                 </div>
                 <div>
                   <Typography.Title level={5}>{rc.accountRoles}</Typography.Title>
-                  {userRoles.length === 0 ? (
+                  {!resourcesAvailable(resources, 'roles', 'teams') ? (
+                    <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+                  ) : userRoles.length === 0 ? (
                     <UnknownText>{rc.noRoles}</UnknownText>
                   ) : (
                     <Space size={4} wrap>

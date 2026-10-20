@@ -4,7 +4,15 @@ import { Button, Drawer, Empty, Modal, Space, Table, Tabs, Tag, Typography } fro
 import type { AdminResources, AdminTeam as Team } from './client.js';
 import { AccessTable, buildAccessRows, teamSubjects } from './resources-access.js';
 import { resourcesCopy as rc } from './resources-copy.js';
-import { EnabledBadge, type ModelResources, NameCell, PAGINATION, t, UnknownText } from './resources-shared.js';
+import {
+  EnabledBadge,
+  type ModelResources,
+  NameCell,
+  PAGINATION,
+  resourcesAvailable,
+  t,
+  UnknownText,
+} from './resources-shared.js';
 
 export function TeamDetailDrawer({
   team,
@@ -55,43 +63,44 @@ export function TeamDetailDrawer({
           {
             key: 'members',
             label: `${rc.teamMembersTab}（${team.memberCount}）`,
-            children:
-              members.length === 0 ? (
-                <Empty description={<UnknownText>{rc.notCollected}</UnknownText>} />
-              ) : (
-                <Table
-                  rowKey="id"
-                  size="small"
-                  pagination={PAGINATION}
-                  dataSource={[...members]}
-                  columns={[
-                    {
-                      title: t('user'),
-                      key: 'user',
-                      render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
-                    },
-                    {
-                      title: rc.accountRoles,
-                      key: 'roles',
-                      render: (_, user) =>
-                        (user.roleIds ?? []).length > 0 ? (
-                          <Space size={4} wrap>
-                            {(user.roleIds ?? []).map((id) => (
-                              <Tag key={id}>{roleNames.get(id) ?? id}</Tag>
-                            ))}
-                          </Space>
-                        ) : (
-                          <UnknownText>{rc.noRoles}</UnknownText>
-                        ),
-                    },
-                    {
-                      title: t('status'),
-                      key: 'status',
-                      render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
-                    },
-                  ]}
-                />
-              ),
+            children: !resourcesAvailable(resources, 'users') ? (
+              <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+            ) : members.length === 0 ? (
+              <Empty description={<UnknownText>{rc.notCollected}</UnknownText>} />
+            ) : (
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={PAGINATION}
+                dataSource={[...members]}
+                columns={[
+                  {
+                    title: t('user'),
+                    key: 'user',
+                    render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+                  },
+                  {
+                    title: rc.accountRoles,
+                    key: 'roles',
+                    render: (_, user) =>
+                      (user.roleIds ?? []).length > 0 ? (
+                        <Space size={4} wrap>
+                          {(user.roleIds ?? []).map((id) => (
+                            <Tag key={id}>{roleNames.get(id) ?? id}</Tag>
+                          ))}
+                        </Space>
+                      ) : (
+                        <UnknownText>{rc.noRoles}</UnknownText>
+                      ),
+                  },
+                  {
+                    title: t('status'),
+                    key: 'status',
+                    render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
+                  },
+                ]}
+              />
+            ),
           },
           {
             key: 'access',
@@ -149,7 +158,9 @@ export function TeamEmployeesModal({
       onOk={onClose}
     >
       <Typography.Paragraph type="secondary">{t('teamEmployeesEmptyHint')}</Typography.Paragraph>
-      {members.length === 0 ? (
+      {!resourcesAvailable(resources, 'users') ? (
+        <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+      ) : members.length === 0 ? (
         <Empty description={t('teamEmployeesEmpty')} />
       ) : (
         <Table<PlatformUser>

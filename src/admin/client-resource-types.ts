@@ -94,6 +94,8 @@ export interface AdminModelAssignmentSubject {
 }
 
 export interface AdminResources {
+  /** Omitted for complete responses. These collections failed, rather than being empty. */
+  readonly unavailable?: readonly AdminResourceCollection[];
   readonly users: readonly PlatformUser[];
   readonly teams: readonly Team[];
   readonly roles: readonly Role[];
@@ -101,6 +103,9 @@ export interface AdminResources {
   readonly skills: readonly AdminSkill[];
   readonly assignments: readonly AdminSkillAssignment[];
 }
+
+export type AdminResourceCollection = 'users' | 'teams' | 'roles' | 'permissions' | 'skills' | 'assignments';
+export type AdminResourceScope = AdminResourceCollection | 'directory';
 
 export interface AdminModels {
   readonly models: readonly AdminModel[];

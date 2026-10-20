@@ -12,6 +12,7 @@ import {
   type NameListFilters,
   PAGINATION,
   RefreshButton,
+  resourcesAvailable,
   SectionHeader,
   type SectionProps,
   t,
@@ -86,8 +87,16 @@ export function TeamsSection({
       key: 'employees',
       width: 140,
       render: (_, team) => (
-        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setEmployeesTeamId(team.id)}>
-          {teamEmployeesCount(team.id, resources)}
+        <Button
+          type="link"
+          size="small"
+          style={{ padding: 0 }}
+          disabled={!resourcesAvailable(resources, 'users')}
+          onClick={() => setEmployeesTeamId(team.id)}
+        >
+          {resourcesAvailable(resources, 'users')
+            ? teamEmployeesCount(team.id, resources)
+            : t('resourceAssociationUnavailable')}
         </Button>
       ),
     },
