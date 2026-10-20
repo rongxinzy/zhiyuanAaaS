@@ -46,6 +46,9 @@ export const knowledgeTranslations = {
     knowledgeGrantsReadFailed: '授权读取失败',
     knowledgeGrantsSaveFailed: '授权保存失败',
     knowledgeGrantsSaved: '知识库访问授权已保存。',
+    knowledgeGrantsDraftHint:
+      '选择的用户和团队会在保存时一并授权；移除后也需保存才会生效。关闭窗口将放弃未保存的修改。',
+    knowledgeGrantsEmptySaveBlocked: '保存授权需要至少一名用户或团队。清空全部访问请使用「撤销全部」。',
     knowledgeGrantType: '主体类型',
     knowledgeGrantUser: '用户',
     knowledgeGrantTeam: '团队',
@@ -336,6 +339,9 @@ export const knowledgeTranslations = {
     knowledgeGrantsReadFailed: 'Could not load access grants',
     knowledgeGrantsSaveFailed: 'Could not save access grants',
     knowledgeGrantsSaved: 'Knowledge base access grants saved.',
+    knowledgeGrantsDraftHint:
+      'Selected users and teams are included when saving. Removals also take effect after saving. Closing discards unsaved changes.',
+    knowledgeGrantsEmptySaveBlocked: 'Saving needs at least one user or team. Use “Revoke all” to clear every grant.',
     knowledgeGrantType: 'Subject type',
     knowledgeGrantUser: 'User',
     knowledgeGrantTeam: 'Team',

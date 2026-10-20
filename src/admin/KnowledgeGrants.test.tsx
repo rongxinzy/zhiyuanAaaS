@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { Dispatch, SetStateAction } from 'react';
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -6,8 +7,8 @@ import { App, ConfigProvider } from 'antd';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
-import { KnowledgeGrants } from './KnowledgeGrants.js';
-import type { PortalClient } from './portal.js';
+import { KnowledgeGrants, updateKnowledgeGrantScope } from './KnowledgeGrants.js';
+import type { ManagedKnowledgeBase, PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -65,7 +66,7 @@ async function pickSubject(combobox: HTMLElement, label: string) {
 
 function renderGrants(portal: PortalClient) {
   return render(
-    <ConfigProvider>
+    <ConfigProvider theme={{ token: { motion: false } }}>
       <App>
         <KnowledgeGrants portal={portal} baseId="kb-1" />
       </App>
@@ -77,8 +78,99 @@ function openGrantEditor() {
   fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantEdit') }));
 }
 
+describe('updateKnowledgeGrantScope', () => {
+  test('updates matching detail and list rows only', () => {
+    const detail: { current: ManagedKnowledgeBase | null } = {
+      current: { id: 'kb-1', scope: { users: 1, teams: 0 } } as ManagedKnowledgeBase,
+    };
+    const bases: { current: readonly ManagedKnowledgeBase[] } = {
+      current: [
+        { id: 'kb-1', scope: { users: 1, teams: 0 } } as ManagedKnowledgeBase,
+        { id: 'kb-2', scope: { users: 3, teams: 1 } } as ManagedKnowledgeBase,
+      ],
+    };
+    const setDetail: Dispatch<SetStateAction<ManagedKnowledgeBase | null>> = (updater) => {
+      detail.current = typeof updater === 'function' ? updater(detail.current) : updater;
+    };
+    const setBases: Dispatch<SetStateAction<readonly ManagedKnowledgeBase[]>> = (updater) => {
+      bases.current = typeof updater === 'function' ? updater(bases.current) : updater;
+    };
+    updateKnowledgeGrantScope('kb-1', { users: 0, teams: 2 }, setDetail, setBases);
+    expect(detail.current?.scope).toEqual({ users: 0, teams: 2 });
+    expect(bases.current[0]?.scope).toEqual({ users: 0, teams: 2 });
+    expect(bases.current[1]?.scope).toEqual({ users: 3, teams: 1 });
+  });
+});
+
 describe('KnowledgeGrants', () => {
   afterEach(() => cleanup());
+
+  test('saves pending selections without requiring a separate add click and clears them on reopen', async () => {
+    const changed = vi.fn();
+    const portal = makePortal();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
+        </App>
+      </ConfigProvider>,
+    );
+    await screen.findByText('user-1');
+    openGrantEditor();
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantTeam') }), '市场部');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+    await waitFor(() =>
+      expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [
+        { type: 'user', id: 'user-1' },
+        { type: 'user', id: 'user-2' },
+        { type: 'team', id: 'team-2' },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(changed).toHaveBeenCalledWith('kb-1', { users: 2, teams: 1 });
+    openGrantEditor();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') })).toBeDisabled();
+    expect(within(screen.getByRole('table')).getByText('user-2')).toBeInTheDocument();
+  });
+
+  test('discards a removed row and pending selection when closing without saving', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /移\s*除/ }));
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+    openGrantEditor();
+    expect(within(screen.getByRole('table')).getByText('user-1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') })).toBeDisabled();
+    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+  });
+
+  test('does not restore selected subjects after revoke all and reports the empty committed scope', async () => {
+    const changed = vi.fn();
+    const portal = makePortal();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
+        </App>
+      </ConfigProvider>,
+    );
+    await screen.findByText('user-1');
+    openGrantEditor();
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') }));
+    const dialogs = await screen.findAllByRole('dialog');
+    fireEvent.click(within(dialogs.at(-1)!).getByRole('button', { name: tr('knowledgeGrantsRevokeAll') }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(changed).toHaveBeenCalledWith('kb-1', { users: 0, teams: 0 });
+    expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', []);
+    openGrantEditor();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantAddUser') })).toBeDisabled();
+    expect(within(screen.getByRole('table')).queryByText('user-2')).not.toBeInTheDocument();
+  });
 
   test('shows only employees bound to the selected knowledge base and links to management', async () => {
     const navigate = vi.fn();
@@ -100,6 +192,72 @@ describe('KnowledgeGrants', () => {
     expect(screen.queryByText(tr('knowledgeAgentEmpty'))).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: tr('knowledgeAgentManage') }));
     expect(navigate).toHaveBeenCalledOnce();
+  });
+
+  test('keeps saved access and the editor after a failed save without a success notification', async () => {
+    const changed = vi.fn();
+    const portal = makePortal({
+      replaceManagedKnowledgeGrants: vi.fn().mockRejectedValue(new PortalError(503, 'Storage unavailable')),
+    });
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
+        </App>
+      </ConfigProvider>,
+    );
+    await screen.findByText('user-1');
+    openGrantEditor();
+    // Keep a non-empty pending set so Save stays enabled and the write can fail.
+    await pickSubject(screen.getByRole('combobox', { name: tr('knowledgeGrantUser') }), '李四');
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsSave') }));
+    expect(await screen.findByText('Storage unavailable')).toBeInTheDocument();
+    expect(screen.queryByText(tr('knowledgeGrantsSaved'))).not.toBeInTheDocument();
+    expect(changed).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantsSave') })).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeRetryRead') }));
+    await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantEdit') })).toBeEnabled());
+    expect(within(screen.getByRole('listitem')).getByText('user-1')).toBeInTheDocument();
+  });
+
+  test('canceling revoke all does not write or change the saved set', async () => {
+    const portal = makePortal();
+    renderGrants(portal);
+    await screen.findByText('user-1');
+    openGrantEditor();
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') }));
+    const dialogs = await screen.findAllByRole('dialog');
+    fireEvent.click(within(dialogs.at(-1)!).getByRole('button', { name: /取\s*消/ }));
+    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+    expect(within(screen.getByRole('table')).getByText('user-1')).toBeInTheDocument();
+  });
+
+  test('disables empty save so wiping grants cannot toast success without revoke', async () => {
+    const changed = vi.fn();
+    const portal = makePortal();
+    render(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <App>
+          <KnowledgeGrants portal={portal} baseId="kb-1" onGrantsChanged={changed} />
+        </App>
+      </ConfigProvider>,
+    );
+    await screen.findByText('user-1');
+    openGrantEditor();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /移\s*除/ }));
+    const save = screen.getByRole('button', { name: tr('knowledgeGrantsSave') });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(screen.queryByText(tr('knowledgeGrantsSaved'))).not.toBeInTheDocument();
+    expect(portal.replaceManagedKnowledgeGrants).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    // Clearing access still works through the confirmed revoke path.
+    fireEvent.click(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') }));
+    const dialogs = await screen.findAllByRole('dialog');
+    fireEvent.click(within(dialogs.at(-1)!).getByRole('button', { name: tr('knowledgeGrantsRevokeAll') }));
+    await waitFor(() => expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', []));
+    expect(changed).toHaveBeenCalledWith('kb-1', { users: 0, teams: 0 });
   });
 
   test('does not label an unsaved removal as effective access after closing the editor', async () => {
@@ -129,8 +287,10 @@ describe('KnowledgeGrants', () => {
     const userSelect = screen.getByRole('combobox', { name: tr('knowledgeGrantUser') });
     expect(userSelect).toBeDisabled();
     resolveGrants({ knowledge_base_id: 'kb-1', tenant_id: 'tenant-1', grants: [] });
-    await waitFor(() => expect(save).toBeEnabled());
+    // Empty committed set: Save stays disabled; subject pickers unlock for adding.
     await waitFor(() => expect(userSelect).toBeEnabled());
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('button', { name: tr('knowledgeGrantsRevokeAll') })).toBeDisabled();
   });
 
   test('ignores an old base response and clears the previous base draft', async () => {
@@ -339,7 +499,8 @@ describe('KnowledgeGrants', () => {
     await waitFor(() =>
       expect(portal.replaceManagedKnowledgeGrants).toHaveBeenCalledWith('kb-1', [{ type: 'user', id: 'user-1' }]),
     );
-    expect(within(screen.getByRole('table')).getAllByText('user-1')).toHaveLength(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(within(screen.getByRole('listitem')).getByText('user-1')).toBeInTheDocument();
     expect(screen.queryByText(tr('knowledgeGrantUnknownSubject'))).not.toBeInTheDocument();
   });
 
@@ -415,7 +576,7 @@ describe('KnowledgeGrants', () => {
       ]),
     );
     // 加完就清空草稿：按钮回落到不可点，重复点不会塞进同一个主体。
-    await waitFor(() => expect(screen.getByRole('button', { name: tr('knowledgeGrantAddTeam') })).toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   // 重名的人在选择之前必须能分清：重名的选项补 ID 前 8 位，不重名的保持只写名字。

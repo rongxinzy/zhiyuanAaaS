@@ -44,7 +44,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeDocumentInspector } from './KnowledgeDocumentInspector.js';
-import { KnowledgeGrants } from './KnowledgeGrants.js';
+import { KnowledgeGrants, updateKnowledgeGrantScope } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
 import { knowledgeBaseColumns } from './knowledge-base-columns.js';
 import { useKnowledgeDetailRetrieval } from './knowledge-detail-retrieval.js';
@@ -1779,6 +1779,7 @@ export function KnowledgeManagement({
                           portal={portal}
                           baseId={selected.id}
                           disabled={writeBlocked || uploading}
+                          onGrantsChanged={(id, scope) => updateKnowledgeGrantScope(id, scope, setDetail, setBases)}
                           onOpenRetrieval={retrieval.openAgentCheck}
                           onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
                         />

@@ -1,11 +1,11 @@
 import { SearchOutlined } from '@ant-design/icons';
 import { Alert, App, Button, List, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { knowledgeErrorText } from './knowledge-error.js';
-import type { ManagedKnowledgeGrant, PortalClient, PortalEmployee } from './portal.js';
+import type { ManagedKnowledgeBase, ManagedKnowledgeGrant, PortalClient, PortalEmployee } from './portal.js';
 import { PortalError } from './portal.js';
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
@@ -17,6 +17,16 @@ const subjectMatches = (input: string, candidate: unknown): boolean =>
   (typeof candidate === 'string' && candidate.toLowerCase().includes(input.trim().toLowerCase()));
 
 type GrantSubject = { readonly id: string; readonly name: string };
+
+export function updateKnowledgeGrantScope(
+  id: string,
+  scope: { users: number; teams: number },
+  setDetail: Dispatch<SetStateAction<ManagedKnowledgeBase | null>>,
+  setBases: Dispatch<SetStateAction<readonly ManagedKnowledgeBase[]>>,
+) {
+  setDetail((current) => (current?.id === id ? { ...current, scope } : current));
+  setBases((current) => current.map((base) => (base.id === id ? { ...base, scope } : base)));
+}
 
 // The picker's candidate lists plus how much they can be trusted. `complete`
 // is false when either source failed: the list is then known to be partial,
@@ -34,12 +44,14 @@ export function KnowledgeGrants({
   disabled = false,
   onOpenRetrieval,
   onManageAgents,
+  onGrantsChanged,
 }: {
   readonly portal: PortalClient;
   readonly baseId: string;
   readonly disabled?: boolean;
   readonly onOpenRetrieval?: () => void;
   readonly onManageAgents?: (() => void) | undefined;
+  readonly onGrantsChanged?: (baseId: string, scope: { users: number; teams: number }) => void;
 }) {
   const { message } = App.useApp();
   const [modal, modalContext] = Modal.useModal();
@@ -61,6 +73,8 @@ export function KnowledgeGrants({
   const baseGeneration = useRef(0);
   const requestGeneration = useRef(0);
   const subjectsGeneration = useRef(0);
+  const savingGeneration = useRef<number | null>(null);
+  const revokeDialog = useRef<{ destroy(): void } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setEmployees(null);
@@ -154,6 +168,7 @@ export function KnowledgeGrants({
     setLoadedBaseId(null);
     setLoading(true);
     setSaving(false);
+    savingGeneration.current = null;
     setGrants([]);
     setSavedGrants([]);
     setUserDrafts([]);
@@ -167,11 +182,14 @@ export function KnowledgeGrants({
       baseGeneration.current += 1;
       requestGeneration.current += 1;
       subjectsGeneration.current += 1;
+      revokeDialog.current?.destroy();
     };
   }, [load, loadSubjects]);
 
   // 编辑门禁：读取/保存还没就绪、或上次写结果未知时，只允许看。
   const editLocked = disabled || blocked || loading || saving || !!error || loadedBaseId !== baseId;
+  const editLockedRef = useRef(editLocked);
+  editLockedRef.current = editLocked;
 
   // 与技能授权一致：一次可以挑多个主体再加。挑中的 id 全部并入待保存列表，
   // 已经在列表里的直接跳过，避免出现重复行；同一个 id 只会有一行。
@@ -228,10 +246,11 @@ export function KnowledgeGrants({
   }, [grants, subjects]);
 
   const save = async (next = grants) => {
-    if (editLocked) return;
+    if (editLockedRef.current || savingGeneration.current !== null) return false;
     const base = baseId;
     const baseVersion = baseGeneration.current;
     const requestVersion = ++requestGeneration.current;
+    savingGeneration.current = requestVersion;
     setSaving(true);
     try {
       const result = await portal.replaceManagedKnowledgeGrants(
@@ -241,8 +260,16 @@ export function KnowledgeGrants({
       if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
         setGrants(result.grants);
         setSavedGrants(result.grants);
+        setUserDrafts([]);
+        setTeamDrafts([]);
         setError(null);
+        setEditorOpen(false);
+        onGrantsChanged?.(base, {
+          users: result.grants.filter((grant) => grant.type === 'user').length,
+          teams: result.grants.filter((grant) => grant.type === 'team').length,
+        });
         message.success(tr('knowledgeGrantsSaved'));
+        return true;
       }
     } catch (cause) {
       if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) {
@@ -251,9 +278,62 @@ export function KnowledgeGrants({
           setBlocked(true);
         message.error(tr('knowledgeGrantsSaveFailed'));
       }
+      return false;
     } finally {
+      if (savingGeneration.current === requestVersion) savingGeneration.current = null;
       if (baseVersion === baseGeneration.current && requestVersion === requestGeneration.current) setSaving(false);
     }
+    return false;
+  };
+
+  const pendingGrants = useMemo(() => {
+    const next = new Map(grants.map((grant) => [`${grant.type}:${grant.id}`, grant]));
+    for (const [type, ids] of [
+      ['user', userDrafts],
+      ['team', teamDrafts],
+    ] as const)
+      for (const id of ids) next.set(`${type}:${id}`, { type, id });
+    return [...next.values()];
+  }, [grants, userDrafts, teamDrafts]);
+
+  const saveSelection = () => {
+    // Empty save via this button used to toast success after wiping grants.
+    // Clearing access must go through the explicit revoke confirmation.
+    if (pendingGrants.length === 0) {
+      message.warning(tr('knowledgeGrantsEmptySaveBlocked'));
+      return false;
+    }
+    return save(pendingGrants);
+  };
+
+  const openEditor = () => {
+    setGrants(savedGrants);
+    setUserDrafts([]);
+    setTeamDrafts([]);
+    setEditorOpen(true);
+  };
+
+  const revokeAll = () => {
+    const version = baseGeneration.current;
+    // Calling .then() flips useModal's silent flag so a failed onOk rejection is not
+    // rethrown into the browser console (pageerror "undefined" broke e2e).
+    const instance = modal.confirm({
+      title: tr('knowledgeGrantsRevokeConfirm'),
+      okText: tr('knowledgeGrantsRevokeAll'),
+      cancelText: tr('knowledgeCancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        // Reject to keep the confirm open; save() already surfaces message.error.
+        if (version !== baseGeneration.current || !(await save([]))) {
+          return Promise.reject(new Error(tr('knowledgeGrantsSaveFailed')));
+        }
+      },
+    });
+    revokeDialog.current = instance;
+    void instance.then(
+      () => undefined,
+      () => undefined,
+    );
   };
 
   const columns: ColumnsType<ManagedKnowledgeGrant> = [
@@ -309,7 +389,7 @@ export function KnowledgeGrants({
               </Typography.Title>
               <Typography.Text type="secondary">{tr('knowledgeGrantsHint')}</Typography.Text>
             </div>
-            <Button disabled={!!error} onClick={() => setEditorOpen(true)}>
+            <Button disabled={!!error || saving} onClick={openEditor}>
               {tr('knowledgeGrantEdit')}
             </Button>
           </div>
@@ -426,20 +506,7 @@ export function KnowledgeGrants({
             type="warning"
             title={tr('knowledgeGrantsReplaceHint')}
             action={
-              <Button
-                size="small"
-                danger
-                disabled={editLocked || !grants.length}
-                onClick={() =>
-                  modal.confirm({
-                    title: tr('knowledgeGrantsRevokeConfirm'),
-                    okText: tr('knowledgeGrantsRevokeAll'),
-                    cancelText: tr('knowledgeCancel'),
-                    okButtonProps: { danger: true },
-                    onOk: () => save([]),
-                  })
-                }
-              >
+              <Button size="small" danger disabled={editLocked || !savedGrants.length} onClick={revokeAll}>
                 {tr('knowledgeGrantsRevokeAll')}
               </Button>
             }
@@ -497,7 +564,13 @@ export function KnowledgeGrants({
             locale={{ emptyText: tr('knowledgeGrantsEmpty') }}
             scroll={{ x: 480 }}
           />
-          <Button type="primary" loading={saving} disabled={editLocked} onClick={() => void save()}>
+          <Typography.Text type="secondary">{tr('knowledgeGrantsDraftHint')}</Typography.Text>
+          <Button
+            type="primary"
+            loading={saving}
+            disabled={editLocked || pendingGrants.length === 0}
+            onClick={() => void saveSelection()}
+          >
             {tr('knowledgeGrantsSave')}
           </Button>
         </Space>

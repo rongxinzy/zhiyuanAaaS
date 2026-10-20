@@ -212,9 +212,14 @@ try {
     .click();
   assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/contacts'));
   assert.ok(state.requests.some((item) => item.method === 'GET' && item.path === '/api/v1/departments'));
-  await grants.getByRole('button', { name: '添加用户', exact: true }).click();
   await grants.getByRole('button', { name: '保存授权', exact: true }).click();
-  await grants.getByText('user-e2e', { exact: true }).waitFor();
+  await grants.waitFor({ state: 'hidden' });
+  await grantRegion.getByText('user-e2e', { exact: true }).waitFor();
+  await page
+    .getByRole('region', { name: '对象摘要', exact: true })
+    .getByText('2 项使用授权', { exact: true })
+    .waitFor();
+  await grantRegion.getByRole('button', { name: '编辑授权', exact: true }).click();
   const revokePath = `/api/v1/knowledge/managed/bases/${createdKnowledgeBase.id}/grants`;
   await waitForValue(
     () => state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'),
@@ -235,14 +240,18 @@ try {
   await grants.getByText('HTTP 503', { exact: true }).waitFor();
   assert.equal(await grants.getByText('当前没有用户或团队授权。', { exact: true }).count(), 0);
   assert.ok(state.knowledgeGrants[createdKnowledgeBase.id].some((grant) => grant.id === 'user-e2e'));
+  await revokeDialog.getByRole('button', { name: '取消', exact: true }).click();
   await grants.getByRole('button', { name: '重试读取', exact: true }).click();
   await grants.getByRole('button', { name: '撤销全部', exact: true }).click();
   await page.getByRole('dialog').last().getByRole('button', { name: '撤销全部', exact: true }).click();
-  await grants.getByText('当前没有用户或团队授权。', { exact: true }).waitFor();
+  await grants.waitFor({ state: 'hidden' });
+  await grantRegion.getByText('当前没有用户或团队授权。', { exact: true }).waitFor();
+  await page
+    .getByRole('region', { name: '对象摘要', exact: true })
+    .getByText('0 项使用授权', { exact: true })
+    .waitFor();
   assert.deepEqual(state.knowledgeGrants[createdKnowledgeBase.id], []);
   checks.push('knowledge grants: save, failed revocation preserves access, retry and revoke all');
-  await grants.locator('.ant-modal-close').click();
-  await grants.waitFor({ state: 'hidden' });
 
   await page.getByRole('tab', { name: '检索测试', exact: true }).click();
   const retrieval = page.getByRole('region', { name: '验证知识是否找得到', exact: true });
