@@ -126,6 +126,29 @@ Electron IPC, Node modules, or `process`.
   current source, Markdown links, `git diff --check`, and the PR file scope.
   Report that runtime checks were not run when no runtime files changed.
 
+## Authorization: Role-Only Grants
+
+- Grant permissions only to roles. This applies to administrative actions
+  and resource access (models, Skills, credentials, knowledge bases, and
+  digital employees); do not introduce direct user or team grants.
+- Users, including digital-employee identities, receive permissions only
+  through their assigned roles. Teams receive permissions only through
+  configured roles; members inherit the roles according to the authoritative
+  service contract. Never copy a team's permission list onto individual users.
+- The backend is the authority for role membership, inheritance, effective
+  permissions, and revocation. Do not infer authorization from a role's display
+  name, ownership, team membership alone, or browser-local state. UI visibility
+  is not an authorization boundary; every operation must be checked server-side.
+- Ownership, organizational membership, resource bindings, and quota/rate-limit
+  selectors may still reference users or teams, but must not act as a separate
+  permission-grant path or bypass role-based checks.
+- Existing direct grants and APIs without role subjects are migration gaps,
+  not exceptions to this rule. Document the backend/SDK dependency and an
+  explicit, reviewed migration that preserves access and revocation semantics;
+  do not silently drop existing grants or claim frontend changes enforce the
+  rule across services. Keep positive and negative authorization tests for
+  human users, digital employees, inherited roles, and revoked roles.
+
 ## Data Fetching
 
 Server state goes through TanStack Query (`@tanstack/react-query`); do not
