@@ -4,7 +4,7 @@ import { Button, Drawer, Empty, Modal, Space, Table, Tabs, Tag, Typography } fro
 import type { AdminResources } from './client.js';
 import { effectiveRoleIds } from './resources-access.js';
 import { resourcesCopy as rc } from './resources-copy.js';
-import { EnabledBadge, NameCell, PAGINATION, t, UnknownText } from './resources-shared.js';
+import { EnabledBadge, NameCell, PAGINATION, resourcesAvailable, t, UnknownText } from './resources-shared.js';
 
 export function RoleMembersModal({
   role,
@@ -28,7 +28,9 @@ export function RoleMembersModal({
       onCancel={onClose}
       onOk={onClose}
     >
-      {members.length === 0 ? (
+      {!resourcesAvailable(resources, 'users', 'teams') ? (
+        <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+      ) : members.length === 0 ? (
         <Empty description={rc.roleSubjectsEmpty} />
       ) : (
         <Table<PlatformUser>
@@ -126,30 +128,31 @@ export function RoleDetailDrawer({
           },
           {
             key: 'subjects',
-            label: `${rc.roleSubjectsTab}（${subjects.length}）`,
-            children:
-              subjects.length === 0 ? (
-                <Empty description={rc.roleSubjectsEmpty} />
-              ) : (
-                <Table<PlatformUser>
-                  rowKey="id"
-                  size="small"
-                  pagination={PAGINATION}
-                  dataSource={[...subjects]}
-                  columns={[
-                    {
-                      title: t('user'),
-                      key: 'user',
-                      render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
-                    },
-                    {
-                      title: t('status'),
-                      key: 'status',
-                      render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
-                    },
-                  ]}
-                />
-              ),
+            label: `${rc.roleSubjectsTab}（${resourcesAvailable(resources, 'users', 'teams') ? subjects.length : t('resourceAssociationUnavailable')}）`,
+            children: !resourcesAvailable(resources, 'users', 'teams') ? (
+              <UnknownText>{t('resourceAssociationUnavailable')}</UnknownText>
+            ) : subjects.length === 0 ? (
+              <Empty description={rc.roleSubjectsEmpty} />
+            ) : (
+              <Table<PlatformUser>
+                rowKey="id"
+                size="small"
+                pagination={PAGINATION}
+                dataSource={[...subjects]}
+                columns={[
+                  {
+                    title: t('user'),
+                    key: 'user',
+                    render: (_, user) => <NameCell name={user.displayName} detail={user.username} />,
+                  },
+                  {
+                    title: t('status'),
+                    key: 'status',
+                    render: (_, user) => <EnabledBadge enabled={user.status === 'active'} />,
+                  },
+                ]}
+              />
+            ),
           },
         ]}
       />

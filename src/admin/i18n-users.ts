@@ -1,5 +1,9 @@
 export const usersTranslations = {
   zh: {
+    resourceAuxiliaryFailed: '部分关联数据加载失败',
+    resourceAuxiliaryFailedHint:
+      '主列表仍可查看。受影响的关联统计暂不可用，依赖这些数据的编辑或授权操作已停用，请重试。',
+    resourceAssociationUnavailable: '关联数据不可用',
     userPartialSave: '用户资料已保存，角色与团队未保存',
     userPartialSaveHint: '列表已刷新。请检查角色与团队后重试；已保存的用户资料不会回滚。',
     teamOwnerUnsupported: '暂不支持配置',
@@ -89,6 +93,10 @@ export const usersTranslations = {
     members: '成员数',
   },
   en: {
+    resourceAuxiliaryFailed: 'Some related data could not be loaded',
+    resourceAuxiliaryFailedHint:
+      'The primary list is available. Affected related statistics and dependent editing or assignment actions are unavailable. Retry to reload.',
+    resourceAssociationUnavailable: 'Related data unavailable',
     userPartialSave: 'Profile saved; roles and teams were not saved',
     userPartialSaveHint:
       'The list has been refreshed. Check roles and teams and retry; the saved profile has not been rolled back.',

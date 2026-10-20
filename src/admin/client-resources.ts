@@ -24,6 +24,8 @@ import {
 } from './client-resource-parsers.js';
 import type {
   AdminAssignmentSubject,
+  AdminResourceCollection,
+  AdminResourceScope,
   AdminResources,
   AdminSkill,
   AdminSkillInstallations,
@@ -83,20 +85,42 @@ export function createResourcesApi(context: ClientContext) {
         ...(failed.length ? { failed } : {}),
       };
     },
-    async resources(identity?: AdminIdentity): Promise<AdminResources> {
+    async resources(identity?: AdminIdentity, scope?: AdminResourceScope): Promise<AdminResources> {
       const client = context.requireClient();
+      const unavailable: AdminResourceCollection[] = [];
+      const read = async <T>(collection: AdminResourceCollection, request: Promise<T>, fallback: T): Promise<T> => {
+        try {
+          return await request;
+        } catch (error) {
+          // Legacy consumers need a complete directory. Scoped list pages can
+          // retain their primary rows, but must label unavailable dependencies.
+          if (!scope || scope === collection || scope === 'directory') throw error;
+          unavailable.push(collection);
+          return fallback;
+        }
+      };
       const [users, teams, roles, permissions, skills, assignments] = await Promise.all([
-        hasAdminPermission(identity, AdminPermission.UsersRead) ? context.listAllUsers(client) : Promise.resolve([]),
-        hasAdminPermission(identity, AdminPermission.TeamsRead) ? context.listAllTeams(client) : Promise.resolve([]),
-        hasAdminPermission(identity, AdminPermission.RolesRead) ? context.listAllRoles(client) : Promise.resolve([]),
+        hasAdminPermission(identity, AdminPermission.UsersRead)
+          ? read('users', context.listAllUsers(client), [])
+          : Promise.resolve([]),
+        hasAdminPermission(identity, AdminPermission.TeamsRead)
+          ? read('teams', context.listAllTeams(client), [])
+          : Promise.resolve([]),
         hasAdminPermission(identity, AdminPermission.RolesRead)
-          ? client.listPermissions()
+          ? read('roles', context.listAllRoles(client), [])
+          : Promise.resolve([]),
+        scope !== 'directory' && hasAdminPermission(identity, AdminPermission.RolesRead)
+          ? read('permissions', client.listPermissions(), { permissions: [] })
           : Promise.resolve({ permissions: [] }),
-        hasAdminPermission(identity, AdminPermission.SkillsRead)
-          ? context.listAllSkills(client)
+        scope !== 'directory' && hasAdminPermission(identity, AdminPermission.SkillsRead)
+          ? read('skills', context.listAllSkills(client), { skills: [] })
           : Promise.resolve({ skills: [] }),
-        hasAdminPermission(identity, AdminPermission.SkillsAssign)
-          ? listAssignmentPages<JsonObject>(context, 'skill').then((items) => ({ items }))
+        scope !== 'directory' && hasAdminPermission(identity, AdminPermission.SkillsAssign)
+          ? read(
+              'assignments',
+              listAssignmentPages<JsonObject>(context, 'skill').then((items) => ({ items })),
+              { items: [] },
+            )
           : Promise.resolve({ items: [] }),
       ]);
       return {
@@ -106,6 +130,7 @@ export function createResourcesApi(context: ClientContext) {
         permissions: permissions.permissions,
         skills: parseSkills(skills),
         assignments: parseAssignments(assignments),
+        ...(unavailable.length ? { unavailable } : {}),
       };
     },
     async users(): Promise<readonly PlatformUser[]> {

@@ -12,7 +12,7 @@ import { AdminNotificationKind, notify } from './notifications.js';
 import { PortalClient } from './portal.js';
 import { resourcesCopy as rc } from './resources-copy.js';
 import { RolesSection } from './resources-roles.js';
-import { AdminResourceTab, type ModelResources, sectionTitle, t } from './resources-shared.js';
+import { AdminResourceTab, type ModelResources, resourcesAvailable, sectionTitle, t } from './resources-shared.js';
 import { AssignmentsSection } from './resources-skill-grants.js';
 import { SkillsSection } from './resources-skills.js';
 import { TeamsSection } from './resources-teams.js';
@@ -41,44 +41,57 @@ export function Resources({ client, tab, identity, portal }: ResourcesProps) {
   const [resolvedPortal] = useState(createPortal);
   const canQueryModels =
     hasAdminPermission(identity, AdminPermission.ModelsRead) && typeof client.models === 'function';
-  const resourcesKey = ['admin', 'resources', identity?.user.id ?? null, canQueryModels] as const;
+  const resourcesKey = ['admin', 'resources', identity, tab] as const;
   const queryClient = useQueryClient();
   const resourcesQuery = useQuery({
     queryKey: resourcesKey,
-    queryFn: async () => {
-      const [next, models] = await Promise.all([
-        client.resources(identity),
-        canQueryModels ? client.models(identity) : Promise.resolve({ models: [], assignments: [] }),
-      ]);
-      return {
-        resources: next,
-        modelResources: {
-          ...models,
-          available: canQueryModels && hasAdminPermission(identity, AdminPermission.ModelsAssign),
-          skillsAvailable:
-            hasAdminPermission(identity, AdminPermission.SkillsRead) &&
-            hasAdminPermission(identity, AdminPermission.SkillsAssign),
-        } satisfies ModelResources,
-      };
-    },
+    queryFn: () => client.resources(identity, tab),
   });
-  const resources = resourcesQuery.data?.resources ?? null;
-  const modelResources: ModelResources = resourcesQuery.data?.modelResources ?? {
-    models: [],
-    assignments: [],
-    available: false,
-    skillsAvailable: false,
+  const modelsKey = ['admin', 'resource-model-access', identity] as const;
+  const modelsQuery = useQuery({
+    queryKey: modelsKey,
+    queryFn: () => client.models(identity),
+    enabled: canQueryModels,
+  });
+  const resources = resourcesQuery.data ?? null;
+  const modelResources: ModelResources = {
+    models: modelsQuery.data?.models ?? [],
+    assignments: modelsQuery.data?.assignments ?? [],
+    available:
+      canQueryModels &&
+      modelsQuery.isSuccess &&
+      hasAdminPermission(identity, AdminPermission.ModelsAssign) &&
+      (!resources || resourcesAvailable(resources, 'roles', 'teams')),
+    skillsAvailable:
+      hasAdminPermission(identity, AdminPermission.SkillsRead) &&
+      hasAdminPermission(identity, AdminPermission.SkillsAssign) &&
+      Boolean(resources && resourcesAvailable(resources, 'skills', 'assignments', 'roles', 'teams')),
   };
   const loading = resourcesQuery.isFetching;
   const error = resourcesQuery.isError;
   const load = async () => {
-    await queryClient.invalidateQueries({ queryKey: resourcesKey });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: resourcesKey }),
+      queryClient.invalidateQueries({ queryKey: modelsKey }),
+    ]);
   };
   const reportError = useCallback(() => {
     notify(AdminNotificationKind.Error, t('operationUnavailable'));
   }, []);
+  const dependenciesAvailable = !resources
+    ? !error
+    : tab === AdminResourceTab.Users
+      ? resourcesAvailable(resources, 'roles', 'teams')
+      : tab === AdminResourceTab.Teams
+        ? resourcesAvailable(resources, 'roles')
+        : tab === AdminResourceTab.Roles
+          ? resourcesAvailable(resources, 'permissions')
+          : tab === AdminResourceTab.Assignments
+            ? resourcesAvailable(resources, 'users', 'teams', 'roles', 'skills')
+            : true;
   const canMutate =
-    tab === AdminResourceTab.Users
+    dependenciesAvailable &&
+    (tab === AdminResourceTab.Users
       ? hasAdminPermission(identity, AdminPermission.UsersWrite)
       : tab === AdminResourceTab.Teams
         ? hasAdminPermission(identity, AdminPermission.TeamsWrite)
@@ -86,12 +99,25 @@ export function Resources({ client, tab, identity, portal }: ResourcesProps) {
           ? hasAdminPermission(identity, AdminPermission.RolesWrite)
           : tab === AdminResourceTab.Skills
             ? hasAdminPermission(identity, AdminPermission.SkillsWrite)
-            : hasAdminPermission(identity, AdminPermission.SkillsAssign);
+            : hasAdminPermission(identity, AdminPermission.SkillsAssign));
   // 2026-09-30 LiXiang2019 加载中保留页头与表格结构；无缓存且失败时不展示空成功态
   const view = resources ?? (loading && !error ? EMPTY_RESOURCES : null);
 
   return (
     <section aria-label={sectionTitle(tab)}>
+      {modelsQuery.isError || resources?.unavailable?.length ? (
+        <Alert
+          type="warning"
+          showIcon
+          title={t('resourceAuxiliaryFailed')}
+          description={t('resourceAuxiliaryFailedHint')}
+          action={
+            <Button size="small" onClick={() => void load()}>
+              {rc.retry}
+            </Button>
+          }
+        />
+      ) : null}
       {error ? (
         <Alert
           type="error"
@@ -153,7 +179,10 @@ export function Resources({ client, tab, identity, portal }: ResourcesProps) {
           {/* 技能 */}
           {tab === AdminResourceTab.Skills ? (
             <SkillsSection
-              canAssign={hasAdminPermission(identity, AdminPermission.SkillsAssign)}
+              canAssign={
+                hasAdminPermission(identity, AdminPermission.SkillsAssign) &&
+                Boolean(resources && resourcesAvailable(resources, 'users', 'teams', 'roles'))
+              }
               client={client}
               portal={resolvedPortal}
               resources={view}

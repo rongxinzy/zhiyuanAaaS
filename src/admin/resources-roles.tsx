@@ -14,6 +14,7 @@ import {
   type NameListFilters,
   PAGINATION,
   RefreshButton,
+  resourcesAvailable,
   SectionHeader,
   type SectionProps,
   t,
@@ -71,8 +72,14 @@ export function RolesSection({
       key: 'members',
       width: 100,
       render: (_, role) => (
-        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setMembersRoleId(role.id)}>
-          {memberCount(role.id)}
+        <Button
+          type="link"
+          size="small"
+          style={{ padding: 0 }}
+          disabled={!resourcesAvailable(resources, 'users', 'teams')}
+          onClick={() => setMembersRoleId(role.id)}
+        >
+          {resourcesAvailable(resources, 'users', 'teams') ? memberCount(role.id) : t('resourceAssociationUnavailable')}
         </Button>
       ),
     },

@@ -10,6 +10,13 @@ const language: AdminLanguage = 'zh';
 
 export const t = (key: AdminTranslationKey) => translate(language, key);
 
+export function resourcesAvailable(
+  resources: AdminResources,
+  ...collections: NonNullable<AdminResources['unavailable']>
+): boolean {
+  return !collections.some((collection) => resources.unavailable?.includes(collection));
+}
+
 export const PASSWORD_MIN_LENGTH = 6;
 
 export const PASSWORD_MAX_LENGTH = 1024;
