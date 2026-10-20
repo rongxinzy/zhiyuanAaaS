@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { handleChannelFixture } from './admin-channel-fixture.mjs';
 import { readBody, writeJson } from './admin-fixture-http.mjs';
+import { handleKnowledgeRetrievalFixture } from './admin-knowledge-retrieval-fixture.mjs';
 
 // Deterministic test-only API fixtures; never loaded by the admin application.
 export const state = {
@@ -433,23 +434,7 @@ async function route(method, pathname, rawBody, response, query, headers) {
   }
   if (method === 'GET' && pathname === '/api/v1/employees')
     return writeJson(response, 200, { employees: state.employees });
-  if (method === 'POST' && pathname.match(/^\/api\/v1\/knowledge\/employees\/[^/]+\/search$/))
-    return writeJson(response, 200, {
-      query: jsonBody(rawBody).query,
-      mode: jsonBody(rawBody).mode,
-      results: [
-        {
-          score: 0.92,
-          content: '退款可在 30 天内申请。',
-          source: {
-            knowledge_base_id: jsonBody(rawBody).knowledge_base_ids?.[0] ?? 'kb-1',
-            document_id: 'doc-e2e-policy',
-            chunk_id: 'chunk-e2e-policy',
-            title: '退款政策',
-          },
-        },
-      ],
-    });
+  if (handleKnowledgeRetrievalFixture(method, pathname, query, jsonBody(rawBody), response)) return;
   const chunkPath = pathname.match(/^\/api\/v1\/knowledge\/managed\/documents\/([^/]+)\/chunks(?:\/([^/]+))?$/);
   if (chunkPath) {
     const documentId = decodeURIComponent(chunkPath[1]);
@@ -474,22 +459,6 @@ async function route(method, pathname, rawBody, response, query, headers) {
       return writeJson(response, 200, { data: chunk, operationId: `chunkop-${state.nextId++}` });
     }
   }
-  const knowledgeSourceMatch = pathname.match(/^\/api\/v1\/knowledge\/employees\/[^/]+\/documents\/([^/]+)$/);
-  if (method === 'GET' && knowledgeSourceMatch)
-    return writeJson(response, 200, {
-      document: {
-        id: decodeURIComponent(knowledgeSourceMatch[1]),
-        title: '退款政策',
-        file_name: 'refund-policy.pdf',
-        file_type: 'pdf',
-        source: 'upload',
-        knowledge_base_id: 'kb-1',
-      },
-      chunks: [{ id: 'chunk-e2e-policy', seq_id: 1, chunk_type: 'text', content: '退款可在 30 天内申请。' }],
-      total: 1,
-      page: Number(query.get('page') ?? 1),
-      page_size: Number(query.get('page_size') ?? 20),
-    });
   // Portal session mint for the embedded workbench messenger: the console
   // trades its AEP bearer for portal cookies before mounting the iframe.
   if (method === 'POST' && pathname === '/api/v1/session') {

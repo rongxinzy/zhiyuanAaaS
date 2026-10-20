@@ -46,8 +46,8 @@ import { ADMIN_LANGUAGE, translate } from './i18n.js';
 import { KnowledgeDocumentInspector } from './KnowledgeDocumentInspector.js';
 import { KnowledgeGrants } from './KnowledgeGrants.js';
 import { KnowledgeOperations } from './KnowledgeOperations.js';
-import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
 import { knowledgeBaseColumns } from './knowledge-base-columns.js';
+import { useKnowledgeDetailRetrieval } from './knowledge-detail-retrieval.js';
 import { knowledgeErrorText } from './knowledge-error.js';
 import {
   ALL_FOLDERS_KEY,
@@ -107,7 +107,7 @@ export function KnowledgeManagement({
   const [readiness, setReadiness] = useState<ManagedKnowledgeReadiness | null>(null);
   const [bases, setBases] = useState<readonly ManagedKnowledgeBase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(baseId);
-  const [detailTab, setDetailTab] = useState('documents');
+  const retrieval = useKnowledgeDetailRetrieval(portal, selectedId);
   const [docHintVisible, setDocHintVisible] = useState(() => localStorage.getItem(DOC_HINT_DISMISSED_KEY) !== '1');
   const [docs, setDocs] = useState<ManagedKnowledgePage | null>(null);
   const [docsContext, setDocsContext] = useState('');
@@ -208,7 +208,7 @@ export function KnowledgeManagement({
     chunkRequestGeneration.current += 1;
     chunkSaveGeneration.current += 1;
     setSelectedId(id);
-    setDetailTab('documents');
+    retrieval.setDetailTab('documents');
     setPage(1);
     setFiles([]);
     setFolderQueue([]);
@@ -523,7 +523,7 @@ export function KnowledgeManagement({
       onClick: () => {
         setStatusFilter('processing');
         setPage(1);
-        setDetailTab('documents');
+        retrieval.setDetailTab('documents');
       },
     },
     {
@@ -533,7 +533,7 @@ export function KnowledgeManagement({
       onClick: () => {
         setStatusFilter('failed');
         setPage(1);
-        setDetailTab('documents');
+        retrieval.setDetailTab('documents');
       },
     },
     { key: 'agents', icon: <RobotOutlined />, text: summaryText(t('summaryAgents'), summaryAgents) },
@@ -541,7 +541,7 @@ export function KnowledgeManagement({
       key: 'grants',
       icon: <TeamOutlined />,
       text: summaryText(t('summaryGrants'), detail?.scope ? detail.scope.users + detail.scope.teams : null),
-      onClick: () => setDetailTab('access'),
+      onClick: () => retrieval.setDetailTab('access'),
     },
   ];
 
@@ -1487,8 +1487,8 @@ export function KnowledgeManagement({
                   </Space>
                 </section>
                 <Tabs
-                  activeKey={detailTab}
-                  onChange={setDetailTab}
+                  activeKey={retrieval.detailTab}
+                  onChange={retrieval.setDetailTab}
                   items={[
                     {
                       key: 'documents',
@@ -1768,9 +1768,7 @@ export function KnowledgeManagement({
                     {
                       key: 'retrieval',
                       label: t('tabRetrieval'),
-                      children: (
-                        <KnowledgeRetrieval key={`retrieval:${selected.id}`} portal={portal} baseId={selected.id} />
-                      ),
+                      children: retrieval.panel,
                     },
                     {
                       key: 'access',
@@ -1781,7 +1779,7 @@ export function KnowledgeManagement({
                           portal={portal}
                           baseId={selected.id}
                           disabled={writeBlocked || uploading}
-                          onOpenRetrieval={() => setDetailTab('retrieval')}
+                          onOpenRetrieval={retrieval.openAgentCheck}
                           onManageAgents={onNavigate ? () => onNavigate('employees') : undefined}
                         />
                       ),

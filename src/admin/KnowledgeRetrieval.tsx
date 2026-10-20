@@ -8,8 +8,22 @@ import type { EmployeeKnowledgeSearchHit, EmployeeKnowledgeSource, PortalClient,
 
 const tr = (key: Parameters<typeof translate>[1]) => translate(ADMIN_LANGUAGE, key);
 
-export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: PortalClient; readonly baseId: string }) {
+export type KnowledgeSearchMode = 'library' | 'agent';
+
+export function KnowledgeRetrieval({
+  portal,
+  baseId,
+  mode: controlledMode,
+  onModeChange,
+}: {
+  readonly portal: PortalClient;
+  readonly baseId: string;
+  readonly mode?: KnowledgeSearchMode;
+  readonly onModeChange?: (mode: KnowledgeSearchMode) => void;
+}) {
   const { token } = theme.useToken();
+  const [localMode, setLocalMode] = useState<KnowledgeSearchMode>('library');
+  const mode = controlledMode ?? localMode;
   const [employees, setEmployees] = useState<readonly PortalEmployee[]>([]);
   const [employee, setEmployee] = useState<string>();
   const [employeeLoading, setEmployeeLoading] = useState(false);
@@ -29,6 +43,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
   const sourceGeneration = useRef(0);
 
   useEffect(() => {
+    if (mode !== 'agent') return;
     const controller = new AbortController();
     setEmployeeLoading(true);
     setEmployeeError(null);
@@ -45,7 +60,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
         if (!controller.signal.aborted) setEmployeeLoading(false);
       });
     return () => controller.abort();
-  }, [portal]);
+  }, [portal, mode]);
 
   useEffect(() => {
     searchController.current?.abort();
@@ -60,7 +75,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
     setSource(null);
     setSourceError(null);
     setSourcePage(1);
-  }, [baseId, employee]);
+  }, [baseId, employee, mode, portal]);
 
   useEffect(
     () => () => {
@@ -71,7 +86,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
   );
 
   const runSearch = async () => {
-    if (!employee || !query.trim() || searching) return;
+    if ((mode === 'agent' && !employee) || !query.trim() || searching) return;
     searchController.current?.abort();
     sourceController.current?.abort();
     sourceGeneration.current += 1;
@@ -89,11 +104,15 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
     setSource(null);
     setSourceError(null);
     try {
-      const response = await portal.searchEmployeeKnowledge(
-        employee,
-        { query: query.trim(), knowledge_base_ids: [baseId], mode: 'hybrid', limit: 10 },
-        controller.signal,
-      );
+      const input = { query: query.trim(), mode: 'hybrid' as const, limit: 10 };
+      const response =
+        mode === 'library'
+          ? await portal.searchManagedKnowledge(baseId, input, controller.signal)
+          : await portal.searchEmployeeKnowledge(
+              employee!,
+              { ...input, knowledge_base_ids: [baseId] },
+              controller.signal,
+            );
       if (!controller.signal.aborted && generation === searchGeneration.current) setResults(response.results);
     } catch (cause) {
       if (!controller.signal.aborted && generation === searchGeneration.current)
@@ -104,7 +123,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
   };
 
   const loadSource = async (hit: EmployeeKnowledgeSearchHit, page: number) => {
-    if (!employee) return;
+    if (mode === 'agent' && !employee) return;
     sourceController.current?.abort();
     const controller = new AbortController();
     sourceController.current = controller;
@@ -115,13 +134,10 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
     setSource(null);
     setSourcePage(page);
     try {
-      const response = await portal.getEmployeeKnowledgeSource(
-        employee,
-        hit.source.document_id,
-        page,
-        20,
-        controller.signal,
-      );
+      const response =
+        mode === 'library'
+          ? await portal.getManagedKnowledgeSource(baseId, hit.source.document_id, page, 20, controller.signal)
+          : await portal.getEmployeeKnowledgeSource(employee!, hit.source.document_id, page, 20, controller.signal);
       if (!controller.signal.aborted && generation === sourceGeneration.current) setSource(response);
     } catch (cause) {
       if (!controller.signal.aborted && generation === sourceGeneration.current)
@@ -143,39 +159,45 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
           <Typography.Text type="secondary">{tr('knowledgeRetrievalHint')}</Typography.Text>
         </div>
       </div>
-      <Segmented
-        value="agent"
+      <Segmented<KnowledgeSearchMode>
+        value={mode}
+        onChange={(value) => {
+          setLocalMode(value);
+          onModeChange?.(value);
+        }}
         options={[
           {
             label: tr('knowledgeSearchLibrary'),
             value: 'library',
-            disabled: true,
-            title: tr('knowledgeSearchLibraryDisabled'),
           },
           { label: tr('knowledgeSearchAgent'), value: 'agent' },
         ]}
       />
-      <Typography.Text type="secondary">{tr('knowledgeSearchLibraryDisabled')}</Typography.Text>
-      {employeeError ? (
+      <Typography.Text type="secondary">
+        {tr(mode === 'library' ? 'knowledgeSearchLibraryHint' : 'knowledgeSearchAgentHint')}
+      </Typography.Text>
+      {mode === 'agent' && employeeError ? (
         <Alert showIcon type="error" title={tr('knowledgeSearchEmployeesFailed')} description={employeeError} />
       ) : (
         <Space orientation="vertical" style={{ width: '100%' }}>
-          <Space wrap>
-            <Typography.Text>{tr('knowledgeSearchEmployee')}</Typography.Text>
-            <Select
-              aria-label={tr('knowledgeSearchEmployee')}
-              showSearch={{ optionFilterProp: 'label' }}
-              loading={employeeLoading}
-              value={employee}
-              onChange={setEmployee}
-              options={employees.map((item) => ({
-                value: item.name,
-                label: `${item.displayName} (${item.name})`,
-              }))}
-              placeholder={tr('knowledgeSearchEmployee')}
-              style={{ minWidth: 240 }}
-            />
-          </Space>
+          {mode === 'agent' && (
+            <Space wrap>
+              <Typography.Text>{tr('knowledgeSearchEmployee')}</Typography.Text>
+              <Select
+                aria-label={tr('knowledgeSearchEmployee')}
+                showSearch={{ optionFilterProp: 'label' }}
+                loading={employeeLoading}
+                value={employee}
+                onChange={setEmployee}
+                options={employees.map((item) => ({
+                  value: item.name,
+                  label: `${item.displayName} (${item.name})`,
+                }))}
+                placeholder={tr('knowledgeSearchEmployee')}
+                style={{ minWidth: 240 }}
+              />
+            </Space>
+          )}
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               size="large"
@@ -191,7 +213,7 @@ export function KnowledgeRetrieval({ portal, baseId }: { readonly portal: Portal
               type="primary"
               size="large"
               loading={searching}
-              disabled={!employee || !query.trim()}
+              disabled={(mode === 'agent' && !employee) || !query.trim()}
               onClick={() => void runSearch()}
             >
               {tr('knowledgeSearchButton')}

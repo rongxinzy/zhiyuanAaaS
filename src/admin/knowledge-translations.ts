@@ -19,7 +19,8 @@ export const knowledgeTranslations = {
     knowledgeSearchWelcomeHint: '输入一个业务问题，检查相关片段是否被找到。',
     knowledgeSearchTry: '试试',
     knowledgeSearchLibrary: '本库检索',
-    knowledgeSearchLibraryDisabled: '需要后端契约，尚未开放',
+    knowledgeSearchLibraryHint: '以管理员身份检查当前知识库的检索结果与来源，无需选择数字员工。',
+    knowledgeSearchAgentHint: '使用当前账号验证所选数字员工的检索权限；需要账号授权及员工关联。',
     knowledgeSearchAgent: 'Agent 权限验证',
     knowledgeIndexHint: '解析并完成索引后，资料才能参与检索',
     knowledgeSearchScore: '相关度',
@@ -257,6 +258,9 @@ export const knowledgeTranslations = {
     knowledgeNoDocuments: '暂无文档',
     knowledgeNotConfiguredManaged: '知识库服务未配置',
     knowledgeForbiddenManaged: '没有权限访问知识库管理。',
+    knowledgeNotGranted: '所选 Agent 未绑定该知识库或无权访问。',
+    knowledgeAccessDenied: '所请求的知识库不属于当前部署、租户，或尚未登记。',
+    knowledgeAdminRequired: '需要管理员权限。',
     knowledgeConfigErrorManaged: '知识库服务配置不完整，暂时无法管理。',
     knowledgeUpstreamInvalidManaged:
       '知识库服务未提供该操作需要的接口（多为版本过旧），升级知识库服务后再重试；操作编号可用于核对。',
@@ -300,7 +304,10 @@ export const knowledgeTranslations = {
     knowledgeSearchWelcomeHint: 'Ask a business question and check whether the relevant passage is found.',
     knowledgeSearchTry: 'Try',
     knowledgeSearchLibrary: 'This library',
-    knowledgeSearchLibraryDisabled: 'Needs a backend contract; not available yet',
+    knowledgeSearchLibraryHint:
+      'Inspect this library’s search results and sources as an administrator. No Agent selection is needed.',
+    knowledgeSearchAgentHint:
+      'Check the selected Agent’s retrieval access using your current account; account grants and Agent binding are required.',
     knowledgeSearchAgent: 'Agent permission check',
     knowledgeIndexHint: 'A document joins retrieval only after parsing and indexing finish',
     knowledgeSearchScore: 'Score',
@@ -547,6 +554,10 @@ export const knowledgeTranslations = {
     knowledgeNoDocuments: 'No documents',
     knowledgeNotConfiguredManaged: 'Knowledge service is not configured',
     knowledgeForbiddenManaged: 'You do not have permission to manage knowledge bases.',
+    knowledgeNotGranted: 'The selected agent is not bound to this knowledge base or is not authorized to access it.',
+    knowledgeAccessDenied:
+      'The requested knowledge base does not belong to this deployment or tenant, or is not registered.',
+    knowledgeAdminRequired: 'Administrator permission is required.',
     knowledgeConfigErrorManaged: 'Knowledge service configuration is incomplete.',
     knowledgeUpstreamInvalidManaged:
       'The knowledge service does not expose the API this action needs (usually an older build); upgrade it and retry. Quote the operation id when checking.',

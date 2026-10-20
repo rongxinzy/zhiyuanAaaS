@@ -10,42 +10,165 @@ import { KnowledgeRetrieval } from './KnowledgeRetrieval.js';
 import type { PortalClient } from './portal.js';
 import { PortalError } from './portal.js';
 
+const searchFixture = {
+  query: 'refund',
+  mode: 'hybrid',
+  results: [
+    {
+      score: 0.92,
+      content: 'Refunds are available within 30 days.',
+      source: { knowledge_base_id: 'kb-1', document_id: 'doc-1', chunk_id: 'chunk-1', title: 'Refund policy' },
+    },
+  ],
+} as const;
+const sourceFixture = {
+  document: {
+    id: 'doc-1',
+    title: 'Refund policy',
+    file_name: 'refund.pdf',
+    file_type: 'pdf',
+    source: 'upload',
+    knowledge_base_id: 'kb-1',
+  },
+  chunks: [{ id: 'chunk-1', seq_id: 1, chunk_type: 'text', content: 'Refunds are available within 30 days.' }],
+  total: 1,
+  page: 1,
+  page_size: 20,
+} as const;
+
 function makePortal(overrides: Partial<PortalClient> = {}) {
   return {
     listEmployees: vi
       .fn()
       .mockResolvedValue([{ name: 'sales-helper', displayName: 'Sales helper', phase: 'Ready', ownerId: 'user-1' }]),
-    searchEmployeeKnowledge: vi.fn().mockResolvedValue({
-      query: 'refund',
-      mode: 'hybrid',
-      results: [
-        {
-          score: 0.92,
-          content: 'Refunds are available within 30 days.',
-          source: { knowledge_base_id: 'kb-1', document_id: 'doc-1', chunk_id: 'chunk-1', title: 'Refund policy' },
-        },
-      ],
-    }),
-    getEmployeeKnowledgeSource: vi.fn().mockResolvedValue({
-      document: {
-        id: 'doc-1',
-        title: 'Refund policy',
-        file_name: 'refund.pdf',
-        file_type: 'pdf',
-        source: 'upload',
-        knowledge_base_id: 'kb-1',
-      },
-      chunks: [{ id: 'chunk-1', seq_id: 1, chunk_type: 'text', content: 'Refunds are available within 30 days.' }],
-      total: 1,
-      page: 1,
-      page_size: 20,
-    }),
+    searchEmployeeKnowledge: vi.fn().mockResolvedValue(searchFixture),
+    getEmployeeKnowledgeSource: vi.fn().mockResolvedValue(sourceFixture),
+    searchManagedKnowledge: vi.fn().mockResolvedValue(searchFixture),
+    getManagedKnowledgeSource: vi.fn().mockResolvedValue(sourceFixture),
     ...overrides,
   } as unknown as PortalClient;
 }
 
 describe('KnowledgeRetrieval', () => {
   afterEach(() => cleanup());
+
+  test('searches this library without an employee and pages its verified source', async () => {
+    const portal = makePortal({
+      listEmployees: vi.fn().mockRejectedValue(new Error('employee service unavailable')),
+      getManagedKnowledgeSource: vi
+        .fn()
+        .mockImplementation((_base, _document, page) => Promise.resolve({ ...sourceFixture, total: 40, page })),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+      </ConfigProvider>,
+    );
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(portal.listEmployees).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'refund' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
+    expect(await screen.findByText('Refunds are available within 30 days.')).toBeInTheDocument();
+    expect(portal.searchManagedKnowledge).toHaveBeenCalledWith(
+      'kb-1',
+      { query: 'refund', mode: 'hybrid', limit: 10 },
+      expect.any(AbortSignal),
+    );
+    expect(portal.searchEmployeeKnowledge).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Refund policy' }));
+    expect(await screen.findByText('refund.pdf · pdf')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('2'));
+    await waitFor(() =>
+      expect(portal.getManagedKnowledgeSource).toHaveBeenLastCalledWith(
+        'kb-1',
+        'doc-1',
+        2,
+        20,
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(portal.getEmployeeKnowledgeSource).not.toHaveBeenCalled();
+  });
+
+  test('switching to Agent checks cancels a pending library search', async () => {
+    let resolveSearch!: (value: { query: string; mode: 'hybrid'; results: [] }) => void;
+    let signal!: AbortSignal;
+    const portal = makePortal({
+      searchManagedKnowledge: vi.fn().mockImplementation((_base, _input, requestSignal) => {
+        signal = requestSignal;
+        return new Promise((resolve) => {
+          resolveSearch = resolve;
+        });
+      }),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+      </ConfigProvider>,
+    );
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'refund' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
+    fireEvent.click(screen.getByText(translate(ADMIN_LANGUAGE, 'knowledgeSearchAgent')));
+    expect(await screen.findByRole('combobox')).toBeInTheDocument();
+    expect(signal.aborted).toBe(true);
+    resolveSearch({ query: 'refund', mode: 'hybrid', results: [] });
+    await waitFor(() =>
+      expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeSearchEmpty'))).not.toBeInTheDocument(),
+    );
+  });
+
+  test('a base change cancels an outstanding library source and clears results', async () => {
+    let resolveSource!: (value: unknown) => void;
+    let signal!: AbortSignal;
+    const portal = makePortal({
+      getManagedKnowledgeSource: vi.fn().mockImplementation((_base, _doc, _page, _size, requestSignal) => {
+        signal = requestSignal;
+        return new Promise((resolve) => {
+          resolveSource = resolve;
+        });
+      }),
+    });
+    const view = render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+      </ConfigProvider>,
+    );
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'refund' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund policy' }));
+    await waitFor(() => expect(portal.getManagedKnowledgeSource).toHaveBeenCalled());
+    view.rerender(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-2" />
+      </ConfigProvider>,
+    );
+    expect(signal.aborted).toBe(true);
+    resolveSource({ document: { file_name: 'stale.pdf' }, chunks: [], page: 1, page_size: 20, total: 0 });
+    await waitFor(() => expect(screen.queryByText(/stale.pdf|Refund policy/)).not.toBeInTheDocument());
+  });
+
+  test('library failure is an error rather than an empty result', async () => {
+    const portal = makePortal({
+      searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(503, 'Search unavailable')),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+      </ConfigProvider>,
+    );
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'refund' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
+    expect(await screen.findByText('Search unavailable')).toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeSearchEmpty'))).not.toBeInTheDocument();
+  });
 
   test('clears a pending search when the selected employee changes', async () => {
     let resolveSearch!: (value: Awaited<ReturnType<PortalClient['searchEmployeeKnowledge']>>) => void;
@@ -61,7 +184,7 @@ describe('KnowledgeRetrieval', () => {
     });
     render(
       <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
     );
     const employeeSelect = screen.getByRole('combobox', {
@@ -101,7 +224,7 @@ describe('KnowledgeRetrieval', () => {
     });
     render(
       <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
     );
     fireEvent.mouseDown(screen.getByRole('combobox', { name: translate(ADMIN_LANGUAGE, 'knowledgeSearchEmployee') }));
@@ -137,7 +260,7 @@ describe('KnowledgeRetrieval', () => {
     const portal = makePortal();
     render(
       <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
     );
     fireEvent.mouseDown(screen.getByRole('combobox', { name: translate(ADMIN_LANGUAGE, 'knowledgeSearchEmployee') }));
@@ -179,7 +302,7 @@ describe('KnowledgeRetrieval', () => {
     });
     render(
       <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
     );
     fireEvent.mouseDown(screen.getByRole('combobox', { name: translate(ADMIN_LANGUAGE, 'knowledgeSearchEmployee') }));
@@ -195,13 +318,15 @@ describe('KnowledgeRetrieval', () => {
     expect(source.getByText(/chunk-1/)).toBeInTheDocument();
   });
 
-  test('shows authorization failures instead of an empty search result', async () => {
+  test('shows agent authorization failures with the not-granted text instead of management forbidden', async () => {
     const portal = makePortal({
-      searchEmployeeKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'knowledge access denied')),
+      searchEmployeeKnowledge: vi
+        .fn()
+        .mockRejectedValue(new PortalError(403, 'knowledge access denied', 'KNOWLEDGE_NOT_GRANTED')),
     });
     render(
       <ConfigProvider>
-        <KnowledgeRetrieval portal={portal} baseId="kb-1" />
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="agent" />
       </ConfigProvider>,
     );
     fireEvent.mouseDown(screen.getByRole('combobox', { name: translate(ADMIN_LANGUAGE, 'knowledgeSearchEmployee') }));
@@ -209,9 +334,43 @@ describe('KnowledgeRetrieval', () => {
     fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
       target: { value: 'secret' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /检\s*索/ }));
-    // 403 走共用错误映射：显示可处置的中文提示，而不是上游英文串。
-    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /开\s*始/ }));
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeNotGranted'))).toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).not.toBeInTheDocument();
     expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeSearchEmpty'))).not.toBeInTheDocument();
+  });
+
+  test('shows library access-denied text instead of management forbidden', async () => {
+    const portal = makePortal({
+      searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'base denied', 'KNOWLEDGE_ACCESS_DENIED')),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="library" />
+      </ConfigProvider>,
+    );
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /开\s*始/ }));
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeAccessDenied'))).toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).not.toBeInTheDocument();
+  });
+
+  test('shows admin-required text for managed retrieval without admin role', async () => {
+    const portal = makePortal({
+      searchManagedKnowledge: vi.fn().mockRejectedValue(new PortalError(403, 'admin only', 'ADMIN_REQUIRED')),
+    });
+    render(
+      <ConfigProvider>
+        <KnowledgeRetrieval portal={portal} baseId="kb-1" mode="library" />
+      </ConfigProvider>,
+    );
+    fireEvent.change(screen.getByLabelText(translate(ADMIN_LANGUAGE, 'knowledgeSearchQuery')), {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /开\s*始/ }));
+    expect(await screen.findByText(translate(ADMIN_LANGUAGE, 'knowledgeAdminRequired'))).toBeInTheDocument();
+    expect(screen.queryByText(translate(ADMIN_LANGUAGE, 'knowledgeForbiddenManaged'))).not.toBeInTheDocument();
   });
 });
